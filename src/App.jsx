@@ -5538,7 +5538,7 @@ function SetupChecklistCard({items,onDismiss,style}){
   );
 }
 
-function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -6641,7 +6641,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
-            <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Try Free →</div>
+            {/* Billing on: the card opens the real checkout, which starts no free trial. */}
+            <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn ? "See plans →" : "Try Free →"}</div>
           </div>
         )}
 
@@ -13488,7 +13489,7 @@ function TermsOfService({onBack}){
 }
 
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
-function PremiumGate({feature,desc,onUpgrade,nativeNote}){
+function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
       <div style={{width:72,height:72,borderRadius:24,background:`linear-gradient(135deg,${C.purple}30,${C.purple}08)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="sparkles" size={32} color={C.purpleBright} strokeWidth={1.35}/></div>
@@ -13516,11 +13517,12 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote}){
           </div>
         </div>
         <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-          {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+          {/* Billing on: the button opens the real checkout, which starts no free trial. Off: today's words. */}
+          {billingOn ? "See plans →" : getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
         </>
       )}
     </div>
@@ -17479,7 +17481,7 @@ export default function FlourishApp(){
   if(!aiDisclosureSeen && !appData?.demo)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
@@ -17671,7 +17673,7 @@ export default function FlourishApp(){
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
@@ -17686,9 +17688,9 @@ export default function FlourishApp(){
       const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
       return <><div data-tour="do"><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/></div>
         {sub==="goals"
-          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
+          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={openUpgrade} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={()=>setShowPaywall(true)}/>)
+            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -17706,13 +17708,13 @@ export default function FlourishApp(){
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is
       // included, so say what actually happened and when it lifts, not that the feature is missing.
-      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={()=>setShowPaywall(true)}/>;
+      return <PremiumGate billingOn={billingUi.show} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={openUpgrade}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
+    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
   };
 
   const ALL_NAV=[

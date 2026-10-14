@@ -19,7 +19,7 @@
 // Pure: every input is passed in, so the gate can test a native shell and a 404 offline.
 // -----------------------------------------------------------------------------
 
-import { getPricing, formatPrice, monthlyEquivalentOfAnnual, annualSavingsPercent } from "./pricing.js";
+import { getPricing, formatPrice } from "./pricing.js";
 
 // A Capacitor shell, by either signal. getPlatform() is the direct answer; the URL scheme is the
 // one that is already true before the native bridge finishes loading, which is when a screen can
@@ -66,19 +66,21 @@ export function offeredPlans({ status } = {}) {
   // this reads the country again and billingPlans maps it.
   const country = "CA";
   const p = getPricing(country);
+  // THE LANDING PAGE'S WORDS (billing day, 2026-10-26): "$11.99 a month", "$99.99 a year", "$79.99 a year",
+  // as the landing page and its founding card say them, and no other figure (no monthly equivalent, no
+  // percentage). tests/upgradeEntryPoints.test.cjs holds every price here to the landing page's copy.
   const plans = [
     {
       key: "monthly",
       label: "Monthly",
-      price: `${formatPrice(p.monthly)}/mo`,
+      price: `${formatPrice(p.monthly)} a month`,
       note: `${p.currency} plus tax`,
     },
     {
       key: "annual",
       label: "Annual",
-      price: `${formatPrice(p.annual)}/yr`,
-      sub: `${formatPrice(monthlyEquivalentOfAnnual(country))}/mo, billed annually`,
-      note: `${p.currency} plus tax · save ${annualSavingsPercent(country)}% versus monthly`,
+      price: `${formatPrice(p.annual)} a year`,
+      note: `${p.currency} plus tax`,
     },
   ];
   const founding = status?.founding;
@@ -86,7 +88,7 @@ export function offeredPlans({ status } = {}) {
     plans.push({
       key: "founding_annual",
       label: "Founding Annual",
-      price: `${formatPrice(p.foundingAnnual)}/yr`,
+      price: `${formatPrice(p.foundingAnnual)} a year`,
       // The ONLY claim made about this offer. No feature promises live here.
       note: foundingLabel(founding.cohortLimit),
     });

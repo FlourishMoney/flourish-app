@@ -337,11 +337,12 @@ Worst first.
    the paid period (`webPlan`, `planRules.isPaidSubscription`). A subscription cancelled at period end
    counts until that period ends. A store app is unchanged. While billing is off, the app is exactly as
    before (section 7). `tests/webPaidPlan.test.cjs`.
-3. **Five screens still open the old paywall, which says paid plans are not open.** Today, Goals, the
-   Credit gate, the coach's out-of-messages gate and What-If call `setShowPaywall(true)` directly (six
-   call sites). That screen's button answers "Paid plans aren't open yet. Nothing has been charged…".
-   Only Settings → Flourish Plus → See plans, and the coach composer's limit, go through `openUpgrade()`
-   to the real checkout. A household can pay, but only from those two places.
+3. **Fixed (round 2): every upgrade button reaches the real checkout.** Today, Goals, the Credit gate,
+   the coach's out-of-messages gate and What-If (six call sites) now go through `openUpgrade()`: with
+   billing on, the checkout screen; with it off, the old paywall and its words, unchanged. With billing on
+   the buttons say "See plans", not "Try Free" or "Start 14 days free" (checkout starts no free trial),
+   and the checkout's prices are the landing page's words: "$11.99 a month", "$99.99 a year", "$79.99 a
+   year", plus tax, with no monthly equivalent or percentage. `tests/upgradeEntryPoints.test.cjs`.
 4. **The earliest founding households will not get the founding link email.** Rows whose consent is
    from before the consent line (`pre-2026-10-01`) agreed only to the launch-day email
    (`mayEmailWaitlistRow`), so the sweep skips them. Numbering ran in join order, so they likely hold the
