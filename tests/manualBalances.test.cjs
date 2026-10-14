@@ -257,6 +257,9 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     const card = { id: "m2", name: "Credit card", type: "credit", subtype: "credit card", balance: -640, institution: "Manual", balanceEntered: true, balanceAsOf: "2026-10-14" };
     const sheet = render(A.BalanceForm, { account: card, onSubmit: noop, onCancel: noop });
     t.ok(/Amount owed/.test(sheet) && /As of/.test(sheet) && /Chequing/.test(sheet) && /Loan/.test(sheet), `6c the balance editor: kind, amount owed for a card, the as-of date ("${sheet.slice(0, 200)}")`);
+    let html = "";
+    try { html = A.render(A.h(A.BalanceForm, { account: { ...card, balance: -2150 }, onSubmit: noop, onCancel: noop })); } catch (e) { html = describe(e); }
+    t.ok(/value="2,150\.00"/.test(html) && /value="2026-10-14"/.test(html), "6c2 the editor opens on the entered amount, \"2,150.00\", and its as-of date");
     const step = render(A.ManualBalanceStep, { onDone: noop, onSkip: noop });
     t.ok(/Your chequing balance/.test(step) && /As of/.test(step) && /Not now/.test(step), `6d onboarding asks for the chequing balance ("${step.slice(0, 200)}")`);
     t.ok(/bankStage==="skipped"&&<ManualBalanceStep/.test(APP), "6e …on the \"Enter it myself\" path, before income, bills and Today");

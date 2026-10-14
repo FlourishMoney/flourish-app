@@ -3969,6 +3969,8 @@ function StatementReview({ batch, onConfirm, onCancel }) {
 // lib/manualBalances.js enterBalance, which never edits a linked bank account. BalanceForm is the
 // sheet's content (Settings → Accounts, Today, How we got this, statement import); ManualBalanceStep
 // is onboarding's "Enter it myself" step.
+// An amount as the editor pre-fills it: "2,150.00" (the field reads commas and a minus sign back).
+const balanceText = (n) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const balanceChip = (on, extra = {}) => ({ flex: "1 1 0", minWidth: 0, minHeight: LAYOUT.minTap, padding: "9px 6px", borderRadius: 11,
   border: `1px solid ${on ? C.green + "66" : C.border}`, background: on ? C.green + "1E" : "transparent", color: on ? C.greenInk : C.muted,
   fontSize: 13, fontWeight: on ? 700 : 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", ...extra });
@@ -3981,8 +3983,8 @@ function BalanceForm({ account = null, prefill = null, mode = "update", country 
   const [loanType, setLoanType] = useState(() => (account && accountKindOf(account) === "loan" && account.subtype) || "auto");
   const [name, setName] = useState("");
   const [amount, setAmount] = useState(() => {
-    if (prefill && prefill.amount != null) return String(prefill.amount);
-    if (account && (account.balanceEntered || Number(account.balance))) return String(amountShownFor(account));
+    if (prefill && prefill.amount != null) return balanceText(prefill.amount);
+    if (account && (account.balanceEntered || Number(account.balance))) return balanceText(amountShownFor(account));
     return "";
   });
   const [asOf, setAsOf] = useState(() => (prefill && prefill.asOf) || (account && account.balanceAsOf) || todayISO(today));
@@ -4077,7 +4079,7 @@ function cashAccountsUsed(data) {
 function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
   const today = new Date();
   // Coming back to this step shows the balance already entered, which Continue then updates.
-  const [amount, setAmount] = useState(() => (account && account.balanceEntered ? String(amountShownFor(account)) : ""));
+  const [amount, setAmount] = useState(() => (account && account.balanceEntered ? balanceText(amountShownFor(account)) : ""));
   const [asOf, setAsOf] = useState(() => (account && account.balanceAsOf) || todayISO(today));
   const [tried, setTried] = useState(false);
   const problem = balanceEntryProblem({ amount, asOf }, today);
