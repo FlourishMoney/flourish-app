@@ -498,7 +498,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
   const markByIndex = new Map(), markByAccount = new Map();
   if (accounts.length) {
     for (const m of likelyDebtAccountMatches({ accounts, debts: manual, debtLinkDismissed: data.debtLinkDismissed })) {
-      const word = m.accountKind === "loc" ? "line of credit" : "card";
+      const word = debtAccountKindWord(m.accountKind);
       markByIndex.set(m.debtIndex, word);
       markByAccount.set(String(m.accountId), word);
       manual.forEach((x, i) => { if (x && x.fromBank && String(x.account_id) === String(m.accountId)) markByIndex.set(i, word); });
@@ -1306,9 +1306,31 @@ const _GENERIC_DEBT_KIND = { "credit card": "card", "card": "card", "line of cre
 const _genericDebtKind = (d) => { const n = String(d && d.name || "").toLowerCase(); return /\d/.test(n) ? null : _GENERIC_DEBT_KIND[n.replace(/[^a-z]+/g, " ").trim()] || null; };
 const _accountKind = (a) => ((a && a.type || "").toLowerCase() === "line of credit" || (a && a.subtype || "").toLowerCase() === "line of credit" ? "loc" : "card");
 const _isCardLikeDebt = (d) => { const n = String(d && d.name || ""); return /credit card|line of credit|\bloc\b|\bcard\b|\bcredit\b/i.test(n) || _issuersIn(n).size > 0; };
+// loan-account-txns: a bank LOAN account (Plaid type "loan": auto, mortgage, student, home equity, a line
+// of credit, commercial...) can be the same debt as one entered by hand ("Car Loan"), so the one-tap link
+// covers it too. Loans pair only with loan-like debts, cards only with card-like ones, as before; a line
+// of credit is both.
+const _isBankLoanAccount = (a) => (a && a.type || "").toLowerCase() === "loan";
+const _isLoanLikeDebt = (d) => /\bloan\b|mortgage|heloc|home equity|\bauto\b|\bcar\b|student|line of credit|\bloc\b/i.test(String(d && d.name || ""));
+const _LOAN_DEBT_KIND = { "car loan": "auto", "auto loan": "auto", "car": "auto", "mortgage": "mortgage", "student loan": "student", "student loans": "student",
+  "heloc": "home equity", "home equity": "home equity", "home equity loan": "home equity", "home equity line of credit": "home equity",
+  "line of credit": "loc", "credit line": "loc", "loc": "loc", "personal loan": "personal", "loan": null };
+const _loanDebtKind = (d) => { const n = String(d && d.name || "").toLowerCase(); return /\d/.test(n) ? null : _LOAN_DEBT_KIND[n.replace(/[^a-z]+/g, " ").trim()] || null; };
+const _loanAccountKind = (a) => {
+  const s = (a && a.subtype || "").toLowerCase();
+  if (s === "auto") return "auto";
+  if (s === "mortgage") return "mortgage";
+  if (s === "student") return "student";
+  if (s === "home equity" || s === "home equity loan") return "home equity";
+  if (s === "line of credit" || s === "commercial line of credit") return "loc";
+  return "personal";
+};
 // demo-fixes C1: a debt is identified by its id and nothing else. Names are usually the debt's type
 // ("Credit Card"), so two cards can share one; keying on the name linked both. Every debt is given a
 // stable id on load (withDebtIds); one without an id is never offered, linked or dismissed.
+// The word a "may be the same" prompt uses for the bank account: a card, a line of credit, or the loan.
+const _KIND_WORD = { card: "card", loc: "line of credit", auto: "auto loan", mortgage: "mortgage", student: "student loan", "home equity": "home equity loan", personal: "loan" };
+export function debtAccountKindWord(kind) { return _KIND_WORD[kind] || "card"; }
 export function debtKey(d) {
   return d && d.id != null && d.id !== "" ? String(d.id) : null;
 }
@@ -1319,7 +1341,8 @@ export function accountLabelWithMask(a) {
 export function likelyDebtAccountMatches(data = {}) {
   const accounts = data.accounts || [], debts = data.debts || [];
   const cards = accounts.filter(_isBankCreditAccount);
-  const cardIds = new Set(cards.map(a => a.id));
+  const loans = accounts.filter(a => _isBankLoanAccount(a) && !_isBankCreditAccount(a));
+  const cardIds = new Set([...cards, ...loans].map(a => a.id)); // every bank account a hand-entered debt can be
   // demo-fixes C6: bank sync gives every bank card a live-balance debt row (fromBank, carrying the card's
   // account_id). That row is the card, so it never counts as another debt linked to it.
   const linkedIds = new Set(debts.filter(d => d && !d.fromBank).flatMap(d => [d.account_id, d.sameAsAccountId]).filter(id => id != null && cardIds.has(id)));
@@ -1327,10 +1350,20 @@ export function likelyDebtAccountMatches(data = {}) {
   const candidates = [];
   debts.forEach((d, debtIndex) => {
     if (!d || debtKey(d) == null || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
-    if (!_isCardLikeDebt(d) || !(num(d.balance) > 0)) return;
-    const open = cards.filter(a => !linkedIds.has(a.id) && !dismissed.has(`${debtKey(d)}|${a.id}`));
-    const kind = _genericDebtKind(d), ofKind = kind ? open.filter(a => _accountKind(a) === kind) : [];
-    for (const a of open) {
+    if (!(num(d.balance) > 0)) return;
+    const isOpen = (a) => !linkedIds.has(a.id) && !dismissed.has(`${debtKey(d)}|${a.id}`);
+    const pairs = [];
+    if (_isCardLikeDebt(d)) {
+      const open = cards.filter(isOpen);
+      const kind = _genericDebtKind(d), ofKind = kind ? open.filter(a => _accountKind(a) === kind) : [];
+      for (const a of open) pairs.push([a, ofKind, _accountKind(a)]);
+    }
+    if (_isLoanLikeDebt(d)) {
+      const open = loans.filter(isOpen);
+      const kind = _loanDebtKind(d), ofKind = kind ? open.filter(a => _loanAccountKind(a) === kind) : [];
+      for (const a of open) pairs.push([a, ofKind, _loanAccountKind(a)]);
+    }
+    for (const [a, ofKind, accountKind] of pairs) {
       const pairKey = `${debtKey(d)}|${a.id}`;
       const aName = `${a.name || ""} ${a.institution || ""}`;
       const d4 = _last4(d.name), a4 = a.mask ? String(a.mask).slice(-4) : _last4(a.name);
@@ -1345,7 +1378,7 @@ export function likelyDebtAccountMatches(data = {}) {
       if (ofKind.length === 1 && ofKind[0] === a) reasons.push("onlyAccount");
       const balanceGap = Math.round(Math.abs(num(d.balance) - Math.abs(num(a.balance))) * 100) / 100;
       if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons, balanceGap,
-        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a), accountKind: _accountKind(a),
+        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a), accountKind,
         score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) + (reasons.includes("onlyAccount") ? 1 : 0) });
     }
   });
@@ -1389,9 +1422,11 @@ export function netWorthRows(data = {}) {
   const debts    = data.debts    || [];
   const base = baseCurrencyOf(data);
   const isBase = a => accountCurrencyOf(a, data) === base;
+  // A bank loan account (type "loan", any subtype) is a liability row like a card: it was in no row at
+  // all, so a linked mortgage left net worth too high (loan-account-txns, item 4).
   const isBankCredit = a => {
     const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
-    return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+    return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit" || t==="loan";
   };
   const cents = (n) => Math.round((Number(n) || 0) * 100);
   const rows = [];
