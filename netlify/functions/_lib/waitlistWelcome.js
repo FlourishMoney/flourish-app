@@ -33,7 +33,7 @@ const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 
 // The copy. Do not add claims, launch dates, prices, trials, plans or offers: the one promise is the
 // launch-day email. THE ONE EXCEPTION is the founding line (Amanda's decision, 2026-10-06): a row the
-// database gave a founding position (1 to 50, migration 0014) gets foundingWelcomeLine() as its second
+// database gave a founding number (migrations 0014, 0017), and that is not a test row, gets foundingWelcomeLine() as its second
 // paragraph, and no other row gets any offer line. The words are in _lib/foundingWaitlist.js. The person consented (CASL, consent version in _lib/waitlistConsent.js) to that email
 // "plus a few updates before then", so this message says so, carries the sender's identity and a working
 // one-click unsubscribe link, and goes out with List-Unsubscribe headers. That replaces the 2026-09-19
@@ -78,8 +78,8 @@ function welcomeHtml(url, paragraphs) {
 
 // The whole message for one waitlist row, or null when no signed unsubscribe link can be made for it
 // (no row id, or no signing secret). A waitlist email without a working unsubscribe is never sent.
-// foundingPosition is the row's founding_position exactly as the database returned it; anything but a
-// whole number from 1 to 50 means no offer line.
+// foundingPosition is the number the caller may name (welcomePositionFor: never a test row's); anything
+// but a whole number from 1 up means no offer line.
 function welcomeEmailPayload(to, rowId, foundingPosition) {
   const url = unsubscribeUrl(rowId);
   const headers = listUnsubscribeHeaders(rowId);

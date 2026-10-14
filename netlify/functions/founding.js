@@ -2,12 +2,15 @@
  * Flourish — founding spots left
  * netlify/functions/founding.js   (GET /api/founding)
  *
- * Answers {"spotsLeft": N}: 50 less the founding numbers issued, never below 0. A count and nothing
- * else. No address, no id, no row leaves through this function, and it takes no input.
+ * Answers {"spotsLeft": N}: 50 less the real holders, never below 0. A count and nothing else. No
+ * address, no id, no row leaves through this function, and it takes no input.
  *
- * The count is of public.waitlist_founding_ledger (migration 0014), where every number ever issued is
- * recorded and none is ever freed: a household that never pays, whose founding subscription ended, or
- * whose waitlist row was deleted still holds its number, so the figure never goes back up.
+ * Real holders are the numbers in public.waitlist_founding_ledger (migration 0014) that are not void
+ * (migration 0017). Every number ever issued is recorded and none is ever freed: a household that never
+ * pays, whose founding subscription ended, or whose waitlist row was deleted still holds its number. A
+ * test row's number is void: it never counts as a household and is never issued again.
+ *
+ * Until 0017 is applied there is no void_at column, PostgREST answers 400, and the page shows no number.
  *
  * If the count cannot be read (no env, Supabase down or slow, migration 0014 not applied yet, a reply
  * without a count) it answers 503 {"error":"unavailable"} and the landing page shows no number. An EMPTY
@@ -42,13 +45,13 @@ function headersFor(event, ok) {
   };
 }
 
-// The count of numbers issued, or null. HEAD with count=exact: PostgREST sends the total in Content-Range and
+// The count of real holders (numbers issued and not void), or null. HEAD with count=exact: PostgREST sends the total in Content-Range and
 // no body at all, so not even the one id the select names comes back.
 async function readIssuedCount(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position&void_at=is.null`, {
       method: "HEAD",
       headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
       signal: controller.signal,
@@ -85,9 +88,9 @@ async function handler(event, _context, now = Date.now()) {
   const secretKey   = (process.env.SUPABASE_SECRET_KEY || "").trim();
   if (!supabaseUrl || !secretKey) return unavailable();
 
-  const issued = await readIssuedCount(supabaseUrl, secretKey);
-  if (issued === 0) return unavailable();          // start() has not run yet: no number rather than "50"
-  const spotsLeft = spotsLeftFromCount(issued);
+  const holders = await readIssuedCount(supabaseUrl, secretKey);
+  if (holders === 0) return unavailable();         // start() has not run yet: no number rather than "50"
+  const spotsLeft = spotsLeftFromCount(holders);
   if (spotsLeft === null) return unavailable();
   cached = { at: now, spotsLeft };
   return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft }) };

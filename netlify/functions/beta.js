@@ -91,6 +91,7 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
+const { isTestEmail, welcomePositionFor } = require("./_lib/foundingWaitlist");
 const { CONSENT_VERSION, WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
@@ -329,6 +330,9 @@ async function handle(event) {
           metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
           consent_version: CONSENT_VERSION,
           consented_at: new Date().toISOString(),
+          // Flourish's own test addresses are stored as test rows, never households (2026-10-14), so the
+          // database gives them no number. It enforces the same itself from migration 0017.
+          ...(isTestEmail(emailAddr) ? { is_test: true } : {}),
         }),
         signal: insertController.signal,
       });
@@ -391,7 +395,8 @@ async function handle(event) {
 
     // The row is saved. Only now: send the confirmation, and record it if Resend accepted it. The row as
     // returned carries founding_position (set by the database inside the insert, migration 0014): when it
-    // is 1 to 50 the email says so, and otherwise it carries no offer line. Both
+    // holds one the email says so, and otherwise it carries no offer line. A test row's email never names
+    // a number (welcomePositionFor). Both
     // steps are best effort. The signup has already succeeded, so neither failure changes this response.
     let insertedRow = null;
     try {
@@ -403,7 +408,7 @@ async function handle(event) {
     // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
     // one, takes precedence.
     const rowForGuard = { consent_version: CONSENT_VERSION, unsubscribed_at: null, ...(insertedRow || {}) };
-    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
+    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, welcomePositionFor({ email: emailAddr, ...(insertedRow || {}) }))) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 

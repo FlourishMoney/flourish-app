@@ -41,9 +41,10 @@ function fakeAdmin(state) {
   };
   const norm = (e) => String(e || "").replace(/\s+/g, "").toLowerCase();
   const rpc = async (name, args) => {
-    if (name !== "waitlist_founding_position_for_email") return { data: null, error: { message: "no such function" } };
+    // waitlist_founding_number_for_email (0017). This file's fixtures never void a number or pass 50.
+    if (name !== "waitlist_founding_number_for_email") return { data: null, error: { message: "no such function" } };
     const hits = (state.rows.waitlist || []).filter(r => norm(r.email) === norm(args.p_email) && norm(args.p_email)
-      && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1 && r.founding_position <= 50);
+      && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1);
     return { data: hits.length ? Math.min(...hits.map(r => r.founding_position)) : null, error: null };
   };
   const user = state.user || { email: "a@b.c", email_confirmed_at: "2026-10-01T00:00:00Z" };
@@ -111,7 +112,10 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     t.eq(cohort.FOUNDING_COHORT_LIMIT, 50, "2a the cohort is 50 households");
     t.eq(cohort.isFoundingPosition(1), true, "2b position 1 is a founding position");
     t.eq(cohort.isFoundingPosition(50), true, "2c …and so is 50");
-    t.eq(cohort.isFoundingPosition(51), false, "2d …but 51 is not, and it does not reopen past the limit");
+    // 2026-10-14 (0017): a test row's number is void and never reissued, so a real household's number can
+    // be past 50. The limit is on REAL holders, kept by the database; the 51st real household gets none
+    // (2g below; foundingBilling 10d; the 0017 trigger).
+    t.eq([cohort.isFoundingPosition(0), cohort.isFoundingPosition(53)], [false, true], "2d 0 is not a founding number; 53 is, when the database issued it after voided test numbers");
     t.eq(cohort.isFoundingPosition(null), false, "2e a position that could not be established is NOT a founding position");
 
     // Whatever the paid count is, only the waitlist position matters.

@@ -184,10 +184,26 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(p.text, [EXPECTED_PARAGRAPHS[0], LINE, ...EXPECTED_PARAGRAPHS.slice(1), WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),
       "2m a row with founding position 7: the approved copy with the founding line second, word for word");
     t.ok(p.html.includes(`>${LINE}</p>`), "2n …and the HTML carries the same line as its own paragraph");
-    for (const pos of [null, 0, 51, "7", 7.5]) {
+    // 51 is no longer in this list: since 0017 a number past 50 can be a real holder's (4d2 in foundingOffer).
+    for (const pos of [null, 0, -1, "7", 7.5]) {
       const q = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: pos }] } })).payload;
       t.ok(!/founding|price|\$\d/i.test(q.text) && !/founding/i.test(q.html), `2o founding_position ${JSON.stringify(pos)}: no offer line at all`);
     }
+  }
+
+  // ── 2c. A test row's welcome never names a founding number (2026-10-14) ─────────────────────
+  // Amanda's own sign-ups at getgrowsmart.com and flourishmoney.app were told "#18", "#19", "#21", "#24".
+  {
+    const insertOf = (r) => JSON.parse(r.calls.find(c => c.method === "POST" && !c.url.includes("resend")).body);
+    for (const addr of ["amanda@getgrowsmart.com", "Privacy@GetGrowSmart.com", "amanda@flourishmoney.app", "qa@mail.flourishmoney.app"]) {
+      const r = await run({ email: addr, insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 19 }] } });
+      t.eq(insertOf(r).is_test, true, `2p ${addr} is stored as a test row`);
+      t.ok(r.payload && !/founding|#\d/i.test(r.payload.text) && !/founding/i.test(r.payload.html), `2q …and its welcome names no founding number, even if the row came back with one`);
+    }
+    const real = await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 7 }] } });
+    t.ok(!("is_test" in insertOf(real)), "2r a household's address sends no is_test at all (the column's default, false, applies)");
+    const marked = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 7, is_test: true }] } })).payload;
+    t.ok(!/founding/i.test(marked.text), "2s a row the database returns as a test row gets no founding line");
   }
 
   // ── 3. Someone already on the list is not emailed again ────────────────────────────────────

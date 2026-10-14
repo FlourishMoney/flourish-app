@@ -25,6 +25,7 @@
 "use strict";
 
 const { sendWelcomeEmail, markWelcomed, hasResendKey } = require("./_lib/waitlistWelcome");
+const { welcomePositionFor } = require("./_lib/foundingWaitlist");
 const { mayEmailWaitlistRow, LEGACY_CONSENT_VERSION } = require("./_lib/waitlistConsent");
 
 // A row must be this old before the sweep touches it, so it never races the request path: a signup made
@@ -97,7 +98,8 @@ async function countWelcomedSince(supabaseUrl, secretKey, sinceIso) {
 // founding_position (migration 0014) is asked for so a founding household's welcome carries its line.
 // Before 0014 is applied that column does not exist and PostgREST answers 400; the sweep then asks again
 // without it, so applying the migration later is never what stops the welcome emails.
-const PENDING_COLUMNS = ["id,email,created_at,unsubscribed_at,consent_version,founding_position", "id,email,created_at,unsubscribed_at,consent_version"];
+// is_test comes with it, so a test row's welcome never names a number (welcomePositionFor).
+const PENDING_COLUMNS = ["id,email,created_at,unsubscribed_at,consent_version,founding_position,is_test", "id,email,created_at,unsubscribed_at,consent_version"];
 async function selectPending(supabaseUrl, secretKey, cutoffIso, limit, columns = PENDING_COLUMNS[0]) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
     + `?select=${columns}`
@@ -171,7 +173,7 @@ async function runSweep(opts = {}) {
     if (Date.now() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email) { failed++; continue; }
     if (!mayEmailWaitlistRow(row, "welcome")) continue; // unsubscribed or pre-consent: never a welcome email, whatever the query returned
-    if (await sendWelcomeEmail(row.email, row.id, row.founding_position)) {
+    if (await sendWelcomeEmail(row.email, row.id, welcomePositionFor(row))) {
       await markWelcomed(supabaseUrl, secretKey, row, row.email);
       sent++;
     } else {
