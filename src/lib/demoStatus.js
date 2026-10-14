@@ -17,8 +17,15 @@ export const DEMO_STATUS_LABEL = "Example · sample data";
 // The header status chip on Today: a label plus the detail that follows it.
 //   lastRefreshRaw — the raw localStorage string for flourish_last_refresh (may be null/garbage)
 //   nowMs          — injected clock, so tests don't depend on the wall
-export function statusChip({ demo, lastRefreshRaw, nowMs }) {
+//   bankConnected  — manual-balances: false means no linked bank, so nothing on Today is live. Then the
+//                    chip says "Balances you entered" when the household entered any, and there is no
+//                    chip at all when it entered none (null). Left out (undefined), the chip reads as it
+//                    always did, which is what every caller from before this rule gets.
+//   enteredBalances — the household has entered at least one balance (lib/manualBalances.js)
+export const ENTERED_STATUS_LABEL = "Balances you entered";
+export function statusChip({ demo, lastRefreshRaw, nowMs, bankConnected, enteredBalances = false }) {
   if (demo) return { label: DEMO_STATUS_LABEL, detail: "" };
+  if (bankConnected === false) return enteredBalances ? { label: ENTERED_STATUS_LABEL, detail: "" } : null;
   let detail;
   if (!lastRefreshRaw) {
     detail = "· up to date";

@@ -18,7 +18,7 @@
 // PURE: `today` is injected; no React, no storage.
 // -----------------------------------------------------------------------------
 
-import { parseMoney, baseCurrencyOf, isCheckingAccount, isSavingsAccount, dateToISO } from "./financialCalculations.js";
+import { parseMoney, baseCurrencyOf, isCheckingAccount, isSavingsAccount, isCreditLiability, dateToISO } from "./financialCalculations.js";
 import { isUS } from "./locale.js";
 
 export const BALANCE_KINDS = ["chequing", "savings", "card", "loan"];
@@ -187,4 +187,25 @@ export function enteredBalanceNote(accounts = [], today = new Date()) {
     .sort((x, y) => y.days - x.days)[0];
   const stale = oldest ? { accountId: oldest.a.id, name: oldest.a.name || "", days: oldest.days, text: `Entered ${oldest.days} days ago.` } : null;
   return { lines, stale };
+}
+
+// Where Today's safe to spend came from, said as a fact, for the accounts it starts from (the base-
+// currency cash accounts). Only entered balances: "From the balance you entered." Entered and linked
+// together: "From your bank and the balances you entered." No entered balance (a linked bank, the
+// demos, a statement whose balance was never entered): null, and Today reads as it always did.
+export const SOURCE_ENTERED = "From the balance you entered.";
+export const SOURCE_MIXED = "From your bank and the balances you entered.";
+export function balanceSourceLine(accounts = []) {
+  const list = (accounts || []).filter(Boolean);
+  if (!list.some(a => a.balanceEntered && isEditableAccount(a))) return null;
+  return list.some(a => !isEditableAccount(a)) ? { kind: "mixed", text: SOURCE_MIXED } : { kind: "entered", text: SOURCE_ENTERED };
+}
+
+// Today's debt tile. "total" when anything is owed; "free" ("Debt free!") only when the household has
+// debts on record (a debt entered, or a card or loan account, linked or entered) and none of it is
+// owed; "none" when there is no record at all, so nothing can be celebrated: "No debts entered", Add.
+export function debtTileKind(data = {}, totalDebt = 0) {
+  if (Number(totalDebt) > 0) return "total";
+  const onRecord = (data.debts || []).some(Boolean) || (data.accounts || []).some(a => a && isCreditLiability(a));
+  return onRecord ? "free" : "none";
 }

@@ -30,7 +30,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel }
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
-         kindLabel, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
+         kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
@@ -45,7 +45,7 @@ import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
 import { budgetSuggestionBasis, observedMonthlySpend } from "./lib/budgetBasis.js";
-import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp } from "./lib/demoStatus.js";
+import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp, ENTERED_STATUS_LABEL } from "./lib/demoStatus.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -5546,6 +5546,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [showTerm,setShowTerm]=useState(null); // which term the one ⓘ was pressed on
   // manual-balances: the balance editor open from Today: { accountId } to update one, { add: true } to add one.
   const [balanceEdit,setBalanceEdit]=useState(null);
+  // manual-balances fix round: the "Add a debt" sheet, opened from "No debts entered".
+  const [addDebt,setAddDebt]=useState(false);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
@@ -5599,6 +5601,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
+  // manual-balances fix round: where safe to spend came from, said as a fact ("From the balance you
+  // entered."), for a household whose figure starts from entered balances. Null for everyone else.
+  const balanceSource = data.demo ? null : balanceSourceLine(cashAccountsUsed(data), !!data.bankConnected);
+  const hasEnteredBalance = (data.accounts||[]).some(a => a && a.balanceEntered && isEditableAccount(a));
+  const headerChip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now(), bankConnected:!!data.bankConnected, enteredBalances:hasEnteredBalance});
   // Tester suggestions item 1: the setup checklist. "First number seen" is recorded the first time this
   // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
   const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
@@ -5712,6 +5719,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected});
                 // Demo: a tag, not a "· suffix", so a wrapped line never starts with a separator.
                 if (fresh.kind==="example") return <span style={exampleTagStyle()}>{fresh.text}</span>;
+                // manual-balances fix round: a figure built on balances the household entered is not
+                // "estimated"; the source line under the working says where it came from instead.
+                if (balanceSource && balanceSource.kind==="entered") return null;
                 return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>{fresh.text}</span>;
               })()}
             </div>
@@ -5794,7 +5804,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{ssView.totalLabel}</span>
                     <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
                   </div>
-                  {!data.bankConnected&&<div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
+                  {balanceSource
+                    ? <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:SPACE.xs}}>{balanceSource.text}</div>
+                    : !data.bankConnected&&<div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
               );
             })()}
@@ -5989,6 +6001,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           onClose={()=>setExplain(null)}/>
       )}
       {balanceEdit&&setAppData&&<BalanceSheetFor data={data} setAppData={setAppData} accountId={balanceEdit.add?null:balanceEdit.accountId} onClose={()=>setBalanceEdit(null)}/>}
+      {addDebt&&setAppData&&<Sheet title="Add a debt" onClose={()=>setAddDebt(false)}><InlineDebtEditor data={data} setAppData={setAppData} color={C.red} startAdding/></Sheet>}
       {showTerm&&(
         <HowWeGotThis
           title={showTerm}
@@ -6007,24 +6020,29 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             for the one label whose job is to say the numbers are not yours. In demo the chip IS the
             example tag: exampleTagStyle(), no dot (a dot beside a label is a liveness signal), and
             no green. Non-demo markup is unchanged. */}
-        <div onClick={()=>setShowTransparency(true)}
+        {/* manual-balances fix round: with no linked bank the chip is "Balances you entered" (no dot: a dot
+            beside a label is a liveness signal), and there is no chip when nothing was entered either. */}
+        {headerChip&&<div onClick={()=>setShowTransparency(true)}
           style={data.demo
             ? {...exampleTagStyle(),display:"inline-flex",alignItems:"center",cursor:"pointer"}
-            : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
+            : headerChip.label===ENTERED_STATUS_LABEL
+              ? {display:"flex",alignItems:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"4px 10px",cursor:"pointer"}
+              : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
           title="How is this calculated?">
           {(()=>{
             // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
             // must say so (the same "Example · sample data" Meet uses) rather than "Live".
-            const chip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
+            const chip = headerChip;
             if (data.demo) return chip.label;
+            if (chip.label===ENTERED_STATUS_LABEL) return <span style={{color:C.mutedHi,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>;
             return <>
               <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
               <span style={{color:C.green,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
               {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
             </>;
           })()}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,...(data.demo?{marginLeft:"auto"}:{})}}>
+        </div>}
+        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,...(data.demo||!headerChip?{marginLeft:"auto"}:{})}}>
           <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
           {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
@@ -6183,11 +6201,25 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
             {label:"Due soon",value:formatMoney(dueSoonTotal||0),sub:dueSoon.windowLabel,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            // manual-balances fix round: "Debt free!" only when there are debts on record and none is owed.
+            // With no debt entered and no card or loan account there is nothing to celebrate: "No debts entered", Add.
+            debtTileKind(data,totalDebt)==="none"
+              ? {noDebts:true,label:"No debts entered",color:C.red,icon:"trendUp"}
+              : {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
             {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
-          ].map((s,i)=>(
+          ].map((s,i)=>s.noDebts?(
+            <div key={i} style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",boxSizing:"border-box",
+              ...row({justifyContent:"space-between",gap:SPACE.md})}}>
+              <span style={{...rowText(),display:"flex",alignItems:"center",gap:SPACE.md}}>
+                <Icon id={s.icon} size={20} color={s.color} strokeWidth={1.5}/>
+                <span style={{color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.label}</span>
+              </span>
+              {setAppData&&<button onClick={()=>setAddDebt(true)} aria-label="Add a debt"
+                style={{...rowControl(),background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"0 16px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add</button>}
+            </div>
+          ):(
             <button key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}}
               style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",
                 border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",
@@ -11518,8 +11550,8 @@ function WidgetScreen({data,onBack}){
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 // ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
 // ─── INLINE SETTINGS EDITORS ─────────────────────────────────────────────────
-function InlineDebtEditor({data, setAppData, color, navToScreen}){
-  const [adding, setAdding] = useState(false);
+function InlineDebtEditor({data, setAppData, color, navToScreen, startAdding = false}){
+  const [adding, setAdding] = useState(startAdding); // Today's "Add a debt" opens straight on the form
   const [form, setForm] = useState({name:"",balance:"",rate:"",min:""});
   const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const DEBT_TYPES = ["Credit Card","Line of Credit","Car Loan","Student Loan","OSAP","HELOC","Mortgage","Personal Loan","Buy Now Pay Later","Other"];

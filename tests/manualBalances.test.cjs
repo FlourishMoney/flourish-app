@@ -291,6 +291,81 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     t.ok(/Enter your balance/.test(noCash), "6j with no account Today offers to enter a balance");
   }
 
+  // ── 7. Fix round: Today says where safe to spend came from, and never "Debt free!" on no record ──
+  {
+    const entered = (id, extra = {}) => ({ id, name: id, type: "depository", subtype: "checking", balance: 100, institution: "Manual", balanceEntered: true, balanceAsOf: "2026-10-14", ...extra });
+    const linked = { id: "p1", name: "TD ••4521", type: "depository", subtype: "checking", balance: 900, institution: "TD", _item: "item1" };
+    t.eq(MB.balanceSourceLine([entered("Chequing"), entered("Savings", { subtype: "savings" })]), { kind: "entered", text: "From the balance you entered." },
+      "7a only entered balances behind safe to spend: \"From the balance you entered.\"");
+    t.eq(MB.balanceSourceLine([linked, entered("Savings")]), { kind: "mixed", text: "From your bank and the balances you entered." },
+      "7b linked and entered: \"From your bank and the balances you entered.\"");
+    t.eq([MB.balanceSourceLine([linked]), MB.balanceSourceLine([]), MB.balanceSourceLine(D.demoAccountsFor("CA")), MB.balanceSourceLine(D.demoAccountsFor("US")),
+          MB.balanceSourceLine([{ id: "stmt_acct_0", type: "checking", balance: 0, institution: "Statement" }])],
+      [null, null, null, null, null], "7c linked only, none, both demos, and a statement with no balance entered: no source line (unchanged)");
+
+    const noRecord = { debts: [], accounts: [entered("Chequing")] };
+    t.eq([MB.debtTileKind(noRecord, 0), MB.debtTileKind({ ...noRecord, debts: [{ id: "d1", name: "Visa", balance: "0" }] }, 0),
+          MB.debtTileKind({ debts: [], accounts: [{ id: "c1", type: "credit", subtype: "credit card", balance: 0, institution: "TD", _item: "i" }] }, 0),
+          MB.debtTileKind({ debts: [{ id: "d1", name: "Visa", balance: "640" }], accounts: [] }, 640)],
+      ["none", "free", "free", "total"], "7d no debts and no card or loan account: \"none\"; debts on record all at $0: \"free\"; anything owed: \"total\"");
+    const demoData = (c) => ({ accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), profile: D.demoProfileFor(c) });
+    t.eq([MB.debtTileKind(demoData("CA"), F.FinancialCalcEngine.netWorth(demoData("CA")).liabilities), MB.debtTileKind(demoData("US"), F.FinancialCalcEngine.netWorth(demoData("US")).liabilities)],
+      ["total", "total"], "7e both demos keep their Total debt tile");
+    const fixCopy = ["From the balance you entered.", "From your bank and the balances you entered.", "No debts entered", "Add a debt"];
+    t.eq(fixCopy.filter(s => BANNED.test(s)), [], "7f the new strings use no banned word");
+    t.eq(fixCopy.flatMap(s => adviceProblems(s).map(p => `${s}: ${p}`)), [], "7g …and no sentence starts with a money instruction verb");
+
+    const home = (data) => render(A.Dashboard, { data, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop, setGoalsTab: noop });
+    const E = home(bareOf(MB, shared, today));
+    t.ok(/From the balance you entered\./.test(E) && !/estimated/i.test(E) && !/Connect bank for real numbers/.test(E),
+      `7h Today, entered only: the source line, and no "· estimated" tag or "Estimated · Connect bank" line ("${E.slice(E.indexOf("Safe to spend until"), E.indexOf("Safe to spend until") + 260)}")`);
+    t.ok(/No debts entered\s*Add\b/.test(E) && !/Debt free!/.test(E) && !/Amazing!/.test(E), "7i …\"No debts entered\" with Add, never \"Debt free! Amazing!\"");
+    const linkedHome = { ...shared("pl_chq"), transactions: [], debts: [], accounts: [{ ...linked, id: "pl_chq", balance: 2150 }], bankConnected: true };
+    const L = home(linkedHome);
+    t.ok(/· live/.test(L) && !/From the balance you entered|From your bank and the balances/.test(L) && !/Connect bank for real numbers/.test(L),
+      "7j Today, linked only: \"· live\" as before, no source line");
+    const mixed = MB.enterBalance(linkedHome, { kind: "savings", amount: "3000", asOf: "2026-10-14" }, today);
+    const M = home(mixed);
+    t.ok(/From your bank and the balances you entered\./.test(M) && /· live/.test(M) && !/Connect bank for real numbers/.test(M), "7k Today, mixed: \"From your bank and the balances you entered.\"");
+    // An account from before this change: Manual, a balance, no "as of" date (nothing was entered here).
+    const legacy = { ...shared("m1"), transactions: [], debts: [], accounts: [{ id: "m1", name: "Chequing", type: "checking", balance: 2150, institution: "Manual" }] };
+    const S0 = home(legacy);
+    t.ok(/· estimated/.test(S0) && /Estimated · Connect bank for real numbers/.test(S0) && !/From the balance/.test(S0), "7l an account with no balance entered reads as before: \"· estimated\" and the Estimated line");
+    const paidOff = home({ ...bareOf(MB, shared, today), debts: [{ id: "d1", name: "Visa", balance: "0", rate: "19.99", min: "" }] });
+    t.ok(/Debt free!/.test(paidOff) && !/No debts entered/.test(paidOff), "7m debts on record, all at $0: \"Debt free!\"");
+    for (const c of D.DEMO_COUNTRIES) {
+      const d = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(today, c),
+        bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true };
+      const txt = home(d);
+      t.ok(/Total debt/.test(txt) && !/No debts entered|From the balance you entered|From your bank and the balances/.test(txt), `7n ${c} demo Today: Total debt as before, no source line`);
+    }
+    t.ok(/<Sheet title="Add a debt"/.test(APP) && /<InlineDebtEditor[^>]*startAdding/.test(APP), "7o Add opens the debt editor, ready to add one");
+
+    // (a) Today's header: no linked bank, nothing here is "Live".
+    const DS = await import("../src/lib/demoStatus.js");
+    const NOW = Date.now();
+    t.eq([DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: true }),
+          DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: false }),
+          DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: true, enteredBalances: true }),
+          DS.statusChip({ demo: true, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: true }).label],
+      [{ label: "Balances you entered", detail: "" }, null, { label: "Live", detail: "· up to date" }, DS.DEMO_STATUS_LABEL],
+      "7p header chip: no bank and balances entered, \"Balances you entered\"; no bank and nothing entered, no chip; a linked bank, \"Live · up to date\" as before; demo as before");
+    t.ok(/Balances you entered/.test(E) && !/Live\s*· up to date/.test(E), "7q Today, entered only: the header says \"Balances you entered\", not \"Live · up to date\"");
+    t.ok(/Live\s*· up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only: \"Live · up to date\", unchanged");
+    t.ok(!/Live\s*·/.test(S0) && !/Balances you entered/.test(S0), "7s Today, no bank and no balance entered: no chip at all");
+    for (const s of [DS.ENTERED_STATUS_LABEL]) t.ok(!BANNED.test(s) && !adviceProblems(s).length, `7t "${s}" passes both copy rules`);
+
+    // (b) The setup checklist ticks "bank" for an entered chequing balance, under its new name.
+    const CK = await import("../src/lib/setupChecklist.js");
+    const bankItem = (d) => CK.setupChecklist(d).find(i => i.id === "bank");
+    t.eq(bankItem({}).label, "Bank linked, statement imported or balance entered", "7u the checklist item is renamed");
+    t.eq([bankItem({ accounts: [entered("Chequing")] }).done, bankItem({ accounts: [{ id: "m1", type: "checking", institution: "Manual", balance: 0 }] }).done,
+          bankItem({ accounts: [entered("Savings", { subtype: "savings" })] }).done, bankItem({ bankConnected: true }).done, bankItem({ accounts: [{ institution: "Statement" }] }).done],
+      [true, false, false, true, true], "7v it ticks for an entered chequing balance (not a $0 placeholder or savings alone); a bank or a statement still tick it");
+    t.ok(!BANNED.test(bankItem({}).label) && !adviceProblems(bankItem({}).label).length, "7w the new name passes both copy rules");
+    t.ok(/✓\s*Bank linked, statement imported or balance entered\s*, done/.test(E), "7x Today's checklist shows the renamed item, ticked, for a household that entered its chequing balance");
+  }
+
   process.exitCode = t.summary("manualBalances") ? 1 : 0;
 })();
 
