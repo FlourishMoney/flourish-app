@@ -96,9 +96,13 @@ export function buildMeetSnapshot(data = {}) {
   } catch { /* no usable history → no wins and no changes, which is not a failure */ }
 
   // Debts and goals → progress (values read straight from appData / engine, never recomputed here).
-  const debts = (data.debts || []).filter(d => _num(d.balance) > 0);
+  // A debt entered by hand and linked to a bank account (sameAsAccountId) is the same debt as that
+  // account's bank row, so the debts come from Debt Sim's list, which counts a linked pair once (the
+  // bank's name and balance now). No liability feed is passed: progress is the household's own debts,
+  // each unlinked one as stored. A likely pair not yet answered stays as both, as it does in Debt Sim.
+  const debts = buildDebtListForSimulator(data.debts, undefined, data);
   if (debts.length) {
-    snap.debts = debts.map(d => ({ name: d.name || "Debt", balance: _round2(_num(d.balance)), prevBalance: null, payoffDate: null }));
+    snap.debts = debts.map(d => ({ name: d.name, balance: _round2(d.balance), prevBalance: null, payoffDate: null }));
   }
   const goals = data.goals || [];
   if (goals.length) {
