@@ -33,7 +33,7 @@ import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amo
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
-import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
+import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -77,7 +77,7 @@ import { demoCoachExchanges, demoFacilitatorLine, demoCheckInInsight } from "./l
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { derivePlan } from "./lib/planFromProfile.js";
+import { derivePlan, webPlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
@@ -16395,6 +16395,10 @@ export default function FlourishApp(){
   const [showUpgrade,setShowUpgrade]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   const [billingNotice,setBillingNotice]=useState(null);
+  // The plan the profiles row last gave (derivePlan), and whether the server's billing status says this
+  // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
+  const [profilePlan,setProfilePlan]=useState(null);
+  const webPaidRef = useRef(false);
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
@@ -16514,6 +16518,8 @@ export default function FlourishApp(){
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
       setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
+      // The web paid-subscription effect (after openUpgrade) applies the server's `paid` on top of this.
+      setProfilePlan(cp);
       return cp;
     } catch (e) {
       console.error("[profiles] plan reconcile failed:", e?.message || e);
@@ -16552,6 +16558,18 @@ export default function FlourishApp(){
   // The two entry points call this. While billing is off it opens the existing feature paywall,
   // exactly as it did before, so nothing about today's app changes.
   const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+  // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
+  // the paid period, planRules.isPaidSubscription): it lifts a free web household to premium, and it ends
+  // when the paid period does. A store app never asks and never counts it (Apple 3.1.3(b)). Billing off:
+  // there is no status, `paid` is false, and the plan is the profile's, exactly as before.
+  useEffect(()=>{
+    // Only this account's own answer counts: billingAskedFor is the account the status call finished for.
+    webPaidRef.current = !nativeApp && !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
+    if(profilePlan===null) return;
+    const plan = webPlan(profilePlan, { paid: webPaidRef.current, native: nativeApp });
+    setPlan(plan);
+    setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
+  },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
   // The founding link: the checkout screen once this account's status is in and billing is on; in a store
   // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
   // answer in that status, never this link's.
@@ -16748,7 +16766,7 @@ export default function FlourishApp(){
     if (localUid && localUid !== user.id) {
       console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
-      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setCheckInBonus(0);
+      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
     }
     // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
     // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —

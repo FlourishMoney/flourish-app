@@ -5,8 +5,10 @@
 // Subscriptions are sold only on the web, through Stripe. Until in-app purchase exists, a household
 // using the iOS or Android app gets the 14-day trial and then the free tier, whatever it bought on the
 // web. Where that is enforced:
-//   • the app itself never sees a subscription: its plan comes from the profiles row alone, which the
-//     Stripe webhook never writes, and a store app does not even ask /api/billing for its status;
+//   • a store app never sees a subscription: its plan comes from the profiles row alone, which the
+//     Stripe webhook never writes, and it does not even ask /api/billing for its status. (On the web, from
+//     billing day, the status's server-computed `paid` lifts a free household to premium: webPlan, in
+//     src/lib/planFromProfile.js, which returns the profile's plan whenever `native` is true; section 7.)
 //   • the server's limits (the one-bank cap in plaid.js, the weekly coach limit in coach.js) ask
 //     getUserPlan, which for a request from a store app (_lib/cors.js isNativeRequest) does not read the
 //     subscription at all (_lib/planRules.js deriveEntitlement, native: true).
@@ -158,7 +160,7 @@ function load(db) {
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const refresh = app.slice(app.indexOf("const refreshPlanFromProfile"), app.indexOf("const refreshPlanFromProfile") + 900);
-    t.ok(/\.from\("profiles"\)/.test(refresh) && !/subscriptions/.test(refresh), "5b the app's plan comes from the profiles row alone");
+    t.ok(/\.from\("profiles"\)/.test(refresh) && !/subscriptions/.test(refresh), "5b the app reads its plan from the profiles row and never reads a subscription row itself");
     t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app), "5c a store app never asks /api/billing for its status");
     const hook = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "5d the Stripe webhook never writes the profiles row the app reads");
@@ -194,6 +196,20 @@ function load(db) {
     const { LANDING_PRICE_SENTENCE } = require("../netlify/functions/_lib/foundingLinkEmail.js");
     t.ok(/Not yet available in the iPhone and Android apps\.$/.test(LANDING_PRICE_SENTENCE),
       "6g the founding link email says, in the landing page's words, that it is not yet available in the iPhone and Android apps");
+  }
+
+
+  // ── 7. billing day: the web counts a payment, a store app still never does ─────────────────────
+  {
+    const P = await import("../src/lib/planFromProfile.js");
+    for (const plan of ["free", "trial", "beta_founder", "premium"]) for (const paid of [true, false]) {
+      t.eq(P.webPlan(plan, { paid, native: true }), plan, `7a a store app's plan is the profile's (${plan}), paid on the web or not (${paid})`);
+    }
+    t.eq(P.webPlan("free", { paid: true, native: false }), "premium", "7b (not vacuous: the same payment does count on the web)");
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    t.ok(/webPaidRef\.current = !nativeApp && /.test(app) && /webPlan\(profilePlan, \{ paid: webPaidRef\.current, native: nativeApp \}\)/.test(app),
+      "7c the App passes the store-app flag to webPlan and never counts a payment natively");
+    t.eq((app.match(/=\s*webPlan\(/g) || []).length, 1, "7d …and that effect is the only call to webPlan: the only place a payment is counted");
   }
 
   process.env = saved;

@@ -87,8 +87,10 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
       const setPlan = (p) => { calls.setPlan.push(p); store.set("flourish_plan", p); return true; };
       const setIsPremium = (v) => calls.setIsPremium.push(v);
       const { derivePlan } = require("../netlify/functions/_lib/planRules.js"); // same rule, CJS side
-      const fn = new Function("supabase", "derivePlan", "setPlan", "setIsPremium", "isCapacitorIOS", "localStorage", "console",
-        `return (${fnText});`)(supabase, derivePlan, setPlan, setIsPremium, () => false, localStorage, { error() {} });
+      // setProfilePlan only records the profile's plan for the web paid-subscription effect
+      // (tests/webPaidPlan.test.cjs); it sets no plan and no premium flag, so here it records nothing.
+      const fn = new Function("supabase", "derivePlan", "setPlan", "setIsPremium", "setProfilePlan", "isCapacitorIOS", "localStorage", "console",
+        `return (${fnText});`)(supabase, derivePlan, setPlan, setIsPremium, () => {}, () => false, localStorage, { error() {} });
       return { fn, store, calls };
     };
 

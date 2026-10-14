@@ -21,7 +21,7 @@ const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/aut
 const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
 const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { stripePost } = require("./_lib/stripeApi");
-const { SUBSCRIPTION_PAID_STATUSES: PAID_STATUSES } = require("./_lib/planRules");
+const { isPaidSubscription } = require("./_lib/planRules");
 
 const { corsHeadersFor } = require("./_lib/cors");
 
@@ -95,14 +95,18 @@ exports.handler = async (event) => {
     // come from src/lib/pricing.js), and no count of how many slots are gone.
     if (action === "status") {
       const { data: row } = await admin
-        .from("subscriptions").select("status, provider_customer_id").eq("user_id", user_id).maybeSingle();
+        .from("subscriptions").select("status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
       const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, await authUser(admin, user_id));
       return json(200, CORS, {
         enabled: true,
-        paid: PAID_STATUSES.includes(row?.status),
+        // The server's own rule (_lib/planRules.js isPaidSubscription): Stripe says active or trialing AND
+        // the paid period has not ended. The web app's plan takes this answer (src/lib/planFromProfile.js
+        // webPlan), so a subscription cancelled at period end stops counting when that period ends, even if
+        // the webhook that says so is late. A store app never asks.
+        paid: isPaidSubscription(row),
         manageable: !!row?.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT },
       });

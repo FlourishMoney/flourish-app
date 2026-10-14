@@ -277,7 +277,9 @@ billing off. (Netlify may then stop auto-publishing; switch it back on once thin
 **Check it is off:** the curl in section 3 answers 404.
 
 What off does: new checkouts, the status call and the billing portal answer 404, and the checkout screen
-disappears. What off does **not** do: it cancels nobody. Existing subscriptions keep renewing in Stripe,
+disappears. Because the web app learns "paid" from that status call, **paying households see the free
+tier in the app while billing is off** (their subscriptions are untouched, and the paid tier returns the
+moment billing is back on). What off does **not** do: it cancels nobody. Existing subscriptions keep renewing in Stripe,
 and the webhook keeps recording them. A paying household cannot open the portal while billing is off;
 cancel for them in Stripe if they ask (hello@flourishmoney.app).
 
@@ -330,15 +332,11 @@ Worst first.
    door shut a full 30-seat beta cap refuses even a valid invite code (`beta.js`, `cap_reached`;
    `beta_signups` was backfilled from every existing account). So unless `OPEN_SIGNUP=true` is set (and
    deployed) on Monday, most founding households cannot pay at all. Section 1 step 6.
-2. **A paying household whose trial has ended still gets the free tier in the app.** The app takes its
-   plan from the `profiles` row only (`refreshPlanFromProfile`); the Stripe webhook writes
-   `subscriptions` only and never `profiles`. The server knows they paid (`getUserPlan`), but the app's
-   own gates do not: Credit stays locked, the coach keeps its weekly free limit, and the Meet
-   facilitator stays off. This hits beta testers whose 14-day trial has ended as soon as they pay, and
-   every founding household created on Monday from about 2026-11-09, when their trial ends.
-   `tests/nativeWebPurchase.test.cjs` 5b and 5d pin "the app's plan comes from the profiles row alone"
-   on purpose, for the store apps (Apple 3.1.3(b)), so a fix must keep a store app free: for example,
-   read the billing status's `paid` on the web only.
+2. **Fixed (round 2): a paying web household gets the paid tier.** The web app now combines the
+   profile's plan with the billing status's `paid`, which the server works out from Stripe's status and
+   the paid period (`webPlan`, `planRules.isPaidSubscription`). A subscription cancelled at period end
+   counts until that period ends. A store app is unchanged. While billing is off, the app is exactly as
+   before (section 7). `tests/webPaidPlan.test.cjs`.
 3. **Five screens still open the old paywall, which says paid plans are not open.** Today, Goals, the
    Credit gate, the coach's out-of-messages gate and What-If call `setShowPaywall(true)` directly (six
    call sites). That screen's button answers "Paid plans aren't open yet. Nothing has been charged…".
@@ -360,10 +358,8 @@ Worst first.
 7. **A refused founding checkout shows the wrong message.** The server answers 403
    `founding_price_not_available`; the checkout screen only recognises `founding_cohort_full`, so the
    household reads "Couldn't reach checkout. Try again in a moment." and retrying never helps.
-8. **The webhook may store no period end.** Since Stripe API version 2025-03-31, `current_period_end`
-   is on the subscription's items, not the subscription. A live endpoint on a current API version leaves
-   `subscriptions.current_period_end` empty, and access then follows `status` alone: still correct, but
-   without the "period ended and we missed the webhook" safety net.
+8. **Fixed (round 2): the webhook stores the paid period on either Stripe API version** (on the
+   subscription before 2025-03-31, on its item after), so "paid until the period ends" holds.
 9. **No tax is charged, while every page says "plus tax".** Stripe Tax is off (P16), so the household
    pays the bare price. Not a blocker for paying; a tax question (P8) for GrowSmart.
 10. Smaller: the welcome email still says "when payments open on October 26" after that date; the
