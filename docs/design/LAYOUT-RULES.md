@@ -73,6 +73,26 @@ until next payday" opening the glossary.
 **320, 375, 390 and 430px wide, at 100% and 130% text.** Those are the four phone widths and the
 accessibility step. A layout that only works at 390 is not done.
 
+**And the iPhone Duo: 466x678, 678x466, 669x951 and 951x669, light and dark.** The Duo keeps an 84px
+strip for its camera and status pill, on the right of the outer display held upright, on the left
+when it is turned, along the top of the inner display in portrait and on its right in landscape, and
+reports it through `env(safe-area-inset-*)`. The suites emulate each one, and each side strip
+mirrored (`tests/_duo.cjs`).
+
+### 6. Nothing sits in the safe area, on any side
+
+Text and controls stay clear of all four insets. Pad each side with its own inset, from
+`src/lib/safeArea.js`: never assume left equals right, and never pad only the top and bottom.
+
+- A full-screen backdrop that holds a sheet or dialog spreads `overlaySafe()`.
+- A fixed bar is placed with `centredInSafeArea()`, not `left:50%` and `translateX(-50%)`, which
+  centres on the whole screen and so runs under a side strip.
+- The helpers return longhands. A `padding:` shorthand after them in the same style object resets
+  them without a sound, so it goes first. `tests/safeAreaSides.test.cjs` fails the other order.
+
+Content may scroll under the status bar or the home indicator; it may not start there, and nothing
+pinned may sit there.
+
 ## What the test measures, exactly
 
 - **Gaps are measured between bounding boxes** — the rectangles the browser hit-tests, which is what

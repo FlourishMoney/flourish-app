@@ -36,6 +36,7 @@ import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/si
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
+import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -1361,7 +1362,7 @@ function Sheet({ title, subtitle, onClose, children, label }) {
   // overlay inside the card instead of covering the screen.
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={label || title}
-      style={{ position: "fixed", inset: 0, zIndex: 1002, display: "flex", alignItems: isDesktop ? "center" : "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", fontFamily: "'Plus Jakarta Sans',sans-serif", color: C.cream }}
+      style={{ position: "fixed", inset: 0, zIndex: 1002, display: "flex", alignItems: isDesktop ? "center" : "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", fontFamily: "'Plus Jakarta Sans',sans-serif", color: C.cream,...overlaySafe() }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ background: C.card, borderRadius: isDesktop ? "20px" : "24px 24px 0 0", width: "100%", maxWidth: 520, border: `1px solid ${C.border}`, boxShadow: "0 8px 60px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", maxHeight: isDesktop ? "85vh" : "92vh" }}>
         <div style={{ padding: "16px 20px 12px", flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
@@ -2389,7 +2390,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
   const cardText     = result ? (result.verdictReason || result.summary) : "";
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",...overlaySafe()}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 44px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:GAP.textToControl,marginBottom:20}}>
           <div style={{minWidth:0}}>
@@ -3118,7 +3119,7 @@ function MoneyWrapped({data, onClose}) {
   const cur = slides[slide];
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:999,background:cur.bg,transition:"background 0.5s ease",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0"}}>
+    <div style={{position:"fixed",inset:0,zIndex:999,background:cur.bg,transition:"background 0.5s ease",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0",...overlaySafe(0, { bottom: true })}}>
       {/* Top bar */}
       <div style={{position:"absolute",top:0,left:0,right:0,padding:"48px 24px 16px",display:"flex",gap:6}}>
         {slides.map((_,i)=>(
@@ -3585,7 +3586,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   ];
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",padding:"0 0 0 0"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",padding:"0 0 0 0",...overlaySafe()}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 40px",width:"100%",maxWidth:520,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         {/* Step indicator */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
@@ -3822,7 +3823,7 @@ function DashCustomize({ layout, onChange, onClose }) {
   const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)',...overlaySafe()}} onClick={onClose}>
       <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
         {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:GAP.textToControl,padding:'20px 20px 0',minHeight:LAYOUT.minTap,flexShrink:0}}>
@@ -3861,7 +3862,7 @@ function DashCustomize({ layout, onChange, onClose }) {
             );
           })}
         </div>
-        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:GAP.controlToControl}}>
+        <div style={{padding:'12px 16px 20px',paddingBottom:safeSide("bottom", 20),flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:GAP.controlToControl}}>
           <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
             style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
             Reset
@@ -3915,7 +3916,7 @@ function StatementReview({ batch, onConfirm, onCancel }) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto",...overlaySafe(16, { bottom: true })}}>
       <div style={{maxWidth:560,width:"100%",background:C.bg,borderRadius:20,border:`1px solid ${C.border}`,padding:20,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:4}}>Review before importing</div>
         <div style={{color:C.muted,fontSize:13,marginBottom:12,lineHeight:1.5}}>Flourish read these from your statement. It doesn't add up your numbers, it only copies what's printed. Tick the ones to import; edit anything that's off. Nothing is saved until you confirm.</div>
@@ -5011,7 +5012,7 @@ function DataTransparencyPanel({data, onClose}) {
   );
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",backdropFilter:"blur(4px)"}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",backdropFilter:"blur(4px)",...overlaySafe()}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.bg,borderRadius:"22px 22px 0 0",
         border:`1px solid ${C.border}`,maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
@@ -5278,7 +5279,7 @@ function FeedbackSheet({onClose}){
   };
   const field={width:"100%",boxSizing:"border-box",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontSize:14,fontFamily:"inherit"};
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center",...overlaySafe()}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div role="dialog" aria-modal="true" aria-labelledby="feedback-title" style={{background:C.bg,borderRadius:"24px 24px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto"}}>
         <div style={row({justifyContent:"space-between",marginBottom:SPACE.md})}>
           <h2 id="feedback-title" style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,margin:0}}>Send feedback</h2>
@@ -6741,7 +6742,7 @@ function BillManager({data, setAppData, onClose}){
   );
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",...overlaySafe()}} onClick={onClose}>
       <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 -12px 48px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{padding:"14px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
           <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 12px"}}/>
@@ -6901,7 +6902,7 @@ function DebtLinkPrompt({ match, setAppData }) {
 
 function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose }) {
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",...overlaySafe()}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
         padding:LAYOUT.cardPadding,paddingBottom:SPACE.xl,border:`1px solid ${C.border}`,maxHeight:"85vh",overflowY:"auto"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
@@ -7330,7 +7331,7 @@ function ManualBillForm({data, setAppData, onClose}){
   // permissionAsked so it never re-offers; the user can still enable later from Settings.
   const markAsked = () => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), notifications: { ...NOTIF_DEFAULTS, ...(prev.profile?.notifications||{}), permissionAsked: true } } }));
   const offer = showNotifOffer ? (
-    <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={e=>{if(e.target===e.currentTarget){setShowNotifOffer(false);markAsked();}}}>
+    <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,...overlaySafe(24, { bottom: true })}} onClick={e=>{if(e.target===e.currentTarget){setShowNotifOffer(false);markAsked();}}}>
       <div style={{maxWidth:400,width:"100%",background:C.bg,borderRadius:22,border:`1px solid ${C.border}`,padding:24,textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:8}}>🔔</div>
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:8}}>Want a heads-up before it's due?</div>
@@ -7344,7 +7345,7 @@ function ManualBillForm({data, setAppData, onClose}){
   if(!onClose) return <>{content}{offer}</>; // inline (Money Meeting)
   return (
     <>
-      <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0",...overlaySafe()}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
         <div style={{width:"100%",maxWidth:440,maxHeight:"88vh",overflowY:"auto",background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,padding:"20px 20px 28px"}}>{content}</div>
       </div>
       {offer}
@@ -8552,7 +8553,7 @@ function SpendScreen({data, setAppData, setScreen}){
     <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Explain this" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",...overlaySafe()}} onClick={()=>setMarkBillTxn(null)}>
         <div style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -8665,7 +8666,7 @@ function SpendScreen({data, setAppData, setScreen}){
         We deduct the transaction amount from that bill's arrears balance.
     ────────────────────────────────────────────────────────────────── */}
     {arrearsPayTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setArrearsPayTxn(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",...overlaySafe()}} onClick={()=>setArrearsPayTxn(null)}>
         <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -8735,7 +8736,7 @@ function SpendScreen({data, setAppData, setScreen}){
     )}
     {/* ── Apply to all vendor modal ─────────────────────────────────── */}
     {applyAllPrompt&&(
-      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",...overlaySafe()}} onClick={()=>setApplyAllPrompt(null)}>
         <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -8769,7 +8770,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {depositTxn&&setAppData&&<DepositSheet key={depositTxnKey(depositTxn)} txn={depositTxn} data={{...data, transactions: txns}} setAppData={setAppData} mode="mark" onClose={()=>setDepositTxn(null)}/>}
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",...overlaySafe()}}
         onClick={e=>{if(e.target===e.currentTarget)setRecatTxn(null);}}>
         <div style={{background:C.card,borderRadius:isDesktop?"20px":"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 8px 60px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:isDesktop?"80vh":"85vh"}}>
           {/* Fixed header */}
@@ -9577,7 +9578,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         if(setAppData) setAppData(prev=>({...prev,profile:{...(prev.profile||{}),retirement:{...(prev.profile?.retirement||{}),[field]:val}}}));
       };
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
+        {/* The tint sits on the card colour, not straight on the page: over the page the ambient glow
+            shows through it, and where the glow lands (it is fixed to the screen, so that depends on
+            the viewport; the iPhone Duo's inner display put it here) the heading fell to 4.35:1.
+            Over the card it is the surface paletteContrast.test certifies. */}
+        <div style={{background:`linear-gradient(${C.blueDim},${C.blueDim}),${C.card}`,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Accounts with tax rules of their own. Limits are from the {taxAuthority(data.profile?.country)}, with the year.</div>
         </div>
@@ -9845,8 +9850,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             })}
           </div>
 
-          {/* Savings rate note */}
-          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
+          {/* Savings rate note. On the card colour, as the tax-accounts box: over the page the ambient
+              glow under the tint took the note to 4.31:1 at the iPhone Duo's outer display. */}
+          <div style={{background:`linear-gradient(${C.tealDim},${C.tealDim}),${C.card}`,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
             <div style={{color:C.tealBright,fontSize:13,fontWeight:700}}>
               💰 {Math.round(savingsRate*100)}% savings target ({isCA?"RRSP/TFSA/Emergency":"401k/IRA/Emergency"}) = ${Math.round(savingsMo).toLocaleString()}/mo already reserved
             </div>
@@ -12738,8 +12744,10 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         </div>
       </div>
 
-      {/* Messages */}
-      <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+      {/* Messages. Focusable, so the list can be scrolled from a keyboard when it holds no button or
+          link of its own (axe scrollable-region-focusable: a new account's first message, on a
+          viewport as short as the iPhone Duo's outer display). */}
+      <div tabIndex={0} style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
         {messages.map((m,i)=>(
           <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
             {m.role==="system"
@@ -13355,7 +13363,7 @@ function Paywall({onClose,onPromoValid,country}){
   ];
 
   return(
-    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",paddingTop:INSET.top,...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
@@ -13476,7 +13484,7 @@ function FirstVisitScreen({data, onDismiss}) {
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0;
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
       {/* Ambient glow */}
       <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
@@ -13676,7 +13684,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
   const head={color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5};
   const body={color:C.mutedHi,fontSize:13,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"};
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto",...overlaySafe(24, { bottom: true })}}
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
       <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24,margin:"auto"}}>
         <div style={{textAlign:"center",marginBottom:16}}>
@@ -13711,7 +13719,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
 // here — sees the terms again before any grant. Cancel leaves the toggle off and consent ungranted.
 function AIConsentModal({ onEnable, onCancel }){
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,...overlaySafe(24, { bottom: true })}}
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
       <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
         <div style={{textAlign:"center",marginBottom:16}}>
@@ -14740,7 +14748,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
 
   return (
-    <div style={{ minHeight: "100dvh", background: showAuth ? "#050D09" : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
+    <div style={{ minHeight: "100dvh", background: showAuth ? "#050D09" : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)", ...safeX(0) }}>
 
       {!showAuth ? (
 
@@ -15184,7 +15192,7 @@ function ModalHost() {
   const accentFg = m.destructive ? textOn(C.red) : (C.isDark ? "#041810" : "#FFFFFF");
   return (
     <div role="dialog" aria-modal="true" aria-label={m.title || "Dialog"}
-      style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
+      style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,...overlaySafe(24, { bottom: true })}}
       onClick={(e)=>{ if(e.target===e.currentTarget && !m.destructive) finish(isConfirm?false:isPrompt?null:undefined); }}>
       <div style={{maxWidth:400,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
         {m.title && <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:8}}>{m.title}</div>}
@@ -16293,8 +16301,14 @@ export default function FlourishApp(){
   // The offline notice is a top banner like the others, so it belongs in the same measured
   // container. On its own it used to cover the wordmark, the bell and the gear and swallow their
   // taps; alongside any other banner it was hidden entirely, one z-index below them.
+  // The banners stack in one fixed container at the very top of the screen (bannerRef). The first one
+  // showing pads the top inset (the status bar; the iPhone Duo's 82 px strip on its inner display)
+  // and the rest do not; every one pads both side strips (lib/safeArea.js). Order as rendered: sync,
+  // migrated, demo, offline.
+  const firstBanner = syncError ? "sync" : showMigratedBanner ? "migrated" : (appData?.demo && !demoBannerHidden) ? "demo" : !isOnline ? "offline" : null;
+  const bannerEdges = (name, top, side) => ({ paddingTop: firstBanner === name ? `calc(${top}px + ${INSET.top})` : top, ...safeX(side) });
   const offlineBanner = !isOnline ? (
-    <div style={{width:"100%",background:"#180800",borderBottom:`2px solid ${C.orange}44`,pointerEvents:"auto",padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
+    <div style={{width:"100%",background:"#180800",borderBottom:`2px solid ${C.orange}44`,pointerEvents:"auto",padding:"9px 20px",...bannerEdges("offline", 9, 20),display:"flex",alignItems:"center",gap:10}}>
       <span style={{fontSize:14}}>📡</span>
       <span style={{color:DARK_C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
     </div>
@@ -17088,7 +17102,7 @@ export default function FlourishApp(){
   // These render ABOVE the app shell, so the shell's background wrapper never mounts. Both screens
   // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
   // white — unreadable in dark theme. legalShell supplies the background the shell would have.
-  const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",...safeX(16),fontFamily:"'Plus Jakarta Sans',sans-serif"};
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
@@ -17404,7 +17418,7 @@ input,button,select,textarea { font-family:inherit; }
 `
   // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
   const syncBanner = syncError ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.gold}22`,borderBottom:`1px solid ${C.gold}55`,pointerEvents:"auto",color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.gold}22`,borderBottom:`1px solid ${C.gold}55`,pointerEvents:"auto",color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",...bannerEdges("sync", 6, 12),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       Saved on this device. Cloud sync is retrying…
     </div>
   ) : null;
@@ -17414,7 +17428,7 @@ input,button,select,textarea { font-family:inherit; }
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,pointerEvents:"auto",color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,pointerEvents:"auto",color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 46px",...bannerEdges("demo", 6, 0),paddingLeft:`calc(46px + ${INSET.left})`,paddingRight:`calc(46px + ${INSET.right})`,position:"relative",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode: you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
@@ -17422,14 +17436,17 @@ input,button,select,textarea { font-family:inherit; }
           flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
       <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealInk,cursor:"pointer",fontWeight:800,fontSize:13,padding:"0 14px",minHeight:LAYOUT.minTap,borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
       {/* Hides the banner for this session only (screenshots). Absolutely positioned so the message
-          stays optically centred; the banner's 34px side padding reserves its gutter. */}
+          stays optically centred; the banner's 46px side padding reserves its gutter (the 44px button
+          and its 2px inset: a 34px gutter let "Exit demo" run under it once the message fitted on
+          one line, at 466px). It sits inside the right-hand safe area and centres on the banner's
+          own row, below any top inset. */}
       <button aria-label="Hide demo banner" title="Hide for now" onClick={()=>setDemoBannerHidden(true)}
-        style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center"}),fontFamily:"inherit"}}>✕</button>
+        style={{position:"absolute",right:`calc(2px + ${INSET.right})`,top:firstBanner==="demo"?`calc(50% + ${INSET.top} / 2)`:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center"}),fontFamily:"inherit"}}>✕</button>
     </div>
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
   const migratedBanner = showMigratedBanner ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.green}22`,borderBottom:`1px solid ${C.green}55`,pointerEvents:"auto",color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.green}22`,borderBottom:`1px solid ${C.green}55`,pointerEvents:"auto",color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",...bannerEdges("migrated", 6, 12),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
       <button aria-label="Dismiss" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
@@ -17539,7 +17556,7 @@ input,button,select,textarea { font-family:inherit; }
 
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────
   return(
-    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",...safeX(0)}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
       <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
       {/* Ambient mesh background */}
@@ -17570,7 +17587,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
+        <div style={{padding:"max(14px, calc(env(safe-area-inset-top, 0px) - var(--banner-h, 0px))) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0,minHeight:LAYOUT.minTap}}>
             <FlourishMark size={36}/>
             <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:20,color:C.cream,letterSpacing:-0.3}}>flourish</span>
@@ -17587,7 +17604,7 @@ input,button,select,textarea { font-family:inherit; }
         {!showNotifs&&!showSettings&&(
           <>
           {/* Floating pill nav */}
-          <div style={{position:"fixed",bottom:"max(16px, env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
+          <div style={{position:"fixed",bottom:"max(16px, env(safe-area-inset-bottom))",...centredInSafeArea(20, 390),zIndex:50}}>
             {/* The five buttons were a fixed 56px wide, which is 280 inside a bar that is only 264
                 wide at 320px: they overflowed their own pill and the gaps between them collapsed to
                 zero. They share the width now, with GAP.controlToControl between them. */}
@@ -17622,8 +17639,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),left:"50%",transform:"translateX(-50%)",
-                width:"calc(100% - 40px)",maxWidth:390,
+              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),...centredInSafeArea(20, 390),
                 background:C.surface,borderRadius:20,padding:"20px 20px 16px",
                 border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
                 pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
