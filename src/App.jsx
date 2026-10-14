@@ -14804,6 +14804,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-walk-tile-n{ grid-area:n; align-self:end; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:800; color:#15321a; }
             .fll-walk-tile-s{ grid-area:s; align-self:start; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; }
             .fll-walk-tile.on{ outline:3px solid #4d7c0f; outline-offset:-1px; border-color:#4d7c0f; }
+            .fll-familiar{ margin-block:0 16px; margin-inline:0; text-align:center; }
+            .fll-familiar ul{ margin-block:0; margin-inline:0; padding-inline-start:${SPACE.xl}px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; line-height:1.6; color:#52624f; }
+            .fll-familiar li + li{ margin-top:${SPACE.xs}px; }
             .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
             .fll-walk-v{ display:block; width:100%; max-width:360px; height:auto; aspect-ratio:9/16; margin-inline:auto; border-radius:22px; background:#15271a; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
@@ -14882,7 +14885,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
-              .fll-walk{ text-align:left; }
+              .fll-walk, .fll-familiar{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
               .fll-walk-stage, .fll-walk-grid{ margin-inline:0; }
               .fll-walk-grid{ max-width:none; grid-template-columns:repeat(4,minmax(0,1fr)); }
@@ -14921,7 +14924,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 Coming soon to iPhone and Android
               </span>
                 <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
-                <p className="fll-sub">flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
+                <p className="fll-sub">Safe to spend is built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
               </div>
               {/* The real Today card, cropped from the demo capture by scripts/crop-hero-card.mjs (never
                   redrawn): every figure in it is one the demo showed. Tapping it opens the demo. */}
@@ -14941,6 +14944,16 @@ function AuthScreen({ onAuth, onTryDemo }) {
               <FoundingOffer/>
               <div className="fll-hero-demo">
                 <LandingHowTo/>
+                <section className="fll-familiar" aria-labelledby="fll-familiar-t">
+                  <h2 className="fll-walk-t" id="fll-familiar-t">Sound familiar?</h2>
+                  <ul>
+                    <li>The bank balance looks fine, but rent hasn't come out yet.</li>
+                    <li>The card payment leaves chequing a few days before payday.</li>
+                    <li>The app says "checking" and asks for a zip code.</li>
+                    <li>You spend more time fixing the budget than understanding it.</li>
+                  </ul>
+                  <p className="fll-walk-note">flourish starts from your paydays and shows the math behind what's safe to spend.</p>
+                </section>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>
@@ -14984,7 +14997,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
-                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish speaks Canadian: chequing, not checking. It includes Canadian terms and programs like the RRSP, TFSA and the Canada Child Benefit. Bank connections are read-only, so flourish can't move your money."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
                   <div className="fll-ico">{icon}</div>
