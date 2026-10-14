@@ -10,6 +10,8 @@
 //   • the server's limits (the one-bank cap in plaid.js, the weekly coach limit in coach.js) ask
 //     getUserPlan, which for a request from a store app (_lib/cors.js isNativeRequest) does not read the
 //     subscription at all (_lib/planRules.js deriveEntitlement, native: true).
+//   • billing day (2026-10-26) adds the founding price and the founding link email; neither unlocks or opens
+//     anything in a store app (section 6). In-app purchase ships in 1.1.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -160,6 +162,38 @@ function load(db) {
     t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app), "5c a store app never asks /api/billing for its status");
     const hook = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "5d the Stripe webhook never writes the profiles row the app reads");
+  }
+
+  // ── 6. billing day (2026-10-26): the founding plan and the founding link, in a store app ─────────
+  // Billing goes live on the web only. In-app purchase ships in 1.1; until then nothing bought through
+  // Stripe, the founding price included, unlocks anything in the iOS or Android app, and the founding link
+  // email opens nothing there.
+  {
+    const FOUNDING = { status: "active", current_period_end: "2027-10-26T00:00:00Z", plan_key: "founding_annual" };
+    for (const status of ["active", "trialing"]) {
+      const nat = deriveEntitlement(ENDED_TRIAL, { ...FOUNDING, status }, NOW, { native: true });
+      t.eq([nat.plan, nat.unlimited, nat.paidSubscription], ["free", false, false], `6a a ${status} Founding Annual subscription unlocks nothing in a store app`);
+    }
+    t.eq(deriveEntitlement(ENDED_TRIAL, FOUNDING, NOW).plan, "premium", "6b …and the same subscription counts on the web");
+    const db = { profiles: [{ user_id: "u1", ...ENDED_TRIAL }], subscriptions: [{ user_id: "u1", ...FOUNDING }] };
+    const a = load(db);
+    const nat = await a.auth.getUserPlan("u1", { native: true });
+    t.eq([nat.entitlement, nat.unlimited, nat.paid, a.reads.includes("subscriptions")], ["free", false, false, false],
+      "6c getUserPlan for a store app: a founding subscriber gets the free tier, and the subscription is not read");
+
+    const L = await import("../src/lib/foundingLink.js");
+    const ON = { enabled: true, paid: false, founding: { available: true, cohortLimit: 50 } };
+    for (const signedIn of [true, false]) for (const asked of [true, false]) for (const status of [ON, { ...ON, paid: true }, null]) {
+      t.eq(L.foundingLinkAction({ requested: true, native: true, signedIn, asked, status }), "forget",
+        `6d the founding link opens nothing in a store app (signed ${signedIn ? "in" : "out"}, ${asked ? "asked" : "not asked"}, billing ${status ? "on" : "off"})`);
+    }
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const init = app.slice(app.indexOf("const [foundingLink,setFoundingLink]=useState("), app.indexOf("const [foundingLink,setFoundingLink]=useState(") + 200);
+    t.ok(/useState\(\(\)=>\{\s*if\(isNativeApp\(\)\) return false;/.test(init), "6e the App never even holds the founding link in a store app");
+    t.ok(/\{foundingNote && !isNativeApp\(\) && /.test(app), "6f the sign-in card's founding line never renders in a store app");
+    const { LANDING_PRICE_SENTENCE } = require("../netlify/functions/_lib/foundingLinkEmail.js");
+    t.ok(/Not yet available in the iPhone and Android apps\.$/.test(LANDING_PRICE_SENTENCE),
+      "6g the founding link email says, in the landing page's words, that it is not yet available in the iPhone and Android apps");
   }
 
   process.env = saved;
