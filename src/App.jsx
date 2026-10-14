@@ -6201,11 +6201,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
             {label:"Due soon",value:formatMoney(dueSoonTotal||0),sub:dueSoon.windowLabel,color:C.gold,icon:"calendar",screen:"plan"},
-            // manual-balances fix round: "Debt free!" only when there are debts on record and none is owed.
+            // manual-balances: debts on record and none owed reads, as a fact, "All entered debts are at $0."
             // With no debt entered and no card or loan account there is nothing to celebrate: "No debts entered", Add.
             debtTileKind(data,totalDebt)==="none"
               ? {noDebts:true,label:"No debts entered",color:C.red,icon:"trendUp"}
-              : {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+              : {label:totalDebt>0?"Total debt":"All entered debts are at $0.",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
             {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},

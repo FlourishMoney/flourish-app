@@ -201,7 +201,7 @@ export function balanceSourceLine(accounts = []) {
   return list.some(a => !isEditableAccount(a)) ? { kind: "mixed", text: SOURCE_MIXED } : { kind: "entered", text: SOURCE_ENTERED };
 }
 
-// Today's debt tile. "total" when anything is owed; "free" ("Debt free!") only when the household has
+// Today's debt tile. "total" when anything is owed; "free" ("All entered debts are at $0.") only when the household has
 // debts on record (a debt entered, or a card or loan account, linked or entered) and none of it is
 // owed; "none" when there is no record at all, so nothing can be celebrated: "No debts entered", Add.
 export function debtTileKind(data = {}, totalDebt = 0) {

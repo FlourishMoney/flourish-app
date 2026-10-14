@@ -332,7 +332,10 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     const S0 = home(legacy);
     t.ok(/· estimated/.test(S0) && /Estimated · Connect bank for real numbers/.test(S0) && !/From the balance/.test(S0), "7l an account with no balance entered reads as before: \"· estimated\" and the Estimated line");
     const paidOff = home({ ...bareOf(MB, shared, today), debts: [{ id: "d1", name: "Visa", balance: "0", rate: "19.99", min: "" }] });
-    t.ok(/Debt free!/.test(paidOff) && !/No debts entered/.test(paidOff), "7m debts on record, all at $0: \"Debt free!\"");
+    t.ok(/All entered debts are at \$0\./.test(paidOff) && !/No debts entered|Debt free|Amazing!|🎉/.test(paidOff), "7m debts on record, all at $0: exactly \"All entered debts are at $0.\"");
+    const SRC = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
+    t.ok(!/Debt free!|Amazing!/.test(SRC), "7m2 \"Debt free!\" and \"Amazing!\" appear nowhere in src");
+    t.ok(!BANNED.test("All entered debts are at $0.") && !adviceProblems("All entered debts are at $0.").length, "7m3 the new sentence passes both copy rules");
     for (const c of D.DEMO_COUNTRIES) {
       const d = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(today, c),
         bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true };
