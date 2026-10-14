@@ -43,13 +43,26 @@ npm run build
 npx cap sync ios        # and/or: npx cap sync android
 ```
 
-iOS (Xcode 26.5; decision P15 keeps Xcode 26 and defers the Capacitor 8.5 UIScene
-migration to January):
+iOS. **From 2026-10-14 every iOS build needs Xcode 27.1 or later and the UIScene lifecycle**
+(PR #67: Capacitor 8.5.3, `ios/App/App/SceneDelegate.swift`, `UIApplicationSceneManifest` in
+Info.plist). Decision P15 (Xcode 26, migration in January) is superseded: Xcode 26 is no longer on
+the build Mac, and an app linked against the iOS 27 SDK without a scene manifest stops at launch
+(`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`), which is an App Review 2.1(a)
+rejection. Do not revert the scene files, and do not build from a branch that predates them.
+Point the tools at Xcode 27.1 for the shell rather than switching the system default:
 
 ```
+export DEVELOPER_DIR=/Applications/Xcode-27.1.app/Contents/Developer
 cd ios/App
 xcodebuild -scheme App -configuration Release -destination 'generic/platform=iOS' build
 ```
+
+**Store builds carry the Sentry DSN.** An App Store archive (and a Play AAB) must be built with
+`VITE_SENTRY_DSN` set in the build shell, or crashes in the store app reach no one. The DSN is not
+in `.env.local`: read it from the live site's bundle (`assets/index-*.js`) into an `export` in the
+build shell only. Never commit it, write it into a tracked file, or print it. Before uploading,
+check that the bundle carries it (count the matching lines in `dist/assets/*.js`, do not print
+them). A local test archive built without it must never be uploaded.
 
 Android needs **JDK 21** and the SDK path exported. JDK 17 is too old — Capacitor 8's
 android library compiles at source release 21 — and JDK 26 is too new: AGP 8.13's jlink
