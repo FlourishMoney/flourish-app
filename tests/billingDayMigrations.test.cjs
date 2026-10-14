@@ -19,6 +19,8 @@
 //   6. Grants: every new table has RLS and a service_role grant in its own file; every new function
 //      is revoked from PUBLIC, anon and authenticated and granted to the service role only.
 //   7. The proof script stays local, and 0017 is not on this branch.
+//   8. The runbook (docs/ops/BILLING-DAY-OCT-26.md) runs the same three, in the same order, and every
+//      SQL block it gives is read-only.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -110,6 +112,32 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     "7d it reads the held 0017 with git show and never checks out, merges or pushes");
   t.ok(!proof.slice(1).some(s => /@(?!example\.test|getgrowsmart\.com)[a-z0-9-]+\.[a-z]/i.test(s)), "7e its addresses are made up (example.test, and the test domain)");
   t.ok(!fs.readdirSync(MIG).some(f => /^0017/.test(f)), "7f 0017 is not on this branch (PR #69 holds it)");
+
+  // ── 8. the runbook (docs/ops/BILLING-DAY-OCT-26.md) says the same thing ───────────────────────────
+  {
+    const docPath = path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md");
+    const doc = fs.existsSync(docPath) ? fs.readFileSync(docPath, "utf8") : "";
+    t.ok(doc.length > 0, "8a docs/ops/BILLING-DAY-OCT-26.md exists");
+    const runs = [...doc.matchAll(/^### 2\.\d Run `supabase\/migrations\/([0-9]{4})_[a-z_]+\.sql`/gm)].map(m => m[1]);
+    t.eq(runs, ["0009", "0010", "0016"], "8b it runs 0009, then 0010, then 0016, and nothing else");
+    for (const f of [M0009, M0010, M0016]) t.ok(fs.existsSync(path.join(MIG, f)) && doc.includes(`supabase/migrations/${f}`), `8c the file it names exists: ${f}`);
+    t.ok(/\*\*Not\*\* 0017, \*\*not\*\* `waitlist_founding_start\(\)`/.test(doc), "8d it says not to run 0017 or waitlist_founding_start()");
+    const blocks = [...doc.matchAll(/```sql\n([\s\S]*?)```/g)].map(m => m[1]);
+    t.ok(blocks.length >= 4, `8e it has a check for each migration (${blocks.length} SQL blocks)`);
+    const WRITES = /\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|comment on|call|do)\b|waitlist_founding_start|waitlist_founding_mark_ended/i;
+    // Quoted strings are arguments (has_table_privilege(..., 'INSERT')), not statements.
+    t.eq(blocks.map((b, i) => (WRITES.test(code(b).replace(/'[^']*'/g, "''").replace(/\bupdated_at\b/g, "")) ? `block ${i + 1}` : null)).filter(Boolean), [],
+      "8f every SQL block in it is read-only (select only; no write, no DDL, no founding function that writes)");
+    t.ok(blocks.every(b => /^\s*select\b/i.test(b.replace(/--[^\n]*\n/g, ""))), "8g …each one starts with select");
+    t.ok(!/@(?!flourishmoney\.app)[a-z0-9-]+\.[a-z]/i.test(blocks.join("\n")), "8h no SQL block holds an email address");
+    t.ok(/curl -s -o \/dev\/null -w '%\{http_code\}\\n' -X POST https:\/\/flourishmoney\.app\/api\/billing/.test(doc), "8i it gives the no-secret on/off check (401 on, 404 off)");
+    for (const h of ["## 3. Turn billing on", "## 4. The first smoke purchase, and its refund", "## 6. The first hour",
+      "## 7. The stop condition, and turning billing off", "## 8. What cannot be undone once a real charge clears", "## 9. Holding 0017 (PR #69): what it means on Monday"]) {
+      t.ok(doc.includes(h), `8j it has the section "${h.replace(/^## /, "")}"`);
+    }
+    t.ok(/create a new deploy/.test(doc) && /Trigger deploy/.test(doc), "8k it says a variable change needs a deploy (Netlify functions keep the values they were deployed with)");
+    t.ok(!/sk_live_[A-Za-z0-9]|sk_test_[A-Za-z0-9]|whsec_[A-Za-z0-9]|re_[A-Za-z0-9]{8}|price_[A-Za-z0-9]{8}|eyJ[A-Za-z0-9]/.test(doc), "8l it holds no key, signing secret or price id");
+  }
 
   t.summary("billingDayMigrations.test");
 })();
