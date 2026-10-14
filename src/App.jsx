@@ -14989,7 +14989,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
-                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish speaks Canadian: chequing, not checking. It knows the RRSP, TFSA and the Canada Child Benefit. Bank connections are read-only, so flourish can't move your money."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
                   <div className="fll-ico">{icon}</div>

@@ -100,5 +100,8 @@ function imageSize(file) {
     t.ok(/<h2 className="fll-walk-t" id="fll-familiar-t">Sound familiar\?<\/h2>/.test(sec) && /<p className="fll-walk-note">flourish starts from your paydays and shows the math behind every number\.<\/p>/.test(sec),
       "6d …its heading and closing line, in the page's existing heading and note styles");
   }
+  t.ok(/"Built in Canada", "flourish speaks Canadian: chequing, not checking\. It knows the RRSP, TFSA and the Canada Child Benefit\. Bank connections are read-only, so flourish can't move your money\."/.test(landing),
+    "6e the Built in Canada card, word for word");
+
   t.summary("landingScreens.test");
 })();
