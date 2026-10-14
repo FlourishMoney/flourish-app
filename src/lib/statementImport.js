@@ -195,4 +195,39 @@ export function rowsToImport(classified, selectedIds, accountId = null) {
   return out;
 }
 
+// manual-balances: the balance a statement offers its account, for the household to confirm. A PDF's
+// closing balance is the model's transcription, so it is offered only when that figure appears
+// VERBATIM in the statement text (the same check every row passes); it is dated the period's end when
+// one was printed. Returns { amount, asOf } (asOf "YYYY-MM-DD" or null), or null. Nothing is saved here.
+export function closingBalancePrefill(anchors = {}, statementText = "") {
+  const closing = anchors && anchors.closingBalance;
+  if (closing == null || closing === "") return null;
+  const amount = _num(closing);
+  if (!Number.isFinite(amount) || !amountAppearsInSource(amount, statementText)) return null;
+  const end = anchors.period && parseRowDate(anchors.period.end);
+  return { amount: _round(amount), asOf: end ? end.toISOString().slice(0, 10) : null };
+}
+
+// A CSV with a Balance column: the balance on its newest row. The file's order is read from its dates
+// (oldest first or newest first); when every row has the same date the order is unknown and nothing is
+// offered, as nothing is when a date or the balance cannot be read. Returns { amount, asOf } or null.
+export function csvClosingBalance(text = "") {
+  const lines = String(text || "").trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return null;
+  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const clean = s => String(s == null ? "" : s).trim().replace(/^["']|["']$/g, "");
+  const headers = lines[0].split(sep).map(h => clean(h).toLowerCase());
+  const dateIdx = headers.findIndex(h => /date|posted|trans/.test(h));
+  const balIdx = headers.findIndex(h => /balance/.test(h));
+  if (dateIdx < 0 || balIdx < 0) return null;
+  const rows = lines.slice(1).map(l => l.split(sep).map(clean));
+  const first = parseRowDate(rows[0][dateIdx]), last = parseRowDate(rows[rows.length - 1][dateIdx]);
+  if (!first || !last || first.getTime() === last.getTime()) return null;
+  const newest = first > last ? rows[0] : rows[rows.length - 1];
+  const raw = String(newest[balIdx] || "").replace(/[$,\s]/g, "");
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(raw)) return null;
+  const d = parseRowDate(newest[dateIdx]);
+  return { amount: _round(Number(raw)), asOf: d.toISOString().slice(0, 10) };
+}
+
 function _round(n, dp = 2) { const f = 10 ** dp; return Math.round((Number(n) || 0) * f) / f; }
