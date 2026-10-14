@@ -14796,6 +14796,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-walk-tile-n{ grid-area:n; align-self:end; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:800; color:#15321a; }
             .fll-walk-tile-s{ grid-area:s; align-self:start; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; }
             .fll-walk-tile.on{ outline:3px solid #4d7c0f; outline-offset:-1px; border-color:#4d7c0f; }
+            .fll-familiar{ margin-block:0 16px; margin-inline:0; text-align:center; }
+            .fll-familiar ul{ margin-block:0; margin-inline:0; padding-inline-start:${SPACE.xl}px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; line-height:1.6; color:#52624f; }
+            .fll-familiar li + li{ margin-top:${SPACE.xs}px; }
             .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
             .fll-walk-v{ display:block; width:100%; max-width:360px; height:auto; aspect-ratio:9/16; margin-inline:auto; border-radius:22px; background:#15271a; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
@@ -14874,7 +14877,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
-              .fll-walk{ text-align:left; }
+              .fll-walk, .fll-familiar{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
               .fll-walk-stage, .fll-walk-grid{ margin-inline:0; }
               .fll-walk-grid{ max-width:none; grid-template-columns:repeat(4,minmax(0,1fr)); }
@@ -14933,6 +14936,16 @@ function AuthScreen({ onAuth, onTryDemo }) {
               <FoundingOffer/>
               <div className="fll-hero-demo">
                 <LandingHowTo/>
+                <section className="fll-familiar" aria-labelledby="fll-familiar-t">
+                  <h2 className="fll-walk-t" id="fll-familiar-t">Sound familiar?</h2>
+                  <ul>
+                    <li>The bank balance looks fine, but rent hasn't come out yet.</li>
+                    <li>The card payment leaves chequing a few days before payday.</li>
+                    <li>The app says "checking" and asks for a zip code.</li>
+                    <li>You spend more time fixing the budget than understanding it.</li>
+                  </ul>
+                  <p className="fll-walk-note">flourish starts from your paydays and shows the math behind every number.</p>
+                </section>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>

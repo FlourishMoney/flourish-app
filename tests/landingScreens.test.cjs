@@ -89,5 +89,16 @@ function imageSize(file) {
   // ── 6. landing-voc copy (2026-10-14) ─────────────────────────────────────────────────────────
   t.ok(/<p className="fll-sub">Built around your paydays, not the calendar month\. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\.<\/p>/.test(landing),
     "6a the hero subline opens with the paydays sentence, word for word");
+  {
+    const demoCol = landing.slice(landing.indexOf('<div className="fll-hero-demo">'), landing.indexOf('className="fll-trust-row"'));
+    const iVideo = demoCol.indexOf("<LandingHowTo/>"), iSec = demoCol.indexOf("Sound familiar?"), iBtn = demoCol.indexOf('className="fll-demo"');
+    t.ok(iVideo >= 0 && iSec > iVideo && iBtn > iSec, "6b \"Sound familiar?\" sits after the videos and before the demo button");
+    const sec = demoCol.slice(iSec - 200, iBtn);
+    const items = [...sec.matchAll(/<li>([^<]+)<\/li>/g)].map(m => m[1]);
+    t.eq(items, ["The bank balance looks fine, but rent hasn't come out yet.", "The card payment leaves chequing a few days before payday.",
+      'The app says "checking" and asks for a zip code.', "You spend more time fixing the budget than understanding it."], "6c its four items, word for word and in order");
+    t.ok(/<h2 className="fll-walk-t" id="fll-familiar-t">Sound familiar\?<\/h2>/.test(sec) && /<p className="fll-walk-note">flourish starts from your paydays and shows the math behind every number\.<\/p>/.test(sec),
+      "6d …its heading and closing line, in the page's existing heading and note styles");
+  }
   t.summary("landingScreens.test");
 })();
