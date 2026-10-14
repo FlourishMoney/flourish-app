@@ -34,6 +34,7 @@ import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amo
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
+import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
@@ -14759,7 +14760,7 @@ function FoundingCard() {
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo }) {
+function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14784,7 +14785,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
   // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
   // page for people who cannot use the product yet; someone who has installed the app already can.
-  const [showAuth, setShowAuth] = useState(isNativeApp());
+  // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
+  const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15372,6 +15374,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                       </button>
                     ))}
                   </div>
+                  {foundingNote && !isNativeApp() && <div style={{ color: "#EDE9E2", fontSize: 13, lineHeight: 1.6, marginBottom: SPACE.lg, background: "rgba(255,255,255,0.05)", padding: "10px 14px", borderRadius: 10 }}>{foundingNote}</div>}
                   {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   {pendingConfirm && mode === "login" && (
                     <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -16392,6 +16395,22 @@ export default function FlourishApp(){
   const [showUpgrade,setShowUpgrade]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   const [billingNotice,setBillingNotice]=useState(null);
+  // The account the status call has FINISHED for, whatever it answered: how the founding link tells
+  // "billing is off" from "not asked yet".
+  const [billingAskedFor,setBillingAskedFor]=useState(null);
+  // The founding link (src/lib/foundingLink.js): ?checkout=founding, or one opened on this device while
+  // signed out in the last 7 days. Never in a store app. The parameter comes off the address bar at once.
+  const [foundingLink,setFoundingLink]=useState(()=>{
+    if(isNativeApp()) return false;
+    try{
+      if(foundingLinkInUrl(window.location.search)){
+        rememberFoundingLink(localStorage);
+        window.history.replaceState({},"",window.location.pathname+withoutFoundingLink(window.location.search)+window.location.hash);
+        return true;
+      }
+      return foundingLinkPending(localStorage);
+    }catch{ return false; }
+  });
   // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
   // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
   // ── Plaid reconnect state ─────────────────────────────────────
@@ -16524,6 +16543,7 @@ export default function FlourishApp(){
         const body = await res.json();
         if(!cancelled) setBillingStatus(body);
       }catch{ /* offline or blocked: stay hidden */ }
+      finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
     return ()=>{ cancelled = true; };
   },[user?.id, nativeApp]);
@@ -16532,6 +16552,14 @@ export default function FlourishApp(){
   // The two entry points call this. While billing is off it opens the existing feature paywall,
   // exactly as it did before, so nothing about today's app changes.
   const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+  // The founding link: the checkout screen once this account's status is in and billing is on; in a store
+  // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
+  // answer in that status, never this link's.
+  useEffect(()=>{
+    const act = foundingLinkAction({ requested: foundingLink, native: nativeApp, signedIn: !!user?.id, asked: !!user?.id && billingAskedFor===user.id, status: billingStatus });
+    if(act==="open"){ const n = foundingLinkNotice(billingStatus); if(n) setBillingNotice(n); setShowUpgrade(true); }
+    if(act==="open" || act==="forget"){ try{ forgetFoundingLink(localStorage); }catch{} setFoundingLink(false); }
+  },[foundingLink, nativeApp, user?.id, billingAskedFor, billingStatus]);
 
   // Coming back from Stripe. THIS SETS NO PLAN. A success redirect means the card was accepted,
   // not that the subscription exists — and it is a URL anyone can type. The plan is whatever the
@@ -17413,7 +17441,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,

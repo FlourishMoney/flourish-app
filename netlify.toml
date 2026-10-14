@@ -13,6 +13,12 @@
 [functions."waitlist-sweep"]
   schedule = "*/15 * * * *"
 
+# Scheduled: the founding link email (payments open 2026-10-26). Every 15 minutes it sends each founding
+# household its link, once, and records the send on the row. It reads, sends and writes NOTHING unless
+# BILLING_ENABLED and FOUNDING_LINK_EMAIL are both exactly "true" (docs/ops/BILLING-DAY-OCT-26.md).
+[functions."founding-link-sweep"]
+  schedule = "*/15 * * * *"
+
 # Security headers
 [[headers]]
   for = "/*"
