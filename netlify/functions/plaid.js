@@ -870,6 +870,7 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
     const isFull  = !cursor; // null cursor → full sync from the beginning
     const byId    = new Map(); // transaction_id → txn (modified overwrites added)
     const removed = [];
+    const accounts = new Map(); // account_id → { type, subtype }, from the sync pages themselves
     let hasMore   = true;
     let pages     = 0;
 
@@ -882,6 +883,7 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
         (page.added    || []).forEach(t => byId.set(t.transaction_id, t));
         (page.modified || []).forEach(t => byId.set(t.transaction_id, t));
         (page.removed  || []).forEach(r => { if (r.transaction_id) removed.push(r.transaction_id); });
+        (page.accounts || []).forEach(a => { if (a && a.account_id) accounts.set(a.account_id, a); });
         cursor  = page.next_cursor;
         hasMore = page.has_more;
         pages++;
@@ -909,8 +911,15 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
       if (error) console.error("[syncTransactions cursor persist]", error.message);
     }
 
+    // Every row is labelled with its account's type (the client keeps a loan's own entries out of
+    // the figures: src/lib/loanActivity.js). Sync pages normally carry the accounts; if a page did
+    // not, one /accounts/get call supplies them.
+    if (byId.size && !accounts.size) {
+      try { ((await plaid("/accounts/get", { access_token })).accounts || []).forEach(a => accounts.set(a.account_id, a)); }
+      catch (e) { console.error("[syncTransactions accounts]", e.errorCode || e.message); }
+    }
     return {
-      transactions: normalizeTxns(Array.from(byId.values()), startDate, endDate),
+      transactions: normalizeTxns(Array.from(byId.values()), startDate, endDate, accounts),
       removed,
       truncated,
       full: isFull,
@@ -930,11 +939,12 @@ async function getTransactions(access_token, startDate, endDate) {
       include_original_description:      true,
     },
   });
-  return normalizeTxns(data.transactions || [], startDate, endDate);
+  return normalizeTxns(data.transactions || [], startDate, endDate, new Map((data.accounts || []).map(a => [a.account_id, a])));
 }
 
-// Normalize raw Plaid transactions → Flourish shape
-function normalizeTxns(txns, startDate, endDate) {
+// Normalize raw Plaid transactions → Flourish shape. `accounts` (account_id → Plaid account) labels
+// each row with its account's type and subtype; a row whose account is not in the response gets null.
+function normalizeTxns(txns, startDate, endDate, accounts = new Map()) {
   return txns
     .filter(t => t.date >= startDate && t.date <= endDate)
     .map(t => ({
@@ -947,6 +957,8 @@ function normalizeTxns(txns, startDate, endDate) {
       currency:   t.iso_currency_code || "CAD",
       pending:    t.pending,
       logo_url:   t.logo_url || null,
+      account_type:    accounts.get(t.account_id)?.type ?? null,
+      account_subtype: accounts.get(t.account_id)?.subtype ?? null,
     }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 }

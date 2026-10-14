@@ -12,8 +12,9 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch, debtAccountKindWord } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
+import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount } from "./lib/loanActivity.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
@@ -821,7 +822,14 @@ async function fetchItemTxns(item_id, jwt, fullResync) {
     if (!resp.truncated) break;
     resync = false; // subsequent pages resume from the persisted cursor, never re-full
   }
-  return { transactions, removed, full };
+  // Every synced transaction comes through here, so this is where a loan's own entries (a payment
+  // received, interest, a draw, on an account of type "loan") leave the working set that every figure
+  // is computed from, before any caller detects income or bills from it. They are kept for that
+  // account's activity (lib/loanActivity.js). The server labels each row with its account's type;
+  // the stored accounts are the fallback.
+  const split = splitLoanActivity(transactions, loadState()?.appData?.accounts || []);
+  storeLoanActivity(split.loanActivity, removed);
+  return { transactions: split.transactions, removed, full };
 }
 
 // Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
@@ -6891,7 +6899,7 @@ function DebtLinkPrompt({ match, setAppData }) {
   return (
     <div role="group" aria-labelledby={`debt-link-${match.pairKey}`} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginBottom:LAYOUT.cardGap}}>
       <div id={`debt-link-${match.pairKey}`} style={{color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Is this the same as your {match.accountLabel}?</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that {match.accountKind==="loc"?"line of credit":"card"}. Until you say, net worth counts both, so it may be counted twice.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that {debtAccountKindWord(match.accountKind)}. Until you say, net worth counts both, so it may be counted twice.</div>
       <div style={{display:"flex",gap:GAP.controlToControl,marginTop:GAP.textToControl,flexWrap:"wrap"}}>
         <button onClick={()=>setAppData(prev=>linkDebtToAccount(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:12,color:C.greenInk,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Yes, link them</button>
         <button onClick={()=>setAppData(prev=>dismissDebtAccountMatch(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,color:C.mutedHi,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>No, they're different</button>
@@ -8523,13 +8531,23 @@ function SpendScreen({data, setAppData, setScreen}){
   })();
   // Account filter — map account_id to account name
   const accountMap = (data.accounts||[]).reduce((m,a)=>({...m,[a.id]:a}),{});
-  const uniqueAccounts = [...new Set(txns.map(t=>t.account_id).filter(Boolean))];
+  // A loan's own entries are not in txns (lib/loanActivity.js keeps them out of every figure). They
+  // are listed under their own account, as loan activity.
+  const loanActivityAll = readLoanActivity();
+  const loanAcctIds = [...new Set(loanActivityAll.map(t=>t.account_id).filter(id=>id!=null&&isLoanAccount(accountMap[id])))];
+  const uniqueAccounts = [...new Set([...txns.map(t=>t.account_id).filter(Boolean), ...loanAcctIds])];
   const accountsWithNames = uniqueAccounts.map(id=>({
     id,
     name: accountMap[id]?.name || accountMap[id]?.institution || id,
     type: accountMap[id]?.type || "account",
   }));
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
+  const loanView = accountFilter!=="All" && isLoanAccount(accountMap[accountFilter]);
+  const loanRows = loanView ? loanActivityAll.filter(t=>{
+    if(String(t.account_id)!==String(accountFilter)||!t.date) return false;
+    const d = new Date(t.date+"T12:00:00");
+    return (!startOfPeriod || d >= startOfPeriod) && (!endOfPeriod || d <= endOfPeriod);
+  }) : [];
   const filtered=catFilter==="All"
     ? acctFiltered.filter(t=>{
         if(isCardPaymentCharge(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
@@ -8905,7 +8923,30 @@ function SpendScreen({data, setAppData, setScreen}){
           </select>
         </div>
       </div>
-      {filtered.length===0&&(
+      {loanView&&(<>
+        <div style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+          <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:SPACE.xs}}>Loan activity</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Payments, interest and draws on this loan, as your bank reports them. Flourish does not count them as income, spending or bills, so a loan payment is not counted twice.</div>
+        </div>
+        {loanRows.length===0&&<div style={{background:C.card,borderRadius:18,padding:"20px",textAlign:"center",border:`1px solid ${C.border}`,color:C.muted,fontSize:13}}>No loan activity in this period.</div>}
+        {loanRows.map(txn=>(
+          <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.cream,fontWeight:600,fontSize:14,...wrapText()}}>{txn.name}</div>
+              <div style={{display:"flex",columnGap:GAP.textToControl,rowGap:GAP.textToControl,marginTop:GAP.textToControl,alignItems:"center",flexWrap:"wrap"}}>
+                <Chip label="Loan activity" color={C.muted} size={9}/>
+                <span style={{color:C.muted,fontSize:13}}>{txn.date}</span>
+                {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+              </div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>${Math.abs(Number(txn.amount)||0).toFixed(2)}</div>
+              <div style={{color:C.muted,fontSize:13}}>{Number(txn.amount)<0?"Paid to the loan":"Added to the loan"}</div>
+            </div>
+          </div>
+        ))}
+      </>)}
+      {!loanView&&filtered.length===0&&(
         <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
           {txns.length===0?(
             <>
@@ -8924,7 +8965,7 @@ function SpendScreen({data, setAppData, setScreen}){
           )}
         </div>
       )}
-      {filtered.map(txn=>{
+      {!loanView&&filtered.map(txn=>{
         const effCat = getCat(txn);
         const { emoji: txnEmoji, color: txnDispColor } = getCatDisplay(effCat);
         return (
@@ -16019,7 +16060,9 @@ export default function FlourishApp(){
     try { localStorage.removeItem("flourish_ai_disclosure_seen"); } catch {}
     setAiDisclosureSeen(false);
   };
-  const [appData,setAppData]=useState(()=>saved?.appData||null);
+  // A device that synced a loan's own entries before lib/loanActivity.js existed has them in its saved
+  // transactions: they move to the loan-activity store once, here, before anything reads them.
+  const [appData,setAppData]=useState(()=>moveSavedLoanActivity(saved)?.appData||null);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
   // annual bills so their cadence phase persists (monthly uses day-of-month, no anchor needed).
   useEffect(() => {
