@@ -14916,7 +14916,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 Coming soon to iPhone and Android
               </span>
                 <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
-                <p className="fll-sub">Built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
+                <p className="fll-sub">Safe to spend is built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
               </div>
               {/* The real Today card, cropped from the demo capture by scripts/crop-hero-card.mjs (never
                   redrawn): every figure in it is one the demo showed. Tapping it opens the demo. */}
@@ -14944,7 +14944,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                     <li>The app says "checking" and asks for a zip code.</li>
                     <li>You spend more time fixing the budget than understanding it.</li>
                   </ul>
-                  <p className="fll-walk-note">flourish starts from your paydays and shows the math behind every number.</p>
+                  <p className="fll-walk-note">flourish starts from your paydays and shows the math behind what's safe to spend.</p>
                 </section>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
@@ -14989,7 +14989,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
-                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish speaks Canadian: chequing, not checking. It knows the RRSP, TFSA and the Canada Child Benefit. Bank connections are read-only, so flourish can't move your money."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish speaks Canadian: chequing, not checking. It includes Canadian terms and programs like the RRSP, TFSA and the Canada Child Benefit. Bank connections are read-only, so flourish can't move your money."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
                   <div className="fll-ico">{icon}</div>
