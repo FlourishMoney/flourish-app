@@ -28,7 +28,9 @@ import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDai
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
-import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
+import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
+import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
+         kindLabel, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
@@ -3962,6 +3964,139 @@ function StatementReview({ batch, onConfirm, onCancel }) {
   );
 }
 
+// ─── BALANCES THE HOUSEHOLD ENTERS (manual-balances) ─────────────────────────
+// The balance of a manual or imported account, typed in, with the date it was true. The write is
+// lib/manualBalances.js enterBalance, which never edits a linked bank account. BalanceForm is the
+// sheet's content (Settings → Accounts, Today, How we got this, statement import); ManualBalanceStep
+// is onboarding's "Enter it myself" step.
+const balanceChip = (on, extra = {}) => ({ flex: "1 1 0", minWidth: 0, minHeight: LAYOUT.minTap, padding: "9px 6px", borderRadius: 11,
+  border: `1px solid ${on ? C.green + "66" : C.border}`, background: on ? C.green + "1E" : "transparent", color: on ? C.greenInk : C.muted,
+  fontSize: 13, fontWeight: on ? 700 : 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", ...extra });
+function BalanceProblem({ text }) {
+  return text ? <div role="alert" style={{ color: C.redBright || C.red, fontSize: 13, marginTop: SPACE.sm, lineHeight: 1.5 }}>{text}</div> : null;
+}
+function BalanceForm({ account = null, prefill = null, mode = "update", country = "CA", onSubmit, onCancel }) {
+  const today = new Date();
+  const [kind, setKind] = useState(() => accountKindOf(account) || "chequing");
+  const [loanType, setLoanType] = useState(() => (account && accountKindOf(account) === "loan" && account.subtype) || "auto");
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState(() => {
+    if (prefill && prefill.amount != null) return String(prefill.amount);
+    if (account && (account.balanceEntered || Number(account.balance))) return String(amountShownFor(account));
+    return "";
+  });
+  const [asOf, setAsOf] = useState(() => (prefill && prefill.asOf) || (account && account.balanceAsOf) || todayISO(today));
+  const [tried, setTried] = useState(false);
+  const problem = balanceEntryProblem({ amount, asOf }, today);
+  const owed = kind === "card" || kind === "loan";
+  const submit = () => {
+    setTried(true);
+    if (problem) return;
+    onSubmit && onSubmit({ accountId: account ? account.id : undefined, kind, loanType: kind === "loan" ? loanType : undefined, name: account ? undefined : name, amount, asOf });
+  };
+  return (
+    <div>
+      {prefill && prefill.amount != null && (
+        <div style={{ color: C.mutedHi, fontSize: 13, lineHeight: 1.6 }}>From your statement's closing balance. Change it if it's off.</div>
+      )}
+      <div style={sheetLabel()}>Kind of account</div>
+      <div role="group" aria-label="Kind of account" style={{ display: "flex", gap: GAP.controlToControl }}>
+        {BALANCE_KINDS.map(k => (
+          <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} style={balanceChip(kind === k)}>{kindLabel(k, country)}</button>
+        ))}
+      </div>
+      {kind === "loan" && (<>
+        <div style={sheetLabel()}>Kind of loan</div>
+        <div role="group" aria-label="Kind of loan" style={{ display: "flex", flexWrap: "wrap", gap: GAP.controlToControl }}>
+          {LOAN_TYPES.map(l => (
+            <button key={l.value} type="button" aria-pressed={loanType === l.value} onClick={() => setLoanType(l.value)} style={balanceChip(loanType === l.value, { flex: "1 1 40%" })}>{l.label}</button>
+          ))}
+        </div>
+      </>)}
+      {!account && (<>
+        <div style={sheetLabel()}>Name</div>
+        <SheetField value={name} onChange={setName} label="Account name" placeholder={kind === "loan" ? (LOAN_TYPES.find(l => l.value === loanType) || {}).label : kind === "card" ? "Credit card" : kindLabel(kind, country)} />
+      </>)}
+      <div style={sheetLabel()}>{owed ? "Amount owed" : "Balance"}</div>
+      <SheetField prefix="$" inputMode="decimal" value={amount} onChange={setAmount} label={owed ? "Amount owed" : "Balance"} placeholder="0.00" />
+      <div style={sheetLabel()}>As of</div>
+      <SheetField type="date" value={asOf} max={todayISO(today)} onChange={setAsOf} label="Date this balance was true" />
+      <BalanceProblem text={tried ? problem : null} />
+      <SheetPrimary label={mode === "confirm" ? "Confirm balance" : "Done"} onClick={submit} />
+      {onCancel && <SheetSecondary label={mode === "confirm" ? "Not now" : "Cancel"} onClick={onCancel} />}
+    </div>
+  );
+}
+function BalanceSheet({ account = null, prefill = null, mode, country = "CA", onSubmit, onClose }) {
+  const m = mode || (account ? "update" : "add");
+  const title = m === "confirm" ? "Confirm the balance" : m === "add" ? "Add an account" : "Update balance";
+  const subtitle = m === "confirm"
+    ? "The account from your statement starts from this balance. Nothing is saved until you confirm."
+    : m === "add"
+      ? "An account no bank connection can see. Its balance counts in safe to spend, Watch and net worth, as a linked account's does."
+      : `${(account && account.name) || "This account"}: the balance now, and the date it was true. A linked bank updates on its own; this one changes when you update it.`;
+  return (
+    <Sheet title={title} subtitle={subtitle} onClose={onClose}>
+      <BalanceForm account={account} prefill={prefill} mode={m} country={country} onSubmit={(e) => { onSubmit && onSubmit(e); onClose(); }} onCancel={onClose} />
+    </Sheet>
+  );
+}
+// The balance editor written into the household's data. Linked accounts never reach it.
+function BalanceSheetFor({ data, setAppData, accountId = null, mode, onClose }) {
+  const account = accountId != null ? (data.accounts || []).find(a => a && a.id === accountId && isEditableAccount(a)) || null : null;
+  if (accountId != null && !account) return null;
+  return <BalanceSheet account={account} mode={mode} country={data.profile && data.profile.country}
+    onSubmit={(entry) => setAppData(prev => enterBalance(prev, entry, new Date()))} onClose={onClose} />;
+}
+// One quiet line when an entered balance is more than a week old: "Entered 9 days ago." and Update.
+function StaleBalanceLine({ stale, onUpdate }) {
+  if (!stale) return null;
+  return (
+    <div style={{ ...row(), marginTop: SPACE.sm }}>
+      <span style={{ ...rowText(), color: C.muted, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{stale.text}</span>
+      {onUpdate && <button onClick={e => { e.stopPropagation(); onUpdate(stale.accountId); }} aria-label={`Update the balance of ${stale.name || "this account"}`}
+        style={{ ...rowControl(), background: "none", border: `1px solid ${C.border}`, borderRadius: 10, padding: "0 14px", color: C.mutedHi, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Update</button>}
+    </div>
+  );
+}
+// How we got this, for a figure built on entered balances: "Balance you entered, as of Oct 14."
+function EnteredBalanceLines({ note, onUpdate }) {
+  if (!note || (!note.lines.length && !note.stale)) return null;
+  return (
+    <div style={{ marginTop: SPACE.md }}>
+      {note.lines.map((l, i) => <div key={i} style={{ color: C.mutedHi, ...TYPE.footnote, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{l}</div>)}
+      <StaleBalanceLine stale={note.stale} onUpdate={onUpdate} />
+    </div>
+  );
+}
+// The base-currency cash accounts safe to spend and Watch start from (SafeSpendEngine's own rule).
+function cashAccountsUsed(data) {
+  const base = baseCurrencyOf(data);
+  return (data.accounts || []).filter(a => isCashAccount(a) && accountCurrencyOf(a, data) === base);
+}
+function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
+  const today = new Date();
+  // Coming back to this step shows the balance already entered, which Continue then updates.
+  const [amount, setAmount] = useState(() => (account && account.balanceEntered ? String(amountShownFor(account)) : ""));
+  const [asOf, setAsOf] = useState(() => (account && account.balanceAsOf) || todayISO(today));
+  const [tried, setTried] = useState(false);
+  const problem = balanceEntryProblem({ amount, asOf }, today);
+  const word = kindLabel("chequing", country).toLowerCase();
+  return (
+    <div style={{ padding: "8px 0" }}>
+      <div style={{ color: C.cream, fontWeight: 800, fontSize: 18, marginBottom: 8 }}>Your {word} balance</div>
+      <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>What's in your {word} account today? Safe to spend starts from it. Savings, cards and loans can be added later in Settings, and a bank can be connected any time.</div>
+      <div style={sheetLabel()}>Balance</div>
+      <SheetField prefix="$" inputMode="decimal" value={amount} onChange={setAmount} label={`${kindLabel("chequing", country)} balance`} placeholder="0.00" />
+      <div style={sheetLabel()}>As of</div>
+      <SheetField type="date" value={asOf} max={todayISO(today)} onChange={setAsOf} label="Date this balance was true" />
+      <BalanceProblem text={tried ? problem : null} />
+      <div style={{ marginTop: SPACE.lg }}><Btn label="Continue →" onClick={() => { setTried(true); if (!problem) onDone && onDone({ amount, asOf }); }} /></div>
+      <div style={{ marginTop: GAP.controlToControl }}><Btn label="Not now" onClick={onSkip} outline color={C.muted} small /></div>
+    </div>
+  );
+}
+
 function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected}){
   const [step,setStep]=useState(0);
   // profile.province holds CA province code when country=CA, US state code when country=US.
@@ -4104,6 +4239,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // Step 2b: a pending statement-import review. { rows, anchors, reconciliation, confidence, stmtName }
   // The parsed rows do NOT enter appData until the user confirms which to import (see StatementReview).
   const [stmtReview, setStmtReview] = useState(null);
+  // manual-balances: after a statement's rows are in, the household confirms its account's balance,
+  // pre-filled with the closing balance when the statement printed one. { accountId, prefill } | null.
+  const [balanceConfirm,setBalanceConfirm]=useState(null);
 
   // Commit a set of already-validated transactions to appData under a "Statement" account.
   // Shared by the deterministic CSV path and the confirmed PDF-review path. Nothing calls this
@@ -4124,8 +4262,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       }
       return out.map((t,i)=> String(t.id||"").startsWith("stmt_") ? {...t, id:`stmt_${i}`} : t);
     });
-    onAccountsConnected?.([{id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement',currency:baseCurrencyOf({profile:p})}], []);
-    return taggedTxns.length;
+    // manual-balances: a re-upload keeps the account as it is, so a balance the household entered for it
+    // is not reset to $0. A new statement account starts at $0 until its balance is confirmed.
+    if (!existingStmt) onAccountsConnected?.([{id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement',currency:baseCurrencyOf({profile:p})}], []);
+    return { count: taggedTxns.length, accountId: newAccountId };
   };
 
   const handleStatementUpload = async (e) => {
@@ -4141,9 +4281,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         const txns = parseCSVStatement(text);
         if (!txns) throw new Error('Could not detect columns. Try a PDF instead.');
         if (txns.length === 0) throw new Error('No transactions found in this file.');
-        const n = commitStatementTxns(txns.map(t=>({ ...t, source:'csv' })), stmtName);
+        const { count: n, accountId } = commitStatementTxns(txns.map(t=>({ ...t, source:'csv' })), stmtName);
         setStmtStatus('done'); setStmtMsg(`${n} transactions imported ✓`);
-        setTimeout(() => setBankStage('done'), 900);
+        // manual-balances: the balance comes next, pre-filled from a Balance column when the file has one.
+        setBalanceConfirm({ accountId, prefill: csvClosingBalance(text) });
         return;
       }
       // PDF → the model transcribes → JS validates → the USER confirms. Nothing is written yet.
@@ -4157,7 +4298,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         throw new Error("We couldn't read this statement confidently. Upload a CSV instead, or enter your numbers by hand.");
       }
       setStmtStatus(null); setStmtMsg('');
-      setStmtReview({ ...batch, stmtName });
+      // manual-balances: the closing balance is offered only when it is printed in the statement text.
+      setStmtReview({ ...batch, stmtName, balancePrefill: closingBalancePrefill(batch.anchors, text) });
     } catch (err) {
       setStmtStatus('error');
       setStmtMsg(err.message || 'Could not read file. Try a different format.');
@@ -4174,10 +4316,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     // reviewedRows carry the user's edits; rowsToImport re-checks that no failed row slips through.
     const toImport = rowsToImport(reviewedRows, selectedIds);
     if (toImport.length === 0) { setStmtReview(null); return; }
-    const n = commitStatementTxns(toImport, stmtReview.stmtName);
+    const { count: n, accountId } = commitStatementTxns(toImport, stmtReview.stmtName);
+    const prefill = stmtReview.balancePrefill || null;
     setStmtReview(null);
     setStmtStatus('done'); setStmtMsg(`${n} transaction${n===1?'':'s'} imported ✓`);
-    setTimeout(() => setBankStage('done'), 900);
+    setBalanceConfirm({ accountId, prefill });
   };
   const cancelStatementReview = () => { setStmtReview(null); setStmtStatus(null); setStmtMsg(''); };
 
@@ -4185,6 +4328,22 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // clearing here would destroy a bank the user already connected (it was safe only while connAccts
   // was throwaway local state).
   const skipBank=()=>{setBankStage("skipped");};
+  // manual-balances: the chequing balance typed on the "Enter it myself" step becomes a Manual chequing
+  // account, promoted into appData as a connected account is. Going back and entering it again updates
+  // that account rather than adding a second one.
+  const manualChequing=connAccts.find(a=>a.institution==="Manual"&&isEditableAccount(a)&&accountKindOf(a)==="chequing")||null;
+  const saveManualChequing=({amount,asOf})=>{
+    const prior=manualChequing;
+    const next=enterBalance({profile:p,accounts:connAccts,debts:[]},{accountId:prior?prior.id:undefined,kind:"chequing",amount,asOf},new Date());
+    const acct=prior?next.accounts.find(a=>a.id===prior.id):next.accounts[next.accounts.length-1];
+    if(acct&&acct!==prior) onAccountsConnected?.([acct],[]);
+    setStep(3);
+  };
+  const confirmStatementBalance=(entry)=>{
+    const next=enterBalance({profile:p,accounts:connAccts,debts:[]},entry,new Date());
+    const acct=next.accounts.find(a=>a.id===entry.accountId);
+    if(acct) onAccountsConnected?.([acct],[]);
+  };
   const addBill=()=>setBills([...bills,{name:"",amount:"",date:"1"}]);
   const rmBill=i=>setBills(bills.filter((_,x)=>x!==i));
   const upBill=(i,f,v)=>setBills(bills.map((b,x)=>x===i?{...b,[f]:v}:b));
@@ -4293,6 +4452,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
           </label>
           {stmtReview && <StatementReview batch={stmtReview} onConfirm={confirmStatementReview} onCancel={cancelStatementReview}/>}
+          {balanceConfirm && <BalanceSheet mode="confirm" country={p.country} prefill={balanceConfirm.prefill}
+            account={connAccts.find(a=>a.id===balanceConfirm.accountId) || {id:balanceConfirm.accountId,type:"checking",balance:0,institution:"Statement"}}
+            onSubmit={confirmStatementBalance} onClose={()=>{setBalanceConfirm(null);setBankStage('done');}}/>}
           {!stmtStatus&&<div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
         </div>
 
@@ -4311,12 +4473,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         <div style={{color:C.muted,fontSize:13,marginTop:8}}>{Math.round(bankProg)}%</div>
       </div>}
 
-      {bankStage==="skipped"&&<div style={{textAlign:"center",padding:"20px 0"}}>
-        <div style={{fontSize:48,marginBottom:12}}>✏️</div>
-        <div style={{color:C.cream,fontWeight:800,fontSize:18,marginBottom:8}}>Entering manually</div>
-        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>No problem. You can connect your bank any time from Settings for live data.</div>
-        <Btn label="Continue →" onClick={()=>setStep(3)}/>
-      </div>}
+      {/* manual-balances: "Enter it myself" asks for the chequing balance, so a household with no bank
+          reaches a real safe to spend on Today instead of one built on $0. */}
+      {bankStage==="skipped"&&<ManualBalanceStep country={p.country} account={manualChequing} onDone={saveManualChequing} onSkip={()=>setStep(3)}/>}
       {bankStage==="done"&&<div>
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
@@ -5383,6 +5542,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [showTransparency,setShowTransparency]=useState(false);
   const [explain,setExplain]=useState(null);   // which main number is being explained
   const [showTerm,setShowTerm]=useState(null); // which term the one ⓘ was pressed on
+  // manual-balances: the balance editor open from Today: { accountId } to update one, { add: true } to add one.
+  const [balanceEdit,setBalanceEdit]=useState(null);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
@@ -5433,6 +5594,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const displayedSafe = displayedSafeToSpend(data); // what Today shows; Decisions' move-to-savings is 25% of it, as Meet's extra is
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
+  // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
+  const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
+  const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
   // Tester suggestions item 1: the setup checklist. "First number seen" is recorded the first time this
   // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
   const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
@@ -5576,6 +5740,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe to spend</div>
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
+              {setAppData && !data.demo && (
+                /* manual-balances: no bank needed. The balance typed here is where safe to spend starts. */
+                <button onClick={e=>{e.stopPropagation();setBalanceEdit({add:true});}} style={{marginTop:16,minHeight:LAYOUT.minTap,background:C.green+"22",border:`1px solid ${C.green}55`,color:C.greenInk,borderRadius:99,padding:"10px 20px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"block"}}>Enter your balance</button>
+              )}
               {onTryDemo && !data.demo && (
                 /* Sprint Z #15: explore the full app with sample data — no bank login (App reviewers). */
                 <button onClick={onTryDemo} style={{marginTop:16,background:C.teal+"22",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"10px 20px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🧪 Try with demo data</button>
@@ -5628,6 +5796,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 </div>
               );
             })()}
+            {/* manual-balances: one quiet line when a balance safe to spend uses was entered more than a week ago. */}
+            {hasCashAccount && cashNote.stale && <div style={{marginTop:-6,marginBottom:14}}><StaleBalanceLine stale={cashNote.stale} onUpdate={openBalance}/></div>}
 
             {/* ── Can I afford this? ──────────────────────────────────────
                 Pure math. No AI call. Instant answer.
@@ -5813,8 +5983,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           ]}
           changeLabel="See the full working"
           onChange={()=>{setExplain(null);setShowTransparency(true);}}
+          entered={cashNote} onUpdateBalance={openBalance?(id)=>{setExplain(null);openBalance(id);}:null}
           onClose={()=>setExplain(null)}/>
       )}
+      {balanceEdit&&setAppData&&<BalanceSheetFor data={data} setAppData={setAppData} accountId={balanceEdit.add?null:balanceEdit.accountId} onClose={()=>setBalanceEdit(null)}/>}
       {showTerm&&(
         <HowWeGotThis
           title={showTerm}
@@ -6908,7 +7080,9 @@ function DebtLinkPrompt({ match, setAppData }) {
   );
 }
 
-function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose }) {
+// `entered` (lib/manualBalances.js enteredBalanceNote) says which balances behind the figure the household
+// typed in, and when they were true; onUpdateBalance(accountId) opens that account's balance editor.
+function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose, entered = null, onUpdateBalance = null }) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",...overlaySafe()}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
@@ -6934,6 +7108,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
             <CalcByFlourish style={{marginTop:SPACE.md}}/>
           </div>
         )}
+        <EnteredBalanceLines note={entered} onUpdate={onUpdateBalance}/>
         {source&&<div style={{color:C.muted,...TYPE.footnote,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Source: {source}</div>}
         {changeLabel&&onChange&&(
           <button onClick={onChange} style={{marginTop:SPACE.lg,width:"100%",background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:14,
@@ -7396,7 +7571,8 @@ function watchRangeExplanation(key, ctx) {
     const cash = (data.accounts || []).filter(a => isCashAccount(a) && accountCurrencyOf(a, data) === base);
     return { title: rowLabel("start"), value: S.check.start,
       meaning: "What is in your everyday accounts now, to the cent: where the forecast starts. The headline above shows the same balance rounded down to the dollar, as Today does.",
-      inputs: [...cash.map(a => ({ label: a.name || "Account", value: formatMoney(num(a.balance), { cents: true }) })), { label: "Total", value: S.check.start }] };
+      inputs: [...cash.map(a => ({ label: a.name || "Account", value: formatMoney(num(a.balance), { cents: true }) })), { label: "Total", value: S.check.start }],
+      entered: enteredBalanceNote(cash, new Date()) };
   }
   if (key === "low") {
     const to = rangeSummary(forecast, S.lowDay, { avgDailySpend });
@@ -7481,6 +7657,8 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
   // days, so 90d is a longer list, not a wall of empty dates.
   const [range,setRange]=useState(WATCH_RANGES.includes(initialRange) ? initialRange : 30);
   const [explainWatch,setExplainWatch]=useState(false);
+  // manual-balances: the account whose entered balance is being updated from How we got this.
+  const [balanceEdit,setBalanceEdit]=useState(null);
   // Which figure of the range summary is open in How we got this: low, end, in, bills, spend, or a
   // paycheque ("pay:<index>").
   const [explainRange,setExplainRange]=useState(null);
@@ -7699,8 +7877,10 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
       const close = () => setExplainRange(null);
       const ex = watchRangeExplanation(explainRange, { summary, range, forecast: _forecast, avgDailySpend: engineDailySpend, data, watchIncome, dayLabel,
         canEdit: !!setAppData, close, openDailySpend: () => setShowDailySpend(true) });
-      return ex ? <HowWeGotThis title={ex.title} value={ex.value} meaning={ex.meaning} inputs={ex.inputs} changeLabel={ex.changeLabel} onChange={ex.onChange} onClose={close}/> : null;
+      return ex ? <HowWeGotThis title={ex.title} value={ex.value} meaning={ex.meaning} inputs={ex.inputs} changeLabel={ex.changeLabel} onChange={ex.onChange} onClose={close}
+        entered={ex.entered} onUpdateBalance={setAppData?(id)=>{close();setBalanceEdit(id);}:null}/> : null;
     })()}
+    {balanceEdit&&setAppData&&<BalanceSheetFor data={data} setAppData={setAppData} accountId={balanceEdit} onClose={()=>setBalanceEdit(null)}/>}
     {explainWatch&&(
       <HowWeGotThis
         title="Starting balance"
@@ -7713,6 +7893,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
         ]}
         changeLabel={setAppData?"Change your daily spend":null}
         onChange={setAppData?()=>{setExplainWatch(false);setShowDailySpend(true);}:null}
+        entered={enteredBalanceNote(cashAccountsUsed(data), new Date())} onUpdateBalance={setAppData?(id)=>{setExplainWatch(false);setBalanceEdit(id);}:null}
         onClose={()=>setExplainWatch(false)}/>
     )}
     <ScreenFootnote>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</ScreenFootnote>
@@ -9080,6 +9261,8 @@ function SpendScreen({data, setAppData, setScreen}){
 function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
   const [explainNetWorth,setExplainNetWorth]=useState(false);
+  // manual-balances: the account whose entered balance is being updated from net worth's How we got this.
+  const [balanceEdit,setBalanceEdit]=useState(null);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
@@ -9484,7 +9667,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         meaning={`Every account and debt listed on this screen, added up: what you have, less what you owe. A debt linked to its bank card is counted once. Accounts in another currency are left out.${nwRows.matches.length?" Two rows marked below may be the same card counted twice: answer the question on this screen to link them.":""}`}
         inputs={[...nwRows.rows.map(r=>({label:r.mayCountTwice?`${r.label}, may be counted twice`:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
           {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
+        entered={enteredBalanceNote((data.accounts||[]).filter(a=>nwRows.rows.some(r=>r.kind!=="debt"&&r.id===a.id)), new Date())}
+        onUpdateBalance={setAppData?(id)=>{setExplainNetWorth(false);setBalanceEdit(id);}:null}
         source="Your accounts and debts" onClose={()=>setExplainNetWorth(false)}/>}
+      {balanceEdit&&setAppData&&<BalanceSheetFor data={data} setAppData={setAppData} accountId={balanceEdit} onClose={()=>setBalanceEdit(null)}/>}
       </>; })()}
 
     {tab==="tax"&&(()=>{
@@ -11514,6 +11700,23 @@ function InlineGoalEditor({data, setAppData, color}){
   );
 }
 
+// manual-balances: Settings → Accounts. Each control holds its own open state, so the section needs none.
+function AccountBalanceButton({ account, data, setAppData }) {
+  const [open, setOpen] = useState(false);
+  return (<>
+    <button onClick={() => setOpen(true)} style={{ marginTop: GAP.textToControl, minHeight: LAYOUT.minTap, background: "none", border: `1px solid ${C.border}`, borderRadius: 10,
+      padding: "0 14px", color: C.mutedHi, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Update balance</button>
+    {open && <BalanceSheetFor data={data} setAppData={setAppData} accountId={account.id} onClose={() => setOpen(false)} />}
+  </>);
+}
+function AddAccountButton({ data, setAppData, color }) {
+  const [open, setOpen] = useState(false);
+  return (<>
+    <button onClick={() => setOpen(true)} style={{ width: "100%", marginTop: GAP.textToControl, background: "none", border: `1px solid ${color}44`, borderRadius: 10, padding: "10px",
+      minHeight: LAYOUT.minTap, color, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ Add an account</button>
+    {open && <BalanceSheetFor data={data} setAppData={setAppData} mode="add" onClose={() => setOpen(false)} />}
+  </>);
+}
 function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,onAddBank,onDisconnectBank,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const s={background:C.card,border:`1px solid ${color}33`,borderRadius:"0 0 18px 18px",padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`};
@@ -11729,7 +11932,9 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
             <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontSize:13,fontWeight:600,...wrapText()}}>{a.name}</div>
-                <div style={{color:C.muted,fontSize:13}}>{a.type} · {a.institution}</div>
+                <div style={{color:C.muted,fontSize:13}}>{a.type} · {a.institution}{a.balanceEntered&&a.balanceAsOf?` · as of ${formatAsOf(a.balanceAsOf,new Date())}`:""}</div>
+                {/* manual-balances: a manual or imported account's balance is the household's to enter. */}
+                {setAppData&&!data.demo&&!isPlaidLinked(a)&&<AccountBalanceButton account={a} data={data} setAppData={setAppData}/>}
               </div>
               <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
                 {a.balance>=0?"$":"−$"}{Math.abs(a.balance||0).toFixed(2)}
@@ -11745,6 +11950,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
             </div>
           ))
         }
+        {setAppData&&!data.demo&&<AddAccountButton data={data} setAppData={setAppData} color={color}/>}
         <button onClick={onAddBank} style={{width:"100%",marginTop:GAP.textToControl,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",minHeight:LAYOUT.minTap,color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Connect Another Bank
         </button>
