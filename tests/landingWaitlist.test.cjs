@@ -96,6 +96,13 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
     && /<WaitlistForm source="bottom_cta" founding=\{waitlistArea === "founding"\}\/>/.test(second), "5f the bottom form: the launch heading and promise only on today's page");
   t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "5g the sign-up card's own status check is unchanged");
 
+  // ── 6. all 50 taken: "Create your account" (approved by ChatGPT and Grok, 2026-10-15) ──────────────
+  const hero = auth.slice(auth.indexOf('<div className="fll-hero-form">'), auth.indexOf("<FoundingOffer", auth.indexOf('<div className="fll-hero-form">')));
+  t.ok(/\{waitlistArea === "account" && \(\s*<div className="fll-capture fll-account">\s*<style dangerouslySetInnerHTML=\{\{ __html: WAITLIST_FORM_CSS \}\}\/>\s*<button type="button" className="fll-btn" onClick=\{goSignup\}>Create your account<\/button>\s*<p className="fll-consent">Subscriptions are paid and used on flourishmoney\.app\. Not yet available in the iPhone and Android apps\.<\/p>\s*<\/div>\s*\)\}/.test(hero),
+    "6a the hero, only when all 50 are taken: one button, \"Create your account\", that opens sign-up, and the approved line under it");
+  t.eq((APP.match(/>Create your account</g) || []).length, 1, "6b …the only such button");
+  t.ok(/const goSignup = \(\) => \{ setMode\("signup"\);[^}]*setShowAuth\(true\); \};/.test(auth), "6c goSignup is the sign-up opener the page already uses");
+
   t.summary("landingWaitlist.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();

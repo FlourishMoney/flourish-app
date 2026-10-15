@@ -407,6 +407,19 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.waitForFunction(() => !document.querySelector(".fll-input"), null, { timeout: 8000 }).catch(() => {});
     const v = await look(page);
     t.eq([v.inputs, v.cta2, v.block], [0, false, null], "11j open, all 50 taken: no waitlist form, no \"Be first to know\", no founding block");
+    const cta = await page.evaluate(() => {
+      const box = document.querySelector(".fll-hero-form .fll-account");
+      const btn = box && box.querySelector("button"), line = box && box.querySelector(".fll-consent");
+      const r = (e) => e.getBoundingClientRect();
+      return box ? { button: btn.textContent.trim(), line: line.textContent.trim(), h: r(btn).height, under: r(line).top >= r(btn).bottom && r(line).top - r(btn).bottom <= 16,
+        buttons: [...document.querySelectorAll("button")].filter(b => b.textContent.trim() === "Create your account").length } : null;
+    });
+    t.eq(cta && [cta.button, cta.line, cta.buttons], ["Create your account", "Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.", 1],
+      "11k …the hero shows one button, \"Create your account\", with the approved line under it");
+    t.ok(cta && cta.h >= 44 && cta.under, `11l …a full tap target (${cta && Math.round(cta.h)}px), the line directly under it`);
+    await page.getByRole("button", { name: "Create your account" }).click();
+    await page.getByText("Create your free account").waitFor();
+    t.ok(await page.locator('input[type="password"]').first().isVisible(), "11m tapping it opens sign-up");
     await ctx.close();
   }
 

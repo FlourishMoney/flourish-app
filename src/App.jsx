@@ -14549,6 +14549,7 @@ const WAITLIST_FORM_CSS = `
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
             .fll-contact-link{ color:#1b5e20; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
+            .fll-account .fll-consent{ margin-block:10px 0; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
               .fll-input{ width:auto; }
@@ -15271,6 +15272,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               <div className="fll-hero-form">
                 <FoundingCard/>
                 {waitlistForms && <WaitlistForm source="hero" founding={waitlistArea === "founding"}/>}
+                {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
+                    waitlist, one button that opens sign-up, and the one line under it. */}
+                {waitlistArea === "account" && (
+                  <div className="fll-capture fll-account">
+                    <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+                    <button type="button" className="fll-btn" onClick={goSignup}>Create your account</button>
+                    <p className="fll-consent">Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.</p>
+                  </div>
+                )}
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
               {waitlistForms && <FoundingOffer launched={waitlistArea === "founding"}/>}

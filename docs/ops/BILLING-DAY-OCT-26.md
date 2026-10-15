@@ -364,7 +364,9 @@ welcome email (`tests/launchEmail.test.cjs` section 6). From D2 the landing's fo
 "We'll email you your founding price link. We won't send other marketing emails from this form.
 Unsubscribe any time. Who we are: see Contact below.", and a signup under it is recorded as consent version
 `2026-10-26`, which covers the founding link email only. Once the spots are full, the forms and the
-founding block go (`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`).
+founding block go, and the hero shows one button, "Create your account", that opens sign-up, with the line
+"Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps."
+(`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`).
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
