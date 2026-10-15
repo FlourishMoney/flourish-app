@@ -181,3 +181,27 @@ approved; they are purchasable in production once the 1.1 build is live there.
 4. The 1.1 store builds: `VITE_IAP_ENABLED=true`, `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the build shell
 5. For TestFlight and internal testing only: Netlify `IAP_ACCEPT_SANDBOX` = `true` while testers buy with sandbox accounts; remove it before release (the App Review account is accepted without it)
 6. Before 1.1 ships: replace the Terms of Service sentence "The iOS and Android apps are free, and there is nothing to buy in them" (section 7; legal review). It is unchanged on this branch.
+
+---
+
+## Item 8. Android, from the vc14 Play Console review
+
+**(a) Edge to edge on Android 15 and later.** No deprecated status or navigation bar call or attribute exists
+in the shell we own or in any plugin's source. The calls Play reported live in AndroidX library code that
+nothing calls (core-splashscreen `SplashScreen$Impl31`, androidx.activity `EdgeToEdgeApi23/26/29`,
+androidx.core `WindowCompat` `setDecorFitsSystemWindows`); R8 (b) removes them from the release build (checked:
+none left). The window behind the transparent bars is the app's own background, light and dark, and on Android
+the status bar's icons follow the app's theme. Insets reach the page (viewport-fit=cover, Capacitor SystemBars)
+and `src/lib/safeArea.js` pads with them. **Emulator screenshots were not taken**: the disk had 11 to 12 GB
+free, and the brief allows the emulator only at 15 GB or more.
+
+**(b) R8.** Release builds now run R8 (code and resource shrinking, `proguard-android-optimize.txt`, the app's
+`proguard-rules.pro`). Measured on this branch, 2026-10-15: the release bundle went from 7,568,172 bytes to
+5,524,130 (2,044,042 smaller, 27 percent). For reference, vc14 (no RevenueCat) was 4,748,338. The mapping file
+is `android/app/build/outputs/mapping/release/mapping.txt` (31.6 MB) and is inside the bundle
+(`BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map`), so Play Console reads it on upload.
+Checked in the minified bytecode: every plugin class kept by name (Share, Local Notifications, RevenueCat's
+PurchasesPlugin, FlourishReview, Capacitor's own), their JavaScript-facing methods kept (`purchasePackage`,
+`restorePurchases`, `getOfferings`, `requestReview`, `share`, `schedule`), and the WebView bridge's
+`@JavascriptInterface` methods kept. **Not run on a device**: the first R8 build must be opened on a phone or
+the emulator (and in Play's pre-launch report) before it is uploaded.
