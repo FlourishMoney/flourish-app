@@ -21,11 +21,12 @@ Before Monday: section 1, ending with deploy **D0** (live Stripe variables; bill
 2. Run 0009, then its read-only check (2.2).
 3. Run 0010, then its read-only check (2.3).
 4. Run 0016, then its read-only check (2.4).
-5. `BILLING_ENABLED=true`, Production, Trigger deploy (**D1**); the curl answers 401 (section 3).
-6. Smoke purchase: Monthly on Amanda's own card, the read-only checks, refund, cancel (section 4).
-7. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
-8. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**) (section 6).
-9. Watch the first hour (section 7). Stop if section 8 says so.
+5. Stripe portal pre-check: `node scripts/stripe-portal-check.cjs` says `OK` (section 3, step 1). Not OK: stop.
+6. `BILLING_ENABLED=true`, Production, Trigger deploy (**D1**); the curl answers 401 (section 3).
+7. Smoke purchase: Monthly on Amanda's own card, the read-only checks, refund, cancel (section 4).
+8. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
+9. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**) (section 6).
+10. Watch the first hour (section 7). Stop if section 8 says so.
 
 Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
 
@@ -40,7 +41,8 @@ Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
    `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
 2. **Stripe customer portal, live mode.** Allow cancel and payment-method updates. **Do not let it switch
    to the founding price.** If plan switching is on and the founding price is listed, any subscriber can
-   move themselves onto $79.99 in the portal; the founding rules are only enforced in our checkout.
+   move themselves onto $79.99 in the portal; the founding rules are only enforced in our checkout. The
+   exact screen, setting and a read-only check are section 3, step 1, which must pass before D1.
 3. **Netlify variables, Production context only** (Site configuration → Environment variables). Deploy
    previews and branch deploys keep the test values, so a preview can never charge a real card:
    `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (the live endpoint's own `whsec_`),
@@ -162,18 +164,39 @@ Nothing else runs in the SQL editor on Monday. **Not** 0017, **not** `waitlist_f
 
 ## 3. Turn billing on
 
-**Who:** Amanda, in Netlify. Nobody else holds the Netlify login.
+**Who:** Amanda, in Stripe and then Netlify. Nobody else holds either login.
 
-1. Site configuration → Environment variables → add `BILLING_ENABLED`, value exactly `true` (not
+1. **Pre-check, before D1: the customer portal cannot switch anyone to the founding price.** Our
+   checkout decides who may have $79.99 a year; Stripe's portal does not, and billing.js opens the
+   portal with its **default** configuration.
+   - **The screen:** Stripe Dashboard in **live mode** (Test mode off) → **Settings** → **Billing** →
+     **Customer portal** (dashboard.stripe.com/settings/billing/portal).
+   - **The setting:** under subscriptions, **Switch plan**. Leave it **off**, or, if it is on, make sure
+     the **Founding Annual** price ($79.99 a year) is not one of the prices it lists. Save.
+   - **Confirm it, read-only,** from the main checkout once this branch is merged. The key is typed
+     hidden, used for this one command, and never printed or stored. A live restricted key with read
+     access to the customer portal and to prices is enough; the live secret key also works. The script
+     only makes GET requests and changes nothing:
+
+```zsh
+cd ~/Projects/flourish-app
+read -rs "STRIPE_READ_KEY?Stripe live key, read-only (hidden): "; echo
+STRIPE_READ_KEY="$STRIPE_READ_KEY" node scripts/stripe-portal-check.cjs
+unset STRIPE_READ_KEY
+```
+
+   Expect a line starting `OK:` (Switch plan off, or on without the founding price; it lists the prices
+   it offers). `NOT OK:` (including a test-mode key) means stop: fix the portal and run it again.
+2. Site configuration → Environment variables → add `BILLING_ENABLED`, value exactly `true` (not
    `TRUE`, not `1`), **Production** context only.
-2. Deploys → Trigger deploy → Deploy site. Wait for "Published". This is deploy **D1**.
-3. Check from a terminal (no login, no secret). 401 means on; 404 means still off:
+3. Deploys → Trigger deploy → Deploy site. Wait for "Published". This is deploy **D1**.
+4. Check from a terminal (no login, no secret). 401 means on; 404 means still off:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://flourishmoney.app/api/billing
 ```
 
-4. On a computer, signed in at flourishmoney.app: Settings shows "Flourish Plus" with "See plans". On
+5. On a computer, signed in at flourishmoney.app: Settings shows "Flourish Plus" with "See plans". On
    the iPhone or Android app nothing about paying appears anywhere (by design, Apple 3.1.3(b)).
 
 What `BILLING_ENABLED` gates: only `netlify/functions/billing.js` (the status call, checkout and the
@@ -450,7 +473,7 @@ where w.founding_position between 1 and 50 and not w.is_test
    lowest numbers, and their welcome email predates the founding line: nothing has told them they are
    founding. Section 6 step 2 counts them. Whether Monday's email counts as the launch-day email for them
    is a CASL decision.
-5. **The Stripe customer portal could sell the founding price to anyone.** If plan switching is enabled
+5. **Addressed (round 3): section 3 step 1 checks it before D1. The Stripe customer portal could sell the founding price to anyone.** If plan switching is enabled
    and the founding price is listed, a subscriber can switch to $79.99 in the portal; our founding rules
    only run in our checkout. Section 1 step 2. The checkout screen's own "manage" text says "switch plan".
 6. **Turning a flag on or off needs a deploy.** Netlify functions keep the variables of their deploy.

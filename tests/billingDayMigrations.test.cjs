@@ -145,9 +145,9 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     const glance = (doc.match(/## Monday, in order\n([\s\S]*?)\n---/) || ["", ""])[1];
     const steps = [...glance.matchAll(/^(\d+)\. (.*)$/gm)].map(m => m[2]);
     const at = (rx) => steps.findIndex(x => rx.test(x));
-    const order = [/^Run 0009/, /^Run 0010/, /^Run 0016/, /^`BILLING_ENABLED=true`/, /^Smoke purchase/, /^`OPEN_SIGNUP=true`/, /^`FOUNDING_LINK_EMAIL=true`/].map(at);
+    const order = [/^Run 0009/, /^Run 0010/, /^Run 0016/, /^Stripe portal pre-check/, /^`BILLING_ENABLED=true`/, /^Smoke purchase/, /^`OPEN_SIGNUP=true`/, /^`FOUNDING_LINK_EMAIL=true`/].map(at);
     t.ok(order.every(i => i >= 0) && order.every((i, k) => k === 0 || i > order[k - 1]),
-      "8m Monday, in order: 0009, 0010, 0016, billing on, the smoke purchase, OPEN_SIGNUP, the founding link email");
+      "8m Monday, in order: 0009, 0010, 0016, the Stripe portal pre-check, billing on, the smoke purchase, OPEN_SIGNUP, the founding link email");
     t.ok(/`OPEN_SIGNUP=true`, Production, Trigger deploy \(\*\*D2\*\*\)/.test(glance), "8n OPEN_SIGNUP comes with its own deploy (D2)");
     const signupSec = doc.slice(doc.indexOf("## 5. Open signup"), doc.indexOf("## 6. The founding link email"));
     t.ok(/add `OPEN_SIGNUP`, value exactly `true`/.test(signupSec) && /Trigger deploy → Deploy site/.test(signupSec) && /\{"action":"signup_status"\}/.test(signupSec),
