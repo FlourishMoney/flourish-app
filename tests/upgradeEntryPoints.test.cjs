@@ -5,8 +5,10 @@
 // Five screens (Today, Goals, the Credit gate, the coach's out-of-messages gate, What-If; six call sites)
 // opened the old feature Paywall directly, whose button says "Paid plans aren't open yet". They now go
 // through openUpgrade(): with BILLING_ENABLED on it opens the real checkout (UpgradeScreen); with it off it
-// opens the old Paywall, whose text stays exactly as today.
-//   1. the call sites;
+// opens the old Paywall, whose text stays exactly as today. Round 5: so do the three web trial prompts
+// (the sidebar trial card, the "N days left" banner, "Your free trial has ended"), which called
+// setShowPaywall(true) from an onClick and showed "Save 31%" and "Paid plans aren't open yet" with billing on.
+//   1. the call sites: every one, whatever the prop (onUpgrade, onClick, anything else);
 //   2. what the buttons say: billing off, today's words; billing on, "See plans", with no free trial
 //      promised in front of a paid checkout;
 //   3. the checkout's prices are the landing page's own words, and no other figure;
@@ -39,6 +41,15 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(APP.includes("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live."),
       "1e the old Paywall's words are unchanged (billing off)");
     t.eq((APP.match(/isDesktop=\{isDesktop\} onUpgrade=\{openUpgrade\} billingOn=\{billingUi\.show\}/g) || []).length, 2, "1f both Today renders know whether billing is on");
+    // Round 5: not only onUpgrade props. The one place left that opens the old Paywall is openUpgrade itself.
+    const opens = [...APP.matchAll(/setShowPaywall\(true\)/g)].map(m => APP.slice(APP.lastIndexOf("\n", m.index) + 1, APP.indexOf("\n", m.index)).trim());
+    t.eq(opens, ["const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };"],
+      "1g nothing opens the old Paywall directly (onClick included): only openUpgrade, with billing off");
+    for (const [name, rx] of [
+      ["the sidebar trial card", /<div onClick=\{openUpgrade\} [^\n]*\n(?:[^\n]*\n){1,4}[^\n]*>Upgrade to Flourish Plus →<\/div>/],
+      ["the \"N days left\" banner", /trialActive&&trialDaysLeft<=7&&\([\s\S]{0,1200}?<button onClick=\{openUpgrade\} [^\n]*>\n\s*Upgrade →\n/],
+      ["\"Your free trial has ended\"", />Your free trial has ended<\/span>\n\s*<button onClick=\{openUpgrade\} [^\n]*>\n\s*Upgrade Now\n/],
+    ]) t.ok(rx.test(APP), `1h ${name} opens checkout through openUpgrade`);
   }
 
   // ── 2. what the buttons say ─────────────────────────────────────────────────────────────────────

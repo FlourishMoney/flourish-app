@@ -17860,7 +17860,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
-            <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
+            <div onClick={openUpgrade} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
               </div>
@@ -17946,7 +17946,7 @@ input,button,select,textarea { font-family:inherit; }
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>
               {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
             </span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            <button onClick={openUpgrade} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               Upgrade →
             </button>
           </div>
@@ -17955,7 +17955,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:DARK_C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={openUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>
