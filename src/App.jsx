@@ -82,6 +82,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
+import { rememberHostedLink, hostedLinkFor, runHostedLink, successMetadata, savePlaidPending, readPlaidPending, clearPlaidPending, HOSTED_LINK_COPY } from "./lib/plaidHostedLink.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -681,7 +682,7 @@ async function callPlaid(action, params={}, options={}) {
   // Quality Sprint review: only auto-retry idempotent/safe actions (reads, keyed upserts, idempotent
   // deletes). Non-idempotent mutations (exchange_token = single-use public_token) must NOT auto-retry
   // — a lost response could otherwise double-act. retries:0 still performs 1 attempt.
-  const RETRY_SAFE = new Set(["create_link_token","get_accounts","get_transactions","get_liabilities","get_investments","list_items","migrate_items","delete_item","delete_account"]);
+  const RETRY_SAFE = new Set(["create_link_token","hosted_link_result","get_accounts","get_transactions","get_liabilities","get_investments","list_items","migrate_items","delete_item","delete_account"]);
   const maxAttempts = Math.max(1, options.retries ?? (RETRY_SAFE.has(action) ? 3 : 1));
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -927,17 +928,59 @@ function removeBillWithOverride(setAppData, idx, name) {
 
 // normalizeAccountBalance lives in ./lib/plaidNormalize.js (pure + unit-tested); imported above.
 
+// ─── Plaid Hosted Link (store apps) ───────────────────────────────────────────
+// lib/plaidHostedLink.js holds the flow and the reasons for it. This wires it to @capacitor/browser,
+// @capacitor/app and the server. One session at a time: a second tap while the browser is up does nothing.
+let hostedLinkOpen = false;
+async function openHostedLink({ linkToken, intent, onSuccess, onProblem }) {
+  const hosted = hostedLinkFor(linkToken);
+  if (!hosted || hostedLinkOpen) return;
+  hostedLinkOpen = true;
+  try {
+    const [{ Browser }, { App: CapApp }] = await Promise.all([import("@capacitor/browser"), import("@capacitor/app")]);
+    const ios = window.Capacitor?.getPlatform?.() === "ios";
+    savePlaidPending(localStorage, { mode: "hosted", link_token: linkToken, result_key: hosted.resultKey, intent });
+    const res = await runHostedLink({
+      openBrowser: (url) => Browser.open({ url }),
+      closeBrowser: () => (ios ? Browser.close() : undefined),
+      addAppUrlListener: (fn) => CapApp.addListener("appUrlOpen", fn),
+      addBrowserFinishedListener: (fn) => Browser.addListener("browserFinished", fn),
+      fetchResult: async () => callPlaid("hosted_link_result", { link_token: linkToken, result_key: hosted.resultKey }, { jwt: await getJwt() }),
+    }, { url: hosted.url });
+    clearPlaidPending(localStorage);
+    if (res.outcome === "success") { onSuccess(res.result.public_token, successMetadata(res.result)); return; }
+    if (res.outcome === "failed") { console.warn("[plaid] hosted link did not finish:", res.reason); noteReviewTrouble(); }
+    onProblem?.(res.outcome === "closed" ? "closed" : "failed");
+  } catch (err) {
+    console.warn("[plaid] hosted link could not start:", err?.message || err);
+    noteReviewTrouble();
+    onProblem?.("failed");
+  } finally {
+    hostedLinkOpen = false;
+  }
+}
+
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
 // never stale even if the callback closes over fresh state.
-function usePlaidLinkSDK(linkToken, onSuccess) {
+// In a store app the same hook opens Plaid Hosted Link instead (openHostedLink above), and Plaid's web
+// SDK is never loaded into the WebView: Plaid has deprecated it there. onProblem("closed"|"failed") is
+// how a store app hears that no bank was added; intent ("onboarding", "add", "reconnect", or a function
+// returning one) goes into the pending record.
+function usePlaidLinkSDK(linkToken, onSuccess, { intent = null, onProblem = null } = {}) {
+  const native = isNativeApp();
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
   useEffect(() => { if (sdkError) noteReviewTrouble(); }, [sdkError]); // Plaid's script failed: no review ask for a while
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+  const onProblemRef = useRef(onProblem);
+  useEffect(() => { onProblemRef.current = onProblem; }, [onProblem]);
+  const intentRef = useRef(intent);
+  useEffect(() => { intentRef.current = intent; }, [intent]);
 
   useEffect(() => {
+    if (native) return;   // store apps: Hosted Link, no script
     if (window.Plaid) { setSdkReady(true); return; }
     const SRC = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
     // Dedupe: another usePlaidLinkSDK instance may have already injected the script.
@@ -963,15 +1006,20 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
   }, []);
 
   const openPlaidLink = useCallback(() => {
+    if (native) {
+      const i = typeof intentRef.current === "function" ? intentRef.current() : intentRef.current;
+      openHostedLink({ linkToken, intent: i, onSuccess: (...args) => onSuccessRef.current(...args), onProblem: (kind) => onProblemRef.current?.(kind) });
+      return;
+    }
     if (!sdkReady || !window.Plaid || !linkToken) return;
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => onSuccessRef.current(...args),
       onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
     }).open();
-  }, [sdkReady, linkToken]);
+  }, [native, sdkReady, linkToken]);
 
-  return { openPlaidLink, plaidReady: sdkReady && !!linkToken, plaidSdkError: sdkError };
+  return { openPlaidLink, plaidReady: native ? !!hostedLinkFor(linkToken) : sdkReady && !!linkToken, plaidSdkError: native ? false : sdkError };
 }
 
 
@@ -4165,15 +4213,15 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
 
-  const fetchLinkToken = useCallback(async ()=>{
+  const fetchLinkToken = useCallback(async (keepError=false)=>{
     if(linkToken) return; // already have one
     // Quality Sprint item 6: offline → recoverable message + auto-retry when back online (effect below).
     if(typeof navigator!=="undefined" && navigator.onLine===false){ setBankError("You're offline. Reconnect to the internet, then tap Retry."); setLinkTokenLoading(false); return; }
     setLinkTokenLoading(true);
-    setBankError(null);
+    if(!keepError) setBankError(null);
     const jwt = await getJwt();
     callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
-      .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
+      .then(d=>{ rememberHostedLink(d); setLinkToken(d.link_token); setLinkTokenLoading(false); })
       .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
@@ -4246,7 +4294,17 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     }
   },[]);
 
-  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess);
+  // Store apps (Hosted Link): no bank was added. Say so on this step, then get a fresh link token so
+  // Connect is ready again: that is the way to try again. The message stays while the token is fetched.
+  const [hostedRetry,setHostedRetry]=useState(false);
+  const onHostedProblem=useCallback((kind)=>{
+    setBankStage("select");
+    setBankError(`${HOSTED_LINK_COPY[kind]||HOSTED_LINK_COPY.failed} ${HOSTED_LINK_COPY.again}`);
+    setLinkToken(null);
+    setHostedRetry(true);
+  },[]);
+  useEffect(()=>{ if(hostedRetry && !linkToken){ setHostedRetry(false); fetchLinkToken(true); } },[hostedRetry, linkToken]); // eslint-disable-line
+  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess,{ intent:"onboarding", onProblem:onHostedProblem });
   const isLinkReady = plaidReady && !linkTokenLoading;
   const initError   = plaidSdkError ? "Plaid SDK failed to load. Try refreshing the page." : null;
   const canConnect = isLinkReady && !initError;
@@ -13331,6 +13389,21 @@ function ConfirmedPage(){
   );
 }
 
+// /plaid/app is the store apps' universal link / App Link (Plaid's redirect_uri for Hosted Link). A bank's
+// own app opens it to hand the household back, and the phone opens Flourish. This page shows only when
+// the phone opened the link in a browser instead, so it says the one thing that is true: the bank step
+// finishes in the app.
+function PlaidAppReturnPage(){
+  return (
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <div style={{maxWidth:420,textAlign:"center"}}>
+        <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>Go back to Flourish.</h1>
+        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Your bank sign-in finishes in the Flourish app. You can close this page.</p>
+      </div>
+    </div>
+  );
+}
+
 // /support: the page App Store Connect's support URL points at. Same shell and type as /privacy
 // and /delete-account. Contact details live in src/lib/supportContact.js.
 function SupportPage({onBack, country = "CA"}){
@@ -16463,6 +16536,7 @@ export default function FlourishApp(){
     if (path === "/delete-account") return "delete-account";
     if (path === "/support") return "support";
     if (path === "/confirmed") return "confirmed";
+    if (path === "/plaid/app") return "plaid-app";
     // Prompt 3d: Kids is parked. /kids serves nothing and redirects to /, so the mini site
     // (KidsMiniSite, kept for the future family add-on) is not reachable in any build.
     if (path === "/kids") { try { window.history.replaceState(null, "", "/"); } catch { /* no history */ } return "home"; }
@@ -17565,8 +17639,35 @@ export default function FlourishApp(){
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });
   },[promoteConnectedAccounts]);
-  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
+  // Store apps (Hosted Link): no bank was added. Say so, and offer to try again through the same consent
+  // sheet as the first time (Settings renders it for pendingPlaid).
+  const onHostedProblem = useCallback((kind)=>{
+    const intent = linkIntentRef.current === "reconnect" ? "reconnect" : "add";
+    setReconnectToken(null);
+    confirmModal({ message: HOSTED_LINK_COPY[kind] || HOSTED_LINK_COPY.failed, confirmLabel: HOSTED_LINK_COPY.tryAgain, cancelLabel: HOSTED_LINK_COPY.notNow })
+      .then(again=>{ if(again) setPendingPlaid(intent); });
+  },[]);
+  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess, { intent: ()=>linkIntentRef.current, onProblem: onHostedProblem });
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
+  // Store apps: a Hosted Link session that ended while the system had closed the app. Its record is
+  // read once when the app opens; a session that added a bank finishes connecting it here, through the
+  // same success handler. Anything else is dropped: the household is back at the start of the app.
+  const hostedRecoveryRan = useRef(false);
+  useEffect(()=>{
+    if(hostedRecoveryRan.current || !user || !hydrated || !isNativeApp()) return;
+    hostedRecoveryRan.current = true;
+    const rec = readPlaidPending(localStorage);
+    if(!rec || rec.mode !== "hosted") return;
+    clearPlaidPending(localStorage);
+    (async ()=>{
+      try {
+        const r = await callPlaid("hosted_link_result", { link_token: rec.link_token, result_key: rec.result_key }, { jwt: await getJwt() });
+        if(r?.status !== "success" || !r.public_token) return;
+        linkIntentRef.current = rec.intent === "reconnect" ? "reconnect" : "add";
+        onReconnectSuccess(r.public_token, successMetadata(r));
+      } catch (err) { console.warn("[plaid] hosted link recovery skipped:", err?.message || err); }
+    })();
+  },[user, hydrated]); // eslint-disable-line
 
   // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -17594,6 +17695,7 @@ export default function FlourishApp(){
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
+  if(screen==="plaid-app")return <PlaidAppReturnPage/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
@@ -17684,6 +17786,7 @@ export default function FlourishApp(){
       // create_link_token is auth-required now — always pass the JWT.
       const opts = jwt ? { jwt } : undefined;
       const d = await callPlaid("create_link_token", payload, opts);
+      rememberHostedLink(d);
       setReconnectToken(d.link_token);
     } catch {
       noteReviewTrouble();
@@ -17701,7 +17804,7 @@ export default function FlourishApp(){
     const country = appData?.profile?.country || "CA";
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
-      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
+      .then(d=>{ rememberHostedLink(d); setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These

@@ -28,6 +28,21 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
 
+# The store apps' universal link / App Link files (Plaid Hosted Link's redirect_uri, /plaid/app). Both
+# must be served as JSON from these exact paths with no redirect; the files exist in public/.well-known, so
+# the SPA fallback below never answers for them. apple-app-site-association has no extension, hence the type.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "public, max-age=3600"
+
 # The self-unregistering kill-switch SW (public/sw.js) must NEVER be cached, so a returning visitor's
 # browser re-fetches it on its next service-worker update check and retires the old (pre-Vite) zombie
 # worker. A real file at /sw.js is served directly and takes precedence over the SPA fallback below.

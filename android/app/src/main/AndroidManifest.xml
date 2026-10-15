@@ -22,6 +22,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Plaid Hosted Link: the in-app browser comes back here when the bank step ends
+                 (src/lib/plaidHostedLink.js, HOSTED_LINK_COMPLETION_URI). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="flourishmoney" android:host="plaid" android:path="/complete" />
+            </intent-filter>
+
+            <!-- Plaid's redirect_uri for the store apps: an App Link, verified against
+                 https://flourishmoney.app/.well-known/assetlinks.json, so a bank's own app can hand
+                 the household back to Flourish. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="flourishmoney.app" android:path="/plaid/app" />
+            </intent-filter>
+
         </activity>
 
         <provider

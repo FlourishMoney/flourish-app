@@ -2,7 +2,7 @@
  * Flourish Money — Plaid API Proxy
  * netlify/functions/plaid.js
  *
- * Actions: create_link_token | exchange_token | get_accounts | get_transactions
+ * Actions: create_link_token | hosted_link_result | exchange_token | get_accounts | get_transactions
  *          get_investments | get_liabilities | remove_item
  *
  * Env vars (Netlify → Site Settings → Environment Variables):
@@ -27,6 +27,7 @@ const PLAID_BASE = {
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
+const { linkTokenBody, resultKey, resultKeyMatches, readHostedLinkResult, LINK_TOKEN_RX } = require("./_lib/plaidLink");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -105,7 +106,6 @@ exports.handler = async (event) => {
       if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
 
       const country = body.country === "US" ? "US" : "CA";
-      const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
 
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
@@ -124,34 +124,31 @@ exports.handler = async (event) => {
         updateAccessToken = data.access_token;
       }
 
-      const isUpdate = !!updateAccessToken;
-      const linkBody = isUpdate
-        ? {
-            user:         { client_user_id: user_id },
-            client_name:  "Flourish Money",
-            access_token: updateAccessToken,
-            webhook:      WEBHOOK_URL,
-            language:     "en",
-          }
-        : {
-            user:              { client_user_id: user_id },
-            client_name:       "Flourish Money",
-            // Only `transactions` is REQUIRED — every depository (chequing/savings) account
-            // supports it, so deposit-only users (e.g. Scotiabank with no cards/investments) can
-            // link. `investments` and `liabilities` are OPTIONAL: Plaid still shows the institution
-            // and lets the user link, extracting+billing those products only when the chosen
-            // account type supports them. Listing them under required `products` made Plaid reject
-            // any user whose accounts didn't support EVERY product ("Connectivity not supported").
-            products:          ["transactions"],
-            optional_products: ["investments", "liabilities"],
-            country_codes:     [country],
-            language:          "en",
-            transactions:      { days_requested: 90 },
-            redirect_uri:      "https://flourishmoney.app",
-            webhook:           WEBHOOK_URL,
-          };
+      // A store app gets Plaid Hosted Link (_lib/plaidLink.js); the website keeps the web SDK.
+      const native = isNativeRequest(event);
+      const linkBody = linkTokenBody({ userId: user_id, country, accessToken: updateAccessToken, native });
       const data = await plaid("/link/token/create", linkBody);
-      return ok({ link_token: data.link_token });
+      if (!native) return ok({ link_token: data.link_token });
+      if (!data.hosted_link_url) {
+        console.error("[create_link_token] Plaid returned no hosted_link_url for a store app");
+        return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "Could not start bank connection." }) };
+      }
+      return ok({ link_token: data.link_token, hosted_link_url: data.hosted_link_url, result_key: resultKey(user_id, data.link_token) });
+    }
+
+    // 1b. hosted_link_result — auth-required. What a store app's Hosted Link session came to, read from
+    // Plaid (/link/token/get), never from the completion redirect. Answers only the account that minted
+    // the link token (result_key). The public_token goes on to exchange_token, as from the web SDK.
+    if (action === "hosted_link_result") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const { link_token, result_key } = body;
+      if (typeof link_token !== "string" || !LINK_TOKEN_RX.test(link_token)) return e400("link_token required");
+      if (!resultKeyMatches(user_id, link_token, result_key)) {
+        return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: "not your link session" }) };
+      }
+      const data = await plaid("/link/token/get", { link_token });
+      return ok(readHostedLinkResult(data));
     }
 
     // 2. exchange_token — auth-required (Tier 1.2): exchange the public_token AND
