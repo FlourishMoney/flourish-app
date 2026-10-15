@@ -355,7 +355,10 @@ To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 
 
 **This is the only founding email any waitlist row gets. No reminders follow it.** The waitlist consent
 ("when flourish launches in Canada, plus a few updates before then") ends at the October 26 launch, so
-emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15).
+emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15). After a row's
+founding link or launch email, the shared rule (`mayEmailWaitlistRow`) refuses it every other email; and
+from D2 (signup open) it refuses every waitlist email but those two, so a new waitlist signup is still
+stored but gets no welcome email (`tests/launchEmail.test.cjs` section 6).
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
@@ -531,7 +534,8 @@ where w.founding_position between 1 and 50 and not w.is_test
    are in Canadian dollars and do not include sales tax, which is calculated from the billing address and
    added at checkout (wording approved by ChatGPT and Grok; Last updated October 14, 2026).
    `docs/ops/LEGAL-PACKET.md` is the snapshot sent to counsel and still quotes the old sentence.
-10. Smaller: the welcome email still says "when payments open on October 26" after that date; the
+10. Smaller: the welcome email stops at D2 (no waitlist email after the launch), and the landing page's
+    waitlist form still takes signups after it, promising a launch email they will not get; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
     GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,
     because the status is read once per sign-in; `beta.js` writes an address into its "ORPHAN SEAT" log

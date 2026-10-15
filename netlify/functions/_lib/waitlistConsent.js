@@ -13,6 +13,8 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
+const { openSignupEnabled } = require("./signupGate");
+
 // 2026-10-06: the purpose and unsubscribe, with "Contact" linking to the page's Contact block, which
 // names the sender, its mailing address and its contact (the owner keeps the company name and address
 // out of the form). Every earlier version stays below, word for word, for the rows that saw it.
@@ -59,8 +61,18 @@ function mayEmailFoundingLink(row) {
 const LAUNCH_EMAIL_CONSENT_VERSIONS = Object.freeze([LEGACY_CONSENT_VERSION]);
 const CANADA_LAUNCH_KIND = "canada_launch";
 // Has this row had its billing-day email already? The sweep records every one in metadata.founding_link
-// (kind "founding_link" or "canada_launch"); a pre-2026-10-01 row that has it gets nothing more, ever.
+// (kind "founding_link" or "canada_launch"); a row that has it gets nothing more, ever (mayEmailWaitlistRow).
 const billingDayEmailSent = (row) => !!(row && row.metadata && typeof row.metadata === "object" && row.metadata.founding_link);
+
+// THE LAUNCH ENDS THE CONSENT. Every version's words asked for an email when flourish launches "plus a few
+// updates before then", so nothing else is covered once it has launched (ChatGPT and Grok, 2026-10-15). For
+// this rule the launch is signup opening: OPEN_SIGNUP exactly "true" (deploy D2, 2026-10-26), the same
+// switch that releases the Canada launch email. From then on the only waitlist emails are the launch emails
+// themselves, once per row:
+const LAUNCH_EMAIL_KINDS = Object.freeze(["founding_link", CANADA_LAUNCH_KIND]);
+// Consent versions reviewed for any OTHER email after the launch. None. A new consent wording that covers
+// email after the launch must be reviewed and listed here first (tests/launchEmail.test.cjs pins this list).
+const POST_LAUNCH_CONSENT_VERSIONS = Object.freeze([]);
 
 // Which billing-day email this row gets: "founding_link", "canada_launch", or null. `launched` is true only
 // once signup is open on billing day (the sweep reads OPEN_SIGNUP). Never both: a row's version decides one.
@@ -93,18 +105,26 @@ const WAITLIST_COUNTRY = "CA";
 
 // THE ONE RULE FOR WHO MAY BE EMAILED. Every waitlist send asks this first.
 //   - An unsubscribed row gets nothing, of any kind.
+//   - A row that has had its founding link email or its Canada launch email gets nothing more, of any kind.
+//   - After the launch (signup open), a row gets only those launch emails, unless its consent version was
+//     reviewed for more (POST_LAUNCH_CONSENT_VERSIONS, empty): no welcome, no update, no reminder, nothing.
+//     The flag is read here, so no caller can leave it out; a caller can add `launched: true`, never remove it.
 //   - A pre-2026-10-01 row (consent was launch news only) gets EXACTLY ONE email, ever: the Canada launch
 //     email (kind "canada_launch"), once. Every other kind says no, now and later: a welcome, an update, a
 //     founding reminder, a store release-day email, a generic "launch", anything (round 5, CASL).
 //   - A row with no consent version on record gets nothing (fails closed; 0012 gave every older row one).
-//   - A row with current consent (a version the site showed) may get any waitlist email, but never the
-//     Canada launch email, which is for the pre-2026-10-01 rows only.
-function mayEmailWaitlistRow(row, kind) {
+//   - Before the launch, a row with current consent (a version the site showed) may get a waitlist email,
+//     but never the Canada launch email, which is for the pre-2026-10-01 rows only.
+function mayEmailWaitlistRow(row, kind, opts = {}) {
   if (!row || row.unsubscribed_at) return false;
+  if (billingDayEmailSent(row)) return false;
   const v = row.consent_version;
-  if (kind === CANADA_LAUNCH_KIND) return v === LEGACY_CONSENT_VERSION && !billingDayEmailSent(row);
+  if (kind === CANADA_LAUNCH_KIND) return v === LEGACY_CONSENT_VERSION;
   if (!v || v === LEGACY_CONSENT_VERSION) return false;
-  return Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v);
+  if (!Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v)) return false;
+  const launched = openSignupEnabled() || (!!opts && opts.launched === true);
+  if (launched && !LAUNCH_EMAIL_KINDS.includes(kind) && !POST_LAUNCH_CONSENT_VERSIONS.includes(v)) return false;
+  return true;
 }
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND, billingDayEmailSent, foundingEmailKindFor, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };
+module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND, billingDayEmailSent, foundingEmailKindFor, LAUNCH_EMAIL_KINDS, POST_LAUNCH_CONSENT_VERSIONS, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };

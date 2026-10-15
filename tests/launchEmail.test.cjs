@@ -14,6 +14,10 @@
 //   5. EXACTLY ONE EMAIL EVER: the shared rule says no to every other kind, now and later (a store release-day
 //      email included); the real welcome sender skips them; and every module that sends email is known here,
 //      so a new sender cannot slip past the rule unreviewed. Nothing is sent.
+//   6. NOTHING AFTER IT, AND NOTHING AFTER THE LAUNCH (2026-10-15): no waitlist row gets any email after its
+//      founding link or launch email; after the launch (signup open) no module sends a waitlist row anything
+//      but those, unless its consent version was reviewed for more (none is); the real welcome sweep and
+//      join_waitlist prove it; there are no founding reminders.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -178,6 +182,95 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     const ask = (f, rx) => rx.test(fs.readFileSync(path.join(fnDir, f), "utf8"));
     t.ok(ask("_lib/foundingLinkEmail.js", /mayEmailWaitlistRow\(row, kind\)/) && ask("waitlist-sweep.js", /mayEmailWaitlistRow\(row, "welcome"\)/)
       && ask("beta.js", /mayEmailWaitlistRow\(rowForGuard, "welcome"\)/), "5f …and each waitlist sender asks the shared rule");
+  }
+
+  // ── 6. nothing after the founding link or launch email; nothing after the launch without review ────
+  // The waitlist consent ("…when flourish launches in Canada, plus a few updates before then") ends at the
+  // launch (ChatGPT and Grok, 2026-10-15). So: after a row's founding link or Canada launch email, nothing
+  // more, of any kind; and after the launch (signup open), no waitlist email but those, unless a consent
+  // version was reviewed for more. There are no founding reminders.
+  {
+    const KINDS = ["welcome", "update", "launch", "founding_link", "canada_launch", "founding_reminder", "founding_last_call", "store_release", "release_day", "newsletter", "", undefined];
+    const WORDED = ["2026-10-01", "2026-10-05", "2026-10-06"];
+    const LINK_SENT = { founding_link: { kind: "founding_link", sent_at: "2026-10-26T15:00:00Z", consent_version: "2026-10-06", position: 7 } };
+    const row = (v, over = {}) => ({ ...ROW, founding_position: 7, consent_version: v, metadata: null, ...over });
+    delete process.env.OPEN_SIGNUP;
+
+    for (const v of [...WORDED, LEGACY]) {
+      for (const launched of [false, true]) {
+        const r = row(v, { metadata: v === LEGACY ? SENT : LINK_SENT });
+        t.eq(KINDS.filter(k => C.mayEmailWaitlistRow(r, k, { launched })), [], `6a ${v}${launched ? ", after the launch" : ""}: after its founding link or launch email, no kind at all`);
+      }
+    }
+    for (const v of WORDED) {
+      t.eq(KINDS.filter(k => C.mayEmailWaitlistRow(row(v), k, { launched: true })), ["founding_link"], `6b ${v}, after the launch: the founding link email and nothing else`);
+      t.ok(["welcome", "update", "founding_link"].every(k => C.mayEmailWaitlistRow(row(v), k)), `6c ${v}, before the launch: the welcome and updates its words asked for (the rule is not shut)`);
+    }
+    t.eq(KINDS.filter(k => C.mayEmailWaitlistRow(row(LEGACY), k, { launched: true })), ["canada_launch"], "6b2 pre-2026-10-01, after the launch: the Canada launch email and nothing else");
+
+    // The launch is read inside the rule: a caller cannot leave it out or switch it off.
+    process.env.OPEN_SIGNUP = "true";
+    t.eq(KINDS.filter(k => C.mayEmailWaitlistRow(row("2026-10-06"), k)), ["founding_link"], "6d signup open: the rule itself knows it is after the launch");
+    t.eq(KINDS.filter(k => C.mayEmailWaitlistRow(row("2026-10-06"), k, { launched: false })), ["founding_link"], "6d2 …and a caller saying launched: false changes nothing");
+    delete process.env.OPEN_SIGNUP;
+
+    // Reviewed consent versions. A new version, or one cleared for email after the launch, fails here until
+    // someone has read its words and listed what it may get.
+    t.eq(Object.keys(C.CONSENT_VERSIONS).sort(), WORDED, "6e every consent version the site has shown is one reviewed here");
+    t.eq([...C.POST_LAUNCH_CONSENT_VERSIONS], [], "6f no consent version is cleared for any email after the launch");
+    t.eq([...C.LAUNCH_EMAIL_KINDS], ["founding_link", "canada_launch"], "6g after the launch, only the founding link and Canada launch emails");
+
+    // The real senders, run after the launch: the welcome sweep and join_waitlist send nothing.
+    async function welcomeSweep(r, open) {
+      const sends = [], realFetch = global.fetch, quiet = { log: console.log, error: console.error };
+      process.env.SUPABASE_URL = "https://example.supabase.co"; process.env[KEY_NAME] = "re_TESTONLY_notarealkey";
+      if (open) process.env.OPEN_SIGNUP = "true"; else delete process.env.OPEN_SIGNUP;
+      global.fetch = async (url, o = {}) => {
+        const u = String(url);
+        if (u.includes("api.resend.com")) { sends.push(u); return { ok: true, status: 200, json: async () => ({}) }; }
+        if (u.includes("welcomed_at=gte.")) return { ok: true, status: 200, headers: { get: () => "*/0" }, json: async () => [] };
+        if (u.includes("/rest/v1/waitlist?select=")) return { ok: true, status: 200, json: async () => [{ id: r.id, email: ADDRESS, created_at: "2026-10-20T00:00:00Z", unsubscribed_at: null, consent_version: r.consent_version, founding_position: r.founding_position, metadata: r.metadata }] };
+        return { ok: true, status: 204, json: async () => ({}) };
+      };
+      console.log = () => {}; console.error = () => {};
+      try { delete require.cache[require.resolve(WELCOME_SWEEP)]; await require(WELCOME_SWEEP).runSweep({ minAgeMs: 0 }); }
+      finally { global.fetch = realFetch; console.log = quiet.log; console.error = quiet.error; delete process.env.OPEN_SIGNUP; }
+      return sends.length;
+    }
+    t.eq(await welcomeSweep(row("2026-10-06"), false), 1, "6h (the welcome sweep, before the launch, sends a welcome: the check below is not blind)");
+    t.eq(await welcomeSweep(row("2026-10-06"), true), 0, "6i the welcome sweep, after the launch: nothing");
+    t.eq(await welcomeSweep(row("2026-10-06", { metadata: LINK_SENT }), false), 0, "6j the welcome sweep, to a row that had its founding link email: nothing");
+
+    async function join(open) {
+      const sends = [], realFetch = global.fetch, quiet = { log: console.log, error: console.error, warn: console.warn };
+      process.env.SUPABASE_URL = "https://example.supabase.co"; process.env[KEY_NAME] = "re_TESTONLY_notarealkey";
+      if (open) process.env.OPEN_SIGNUP = "true"; else delete process.env.OPEN_SIGNUP;
+      global.fetch = async (url, o = {}) => {
+        const u = String(url);
+        if (u.includes("api.resend.com")) { sends.push(u); return { ok: true, status: 200, json: async () => ({ id: "x" }) }; }
+        if (u.endsWith("/rest/v1/waitlist") && o.method === "POST") return { ok: true, status: 201, json: async () => [{ id: "row-1", founding_position: 9 }], text: async () => "" };
+        return { ok: true, status: 204, json: async () => [], text: async () => "" };
+      };
+      console.log = console.error = console.warn = () => {};
+      const beta = path.join(REPO, "netlify", "functions", "beta.js");
+      try {
+        delete require.cache[require.resolve(beta)];
+        await require(beta).handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "join_waitlist", email: "new.person@example.test", country: "CA", placement: "hero", consentVersion: C.CONSENT_VERSION }) });
+      } finally { global.fetch = realFetch; Object.assign(console, quiet); delete process.env.OPEN_SIGNUP; }
+      return sends.length;
+    }
+    t.eq(await join(false), 1, "6k (join_waitlist, before the launch, sends the welcome: the check below is not blind)");
+    t.eq(await join(true), 0, "6l join_waitlist, after the launch: the row is kept, no email");
+
+    // No founding reminders: no sender, no flag, no schedule.
+    const fnDir = path.join(REPO, "netlify", "functions");
+    t.ok(!fs.existsSync(path.join(fnDir, "founding-reminder-sweep.js")) && !fs.existsSync(path.join(fnDir, "_lib", "foundingReminderEmail.js")), "6m the founding reminder sweep and its email are gone");
+    const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
+    t.eq([...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort(), ["founding-link-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep and the founding link sweep");
+    const everywhere = [toml, fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8"),
+      ...fs.readdirSync(fnDir).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, f), "utf8")),
+      ...fs.readdirSync(path.join(fnDir, "_lib")).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, "_lib", f), "utf8"))].join("\n");
+    t.ok(!/FOUNDING_REMINDERS|founding_reminders|foundingReminder/.test(everywhere), "6o no FOUNDING_REMINDERS flag, and no reminder record, anywhere in the functions or the runbook");
   }
 
   process.env = saved;
