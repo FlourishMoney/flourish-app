@@ -17,7 +17,7 @@ Everything the AI side promised to have ready before Monday, September 14. Resea
 
 ## 2. Founding invitation copy
 
-The September draft that was here is out of date (regular price, 14 days free, first 100 households). The founding emails are in code, `netlify/functions/_lib/foundingLinkEmail.js`, `foundingReminderEmail.js` and `waitlistWelcome.js`; who gets each one and when is in `docs/ops/BILLING-DAY-OCT-26.md`, sections 6 and 6a.
+The September draft that was here is out of date (regular price, 14 days free, first 100 households). The founding emails are in code, `netlify/functions/_lib/foundingLinkEmail.js` and `waitlistWelcome.js`; who gets each one and when is in `docs/ops/BILLING-DAY-OCT-26.md`, section 6.
 
 ## 3. Founding offer terms (plain-language summary for the lawyer packet)
 

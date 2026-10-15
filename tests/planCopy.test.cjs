@@ -8,7 +8,7 @@
 //   1. the old Paywall (shown while billing is off): the two prices and their billing periods only;
 //   2. the checkout screen (UpgradeScreen), its plans, its founding confirmation card, its notices and
 //      error messages, and the upgrade gate (PremiumGate), billing on and off;
-//   3. every email this repository sends (welcome, founding link, Canada launch, confirmation, reminders);
+//   3. every email this repository sends (welcome, founding link, Canada launch, confirmation);
 //   4. the source of those screens and of src/lib/billingVisibility.js, comments aside;
 //   5. the rule is not blind: it catches the words it is meant to catch.
 // -----------------------------------------------------------------------------
@@ -83,13 +83,12 @@ const body = (name) => { const i = APP.indexOf(`\nfunction ${name}(`); return i 
     const ID = "3b1f7e20-5c44-4b1e-9a77-0c2d6e8f1a23";
     const row = { id: ID, founding_position: 7, is_test: false, unsubscribed_at: null, consent_version: "2026-10-06" };
     const lib = (f) => require(path.join(REPO, "netlify", "functions", "_lib", f));
-    const W = lib("waitlistWelcome.js"), E = lib("foundingLinkEmail.js"), F = lib("foundingConfirm.js"), R = lib("foundingReminderEmail.js");
+    const W = lib("waitlistWelcome.js"), E = lib("foundingLinkEmail.js"), F = lib("foundingConfirm.js");
     const emails = [
       ["the welcome email", W.welcomeEmailPayload("a@example.test", ID, 7)],
       ["the founding link email", E.foundingLinkEmailPayload("a@example.test", row)],
       ["the Canada launch email", E.foundingLinkEmailPayload("a@example.test", { ...row, consent_version: "pre-2026-10-01" }, { launched: true })],
       ["the confirmation email", F.foundingConfirmEmailPayload("a@example.test", "https://flourishmoney.app/api/founding-confirm?u=x&x=1&t=y")],
-      ...R.REMINDER_KINDS.map(k => [`the ${k} email`, R.foundingReminderPayload("a@example.test", row, k)]),
     ];
     for (const [name, p] of emails) {
       t.ok(!!p, `(${name} was built)`);

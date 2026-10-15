@@ -19,13 +19,6 @@
 [functions."founding-link-sweep"]
   schedule = "*/15 * * * *"
 
-# Scheduled: the founding reminders (October 29 and November 2, Toronto time). Every 15 minutes, inside those
-# windows only, it sends a founding household that got its founding link email and has not paid one reminder
-# of each kind, and records the send on the row. It reads, sends and writes NOTHING unless BILLING_ENABLED and
-# FOUNDING_REMINDERS are both exactly "true" (docs/ops/BILLING-DAY-OCT-26.md section 6a).
-[functions."founding-reminder-sweep"]
-  schedule = "*/15 * * * *"
-
 # Security headers
 [[headers]]
   for = "/*"

@@ -3,9 +3,9 @@
 // EVERY EMAIL IS SIGNED "Amanda, founder of flourish" (lowercase f; billing day, round 5).
 //
 // The brand is written lowercase. Every email this repository sends ends with the same signature line:
-// the welcome email, the founding link email, the Canada launch email, the confirmation email, and the
-// founding reminders. Pinned on the built messages themselves, and on the source, so a new email cannot
-// bring back "Flourish" in the signature.
+// the welcome email, the founding link email, the Canada launch email and the confirmation email. Pinned
+// on the built messages themselves, and on the source, so a new email cannot bring back "Flourish" in the
+// signature.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -31,13 +31,6 @@ const SIGNATURE = "Amanda, founder of flourish";
   built.push(["the Canada launch email", E.foundingLinkEmailPayload("a@example.test", { id: ID, founding_position: 2, is_test: false, unsubscribed_at: null, consent_version: "pre-2026-10-01" }, { launched: true })]);
   const F = require("../netlify/functions/_lib/foundingConfirm.js");
   built.push(["the confirmation email", F.foundingConfirmEmailPayload("a@example.test", "https://flourishmoney.app/api/founding-confirm?u=x&x=1&t=y")]);
-  const remindersPath = path.join(REPO, "netlify", "functions", "_lib", "foundingReminderEmail.js");
-  if (fs.existsSync(remindersPath)) {
-    const R = require(remindersPath);
-    for (const kind of R.REMINDER_KINDS) {
-      built.push([`the founding ${kind}`, R.foundingReminderPayload("a@example.test", { id: ID, founding_position: 7, is_test: false, unsubscribed_at: null, consent_version: "2026-10-06" }, kind)]);
-    }
-  }
 
   for (const [name, payload] of built) {
     t.ok(!!payload, `(${name} was built)`);

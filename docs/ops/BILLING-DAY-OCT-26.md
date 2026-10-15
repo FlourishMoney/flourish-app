@@ -30,10 +30,6 @@ Before Monday: section 1 (including Stripe Tax: the GST/HST registration, settin
 
 Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
 
-Later, not Monday (section 6a):
-
-11. Once ChatGPT and Grok have approved the reminder words, and before Thursday 2026-10-29 10:00 Toronto time: `FOUNDING_REMINDERS=true`, Production, Trigger deploy (**D4**). The reminder goes from October 29, 10:00.
-12. Monday 2026-11-02, 10:00: the last call goes on its own, nothing to deploy. Read the progress query (section 6a). The sweep stops sending on November 9; remove `FOUNDING_REMINDERS` with the next deploy after that.
 
 ---
 
@@ -357,47 +353,13 @@ At most 10 a run and 40 a day. The Resend allowance is shared with the welcome e
 
 To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 (section 8).
 
+**This is the only founding email any waitlist row gets. No reminders follow it.** The waitlist consent
+("when flourish launches in Canada, plus a few updates before then") ends at the October 26 launch, so
+emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15).
+
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
 for the signed-in account's own confirmed email, so a forwarded link gives nobody the founding price.
-
----
-
-## 6a. The founding reminders (later: October 29 and November 2)
-
-The approved 30-day plan: one reminder on Thursday October 29 and one last call on Monday November 2, to
-founding households that got the founding link email and have not paid.
-`netlify/functions/founding-reminder-sweep.js` sends them every 15 minutes, inside their windows only
-(the reminder from October 29 10:00 until November 2 10:00, the last call from November 2 10:00 until
-November 9 10:00, Toronto time), and only while **both** `BILLING_ENABLED` and `FOUNDING_REMINDERS` are
-exactly `true`.
-
-**The words are a draft** (PR #73 description, and `netlify/functions/_lib/foundingReminderEmail.js`).
-Do not turn `FOUNDING_REMINDERS` on until ChatGPT and Grok have approved them.
-
-Who gets each one, once: consent version `2026-10-01`, `2026-10-05` or `2026-10-06` (never
-`pre-2026-10-01`: their one email is the launch email), founding number 1 to 50 that billing still honours,
-not a test row, not unsubscribed, its founding link email sent at least two days before (and, for the last
-call, any reminder at least two days before), and **not paid**: no account with that email address has ever
-had a Stripe subscription. If the subscriptions or an account cannot be read, the run sends nothing.
-
-1. After the words are approved, before October 29 10:00: add `FOUNDING_REMINDERS` = `true`, Production
-   only. Trigger deploy. This is **D4**. "Deploy site" builds the latest `main`: anything merged since D3
-   ships with it.
-2. Nothing to do for the last call. It starts on November 2 at 10:00 on its own.
-3. Progress (read-only, counts only):
-
-```sql
-select count(*) filter (where metadata->'founding_link'->>'kind' = 'founding_link') as link_sent,
-       count(*) filter (where metadata->'founding_reminders' ? 'founding_reminder') as reminder_sent,
-       count(*) filter (where metadata->'founding_reminders' ? 'founding_last_call') as last_call_sent
-from public.waitlist where founding_position between 1 and 50 and not is_test;
-```
-
-At most 10 a run and 40 a day.
-
-To stop the reminders only: remove `FOUNDING_REMINDERS` and deploy. After November 9 the sweep sends
-nothing even with the flag on; remove it with the next deploy.
 
 ---
 
