@@ -32,11 +32,11 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, formatPrice } from "./lib/pricing.js";
-import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
+import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
-import { signupCodeState, statusFromResponse, signupSubmittable, showWaitlistForms, sharedSignupStatus } from "./lib/signupUi.js";
+import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
@@ -65,7 +65,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
+import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
@@ -14530,6 +14530,9 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 // one as the row's source and anything else as "direct". The form's position goes in metadata.placement.
 // The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
 // only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
+// `founding` (billing day, approved by ChatGPT and Grok, 2026-10-15): while signup is open and founding spots
+// remain, the button says "Get my founding spot" and the line under it is the founding spot line, sent as
+// its own version (2026-10-26), whose one promise is the founding price link.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WAITLIST_FORM_CSS = `
             .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
@@ -14552,10 +14555,13 @@ const WAITLIST_FORM_CSS = `
               .fll-btn{ width:auto; }
             }
 `;
-function WaitlistForm({ source = "landing" }) {
+function WaitlistForm({ source = "landing", founding = false }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
   const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
+  // The wording this form shows, and the version it sends with it: always the same pair.
+  const shownText = founding ? FOUNDING_SPOT_CONSENT_TEXT : CONSENT_TEXT;
+  const shownVersion = founding ? FOUNDING_SPOT_CONSENT_VERSION : CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
   useEffect(() => { captureWaitlistSrc(); }, []);
 
@@ -14575,7 +14581,7 @@ function WaitlistForm({ source = "landing" }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: shownVersion }),
       });
       const data = await res.json();
       if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
@@ -14591,7 +14597,7 @@ function WaitlistForm({ source = "landing" }) {
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
         <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
         <div className="fll-done-t">{status === "already" ? "You're already on the list!" : "You're on the list"}</div>
-        <div className="fll-done-b">We'll email you when flourish launches in Canada.</div>
+        <div className="fll-done-b">{founding ? "We'll email you your founding price link." : "We'll email you when flourish launches in Canada."}</div>
       </div>
     );
   }
@@ -14605,14 +14611,14 @@ function WaitlistForm({ source = "landing" }) {
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
         <button className="fll-btn" onClick={submit} disabled={busy}>
-          {busy ? "Joining…" : "Join the waitlist"}
+          {busy ? "Joining…" : founding ? "Get my founding spot" : "Join the waitlist"}
         </button>
         {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
             unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
             and its contact (the owner keeps the company name and address out of the form itself). */}
         <p className="fll-consent" id={`fll-consent-${tag}`}>{(() => {
-          const i = CONSENT_TEXT.lastIndexOf("Contact");
-          return i < 0 ? CONSENT_TEXT : <>{CONSENT_TEXT.slice(0, i)}<a className="fll-contact-link" href="#contact" onClick={e => { const el = document.getElementById("contact"); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Contact</a>{CONSENT_TEXT.slice(i + "Contact".length)}</>;
+          const i = shownText.lastIndexOf("Contact");
+          return i < 0 ? shownText : <>{shownText.slice(0, i)}<a className="fll-contact-link" href="#contact" onClick={e => { const el = document.getElementById("contact"); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Contact</a>{shownText.slice(i + "Contact".length)}</>;
         })()}</p>
       </div>
       {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
@@ -14711,7 +14717,7 @@ function LandingHowTo() {
 // The founding offer, directly under the hero's waitlist form (Amanda's decision, 2026-10-06). The
 // live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
-function FoundingOffer() {
+function FoundingOffer({ launched = false }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
   const box = useRef(null);
   useEffect(() => {
@@ -14738,7 +14744,7 @@ function FoundingOffer() {
     return () => { if (ro) ro.disconnect(); grid.style.removeProperty("--fll-founding-h"); };
   }, []);
   if (isNativeApp()) return null;
-  const copy = foundingOfferCopy();
+  const copy = foundingOfferCopy({ launched });
   const liveLine = foundingLiveLine(spotsLeft);
   return (
     <section className="fll-founding" ref={box} aria-labelledby="fll-founding-h">
@@ -14817,21 +14823,19 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   // page for people who cannot use the product yet; someone who has installed the app already can.
   // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
   const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
-  // The landing's waitlist forms, and the founding block that says "Join the waitlist", go once signup is
-  // open and the founding spots are full (signupUi.js showWaitlistForms): a household joining then would
-  // get no email. signup_status is asked only after the founding count reads 0, so while spots remain the
-  // landing makes no extra function call. Web only; until both answers are in, the page is as it was.
-  const [waitlistGate, setWaitlistGate] = useState({ openSignup: null, spotsLeft: null });
+  // THE LANDING'S WAITLIST AREA (signupUi.js landingWaitlistArea): today's waitlist form while signup is shut;
+  // the founding spot form while it is open and founding spots remain; "Create your account" once they are
+  // all taken. Read from the one /api/founding answer the founding card and block already share, so the
+  // landing makes no extra call. Web only.
+  const [foundingAnswer, setFoundingAnswer] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
     let live = true;
-    sharedFoundingSpots().then(spotsLeft => {
-      if (spotsLeft !== 0) { if (live) setWaitlistGate({ openSignup: null, spotsLeft }); return undefined; }
-      return sharedSignupStatus(API_BASE).then(openSignup => { if (live) setWaitlistGate({ openSignup, spotsLeft }); });
-    });
+    sharedFoundingAnswer().then(a => { if (live) setFoundingAnswer(a); });
     return () => { live = false; };
   }, []);
-  const waitlistForms = showWaitlistForms(waitlistGate);
+  const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, native: isNativeApp() });
+  const waitlistForms = waitlistArea === "waitlist" || waitlistArea === "founding";
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15266,10 +15270,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               </figure>
               <div className="fll-hero-form">
                 <FoundingCard/>
-                {waitlistForms && <WaitlistForm source="hero"/>}
+                {waitlistForms && <WaitlistForm source="hero" founding={waitlistArea === "founding"}/>}
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
-              {waitlistForms && <FoundingOffer/>}
+              {waitlistForms && <FoundingOffer launched={waitlistArea === "founding"}/>}
               <div className="fll-hero-demo">
                 <LandingHowTo/>
                 <section className="fll-familiar" aria-labelledby="fll-familiar-t">
@@ -15340,9 +15344,13 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           {waitlistForms && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
+              {/* The launch promise goes with the launch wording: after the launch the founding spot form stands
+                  alone (Amanda, 2026-10-15). */}
+              {waitlistArea === "waitlist" && <>
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches in Canada.</p>
-              <WaitlistForm source="bottom_cta"/>
+              </>}
+              <WaitlistForm source="bottom_cta" founding={waitlistArea === "founding"}/>
             </div>
           </div>
           )}

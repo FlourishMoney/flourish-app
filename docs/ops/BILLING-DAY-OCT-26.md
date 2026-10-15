@@ -319,6 +319,7 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
    | `2026-10-01` | "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time." (with the identity line) | Yes |
    | `2026-10-05` | "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time." | Yes |
    | `2026-10-06` | "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below." | Yes |
+   | `2026-10-26` | "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below." (the founding spot form: the landing shows it while signup is open and founding spots remain) | Yes, and no other email |
    | anything else | not a version the site ever showed | No |
 
    **Amanda's decision (2026-10-14): the `pre-2026-10-01` rows get the launch email.** They asked to
@@ -358,9 +359,12 @@ To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 
 emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15). After a row's
 founding link or launch email, the shared rule (`mayEmailWaitlistRow`) refuses it every other email; and
 from D2 (signup open) it refuses every waitlist email but those two, so a new waitlist signup gets no
-welcome email (`tests/launchEmail.test.cjs` section 6). One that takes a founding spot still gets its
-founding link email; once the spots are full, the landing's waitlist forms and founding block go
-(`tests/landingWaitlist.test.cjs`), so nobody joins for an email that will not come.
+welcome email (`tests/launchEmail.test.cjs` section 6). From D2 the landing's forms change with it
+(approved by ChatGPT and Grok): while founding spots remain they say "Get my founding spot", with the line
+"We'll email you your founding price link. We won't send other marketing emails from this form.
+Unsubscribe any time. Who we are: see Contact below.", and a signup under it is recorded as consent version
+`2026-10-26`, which covers the founding link email only. Once the spots are full, the forms and the
+founding block go (`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`).
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
@@ -537,9 +541,9 @@ where w.founding_position between 1 and 50 and not w.is_test
    added at checkout (wording approved by ChatGPT and Grok; Last updated October 14, 2026).
    `docs/ops/LEGAL-PACKET.md` and BEFORE-MONDAY.md section 3, counsel's copies, quote the same sentence
    (`tests/termsTax.test.cjs`).
-10. Smaller: the welcome email stops at D2 (no waitlist email after the launch); the landing's waitlist
-    forms stay while founding spots remain (a joiner gets the founding link email) and go once they are
-    full; the
+10. Smaller: the welcome email stops at D2 (no waitlist email after the launch); from D2 the landing's
+    forms are the founding spot form while spots remain and go once they are full; a page left open
+    across D2 is refused with "This page is out of date. Refresh it and try again."; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
     GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,
     because the status is read once per sign-in; `beta.js` writes an address into its "ORPHAN SEAT" log

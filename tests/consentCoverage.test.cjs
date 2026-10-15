@@ -27,7 +27,7 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
   // ── 1. every version is classified ──────────────────────────────────────────────────────────────
   const shown = [C.LEGACY_CONSENT_VERSION, ...Object.keys(C.CONSENT_VERSIONS)].sort();
   t.eq(Object.keys(C.CONSENT_COVERS).sort(), shown, "1a every consent version ever recorded has its coverage written down, and nothing else does");
-  t.eq(shown, ["2026-10-01", "2026-10-05", "2026-10-06", "pre-2026-10-01"], "1b (the four versions: the legacy rows and three worded ones)");
+  t.eq(shown, ["2026-10-01", "2026-10-05", "2026-10-06", "2026-10-26", "pre-2026-10-01"], "1b (the five versions: the legacy rows, three launch-and-updates ones, and the founding spot form's)");
 
   // ── 2. read from the words ──────────────────────────────────────────────────────────────────────
   for (const v of Object.keys(C.CONSENT_VERSIONS)) {
@@ -41,7 +41,7 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
     "2d …recorded from the words that form showed (no consent line existed yet)");
 
   // ── 3. who gets the founding link email ─────────────────────────────────────────────────────────
-  t.eq([...C.FOUNDING_LINK_CONSENT_VERSIONS], ["2026-10-01", "2026-10-05", "2026-10-06"], "3a the founding link email: every version whose words asked for updates");
+  t.eq([...C.FOUNDING_LINK_CONSENT_VERSIONS], ["2026-10-01", "2026-10-05", "2026-10-06", "2026-10-26"], "3a the founding link email: every version whose words asked for updates, and the founding spot form's, which named it");
   const row = (v, over = {}) => ({ id: "7d0c2a51-0b1e-4f7a-9c43-2a6f0e1d9b10", founding_position: 7, is_test: false, unsubscribed_at: null, consent_version: v, ...over });
   for (const v of ["2026-10-01", "2026-10-05", "2026-10-06"]) {
     const p = E.foundingLinkEmailPayload("household@example.test", row(v));

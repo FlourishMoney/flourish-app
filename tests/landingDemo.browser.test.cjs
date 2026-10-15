@@ -345,37 +345,68 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");
     await dctx.close();
   }
-  // ── 11. The waitlist forms go once signup is open and the founding spots are full (2026-10-15) ────
-  // tests/landingWaitlist.test.cjs has the rule. Here, the built page: open with 0 left, no waitlist form,
-  // no "Be first to know", no founding block, no "Join the waitlist" anywhere; open with spots left, or shut
-  // with 0 left, the forms stay. signup_status is asked only once the count reads 0.
-  for (const [mode, open, spots] of [["open, full", true, 0], ["open, spots left", true, 35], ["shut, full", false, 0]]) {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  // ── 11. The landing after the launch (approved by ChatGPT and Grok, 2026-10-15) ─────────────────────
+  // tests/landingWaitlist.test.cjs has the rule. Here, the built page, with /api/founding answering
+  // { spotsLeft, openSignup } (signup_status is not asked by the landing):
+  //   shut: today's page; open with spots left: the founding spot form, its line and its version, and the
+  //   founding block without its two stale bits; open and full: no form and no founding block.
+  const TODAY_LINE = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
+  const FOUNDING_LINE = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
+  const landingAt = async ({ open, spots, width = 390, at }) => {
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 960, hasTouch: width < 960 });
+    if (at) await ctx.clock.install({ time: at });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
-    let statusCalls = 0;
-    await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots }) }));
+    const seen = { founding: 0, status: 0, joins: [] };
+    await page.route("**/api/founding", r => { seen.founding++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots, openSignup: open }) }); });
     await page.route("**/api/beta", r => {
-      if (/signup_status/.test(r.request().postData() || "")) statusCalls++;
-      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ openSignup: open }) });
+      const body = JSON.parse(r.request().postData() || "{}");
+      if (body.action === "signup_status") seen.status++;
+      if (body.action === "join_waitlist") seen.joins.push(body);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body.action === "join_waitlist" ? { joined: true } : { openSignup: open }) });
     });
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.getByText("Real screens from the app.").waitFor();
-    if (open && spots === 0) await page.waitForFunction(() => !document.querySelector(".fll-input"), null, { timeout: 8000 }).catch(() => {});
-    else await page.waitForTimeout(1200);
-    const seen = await page.evaluate(() => ({
-      inputs: document.querySelectorAll(".fll-input").length,
-      cta2: document.body.innerText.includes("Be first to know."),
-      block: !!document.querySelector(".fll-founding"),
-      join: /Join the waitlist/.test(document.body.innerText),
-      hero: !!document.querySelector(".fll-hero .fll-h1") && !!document.querySelector(".fll-hero-card img"),
-    }));
-    if (open && spots === 0) {
-      t.eq([seen.inputs, seen.cta2, seen.block, seen.join], [0, false, false, false], "11a open, full: no waitlist form, no \"Be first to know\", no founding block, no \"Join the waitlist\"");
-      t.ok(seen.hero, "11b …and the rest of the hero is still there (headline, the card)");
-    } else {
-      t.eq([seen.inputs, seen.cta2], [2, true], `11c ${mode}: both waitlist forms stay`);
-    }
-    t.eq(statusCalls, spots === 0 ? 1 : 0, `11d ${mode}: signup_status asked ${spots === 0 ? "once" : "not at all (spots remain)"}`);
+    return { ctx, page, seen };
+  };
+  const look = (page) => page.evaluate(() => ({
+    buttons: [...document.querySelectorAll(".fll-capture .fll-btn")].map(b => b.textContent.trim()),
+    lines: [...document.querySelectorAll(".fll-consent")].map(p => p.textContent.trim()),
+    inputs: document.querySelectorAll(".fll-input").length,
+    cta2: document.body.innerText.includes("Be first to know."),
+    promise: document.body.innerText.includes("Join the waitlist and we'll email you the moment flourish launches in Canada."),
+    block: document.querySelector(".fll-founding") ? document.querySelector(".fll-founding").innerText : null,
+  }));
+  {
+    const { ctx, page, seen } = await landingAt({ open: false, spots: 35 });
+    await page.waitForTimeout(800);
+    const v = await look(page);
+    t.eq([v.buttons, v.lines, v.cta2, v.promise], [["Join the waitlist", "Join the waitlist"], [TODAY_LINE, TODAY_LINE], true, true], "11a signup shut: today's page, both forms, today's line, \"Be first to know\"");
+    t.ok(/Payments open October 26\./.test(v.block || ""), "11b …and the founding block as today");
+    t.eq([seen.founding, seen.status], [1, 0], "11c one /api/founding read, no signup_status call");
+    await ctx.close();
+  }
+  {
+    const { ctx, page, seen } = await landingAt({ open: true, spots: 35 });
+    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
+    const v = await look(page);
+    t.eq([v.buttons, v.lines], [["Get my founding spot", "Get my founding spot"], [FOUNDING_LINE, FOUNDING_LINE]], "11d open, spots left: both forms say \"Get my founding spot\", with the founding spot line");
+    t.eq([v.cta2, v.promise, /Join the waitlist/.test(await page.evaluate(() => document.body.innerText))], [false, false, false], "11e …no \"Be first to know\", no launch promise, no \"Join the waitlist\" anywhere");
+    t.ok(v.block && v.block.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/Payments open October 26|Join the waitlist\./.test(v.block),
+      "11f …and the founding block without its two stale bits");
+    await page.locator(".fll-hero .fll-input").fill("new.household@example.test");
+    await page.getByRole("button", { name: "Get my founding spot" }).first().click();
+    await page.locator(".fll-done .fll-done-b").waitFor();
+    t.eq(seen.joins.map(j => [j.consentVersion, j.placement]), [["2026-10-26", "hero"]], "11g the signup carries the founding spot line's version, 2026-10-26");
+    t.eq(await page.evaluate(() => [document.querySelector(".fll-done .fll-done-t").textContent, document.querySelector(".fll-done .fll-done-b").textContent]),
+      ["You're on the list", "We'll email you your founding price link."], "11h the thank-you: \"You're on the list\" / \"We'll email you your founding price link.\"");
+    t.eq([seen.founding, seen.status], [1, 0], "11i one /api/founding read, no signup_status call");
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await landingAt({ open: true, spots: 0 });
+    await page.waitForFunction(() => !document.querySelector(".fll-input"), null, { timeout: 8000 }).catch(() => {});
+    const v = await look(page);
+    t.eq([v.inputs, v.cta2, v.block], [0, false, null], "11j open, all 50 taken: no waitlist form, no \"Be first to know\", no founding block");
     await ctx.close();
   }
 

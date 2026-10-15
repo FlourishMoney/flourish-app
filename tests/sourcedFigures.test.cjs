@@ -413,6 +413,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Don't use AI", "10. Contact Us", "Contact us", "13. Contact",
       // Subscription screens (web only; a store build renders none of them, nativeNoPrice.test).
       "Get Flourish Plus", "Get Flourish Plus →", "Start 14 days free →", "Cancel any time.", "14 days free. Cancel any time.", "Keep the free plan",
+      // The landing's founding spot form after the launch (approved by ChatGPT and Grok, 2026-10-15).
+      "Get my founding spot",
       ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",

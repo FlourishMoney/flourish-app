@@ -257,7 +257,11 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     const wl = beta.slice(beta.indexOf('if (action === "join_waitlist")'), beta.indexOf('if (action === "signup")'));
     t.ok(/metadata: \{ \.\.\.\(\(metadata && typeof metadata === "object"[^\n]*\), placement \}/.test(wl) && /\bsource,\n/.test(wl) && /WAITLIST_PLACEMENTS\.includes\(placement\)/.test(wl) && /const source = waitlistSourceFor\(src\);/.test(wl),
          "join_waitlist still stores a source (the campaign, or direct) and the UTM metadata bag, with the placement");
-    t.ok(!/OPEN_SIGNUP|openSignupEnabled|decideSignup/.test(wl), "…and the open-signup flag touches none of it");
+    // Billing day (2026-10-15): the flag now decides one thing in join_waitlist, which consent wording the
+    // page shows and so which version a signup must carry (the founding spot form while signup is open).
+    t.ok(!/OPEN_SIGNUP|decideSignup/.test(wl) && (wl.match(/openSignupEnabled\(\)/g) || []).length === 1
+      && /const currentVersion = waitlistConsentVersionFor\(\{ open: openSignupEnabled\(\) \}\);/.test(wl),
+      "…and the open-signup flag touches only the consent version it must carry");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     for (const u of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
       t.ok(app.includes(`"${u}"`), `the client still collects ${u} for the waitlist`);

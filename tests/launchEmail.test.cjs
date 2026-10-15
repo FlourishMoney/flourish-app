@@ -216,7 +216,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
 
     // Reviewed consent versions. A new version, or one cleared for email after the launch, fails here until
     // someone has read its words and listed what it may get.
-    t.eq(Object.keys(C.CONSENT_VERSIONS).sort(), WORDED, "6e every consent version the site has shown is one reviewed here");
+    t.eq(Object.keys(C.CONSENT_VERSIONS).sort(), [...WORDED, "2026-10-26"], "6e every consent version the site has shown is one reviewed here (2026-10-26: the founding link email only, tests/foundingSpotConsent.test.cjs)");
     t.eq([...C.POST_LAUNCH_CONSENT_VERSIONS], [], "6f no consent version is cleared for any email after the launch");
     t.eq([...C.LAUNCH_EMAIL_KINDS], ["founding_link", "canada_launch"], "6g after the launch, only the founding link and Canada launch emails");
 

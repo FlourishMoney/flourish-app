@@ -91,7 +91,7 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
-const { CONSENT_VERSION, WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
+const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor } = require("./_lib/waitlistConsent");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -141,7 +141,7 @@ async function waitlistRowExists(supabaseUrl, secretKey, email) {
 // changes. Best effort: a failure is logged (status only, never the address) and the person is still told
 // they are on the list, while the row stays as it was, so no one is emailed without a recorded consent.
 const REPEAT_CONSENT_TIMEOUT_MS = 3000;
-async function recordRepeatConsent(supabaseUrl, secretKey, email) {
+async function recordRepeatConsent(supabaseUrl, secretKey, email, consentVersion) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), REPEAT_CONSENT_TIMEOUT_MS);
   try {
@@ -153,7 +153,7 @@ async function recordRepeatConsent(supabaseUrl, secretKey, email) {
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
       },
-      body: JSON.stringify({ unsubscribed_at: null, consent_version: CONSENT_VERSION, consented_at: new Date().toISOString() }),
+      body: JSON.stringify({ unsubscribed_at: null, consent_version: consentVersion, consented_at: new Date().toISOString() }),
       signal: controller.signal,
     });
     if (!res.ok) console.error("[waitlist] repeat consent update failed", res.status);
@@ -300,11 +300,14 @@ async function handle(event) {
     // CASL: the signup must carry the version of the consent wording the form showed, and only the
     // current wording is accepted. That version and the time are stored with the row as the consent
     // record. A form showing out-of-date wording (a stale cached page) is refused rather than recorded
-    // as agreeing to words it did not show.
-    if (consentVersion !== CONSENT_VERSION) {
+    // as agreeing to words it did not show. "Current" follows the signup state (billing day): while signup
+    // is open the landing shows the founding spot line (version 2026-10-26), while it is shut the launch
+    // line (2026-10-06), so a page left open across the switch is told to refresh.
+    const currentVersion = waitlistConsentVersionFor({ open: openSignupEnabled() });
+    if (consentVersion !== currentVersion) {
       return {
         statusCode: 400, headers: CORS,
-        body: JSON.stringify({ error: "Consent required", consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ error: "Consent required", consentVersion: currentVersion }),
       };
     }
 
@@ -327,7 +330,7 @@ async function handle(event) {
           source,
           // utm_* and referrer exactly as the form captured them, plus where the form sat.
           metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
-          consent_version: CONSENT_VERSION,
+          consent_version: currentVersion,
           consented_at: new Date().toISOString(),
         }),
         signal: insertController.signal,
@@ -361,7 +364,7 @@ async function handle(event) {
     if (insertRes.status === 409) {
       // Unique violation — already on waitlist. Signing up again with the current wording is new consent:
       // it re-subscribes an unsubscribed address and records this consent (Amanda, 2026-09-30).
-      await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
+      await recordRepeatConsent(supabaseUrl, secretKey, emailAddr, currentVersion);
       return {
         statusCode: 200, headers: CORS,
         body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -372,7 +375,7 @@ async function handle(event) {
       const errText = await insertRes.text();
       // Check for Postgres unique violation in error body
       if (errText.includes("duplicate key") || errText.includes("23505")) {
-        await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
+        await recordRepeatConsent(supabaseUrl, secretKey, emailAddr, currentVersion);
         return {
           statusCode: 200, headers: CORS,
           body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -402,7 +405,7 @@ async function handle(event) {
     // The one shared rule (unsubscribed, or pre-consent) is asked here too, so no send path skips it.
     // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
     // one, takes precedence.
-    const rowForGuard = { consent_version: CONSENT_VERSION, unsubscribed_at: null, ...(insertedRow || {}) };
+    const rowForGuard = { consent_version: currentVersion, unsubscribed_at: null, ...(insertedRow || {}) };
     if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }

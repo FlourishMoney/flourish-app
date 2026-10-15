@@ -121,7 +121,8 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
       const contact = auth.slice(auth.indexOf('<div id="contact"'), auth.indexOf("</div>", auth.indexOf('<div id="contact"')));
       t.ok(contact.includes("<h2>Contact</h2>") && contact.includes(BRIEF_CONTACT) && contact.includes("hello@flourishmoney.app"), "1m #contact exists and holds the company, its mailing address and the contact email");
     }
-    t.ok(/consentVersion: CONSENT_VERSION/.test(app), "1j the form sends the version of the wording it showed");
+    t.ok(/consentVersion: shownVersion/.test(app) && /const shownText = founding \? FOUNDING_SPOT_CONSENT_TEXT : CONSENT_TEXT;\n\s*const shownVersion = founding \? FOUNDING_SPOT_CONSENT_VERSION : CONSENT_VERSION;/.test(app),
+      "1j the form sends the version of the wording it showed (the founding spot line's own version, 2026-10-26, when it shows that)");
     t.ok(/country: "CA", placement: tag/.test(app), "7b …and always sends Canada");
     t.ok(!/No spam, just the launch news/.test(app), "1k the success message no longer contradicts the consent line");
   }
