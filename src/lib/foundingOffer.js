@@ -16,12 +16,17 @@ export const FOUNDING_HOUSEHOLDS = 50;
 export const FOUNDING_ENDPOINT = "/api/founding";
 
 // The words, exactly as approved (2026-10-07 review). The prices are read from pricing.js, never typed here.
-export function foundingOfferCopy() {
+// After the launch (signup open, `launched`), the two bits that went stale come out (Amanda, 2026-10-15):
+// "Join the waitlist." (the button now says "Get my founding spot") and "Payments open October 26."
+// Nothing is added.
+const LAUNCHED_JOIN = `The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Joining is free.`;
+export function foundingOfferCopy({ launched = false } = {}) {
   const p = getPricing("CA");
+  if (launched === true) return { ...foundingOfferCopy(), join: LAUNCHED_JOIN, phoneJoin: LAUNCHED_JOIN };
   return {
     heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
     price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.`,
-    regular: `Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
+    regular: `Standard price for everyone else: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
     join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
     // Under 960px the founding card at the top already shows the price and the count, so the block
     // says how the spots work instead (2026-10-07): this heading, phoneJoin, then the regular price.
@@ -44,42 +49,60 @@ export function foundingLiveLine(spotsLeft) {
 }
 
 // THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line
-// version). Four rows. The prices are read from pricing.js and the saving is worked out from the two annual
-// prices, never typed here. No count read: no pill. 0 left: no card (the block below still says full).
-const _wholeOrCents = (n) => (Number.isInteger(n) ? `$${n}` : formatPrice(n));
+// version). Four rows. The prices are read from pricing.js, never typed here. No count read: no pill. 0 left:
+// no card (the block below still says full). 2026-10-14: no struck-through price beside the founding one,
+// and no saving claim; the price everyone else pays is stated plainly instead.
 export function foundingCardParts(spotsLeft) {
   if (spotsLeft === 0) return null;
   const p = getPricing("CA");
   const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
-  const saving = Math.round((p.annual - p.foundingAnnual) * 100) / 100;
   return {
     eyebrow: `FOUNDING PRICE · FIRST ${FOUNDING_HOUSEHOLDS} HOUSEHOLDS`,
     price: `${formatPrice(p.foundingAnnual)} a year`,
-    regular: `${formatPrice(p.annual)} a year`,
     pill: n === null ? null : `${n} of ${FOUNDING_HOUSEHOLDS} left`,
-    save: `${_wholeOrCents(saving)} a year less than the regular ${formatPrice(p.annual)}.`,
+    // In this order on the card (2026-10-15): the founding price, its terms, then what everyone else pays.
     small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+    save: `Everyone else: ${formatPrice(p.annual)} a year, plus tax.`,
   };
 }
 
-// One read of the endpoint: the number, or null on any failure. Never throws.
-export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
-  if (!fetchImpl) return null;
+// Whether signup is open, from the same answer (billing day, 2026-10-15): true, false, or null when the
+// answer said nothing about it. Only a real boolean counts.
+export function openSignupFrom(body) {
+  const v = body && typeof body === "object" ? body.openSignup : undefined;
+  return v === true ? true : v === false ? false : null;
+}
+
+// One read of the endpoint: { spotsLeft, openSignup }. The count only from a 200; whether signup is open from
+// any answer that says (a 503 still does). Anything unreadable is null. Never throws.
+export async function fetchFoundingAnswer(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
+  if (!fetchImpl) return { spotsLeft: null, openSignup: null };
   try {
     const res = await fetchImpl(FOUNDING_ENDPOINT, { headers: { Accept: "application/json" } });
-    if (!res || !res.ok) return null;
-    return spotsLeftFrom(await res.json());
+    if (!res) return { spotsLeft: null, openSignup: null };
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    return { spotsLeft: res.ok ? spotsLeftFrom(body) : null, openSignup: openSignupFrom(body) };
   } catch {
-    return null;
+    return { spotsLeft: null, openSignup: null };
   }
 }
 
-// The ONE read per page load. The founding block and the founding line both ask; the first ask
-// starts the request and every later ask gets the same answer, so the page makes one /api/founding call.
+// The number alone, or null on any failure. Never throws.
+export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
+  return (await fetchFoundingAnswer(fetchImpl)).spotsLeft;
+}
+
+// The ONE read per page load. The founding block, the founding line and the landing's waitlist area all ask;
+// the first ask starts the request and every later ask gets the same answer, so the page makes one
+// /api/founding call.
 let _shared = null;
-export function sharedFoundingSpots() {
-  if (!_shared) _shared = fetchFoundingSpots();
+export function sharedFoundingAnswer() {
+  if (!_shared) _shared = fetchFoundingAnswer();
   return _shared;
+}
+export function sharedFoundingSpots() {
+  return sharedFoundingAnswer().then(a => a.spotsLeft);
 }
 // For tests: forget the shared answer.
 export function _resetSharedFoundingSpots() { _shared = null; }

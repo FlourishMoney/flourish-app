@@ -1,6 +1,6 @@
 # Flourish Money: legal packet for the fixed-fee review (assembled September 10, 2026)
 
-Send with the lawyer email in BEFORE-MONDAY.md section 7, together with TRADEMARK-KNOCKOUT.md. Sections 2 and 3 are the exact text now in the app (src/App.jsx, both dated April 28, 2026), converted from screen layout to plain text. Section 5 is a draft, not yet in the app.
+Send with the lawyer email in BEFORE-MONDAY.md section 7, together with TRADEMARK-KNOCKOUT.md. Sections 2 and 3 are the exact text now in the app (src/App.jsx; the Privacy Policy dated April 28, 2026, the Terms October 14, 2026), converted from screen layout to plain text. Section 5 is a draft, not yet in the app.
 
 ## 1. What we are asking for, and the questions
 
@@ -13,11 +13,11 @@ Questions:
 1. Privacy policy section 3 (PIPEDA legal basis): is the wording sufficient, and should it be drafted now to the express-consent and automated-decision standard in Bill C-36 (second reading, House returns September 16)?
 2. AI processing disclosure: Anthropic as processor; is the current section 5 wording enough, and does the Anthropic Usage Policy's financial-advice clause (disclosure that AI was involved plus review by a qualified professional) apply to a coach that only explains calculated figures and carries "Not investment, legal or tax advice" on every reply?
 3. Analytics disclosure (PostHog, hosted in the United States, counts and flags only, a Settings opt-out defaulting on; one sentence ships in the policy on September 17 because events start September 18): is opt-out sufficient for pseudonymous product analytics under PIPEDA, or is opt-in required? Plus a written retention schedule (delete on request within 30 days; statement uploads not retained after import; coach conversations not stored server-side; Plaid items removed on disconnect or deletion).
-4. Terms section 7: as of September 17 it says prices are plus applicable taxes and states the founding lock (decision 16, answered by the founder; the text in section 3 below is the pre-September 17 version, and the shipped sentences are quoted in section 6). Please review that wording together with Stripe and Apple billing (annual renewal notices, cancellation effective at period end, no partial-period refunds except where required by law) under Ontario's Consumer Protection Act rules for online subscriptions.
-5. Founding price lock clause (section 4 of this packet): enforceability, and what happens on a lapse or a regular price change.
+4. Terms section 7: as of October 14, 2026 it says "Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout." (decision 16; the full text is in section 3 below). The founding lock is not in the Terms yet (section 6, item 0). Please review that wording together with Stripe and Apple billing (annual renewal notices, cancellation effective at period end, no partial-period refunds except where required by law) under Ontario's Consumer Protection Act rules for online subscriptions.
+5. Founding price lock clause (section 4 of this packet): enforceability, and what happens on a lapse or a change to the standard price for everyone else.
 6. Terms section 3 "Not a Licensed Adviser": is it sufficient for an Ontario company offering budgeting, debt and savings projections and RRSP, TFSA and FHSA explanations to consumers, and should any wording reference securities or financial-planning title rules in Ontario?
 7. Terms section 2 eligibility: Canada outside Quebec, or the United States (decision 17 excludes Quebec at signup until French-language copy and Law 25 basics exist; "outside Quebec for now" ships September 17). Please confirm the wording and what Quebec re-entry requires.
-8. The iOS line in section 7 ("Flourish is currently provided free of charge on iOS") will need replacing when in-app purchase ships; please give us the Apple-compatible version now so it is ready.
+8. The store apps' line in section 7 ("The iOS and Android apps are free, and there is nothing to buy in them…", quoted in section 3) will need replacing when in-app purchase ships; please give us the Apple-compatible version now so it is ready.
 9. App Store review notes (section 5): anything that would draw a reviewer's objection or a legal exposure.
 10. Trademark: file FLOURISH MONEY word mark, classes 9, 36, 42, per TRADEMARK-KNOCKOUT.md; advise on the logo mark and on watching pending application 2455859.
 
@@ -73,7 +73,7 @@ GrowSmart Inc. / Flourish Money. Website: flourishmoney.app. privacy@flourishmon
 
 Known gaps for the reviewer: no analytics provider named yet (PostHog is coming); no retention schedule; section 1 says "we do not collect your IP address for tracking purposes" while the coach function keeps a per-IP daily abuse counter (not for tracking, but the sentence should be accurate); section 5 says calculations run "on your device" while some run in serverless functions on our servers for the coach guards; "SOC 2 Type II" and "TLS 1.2+" are vendor claims to confirm before they stay.
 
-## 3. Terms of Service (current text in the app, last updated April 28, 2026)
+## 3. Terms of Service (current text in the app, last updated October 14, 2026)
 
 Please read these Terms of Service carefully before using Flourish Money. By accessing or using the App, you agree to be bound by these Terms. If you do not agree, do not use the App.
 
@@ -103,9 +103,9 @@ You agree not to: use the App for any unlawful purpose; attempt to reverse-engin
 
 7. Subscription and Billing
 
-Web version: Free Tier: Core features are available at no charge with a 14-day trial of premium features. Flourish Plus: Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.
+Web version: Free Tier: Core features are available at no charge with a 14-day trial of premium features. Flourish Plus: Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.
 
-iOS version currently shows instead: "Flourish is currently provided free of charge on iOS."
+The iOS and Android apps show instead, under "7. Cost and usage limits": "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies."
 
 8. Intellectual Property
 
@@ -153,7 +153,7 @@ App Privacy answers to prepare: Financial Info (linked to user, app functionalit
 
 ## 6. Changes already known to be needed (for the same review)
 
-0. Shipped September 17, before the cohort signs up (please review as written): Terms section 7, "Prices are displayed in CAD for Canadian users and USD for US users, plus applicable taxes" and "The founding annual price renews at the same price for as long as the subscription remains continuously active; the regular price applies after any lapse"; Terms section 2, "resident of Canada (outside Quebec for now) or the United States"; Privacy Policy section 6, "PostHog: product analytics, hosted in the United States; counts and flags only, never amounts; opt out in Settings"; both "Last updated" dates moved to September 17, 2026.
+0. In the app as of October 14, 2026 (please review as written): Terms section 7, "Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout." Planned in September but NOT in the app yet: "The founding annual price renews at the same price for as long as the subscription remains continuously active; the standard price for everyone else applies after any lapse"; Terms section 2, "resident of Canada (outside Quebec for now) or the United States"; Privacy Policy section 6, "PostHog: product analytics, hosted in the United States; counts and flags only, never amounts; opt out in Settings". The Privacy Policy is still dated April 28, 2026.
 1. Terms section 7: annual plans, founding price and the Stripe Customer Portal cancel flow; the iOS sentence replaced with the in-app purchase version when IAP ships.
 2. Privacy policy: add PostHog (analytics, minimized), a retention schedule, the AI notice and bank consent screens as consent mechanisms, and a breach process; correct the IP sentence and the "on your device" sentence.
 3. Both documents: a "last updated" date and a change log; CASL lines on every email capture (BEFORE-MONDAY.md section 4).

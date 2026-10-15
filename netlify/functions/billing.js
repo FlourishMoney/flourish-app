@@ -11,17 +11,20 @@
 // comes from the verified JWT, and the price comes from the environment via
 // _lib/billingPlans.js. A request that names a price is refused by not being read.
 //
-// STRIPE TAX IS OFF (P16: prices are quoted plus tax). automatic_tax is sent explicitly
-// as false rather than omitted, so switching it on is a one-line change here plus the
-// dashboard setting, and the columns in migration 0009 are already waiting for it.
+// STRIPE TAX (from the first sale, 2026-10-26). Prices are quoted "plus tax" (P16) and their Stripe prices
+// are tax-exclusive, so with STRIPE_TAX_ENABLED on, Checkout works out GST/HST (and provincial tax where
+// GrowSmart is registered) from the billing address it collects, and adds it on top. Off, automatic_tax is
+// sent as false, exactly as before. See taxParams() below.
 // -----------------------------------------------------------------------------
 "use strict";
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
-const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice } = require("./_lib/foundingCohort");
+const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = require("./_lib/foundingCohort");
+const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
+const { getStore } = require("@netlify/blobs");
 const { stripePost } = require("./_lib/stripeApi");
-const { SUBSCRIPTION_PAID_STATUSES: PAID_STATUSES } = require("./_lib/planRules");
+const { isPaidSubscription } = require("./_lib/planRules");
 
 const { corsHeadersFor } = require("./_lib/cors");
 
@@ -34,6 +37,25 @@ const { corsHeadersFor } = require("./_lib/cors");
 // The response is 404, deliberately: an endpoint that is not open yet should look absent rather
 // than advertise that billing exists and is merely switched off.
 const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+
+// The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
+function confirmSendStore() {
+  try { return getStore("founding_confirm_sends"); }
+  catch { console.error("[billing] founding confirm", "store_unavailable"); return null; }
+}
+
+// STRIPE_TAX_ENABLED IS A ROLLBACK SWITCH. It is on from the first sale (docs/ops/BILLING-DAY-OCT-26.md,
+// set with BILLING_ENABLED). Unset it, and deploy, only if Stripe Tax itself fails at checkout: new checkouts
+// then go through without tax, while subscriptions already made keep theirs. Exactly "true" or it is off.
+const taxEnabled = () => process.env.STRIPE_TAX_ENABLED === "true";
+// What a Checkout Session needs for Stripe Tax (Stripe's "Collect tax with Checkout", existing customers):
+// automatic tax on; the billing address, always (Canada's tax follows the province); and that address saved to
+// the customer we pass, so renewals are taxed from it too.
+function taxParams() {
+  return taxEnabled()
+    ? { automatic_tax: { enabled: true }, billing_address_collection: "required", customer_update: { address: "auto" } }
+    : { automatic_tax: { enabled: false } };          // P16: prices are quoted plus tax
+}
 
 const APP_ORIGIN = () => (process.env.APP_ORIGIN || "https://flourishmoney.app").trim();
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -95,16 +117,23 @@ exports.handler = async (event) => {
     // come from src/lib/pricing.js), and no count of how many slots are gone.
     if (action === "status") {
       const { data: row } = await admin
-        .from("subscriptions").select("status, provider_customer_id").eq("user_id", user_id).maybeSingle();
+        .from("subscriptions").select("status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
-      const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, await authUser(admin, user_id));
+      const user = await authUser(admin, user_id);
+      const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, user);
+      // An older account holding a founding address may ask for a confirmation link (round 4).
+      const confirmEmail = !foundingAvailable && await foundingConfirmNeeded(admin, user_id, user);
       return json(200, CORS, {
         enabled: true,
-        paid: PAID_STATUSES.includes(row?.status),
+        // The server's own rule (_lib/planRules.js isPaidSubscription): Stripe says active or trialing AND
+        // the paid period has not ended. The web app's plan takes this answer (src/lib/planFromProfile.js
+        // webPlan), so a subscription cancelled at period end stops counting when that period ends, even if
+        // the webhook that says so is late. A store app never asks.
+        paid: isPaidSubscription(row),
         manageable: !!row?.provider_customer_id,
-        founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT },
+        founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
       });
     }
 
@@ -140,13 +169,26 @@ exports.handler = async (event) => {
         // for every later customer.subscription.* event, which never sees the session.
         metadata: { user_id, plan_key: planKey },
         subscription_data: { metadata: { user_id, plan_key: planKey } },
-        automatic_tax: { enabled: false },          // P16 — prices are quoted plus tax
+        ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
         allow_promotion_codes: true,
         success_url: `${APP_ORIGIN()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?billing=cancelled`,
       }, { idempotencyKey: `checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}` });
 
       return json(200, CORS, { url: session.url });
+    }
+
+    // "Send me a confirmation link" (round 4): only for an account that needs one, at most three in 24 hours,
+    // to the account's own address. The link sets the server-only "link" marker (founding-confirm.js).
+    if (action === "send_founding_confirmation") {
+      const user = await authUser(admin, user_id);
+      if (!(await foundingConfirmNeeded(admin, user_id, user))) return json(409, CORS, { error: "not_needed" });
+      const limit = await checkSendLimit(confirmSendStore(), user_id);
+      if (!limit.allowed) return json(limit.reason === "rate_limited" ? 429 : 503, CORS, { error: limit.reason });
+      const url = confirmUrl(user_id, user.email);
+      if (!url) { console.error("[billing] founding confirm", "no_secret"); return json(500, CORS, { error: "server_misconfigured" }); }
+      const sent = await sendFoundingConfirmEmail(user.email, url, `founding-confirm/${user_id}/${new URL(url).searchParams.get("x")}`);
+      return sent ? json(200, CORS, { sent: true }) : json(502, CORS, { error: "send_failed" });
     }
 
     if (action === "create_portal_session") {

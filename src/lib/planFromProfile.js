@@ -70,3 +70,25 @@ export function isUnlimitedProfile(profile, now = Date.now()) {
   const p = derivePlan(profile, now);
   return p === "beta_founder" || p === "premium" || p === "trial";
 }
+
+const PLANS = ["beta_founder", "premium", "trial", "free"];
+
+/**
+ * THE WEB APP'S PLAN: the profile's, plus a paid subscription as the SERVER answers it.
+ *
+ * `profilePlan` is derivePlan()'s answer for the profiles row. `paid` is the billing status call's own
+ * `paid` (netlify/functions/billing.js), which the server works out from Stripe's status and the paid
+ * period (planRules.isPaidSubscription): the app never reads a subscription row itself. While billing is
+ * off that call answers 404, so `paid` is false and this returns the profile's plan, exactly as before.
+ *
+ * Mirrors planRules.deriveEntitlement, and tests/webPaidPlan.test.cjs holds the two together:
+ *   a store app            the profile's plan, whatever was bought on the web (Apple 3.1.3(b))
+ *   founder, trial, plus   unchanged: a payment only ever adds, so nobody loses trial days by paying early
+ *   free, and paid         "premium"
+ *   free, not paid         "free" (a cancelled subscription, once its paid period is over)
+ */
+export function webPlan(profilePlan, { paid = false, native = false } = {}) {
+  const p = PLANS.includes(profilePlan) ? profilePlan : "free";
+  if (native || p !== "free") return p;
+  return paid === true ? "premium" : "free";
+}

@@ -46,7 +46,7 @@ const WELCOME_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
   "We'll email you the day flourish launches in Canada. Before then you may get a few updates, and you can unsubscribe from any of them.",
   "Questions or ideas? Just reply to this email.",
-  "Amanda, founder of Flourish",
+  "Amanda, founder of flourish",
 ];
 const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";
 // The footer on every waitlist email: why they got it, who sent it (the CASL identity line, word for

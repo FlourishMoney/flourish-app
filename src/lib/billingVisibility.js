@@ -19,7 +19,7 @@
 // Pure: every input is passed in, so the gate can test a native shell and a 404 offline.
 // -----------------------------------------------------------------------------
 
-import { getPricing, formatPrice, monthlyEquivalentOfAnnual, annualSavingsPercent } from "./pricing.js";
+import { getPricing, formatPrice } from "./pricing.js";
 
 // A Capacitor shell, by either signal. getPlatform() is the direct answer; the URL scheme is the
 // one that is already true before the native bridge finishes loading, which is when a screen can
@@ -66,19 +66,21 @@ export function offeredPlans({ status } = {}) {
   // this reads the country again and billingPlans maps it.
   const country = "CA";
   const p = getPricing(country);
+  // THE LANDING PAGE'S WORDS (billing day, 2026-10-26): "$11.99 a month", "$99.99 a year", "$79.99 a year",
+  // as the landing page and its founding card say them, and no other figure (no monthly equivalent, no
+  // percentage). tests/upgradeEntryPoints.test.cjs holds every price here to the landing page's copy.
   const plans = [
     {
       key: "monthly",
       label: "Monthly",
-      price: `${formatPrice(p.monthly)}/mo`,
+      price: `${formatPrice(p.monthly)} a month`,
       note: `${p.currency} plus tax`,
     },
     {
       key: "annual",
       label: "Annual",
-      price: `${formatPrice(p.annual)}/yr`,
-      sub: `${formatPrice(monthlyEquivalentOfAnnual(country))}/mo, billed annually`,
-      note: `${p.currency} plus tax · save ${annualSavingsPercent(country)}% versus monthly`,
+      price: `${formatPrice(p.annual)} a year`,
+      note: `${p.currency} plus tax`,
     },
   ];
   const founding = status?.founding;
@@ -86,7 +88,7 @@ export function offeredPlans({ status } = {}) {
     plans.push({
       key: "founding_annual",
       label: "Founding Annual",
-      price: `${formatPrice(p.foundingAnnual)}/yr`,
+      price: `${formatPrice(p.foundingAnnual)} a year`,
       // The ONLY claim made about this offer. No feature promises live here.
       note: foundingLabel(founding.cohortLimit),
     });
@@ -124,6 +126,38 @@ export function billingReturnNotice(search) {
   if (value === "cancelled") return { kind: "cancelled", text: "Checkout cancelled. Nothing was charged." };
   if (value === "portal_return") return { kind: "portal", text: "Subscription settings saved." };
   return null;
+}
+
+// WHAT THE CHECKOUT SCREEN SAYS WHEN STARTING A CHECKOUT FAILS. billing.js answers 403
+// "founding_price_not_available" when this account may not have the founding price (no founding spot on
+// its email, or a founding subscription that has ended); retrying never changes that, so it gets its own
+// words. "founding_cohort_full" is an older name for the same refusal. Anything else is worth a retry.
+export const FOUNDING_REFUSED_TEXT = "The founding price isn't available to this account. It goes to the email address that holds a founding spot on the waitlist, and not after a founding subscription has ended. Monthly and annual are still available.";
+export function checkoutErrorText({ status, error } = {}) {
+  if (status === 403 && (error === "founding_price_not_available" || error === "founding_cohort_full")) return FOUNDING_REFUSED_TEXT;
+  if (error === "signed_out") return "Sign in again to continue.";
+  return "Couldn't reach checkout. Try again in a moment.";
+}
+
+// AN OLDER ACCOUNT HOLDING A FOUNDING ADDRESS (round 4). The status says founding.confirmEmail when this
+// account's address holds a founding spot but was never confirmed from our link. The checkout screen then
+// offers one tap to email a confirmation link (billing.js "send_founding_confirmation"). The words, exactly:
+export const FOUNDING_CONFIRM_COPY = Object.freeze({
+  title: "Your founding spot",
+  body: "This account's email address holds a founding spot on the waitlist. To get the founding price, confirm the address from a link we email to it.",
+  button: "Send me a confirmation link",
+  sending: "Sending…",
+  sent: "Sent. The link is in your inbox and works for 24 hours. After you confirm, come back to this screen.",
+  limited: "A link was sent recently. Check your inbox, or ask again tomorrow.",
+  failed: "Couldn't send the link. Try again in a moment.",
+});
+export function foundingConfirmOffered(status) {
+  return billingIsOn(status) && status.paid !== true && !!status.founding
+    && status.founding.confirmEmail === true && status.founding.available !== true;
+}
+// What the screen says after the tap, from the HTTP status: "sent" | "limited" | "failed".
+export function foundingConfirmResult(httpStatus) {
+  return httpStatus === 200 ? "sent" : httpStatus === 429 ? "limited" : "failed";
 }
 
 // The query keys this feature owns, so the caller can strip them from the URL afterwards.

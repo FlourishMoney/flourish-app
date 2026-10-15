@@ -78,10 +78,12 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
       const premium = [];
       const supabase = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile }) }) }) }) };
       const fn = new Function(
-        "supabase", "derivePlan", "setPlan", "setIsPremium", "isCapacitorIOS", "isNativeApp", "localStorage", "console",
+        "supabase", "derivePlan", "setPlan", "setIsPremium", "setProfilePlan", "isCapacitorIOS", "isNativeApp", "localStorage", "console",
         `return (${fnText});`,
       )(
-        supabase, derivePlan, (p) => store.set("flourish_plan", p), (v) => premium.push(v),
+        // setProfilePlan only records the profile's plan for the web paid-subscription effect, which a store
+        // app ignores (tests/nativeWebPurchase.test.cjs section 7); it sets no plan and no premium flag here.
+        supabase, derivePlan, (p) => store.set("flourish_plan", p), (v) => premium.push(v), () => {},
         () => win.Capacitor?.getPlatform?.() === "ios", () => vis.isNativeApp(win),
         { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
         { error() {} },

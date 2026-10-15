@@ -17,52 +17,12 @@ Everything the AI side promised to have ready before Monday, September 14. Resea
 
 ## 2. Founding invitation copy
 
-Voice rules: direct, smart, Canadian spelling, lowercase "flourish" in body copy, no em dashes, no hype, the honest bit stays in. Replace the bracketed parts. The access code is the one the founder adds to BETA_CODES on Friday; the link is the production site's Log in screen, Sign up.
-
-### Text message (about 70 words)
-
-Hi [name]. I built a money app for Canadian households and I'm opening it to 30 founding families before anyone else. It links your bank read-only (or you type numbers in), tells you what's safe to spend today, and runs a 15-minute weekly money meeting for the two of you. Free for 14 days, then 79.99 a year plus tax for founders instead of 99.99, locked as long as you stay. Rough edges likely. Want in? I'll send the link and your code.
-
-### WhatsApp (goes under the invite card)
-
-You're invited to the founding 50.
-
-flourish is a money coach for Canadian households. It shows you one number every morning (what's safe to spend), flags what's coming, and runs a short weekly money meeting with your partner. The numbers are calculated from your data; the coach explains them and never moves your money.
-
-Founding offer: 14 days free, then 79.99 a year plus tax (about 90 in Ontario; regular price 99.99), locked at that price as long as your subscription stays active. First 100 households only.
-
-It's early. You will find rough edges, and I want to hear about every one. Reply "in" and I'll send your link and code.
-
-### Email (subject: You're invited: 30 founding families for flourish)
-
-Hi [name],
-
-I've been building flourish for about a year: a money coach for Canadian households like ours. Before it goes public, I'm inviting 30 families I trust to use it first.
-
-What it does: links your bank accounts read-only through Plaid (or you can enter numbers by hand), shows you one number every morning (what's safe to spend), warns you about what's coming, and runs a 15-minute weekly money meeting for you and your partner, with an agenda built from your own numbers. Every figure is calculated by flourish from your data. The coach explains, asks questions and helps you decide. It never invents a number and it cannot move your money.
-
-The founding offer: 14 days free, no card. After that, 79.99 a year plus tax (about 90 in Ontario) instead of 99.99, locked at that price as long as your subscription stays active. First 100 households only.
-
-The honest part: it's early. You'll find rough edges, and the most useful thing you can do is tell me about them. Reply to this email or message me any time.
-
-To start: go to [link], tap Log in, then Sign up, and use the code [code]. It takes about two minutes to see your first number. (Three screenshots of those screens go under this line; CC captures them Tuesday.)
-
-Thank you for trying it.
-
-[Founder name]
-GrowSmart Inc., [town], Ontario
-hello@flourishmoney.app
-
-This is a personal invitation. If you'd rather not hear about flourish again, reply "no thanks" and I won't ask twice.
-
-### Follow-ups the support plan expects (CL drafts each on the day)
-
-Day 1: "Did you see your number?" Day 3: "Anything confusing?" Day 7: "Book your first money meeting: here's how." Day 12: "Your trial ends in two days; here's what founding includes."
+The September draft that was here is out of date (regular price, 14 days free, first 100 households). The founding emails are in code, `netlify/functions/_lib/foundingLinkEmail.js` and `waitlistWelcome.js`; who gets each one and when is in `docs/ops/BILLING-DAY-OCT-26.md`, section 6.
 
 ## 3. Founding offer terms (plain-language summary for the lawyer packet)
 
 1. Founding membership is offered to the first 50 households that subscribe on the annual plan during the founding period (founding cohort changed from 100 to 50 on 2026-09-23 — see docs/product/DECISIONS.md).
-2. Price: 79.99 CAD per year plus applicable taxes (about 90.39 in Ontario), compared with the regular annual price of 99.99 CAD plus applicable taxes. The founding price renews at 79.99 for as long as the subscription remains continuously active. If the subscription lapses or is cancelled and later restarted, the regular price applies.
+2. Price: 79.99 CAD per year plus applicable taxes (about 90.39 in Ontario), compared with the standard price for everyone else, 99.99 CAD per year plus applicable taxes. The founding price renews at 79.99 for as long as the subscription remains continuously active. If the subscription lapses or is cancelled and later restarted, the standard price for everyone else applies.
 3. The 14-day free trial comes first; no card is required for the trial. Payment is collected only when the member subscribes at the end of the trial.
 4. Founding includes everything in Plus: unlimited coaching, linked accounts, the Meet facilitator, and a second household login when that ships.
 5. Purchases made on the web are billed by Stripe and can be managed or cancelled any time from Manage subscription. Cancellation stops renewal; access continues to the end of the paid period. No partial-year refunds except where required by law.
@@ -70,7 +30,7 @@ Day 1: "Did you see your number?" Day 3: "Anything confusing?" Day 7: "Book your
 7. flourish provides calculations and educational information. It is not investment, legal or tax advice and GrowSmart Inc. is not a licensed adviser.
 8. Eligibility: residents of Canada outside Quebec, or of the United States, 18 or older (decision 17 excludes Quebec until French-language copy and Law 25 basics exist).
 
-Questions for the lawyer: the price is plus tax (decision 16, answered Monday; the Terms sentence ships Thursday); whether item 2's lock survives a price change to the regular plan; whether item 5's no-refund line is enforceable under Ontario's Consumer Protection Act for online subscriptions; whether the Anthropic Usage Policy's financial-advice clause (disclosure plus professional review) is satisfied by the education framing and the per-reply footer; and whether the privacy policy should be drafted to Bill C-36's express consent standard now.
+Questions for the lawyer: the price is plus tax (decision 16; the Terms say, as of October 14, 2026: "Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout."); whether item 2's lock survives a change to the standard price for everyone else; whether item 5's no-refund line is enforceable under Ontario's Consumer Protection Act for online subscriptions; whether the Anthropic Usage Policy's financial-advice clause (disclosure plus professional review) is satisfied by the education framing and the per-reply footer; and whether the privacy policy should be drafted to Bill C-36's express consent standard now.
 
 ## 4. CASL lines
 

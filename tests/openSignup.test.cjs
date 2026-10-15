@@ -208,7 +208,9 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.eq(self.state.created[0].user_metadata.signup_source, "self_serve", "…the source is recorded on the user too");
 
     const invited = await signup(OPEN, { code: "BETA100" });
-    t.eq([invited.status, invited.data], [200, { ok: true, source: "invited" }], "open: a valid code still works and is tagged invited");
+    // Round 3: with signup open, an invited signup confirms its address by link too (tests/emailConfirmation.test.cjs 2).
+    t.eq([invited.status, invited.data], [200, { ok: true, source: "invited", needsConfirmation: true, sent: true }],
+      "open: a valid code still works, is tagged invited, and (signup being open) confirms its address by link");
     t.eq(invited.state.rpc[0].fn, "reserve_beta_seat", "…and a coded signup still reserves a seat");
     t.eq(invited.state.rpc[0].args.p_cap, 30, "…against the same cap of 30");
     t.eq(invited.state.created[0].user_metadata.beta, true, "…and IS labelled a beta user");
@@ -255,7 +257,11 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     const wl = beta.slice(beta.indexOf('if (action === "join_waitlist")'), beta.indexOf('if (action === "signup")'));
     t.ok(/metadata: \{ \.\.\.\(\(metadata && typeof metadata === "object"[^\n]*\), placement \}/.test(wl) && /\bsource,\n/.test(wl) && /WAITLIST_PLACEMENTS\.includes\(placement\)/.test(wl) && /const source = waitlistSourceFor\(src\);/.test(wl),
          "join_waitlist still stores a source (the campaign, or direct) and the UTM metadata bag, with the placement");
-    t.ok(!/OPEN_SIGNUP|openSignupEnabled|decideSignup/.test(wl), "…and the open-signup flag touches none of it");
+    // Billing day (2026-10-15): the flag now decides one thing in join_waitlist, which consent wording the
+    // page shows and so which version a signup must carry (the founding spot form while signup is open).
+    t.ok(!/OPEN_SIGNUP|decideSignup/.test(wl) && (wl.match(/openSignupEnabled\(\)/g) || []).length === 1
+      && /const currentVersion = waitlistConsentVersionFor\(\{ open: openSignupEnabled\(\) \}\);/.test(wl),
+      "…and the open-signup flag touches only the consent version it must carry");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     for (const u of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
       t.ok(app.includes(`"${u}"`), `the client still collects ${u} for the waitlist`);
@@ -346,7 +352,9 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     for (const [label, code] of [["self-serve", ""], ["invited", "BETA100"]]) {
       const r = await signup(OPEN, { code });
       const u = r.state.created[0];
-      t.eq(Object.keys(u).sort(), ["email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
+      t.eq(Object.keys(u).sort(), ["app_metadata", "email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
+      // app_metadata (server-only) holds one thing: how the address gets confirmed. With signup open, by link.
+      t.eq(u.app_metadata, { email_confirmation: "link" }, `${label}: app_metadata says only how the address is confirmed`);
       t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_source"], `${label}: and metadata carries only the labels`);
       const meta = JSON.stringify(u.user_metadata);
       t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);

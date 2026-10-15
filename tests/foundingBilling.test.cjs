@@ -140,7 +140,10 @@ function load(modPath, state, stripeLog = []) {
 
 const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
 const CONFIRMED = "2026-10-01T00:00:00Z";
-const acct = (email, confirmed = CONFIRMED) => ({ email, email_confirmed_at: confirmed });
+// A founding household's account: its address confirmed by clicking our link (round 3: the founding price
+// needs that, never an address confirmed on creation; tests/foundingVerifiedEmail.test.cjs). `how` = "auto"
+// is an account confirmed on creation.
+const acct = (email, confirmed = CONFIRMED, how = "link") => ({ email, email_confirmed_at: confirmed, app_metadata: { email_confirmation: how } });
 // 60 households joined: numbers 1..50, then null, as start() and the trigger number them.
 const sixty = () => Array.from({ length: 60 }, (_, i) => ({
   email: `h${i + 1}@example.test`, is_test: false, founding_position: i < 50 ? i + 1 : null,
@@ -260,7 +263,9 @@ async function deliver(state, id, type, object, created = T) {
     const r = await asAccount({ waitlist: sixty(), user: acct("h51@example.test"), extra });
     notFounding(r, "5a a client claiming a number, an email, the flag or a price");
     t.ok(r.state.rpcCalls.every(c => c.args.p_email === "h51@example.test"), "5b the lookup always asks about the account's own email");
-    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit", "5c the client is told yes or no and the cohort size, never a number or a count");
+    // Round 4 adds confirmEmail: another yes or no about this account (may it ask for a confirmation link).
+    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit,confirmEmail", "5c the client is told yes or no and the cohort size, never a number or a count");
+    t.eq([typeof r.status.founding.available, typeof r.status.founding.confirmEmail], ["boolean", "boolean"], "5c2 …both answers are plain yes or no");
   }
 
   // ── 6. fails closed ──────────────────────────────────────────────────────────────────────────

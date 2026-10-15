@@ -46,7 +46,10 @@ function subscriptionPatch(sub, extra = {}) {
     plan_key: sub.metadata?.plan_key || null,
     price_id: item.price?.id || null,
     currency: (sub.currency || "cad").toUpperCase(),
-    current_period_end: isoOrNull(sub.current_period_end),
+    // Stripe API 2025-03-31 moved the period onto the subscription's items. Either place is read, so the
+    // paid period is stored whichever API version the endpoint uses; without it, access would follow
+    // the status alone and a missed cancellation would never run out.
+    current_period_end: isoOrNull(Number.isFinite(sub.current_period_end) ? sub.current_period_end : item.current_period_end),
     cancel_at_period_end: !!sub.cancel_at_period_end,
     automatic_tax: !!sub.automatic_tax?.enabled,
     updated_at: new Date().toISOString(),

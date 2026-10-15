@@ -3,7 +3,7 @@
   publish   = "dist"
 
 [build.environment]
-  NODE_VERSION           = "18"
+  NODE_VERSION           = "22"
   SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
 
 # Scheduled: the waitlist welcome sweep. Every 15 minutes it emails any waitlist row whose
@@ -11,6 +11,12 @@
 # path (join_waitlist) stays best effort; this is what guarantees the email is sent exactly once.
 # Netlify kills a scheduled function at 30 seconds, and the function stops starting new sends at 20.
 [functions."waitlist-sweep"]
+  schedule = "*/15 * * * *"
+
+# Scheduled: the founding link email (payments open 2026-10-26). Every 15 minutes it sends each founding
+# household its link, once, and records the send on the row. It reads, sends and writes NOTHING unless
+# BILLING_ENABLED and FOUNDING_LINK_EMAIL are both exactly "true" (docs/ops/BILLING-DAY-OCT-26.md).
+[functions."founding-link-sweep"]
   schedule = "*/15 * * * *"
 
 # Security headers
@@ -63,11 +69,25 @@
   to     = "/.netlify/functions/billing"
   status = 200
 
+# Redirect: the link in "Confirm your email address for your founding price" → Netlify function.
+# GET shows one button and changes nothing; POST confirms (netlify/functions/founding-confirm.js).
+[[redirects]]
+  from   = "/api/founding-confirm"
+  to     = "/.netlify/functions/founding-confirm"
+  status = 200
+
 # Redirect: the landing page's founding offer reads /api/founding → Netlify function.
 # GET only; answers a count of spots left and nothing else (netlify/functions/founding.js).
 [[redirects]]
   from   = "/api/founding"
   to     = "/.netlify/functions/founding"
+  status = 200
+
+# Redirect: the app's once-per-account activation signals → Netlify function. POST only, signed in;
+# adds 1 to an aggregate per-day counter and keeps nothing else (netlify/functions/activation.js).
+[[redirects]]
+  from   = "/api/activation"
+  to     = "/.netlify/functions/activation"
   status = 200
 
 # SPA fallback — all routes → index.html
