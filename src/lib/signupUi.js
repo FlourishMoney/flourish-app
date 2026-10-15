@@ -43,10 +43,19 @@ export function signupSubmittable({ openSignup, code = "" } = {}) {
 //   "founding"  signup open and founding spots remain: "Get my founding spot" and the founding spot line
 //               (consent version 2026-10-26, the founding link email only);
 //   "account"   signup open and all 50 spots taken: no form; "Create your account", which opens sign-up.
+//   "hold"      the answer is not in yet, from launch day on: the area keeps its space and shows nothing,
+//               so a form is never shown and then swapped or removed a moment later. Before launch day
+//               signup is shut (it opens on October 26, deploy D2), so the page shows today's form at
+//               once, exactly as it does now, and nothing is held.
 // Anything not a clear answer is "waitlist", as today: the server refuses a signup carrying the wrong
 // wording, so a page that guessed wrong is told to refresh, never recorded under words it did not show.
 // A store app never shows the landing's forms: "waitlist", and nothing is asked.
-export function landingWaitlistArea({ answer = null, native = false } = {}) {
-  if (native || !answer || answer.openSignup !== true) return "waitlist";
+export const LAUNCH_DAY = Date.parse("2026-10-26T00:00:00-04:00");
+// The longest the area is held. After it, the page settles on today's form and keeps it.
+export const LANDING_HOLD_MS = 4000;
+export function landingWaitlistArea({ answer = null, now = Date.now(), native = false } = {}) {
+  if (native) return "waitlist";
+  if (!answer) return Number.isFinite(now) && now >= LAUNCH_DAY ? "hold" : "waitlist";
+  if (answer.openSignup !== true) return "waitlist";
   return answer.spotsLeft === 0 ? "account" : "founding";
 }

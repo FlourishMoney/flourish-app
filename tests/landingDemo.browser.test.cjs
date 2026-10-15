@@ -45,6 +45,12 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
   const base = `http://127.0.0.1:${server.address().port}/`;
   const browser = await playwright.chromium.launch();
+  // Every page here sees TODAY (before launch day) unless it names another date: from October 26 the landing
+  // holds its waitlist area until /api/founding answers (section 12), and the checks before it describe
+  // today's page. Time still runs.
+  const TODAY = new Date("2026-10-15T12:00:00-04:00");
+  const rawNewContext = browser.newContext.bind(browser);
+  browser.newContext = async (opts = {}, at = TODAY) => { const ctx = await rawNewContext(opts); await ctx.clock.install({ time: at }); return ctx; };
 
   // A new context each time: the welcome page, with only the first-visit intro and the tour marked
   // as seen (both come after the demo has started, and are tested elsewhere).
@@ -353,8 +359,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   const TODAY_LINE = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
   const FOUNDING_LINE = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
   const landingAt = async ({ open, spots, width = 390, at }) => {
-    const ctx = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 960, hasTouch: width < 960 });
-    if (at) await ctx.clock.install({ time: at });
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 960, hasTouch: width < 960 }, at || TODAY);
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
     const seen = { founding: 0, status: 0, joins: [] };
     await page.route("**/api/founding", r => { seen.founding++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots, openSignup: open }) }); });
@@ -420,6 +425,72 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.getByRole("button", { name: "Create your account" }).click();
     await page.getByText("Create your free account").waitFor();
     t.ok(await page.locator('input[type="password"]').first().isVisible(), "11m tapping it opens sign-up");
+    await ctx.close();
+  }
+
+  // ── 12. No visible flash: the area is held until the answer is in, from launch day only (2026-10-15) ───
+  // /api/founding answers late (delay ms). Every visible waitlist button the page ever shows is recorded as it
+  // appears, so a form shown and then swapped or removed would be caught.
+  const watchButtons = (ctx) => ctx.addInitScript(() => {
+    window.__shown = [];
+    const look = () => {
+      for (const b of document.querySelectorAll(".fll-capture .fll-btn")) {
+        if (getComputedStyle(b).visibility !== "visible" || !b.offsetParent) continue;
+        const text = b.textContent.trim();
+        if (!window.__shown.includes(text)) window.__shown.push(text);
+      }
+    };
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  const slow = async ({ open, spots, delay, at }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, at);
+    await watchButtons(ctx);
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    await page.route("**/api/founding", async r => { await new Promise(ok => setTimeout(ok, delay)); try { await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots, openSignup: open }) }); } catch { /* page gone */ } });
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByText("Real screens from the app.").waitFor();
+    return { ctx, page };
+  };
+  const LAUNCHED = new Date("2026-10-27T10:00:00-04:00"), BEFORE = new Date("2026-10-20T10:00:00-04:00");
+  const state = (page) => page.evaluate(() => ({ shown: window.__shown, held: document.querySelectorAll(".fll-held").length,
+    formH: document.querySelector(".fll-hero-form .fll-capture") ? Math.round(document.querySelector(".fll-hero-form .fll-capture").getBoundingClientRect().height) : null }));
+  {
+    const { ctx, page } = await slow({ open: true, spots: 35, delay: 2500, at: LAUNCHED });
+    await page.evaluate(() => document.fonts.ready);   // measure in the page's own font, not the fallback
+    const during = await state(page);
+    t.ok(during.held >= 2 && during.shown.length === 0, `12a after launch, before the answer: the area held (${during.held} parts), no form visible`);
+    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
+    const after = await state(page);
+    t.eq([after.shown, after.held], [["Get my founding spot"], 0], "12b …then the founding spot form, and no other form was ever visible");
+    t.ok(during.formH > 100 && after.formH === during.formH, `12c …in exactly the space that was held (${during.formH}px, then ${after.formH}px)`);
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await slow({ open: true, spots: 0, delay: 1500, at: LAUNCHED });
+    await page.getByRole("button", { name: "Create your account" }).waitFor();
+    const v = await state(page);
+    t.eq([v.shown, v.held], [["Create your account"], 0], "12d after launch, all taken: \"Create your account\" only; no waitlist form was ever visible");
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await slow({ open: false, spots: 35, delay: 1500, at: BEFORE });
+    const first = await state(page);
+    t.ok(first.held === 0 && first.shown.includes("Join the waitlist"), "12e before launch day, signup shut: today's form at once, before any answer, nothing held (exactly as now)");
+    await page.waitForTimeout(1800);
+    t.eq((await state(page)).shown, ["Join the waitlist"], "12f …and it stays");
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await slow({ open: false, spots: 35, delay: 1500, at: LAUNCHED });
+    await page.getByRole("button", { name: "Join the waitlist" }).first().waitFor();
+    t.eq((await state(page)).shown, ["Join the waitlist"], "12g after launch day with signup shut again: held, then today's form, and nothing else shown");
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await slow({ open: true, spots: 35, delay: 6500, at: LAUNCHED });
+    await page.getByRole("button", { name: "Join the waitlist" }).first().waitFor({ timeout: 6000 });
+    await page.waitForTimeout(3500);
+    t.eq((await state(page)).shown, ["Join the waitlist"], "12h no answer within 4 s: today's form, and a late answer does not switch it");
     await ctx.close();
   }
 

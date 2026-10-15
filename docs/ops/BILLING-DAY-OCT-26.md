@@ -366,7 +366,10 @@ Unsubscribe any time. Who we are: see Contact below.", and a signup under it is 
 `2026-10-26`, which covers the founding link email only. Once the spots are full, the forms and the
 founding block go, and the hero shows one button, "Create your account", that opens sign-up, with the line
 "Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps."
-(`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`).
+From October 26 the page keeps that area's space empty until `/api/founding` answers (at most 4 seconds),
+so no form is shown and then swapped; before October 26 nothing is held and the page is exactly as today
+(`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`, `landingDemo.browser.test.cjs`
+sections 11 and 12).
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server

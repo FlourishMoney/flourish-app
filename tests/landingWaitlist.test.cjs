@@ -47,6 +47,16 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
     [{ openSignup: "true", spotsLeft: 0 }, "waitlist", "a string \"true\" is not open"],
   ]) t.eq(area(answer, { now: Date.parse("2026-10-15T12:00:00-04:00") }), want, `1a ${why}`);
   t.eq(area({ openSignup: true, spotsLeft: 0 }, { native: true }), "waitlist", "1b a store app: never anything but today's (it shows no landing form)");
+  // The hold (item 3): only while the answer is not in, and only from launch day on.
+  t.eq(U.LAUNCH_DAY, Date.parse("2026-10-26T04:00:00Z"), "1c launch day: October 26, 00:00 Toronto time");
+  t.eq([area(null, { now: Date.parse("2026-10-15T12:00:00-04:00") }), area(null, { now: U.LAUNCH_DAY - 1 })], ["waitlist", "waitlist"],
+    "1d before launch day, no answer yet: today's form at once, nothing held (the page exactly as now)");
+  t.eq([area(null, { now: U.LAUNCH_DAY }), area(null, { now: Date.parse("2026-11-20T09:00:00-05:00") })], ["hold", "hold"],
+    "1e from launch day, no answer yet: the area is held");
+  t.eq(area(null, { now: U.LAUNCH_DAY, native: true }), "waitlist", "1f …never in a store app");
+  t.eq([area({ openSignup: true, spotsLeft: 35 }, { now: U.LAUNCH_DAY }), area({ openSignup: true, spotsLeft: 0 }, { now: U.LAUNCH_DAY }), area({ openSignup: false, spotsLeft: 35 }, { now: U.LAUNCH_DAY })],
+    ["founding", "account", "waitlist"], "1g once the answer is in, the date plays no part");
+  t.eq(U.LANDING_HOLD_MS, 4000, "1h the longest hold: 4 seconds");
 
   // ── 2. the one /api/founding read ───────────────────────────────────────────────────────────────
   const res = (status, body, opts = {}) => async () => ({ ok: status < 300, status, json: async () => { if (opts.html) throw new SyntaxError("Unexpected token <"); return body; } });
@@ -85,15 +95,15 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
 
   // ── 5. the landing ──────────────────────────────────────────────────────────────────────────────
   const auth = APP.slice(APP.indexOf("function AuthScreen("), APP.indexOf("\n}\n", APP.indexOf("function AuthScreen(")));
-  t.ok(/sharedFoundingAnswer\(\)\.then\(a => \{ if \(live\) setFoundingAnswer\(a\); \}\);/.test(auth) && !/signup_status[\s\S]{0,40}sharedSignupStatus|sharedSignupStatus/.test(APP),
+  t.ok(/sharedFoundingAnswer\(\)\.then\(settle\);/.test(auth) && !/sharedSignupStatus/.test(APP),
     "5a the landing reads the one shared /api/founding answer (no signup_status call of its own)");
-  t.ok(/if \(isNativeApp\(\)\) return undefined;\s*let live = true;\s*sharedFoundingAnswer\(\)/.test(auth), "5b web only: a store app asks nothing");
+  t.ok(/if \(isNativeApp\(\)\) return undefined;\s*let live = true;\s*const settle = [^\n]*\n\s*sharedFoundingAnswer\(\)/.test(auth), "5b web only: a store app asks nothing");
   t.eq((APP.match(/<WaitlistForm /g) || []).length, 2, "5c two waitlist forms on the landing (hero, bottom)");
-  t.ok(/\{waitlistForms && <WaitlistForm source="hero" founding=\{waitlistArea === "founding"\}\/>\}/.test(auth), "5d the hero form: today's or the founding spot form, by state");
-  t.ok(/\{waitlistForms && <FoundingOffer launched=\{waitlistArea === "founding"\}\/>\}/.test(auth), "5e the founding block, with its after-launch words in the founding state");
+  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}\/>\}/.test(auth), "5d the hero form: today's or the founding spot form, by state (held while the answer is not in)");
+  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && <FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}\/>\}/.test(auth), "5e the founding block, with its after-launch words in the founding state"); 
   const second = auth.slice(auth.indexOf("{/* Second email capture */}"), auth.indexOf("{/* Footer */}"));
   t.ok(/\{waitlistArea === "waitlist" && <>\s*<h2 className="fll-h2"[^>]*>Be first to know\.<\/h2>\s*<p className="fll-lede"[^>]*>Join the waitlist and we'll email you the moment flourish launches in Canada\.<\/p>\s*<\/>\}/.test(second)
-    && /<WaitlistForm source="bottom_cta" founding=\{waitlistArea === "founding"\}\/>/.test(second), "5f the bottom form: the launch heading and promise only on today's page");
+    && /<WaitlistForm source="bottom_cta" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}\/>/.test(second), "5f the bottom form: the launch heading and promise only on today's page");
   t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "5g the sign-up card's own status check is unchanged");
 
   // ── 6. all 50 taken: "Create your account" (approved by ChatGPT and Grok, 2026-10-15) ──────────────
@@ -102,6 +112,20 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
     "6a the hero, only when all 50 are taken: one button, \"Create your account\", that opens sign-up, and the approved line under it");
   t.eq((APP.match(/>Create your account</g) || []).length, 1, "6b …the only such button");
   t.ok(/const goSignup = \(\) => \{ setMode\("signup"\);[^}]*setShowAuth\(true\); \};/.test(auth), "6c goSignup is the sign-up opener the page already uses");
+
+  // ── 7. the hold (item 3): the space kept, nothing visible, the first answer final ───────────────────
+  t.ok(/const \[landingNow\] = useState\(\(\) => Date\.now\(\)\);/.test(auth) && /landingWaitlistArea\(\{ answer: foundingAnswer, now: landingNow, native: isNativeApp\(\) \}\)/.test(auth),
+    "7a the date is read once, as the page opens");
+  t.ok(/const settle = \(a\) => \{ if \(live\) setFoundingAnswer\(prev => prev \|\| a\); \};\s*sharedFoundingAnswer\(\)\.then\(settle\);\s*const timer = setTimeout\(\(\) => settle\(\{ spotsLeft: null, openSignup: null \}\), LANDING_HOLD_MS\);/.test(auth),
+    "7b the first to settle, the answer or the 4-second limit, decides; nothing switches after it");
+  t.ok(/\.fll-held\{ visibility:hidden; \}/.test(APP), "7c held: visibility hidden, so the space is kept and nothing shows, takes focus or is read out");
+  t.ok(/<div className=\{held \? "fll-capture fll-held" : "fll-capture"\} aria-hidden=\{held \? "true" : undefined\}>/.test(APP)
+    && /<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*aria-hidden=\{held \? "true" : undefined\}>/.test(APP), "7d the held form and founding block are hidden from assistive tech too");
+  if (A.WaitlistForm) {
+    const held = A.render(A.h(A.WaitlistForm, { source: "hero", founding: true, held: true }));
+    t.ok(/class="fll-capture fll-held" aria-hidden="true"/.test(held), "7e rendered held: the hidden class and aria-hidden");
+    t.ok(!/class="fll-capture fll-held"|aria-hidden="true"/.test(A.render(A.h(A.WaitlistForm, { source: "hero" }))), "7f a form not held has neither");
+  }
 
   t.summary("landingWaitlist.test");
   setImmediate(() => process.exit(process.exitCode || 0));
