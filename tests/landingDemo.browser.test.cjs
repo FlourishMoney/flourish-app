@@ -344,6 +344,37 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(dm.card.left > dm.h1.right && dm.card.left > dm.form.right && dm.form.top > dm.h1.top && dm.card.top < 900,
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");
     await dctx.close();
+    // 2026-10-14: from 1024px the card sits level with the headline and wholly in the first screen, the
+    // founding box directly under it in the right column, and the videos, "Sound familiar?" and the demo
+    // button are one full-width row below the hero. (Under 1024px nothing changed; the 390 x 844 hero is
+    // checked in 6b above.)
+    for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900]]) {
+      const c = await browser.newContext({ viewport: { width: w, height: h } });
+      const pg = await c.newPage(); pg.setDefaultTimeout(15000);
+      const errs = []; pg.on("pageerror", e => errs.push(String(e.message)));
+      await pg.goto(base, { waitUntil: "load" });
+      await pg.getByText("Real screens from the app.").waitFor();
+      await pg.locator(".fll-hero-card img").evaluate(img => img.decode());
+      await pg.evaluate(async () => { await document.fonts.ready; });
+      const m = await pg.evaluate(() => {
+        const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect();
+        return { h1: r(".fll-h1"), sub: r(".fll-sub"), form: r(".fll-input"), join: r(".fll-btn"), founding: document.querySelector(".fll-founding").getBoundingClientRect(),
+          card: r(".fll-hero-card"), walk: r(".fll-walk"), familiar: r(".fll-familiar"), demo: r(".fll-demo"), wrap: document.querySelector(".fll-hero .fll-hero-grid").getBoundingClientRect(),
+          hScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+      });
+      const tag = `${w}x${h}`;
+      t.ok(Math.abs(m.card.top - m.h1.top) <= 2 && m.card.bottom <= h && m.card.left > m.h1.right && m.card.left > m.form.right,
+        `6i ${tag}: the $1,944 card is on the right, its top level with the headline's, wholly in the first screen (card ${Math.round(m.card.top)}-${Math.round(m.card.bottom)}, headline top ${Math.round(m.h1.top)})`);
+      t.ok(m.join.bottom <= h && m.form.top > m.sub.bottom, `6j ${tag}: Join is in the first screen (${Math.round(m.join.top)}-${Math.round(m.join.bottom)}), with the form under the subline`);
+      t.ok(m.founding.top >= m.card.bottom && m.founding.top - m.card.bottom <= 24 && Math.abs(m.founding.left - m.card.left) <= 2 && Math.abs(m.founding.right - m.card.right) <= 2 && m.founding.left > m.form.right,
+        `6n ${tag}: the founding box is in the right column, directly under the card and as wide (box ${Math.round(m.founding.top)}-${Math.round(m.founding.bottom)}, card bottom ${Math.round(m.card.bottom)})`);
+      t.ok(m.walk.top > m.founding.bottom && m.walk.top > m.card.bottom && m.walk.left < m.h1.right && m.walk.right > m.card.left && m.familiar.top > m.walk.bottom && m.demo.top > m.familiar.bottom,
+        `6k ${tag}: the videos are one row below the hero across both columns, then "Sound familiar?", then the demo button`);
+      t.ok(Math.abs((m.walk.left + m.walk.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2 && Math.abs((m.demo.left + m.demo.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2,
+        `6l ${tag}: that row and the demo button are centred`);
+      t.ok(!m.hScroll && errs.length === 0, `6m ${tag}: no sideways scroll and no page errors`);
+      await c.close();
+    }
   }
   await browser.close(); server.close();
   t.summary("LANDING DEMO (browser)");

@@ -15174,6 +15174,32 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-walk-tile-n{ align-self:start; }
               .fll-walk-tile-s{ align-self:end; }
             }
+            /* Desktop, 1024px and up (2026-10-14). The hero is two columns: badge, headline, subline and form on
+               the left; on the right the $1,944 card, its top level with the headline's (the badge's 16px line,
+               7px padding and 1px border each side, and its 22px bottom margin), so the whole card is in the
+               first screen at 1280 x 800 and 1440 x 900, and the founding box directly under it, so the two
+               columns end at about the same height. "See how it works", "Sound
+               familiar?", the demo button and the read-only line move to one full-width row below the hero:
+               the player on the left, its title, subline and tiles beside it, centred on the player; then
+               "Sound familiar?" and the button, centred. Under 1024px nothing here applies. */
+            @media(min-width:1024px){
+              .fll-hero-grid{ grid-template-areas:"text card" "form card" "form founding" "demo demo"; grid-template-rows:auto auto auto auto; }
+              .fll-badge{ line-height:${SPACE.lg}px; }
+              .fll-hero-card{ align-self:start; margin-top:${SPACE.lg + 2 * 7 + 2 * 1 + 22}px; margin-bottom:0; }
+              .fll-founding{ justify-self:end; margin-top:-${SPACE.xl - SPACE.lg}px; }
+              .fll-hero-demo{ justify-self:stretch; max-width:none; margin-top:${SPACE.xl}px; }
+              .fll-walk{ display:grid; max-width:960px; margin-inline:auto; margin-block:0 ${SPACE.xl}px; grid-template-columns:minmax(0,360px) minmax(0,1fr);
+                grid-template-rows:1fr auto auto auto 1fr auto; grid-template-areas:"stage ." "stage t" "stage sub" "stage grid" "stage ." "note ."; column-gap:${SPACE.xxl + SPACE.lg}px; text-align:left; }
+              .fll-walk-t{ grid-area:t; }
+              .fll-walk-sub{ grid-area:sub; }
+              .fll-walk-stage{ grid-area:stage; }
+              .fll-walk-grid{ grid-area:grid; margin-block:0; }
+              .fll-walk-note{ grid-area:note; }
+              .fll-familiar{ max-width:560px; margin-inline:auto; text-align:center; }
+              .fll-familiar ul{ display:inline-block; }
+              .fll-hero-demo .fll-demo{ max-width:440px; margin-inline:auto; }
+              .fll-trust-row{ text-align:center; }
+            }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
               .fll-shot{ width:216px; }
@@ -15190,8 +15216,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
           </div>
 
           {/* Hero. Mobile, one column: pill, H1, subline, the form (field, Join, consent line), the card, then
-              the demo button and the read-only line, so Join is on screen at 390 x 844. Desktop: text, form
-              and demo button on the left, the card on the right (grid areas in .fll-hero-grid). */}
+              the demo button and the read-only line, so Join is on screen at 390 x 844. 960 to 1023px: text,
+              form and demo button on the left, the card on the right. 1024px and up: the card beside the text
+              and form, top-aligned with the headline, and the videos, "Sound familiar?" and the demo button in
+              a full-width row below (grid areas in .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
             <div className="fll-hero-grid">
               <div className="fll-hero-text">
