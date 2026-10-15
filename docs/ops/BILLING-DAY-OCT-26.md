@@ -522,9 +522,10 @@ where w.founding_position between 1 and 50 and not w.is_test
    subscription before 2025-03-31, on its item after), so "paid until the period ends" holds.
 9. **Fixed (round 4): tax is charged from the first sale.** Checkout uses Stripe Tax
    (`STRIPE_TAX_ENABLED`, set with `BILLING_ENABLED` in D1): automatic tax, the billing address always
-   collected and saved to the customer, prices tax-exclusive. **Still open:** the Terms say prices are
-   "inclusive of applicable taxes" and in "USD for US users"; replacement wording is proposed in PR #73, not
-   changed here (legal text).
+   collected and saved to the customer, prices tax-exclusive. **The Terms (round 5):** they now say prices
+   are in Canadian dollars and do not include sales tax, which is calculated from the billing address and
+   added at checkout (wording approved by ChatGPT and Grok; Last updated October 14, 2026).
+   `docs/ops/LEGAL-PACKET.md` is the snapshot sent to counsel and still quotes the old sentence.
 10. Smaller: the welcome email still says "when payments open on October 26" after that date; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
     GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,
