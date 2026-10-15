@@ -36,7 +36,7 @@ const EXPECTED_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
   "We'll email you the day flourish launches in Canada. Before then you may get a few updates, and you can unsubscribe from any of them.",
   "Questions or ideas? Just reply to this email.",
-  "Amanda, founder of Flourish",
+  "Amanda, founder of flourish",
 ];
 const WHY = "You're receiving this because you joined the waitlist at flourishmoney.app.";
 const IDENTITY = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";

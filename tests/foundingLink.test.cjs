@@ -108,7 +108,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
       "Your link: https://flourishmoney.app/?checkout=founding",
       "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
       "Questions? Just reply to this email.",
-      "Amanda, founder of Flourish",
+      "Amanda, founder of flourish",
     ], "2c the words, exactly (changing one is a deliberate edit here)");
     t.eq(E.LANDING_PRICE_SENTENCE, O.foundingOfferCopy().price, "2d the price sentence IS the landing page's, word for word (src/lib/foundingOffer.js)");
     const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;

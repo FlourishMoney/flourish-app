@@ -93,7 +93,7 @@ function confirmEmailParagraphs(url) {
     "You asked to confirm this email address for your flourish account, so the founding price can be matched to it.",
     `Confirm it here: ${url}`,
     "The link works for 24 hours. If you didn't ask for it, ignore this email and nothing changes.",
-    "Amanda, founder of Flourish",
+    "Amanda, founder of flourish",
   ];
 }
 const _esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

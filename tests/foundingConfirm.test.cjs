@@ -219,7 +219,7 @@ function load(modPath, state, { blobs = memStore() } = {}) {
       "You asked to confirm this email address for your flourish account, so the founding price can be matched to it.",
       "Confirm it here: https://flourishmoney.app/api/founding-confirm?u=x&x=1&t=y",
       "The link works for 24 hours. If you didn't ask for it, ignore this email and nothing changes.",
-      "Amanda, founder of Flourish",
+      "Amanda, founder of flourish",
     ], "6f the email's words, exactly");
   }
 

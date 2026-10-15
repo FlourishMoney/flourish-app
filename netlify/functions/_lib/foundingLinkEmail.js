@@ -61,7 +61,7 @@ function foundingLinkParagraphs(position) {
     `Your link: ${FOUNDING_LINK_URL}`,
     "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
     "Questions? Just reply to this email.",
-    "Amanda, founder of Flourish",
+    "Amanda, founder of flourish",
   ];
 }
 
