@@ -78,10 +78,12 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey } from "./lib/storeBilling.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -105,6 +107,11 @@ const API_BASE = (() => {
   // this reuses it rather than keeping a second, narrower copy here.
   return isNativeApp() ? "https://flourishmoney.app" : "";
 })();
+
+// Version 1.1, in-app purchase (lib/storeBilling.js): on only in a store build whose VITE_IAP_ENABLED is
+// exactly "true". Every web build, and every store build until 1.1, answers false and nothing below changes.
+const VITE_ENV = (typeof import.meta !== "undefined" && import.meta.env) || {};
+function storeBillingBuild() { return storeBillingOn({ native: isNativeApp(), env: VITE_ENV }); }
 
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
 // — they no longer ship in the client bundle. Submit a code to the endpoint for a yes/no verdict.
@@ -675,7 +682,9 @@ async function callPlaid(action, params={}, options={}) {
   if (options.jwt) {
     headers["Authorization"] = `Bearer ${options.jwt}`;
   }
-  const body = JSON.stringify({ action, ...params });
+  // Version 1.1: a store build that sells marks the request, so the plan check counts a web subscription
+  // there (Apple 3.1.3(b), multiplatform; netlify/functions/_lib/cors.js). Nothing is added otherwise.
+  const body = JSON.stringify({ action, ...params, ...storeBillingFields(storeBillingBuild()) });
   // Quality Sprint item 6: retry transient failures (network drops + 502/503/504) with exponential
   // backoff. Client errors (4xx) and needs_reconnect surface immediately — retrying them is futile.
   // Quality Sprint review: only auto-retry idempotent/safe actions (reads, keyed upserts, idempotent
@@ -12884,6 +12893,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               context: buildContext(text),
               messages: newMessages.map(m=>({role:m.role, content:m.content})),
             },
+            ...storeBillingFields(storeBillingBuild()),   // version 1.1 store builds only (lib/storeBilling.js)
           }),
         });
       };
@@ -16536,6 +16546,14 @@ export default function FlourishApp(){
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
+  // VERSION 1.1, IN-APP PURCHASE (lib/storeBilling.js). Only a store build with VITE_IAP_ENABLED "true" sells;
+  // everywhere else storeBilling is false and none of this runs. storeStatus is the server's store_status
+  // answer for this account ({ paid, provider, plan_key, founding }), storeAskedFor the account it finished for,
+  // and purchasesRef the RevenueCat plugin once it is configured for this account.
+  const storeBilling = storeBillingBuild();
+  const [storeStatus,setStoreStatus]=useState(null);
+  const [storeAskedFor,setStoreAskedFor]=useState(null);
+  const purchasesRef = useRef(null);
   // The founding link (src/lib/foundingLink.js): ?checkout=founding, or one opened on this device while
   // signed out in the last 7 days. Never in a store app. The parameter comes off the address bar at once.
   const [foundingLink,setFoundingLink]=useState(()=>{
@@ -16667,6 +16685,46 @@ export default function FlourishApp(){
   // Google require their own purchase systems for digital subscriptions, so the iOS and Android
   // builds must show no price, no link and no button. See docs/ops/BILLING-SETUP.md.
   const nativeApp = isNativeApp();
+  // Version 1.1: ask the server what this account may do in a store app that sells, and configure RevenueCat
+  // for this account (its app user id is the Supabase user id, so a store purchase belongs to the household,
+  // not to the phone). Nothing here runs in any other build.
+  const askStore = useCallback(async (action = "store_status")=>{
+    const jwt = await getJwt();
+    if(!jwt) return null;
+    const res = await fetch(`${API_BASE}/api/billing`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+      body: JSON.stringify({action}),
+    });
+    if(!res.ok) return null;                      // 404 while IAP_ENABLED is off on the server
+    return res.json();
+  },[]);
+  useEffect(()=>{
+    let cancelled = false;
+    if(!storeBilling || !user?.id){ setStoreStatus(null); return; }
+    (async ()=>{
+      try{ const s = await askStore("store_status"); if(!cancelled && s) setStoreStatus(s); }
+      catch{ /* offline: stays unknown, and unknown is not paid */ }
+      finally{ if(!cancelled) setStoreAskedFor(user.id); }
+    })();
+    return ()=>{ cancelled = true; };
+  },[storeBilling, user?.id, askStore]);
+  useEffect(()=>{
+    let cancelled = false;
+    if(!storeBilling || !user?.id) return;
+    (async ()=>{
+      const key = revenueCatKey(window.Capacitor?.getPlatform?.(), VITE_ENV);
+      if(!key) return;                            // no key in this build: nothing is configured, nothing is sold
+      try{
+        const { Purchases } = await import("@revenuecat/purchases-capacitor");
+        const { isConfigured } = await Purchases.isConfigured();
+        if(!isConfigured) await Purchases.configure({ apiKey:key, appUserID:user.id });
+        else await Purchases.logIn({ appUserID:user.id });
+        if(!cancelled) purchasesRef.current = Purchases;
+      }catch(e){ console.warn("[store] RevenueCat unavailable:", e?.message||e); }
+    })();
+    return ()=>{ cancelled = true; };
+  },[storeBilling, user?.id]);
   useEffect(()=>{
     let cancelled = false;
     if(nativeApp || !user?.id){ setBillingStatus(null); return; }
@@ -16704,6 +16762,16 @@ export default function FlourishApp(){
     setPlan(plan);
     setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
+  // Version 1.1: a store app that sells takes the server's store_status answer, whichever provider the
+  // household pays through (lib/planFromProfile.js storePlan). Declared after the effect above so that, when
+  // both run, this one has the last word; in every other build it returns at once. Only this account's own
+  // answer counts.
+  useEffect(()=>{
+    if(!storeBilling || profilePlan===null) return;
+    const sp = storePlan(profilePlan, { paid: !!user?.id && storeAskedFor===user.id && storeStatus?.paid === true });
+    setPlan(sp);
+    setIsPremium(sp === "premium" || sp === "beta_founder" || sp === "trial");
+  },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
   // The founding link: the checkout screen once this account's status is in and billing is on; in a store
   // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
   // answer in that status, never this link's.

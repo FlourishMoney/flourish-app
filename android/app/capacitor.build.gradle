@@ -12,6 +12,7 @@ dependencies {
     implementation project(':capacitor-community-in-app-review')
     implementation project(':capacitor-local-notifications')
     implementation project(':capacitor-share')
+    implementation project(':revenuecat-purchases-capacitor')
 
 }
 

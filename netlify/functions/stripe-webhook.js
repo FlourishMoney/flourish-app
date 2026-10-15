@@ -1,6 +1,8 @@
 // netlify/functions/stripe-webhook.js
 // -----------------------------------------------------------------------------
-// STRIPE TELLS US WHAT WAS PAID. This is the only writer of public.subscriptions.
+// STRIPE TELLS US WHAT WAS PAID. This writes public.subscriptions for the website; from version 1.1 the
+// store apps' purchases reach the same one-row-per-household table from RevenueCat
+// (_lib/storeSubscriptions.js). Neither replaces a row the other has PAID for (storePaidRow below).
 //
 // FAIL CLOSED, in that order:
 //   no secret configured        -> 500, nothing read, nothing written
@@ -20,6 +22,7 @@
 
 const { getAdminClient } = require("./_lib/auth");
 const { verifyStripeSignature } = require("./_lib/stripeSignature");
+const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -170,12 +173,32 @@ exports.handler = async (event) => {
       .from("subscriptions").select("user_id, last_event_at").eq(column, value).maybeSingle();
     return data || null;
   };
+  // ONE PAID STATE AT A TIME (version 1.1). A household whose row is a PAID store purchase keeps it: a Stripe
+  // event for the same household is acknowledged and recorded, never written over it. Checkout refuses a
+  // household that already pays (billing.js), so this only happens if a second payment got through anyway,
+  // and the record is support's prompt to refund it.
+  const storePaidRow = async (user_id) => {
+    if (!user_id) return false;
+    const { data } = await admin
+      .from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+    return !!data && isStoreRow(data) && isPaidSubscription(data);
+  };
+  const acknowledgeConflict = async () => {
+    console.error("[stripe-webhook] conflict: a Stripe event for a household that already pays in a store");
+    await admin.from("billing_events").update({
+      status: "ignored",
+      processed_at: new Date().toISOString(),
+      error: "conflict: the household already pays through a store; refund the web subscription",
+    }).eq("event_id", evt.id);
+    return reply(200, { received: true, conflict: true });
+  };
 
   try {
     if (evt.type === "checkout.session.completed") {
       const user_id = userIdFrom(object);
       if (!user_id) throw new Error("checkout session carried no user_id");
       if (staleAgainst(await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
+      if (await storePaidRow(user_id)) return await acknowledgeConflict();
       const patch = {
         user_id,
         provider: "stripe",
@@ -207,6 +230,9 @@ exports.handler = async (event) => {
       // Staleness is judged against whichever row this event would write — including the row the
       // checkout wrote, which the subscription id does not find until the first update lands.
       if (staleAgainst(existing || await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
+      // Found by its Stripe subscription id, the row is this Stripe subscription's own. Found only by account,
+      // it may be a store purchase made since, which this event must not replace.
+      if (!existing && await storePaidRow(user_id)) return await acknowledgeConflict();
       if (eventAtIso) patch.last_event_at = eventAtIso;
       const accountId = existing?.user_id || user_id;
       if (foundingEnded && accountId) {

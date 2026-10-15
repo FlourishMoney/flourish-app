@@ -12,7 +12,7 @@
 //   FREE_CHAT_WEEKLY    applies only to accounts with no entitlement, only while the flag is on.
 // -----------------------------------------------------------------------------
 "use strict";
-const { isNativeRequest } = require("../netlify/functions/_lib/cors.js");
+const { isNativeRequest, isStoreBillingRequest } = require("../netlify/functions/_lib/cors.js");
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -114,7 +114,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       missing: () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function public.increment_coach_usage_weekly(p_user) in the schema cache" } }),
     };
 
-    const run = async ({ mode, unlimited, enforce = true, origin = "https://flourishmoney.app" }) => {
+    const run = async ({ mode, unlimited, enforce = true, origin = "https://flourishmoney.app", query = undefined }) => {
       const calls = { weekly: 0, daily: 0, planOpts: [] };
       const logs = [];
       const admin = {
@@ -127,7 +127,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       const fn = new Function(
         "getUserPlan", "getAdminClient", "ENFORCE_PLAN_LIMITS", "CHAT_DAILY_CEILING", "FREE_CHAT_WEEKLY",
         "countFreeWeek", "decideChatLimit", "corsHeaders", "user_id", "ipCount", "EMERGENCY_IP_DAILY", "console",
-        "isNativeRequest", "event",
+        "isNativeRequest", "isStoreBillingRequest", "event",
         `return (async () => {\n${block}\n  return { allowedThrough: true };\n})();`
       );
       // countFreeWeek logs through the module's own console, not the one injected into the block,
@@ -139,7 +139,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
         out = await fn(
           async (_u, opts) => { calls.planOpts.push(opts); return { unlimited }; }, () => admin, enforce, CEILING, FREE_CHAT_WEEKLY,
           countFreeWeek, decideChatLimit, CORS, "user-1", 1, 10, { error: (...a) => logs.push(a.map(String).join(" ")) },
-          isNativeRequest, { headers: { origin } }
+          isNativeRequest, isStoreBillingRequest, { headers: { origin }, ...(query ? { queryStringParameters: query } : {}) }
         );
       } finally { console.error = quiet; }
       const body = out && out.body ? JSON.parse(out.body) : null;
@@ -152,6 +152,10 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       "7a2 the coach asks getUserPlan with native: false for a web request");
     t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin: "capacitor://localhost" })).calls.planOpts), '[{"native":true}]',
       "7a3 …and native: true for a request from the iOS app");
+    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin: "capacitor://localhost", query: { store_billing: "1" } })).calls.planOpts), '[{"native":true,"storeBilling":true}]',
+      "7a4 …and storeBilling: true for a version 1.1 store app that sells (in-app purchase), and only then");
+    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, query: { store_billing: "1" } })).calls.planOpts), '[{"native":false}]',
+      "7a5 …a web page that sends the same parameter is still a web page");
 
     for (const mode of Object.keys(MODES)) {
       // A free account is refused, with the ordinary free-limit message.

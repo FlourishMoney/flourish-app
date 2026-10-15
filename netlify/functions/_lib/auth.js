@@ -102,9 +102,11 @@ const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
 // + 14 days, so trials created before that migration do not move. The rule itself lives in
 // _lib/planRules.js and is parity-tested against the client's copy. Defaults to free on any error —
 // auth still gates access; worst case a paid user is briefly treated as free on a transient DB error.
-// opts.native: the request came from a store app (_lib/cors.js isNativeRequest). The Stripe subscription
-// is then not read at all, and the answer is the profile's: the trial, then free (Apple 3.1.3(b)).
-async function getUserPlan(user_id, { native = false } = {}) {
+// opts.native: the request came from a store app (_lib/cors.js isNativeRequest). The subscription is then not
+// read at all, and the answer is the profile's: the trial, then free (Apple 3.1.3(b)). opts.storeBilling: the
+// store app sells (version 1.1, _lib/cors.js isStoreBillingRequest); the subscription row is read and counts,
+// whichever provider it came from, as _lib/planRules.js explains.
+async function getUserPlan(user_id, { native = false, storeBilling = false } = {}) {
   try {
     const admin = getAdminClient();
     const { data, error } = await admin
@@ -122,10 +124,10 @@ async function getUserPlan(user_id, { native = false } = {}) {
     // upgrade anyone. Same failure posture as the rest of this function — worst case a paying user
     // is briefly treated as free, never the reverse.
     let sub = null;
-    if (!native) try {
+    if (!native || storeBilling) try {
       const { data: subRow, error: subErr } = await admin
         .from("subscriptions")
-        .select("status, current_period_end, plan_key, cancel_at_period_end")
+        .select("provider, status, current_period_end, plan_key, cancel_at_period_end")
         .eq("user_id", user_id)
         .maybeSingle();
       if (!subErr) sub = subRow || null;
@@ -133,7 +135,7 @@ async function getUserPlan(user_id, { native = false } = {}) {
       console.error("[auth] subscription read failed (treating as unpaid):", e.message);
     }
 
-    const ent = deriveEntitlement(data, sub, Date.now(), { native });
+    const ent = deriveEntitlement(data, sub, Date.now(), { native, storeBilling });
     return {
       // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
       // existing tests read this shape. The derived answer is added beside it, not in place of it.
