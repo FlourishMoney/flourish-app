@@ -128,7 +128,7 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     for (const [what, rx] of [["restore", /onClick=\{doRestore\}/], ["terms", /onViewLegal\("terms"\)/], ["privacy", /onViewLegal\("privacy"\)/], ["sign out", /onClick=\{onSignOut\}/], ["delete", /onClick=\{onDeleteAccount\}/]]) {
       t.ok(rx.test(comp), `6b the paywall always offers ${what}`);
     }
-    t.ok(/<ModalHost\/>/.test(comp), "6c it brings the one ModalHost, so the delete confirmation works with no shell behind it");
+    t.ok(!/<ModalHost\/>/.test(comp), "6c it brings no ModalHost of its own: it is drawn over the app, whose one ModalHost sits above it (item 3)");
     t.ok(/offerCopy\(\{ plan, priceString: p\.product\.priceString, eligible: introEligible\(p, platform, elig\), platform \}\)/.test(comp), "6d every card's words come from the store's price and the store's eligibility");
     t.ok(/storeBuy\(deps, pkg\)/.test(comp) && /serverStatus: \(\)=>askStore\("store_status"\)/.test(comp) && /serverSync: \(\)=>askStore\("store_sync"\)/.test(comp), "6e a purchase goes through lib/storeBilling.js buy: the server is asked first and last");
     let A = null;

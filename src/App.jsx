@@ -83,8 +83,8 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore } from "./lib/storeBilling.js";
-import { offerCopy, introEligible, PAYWALL_COPY } from "./lib/storeOffer.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision } from "./lib/storeBilling.js";
+import { offerCopy, introEligible, PAYWALL_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -12092,7 +12092,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   const [showFeedback,setShowFeedback]=useState(false); // tester suggestions item 6
@@ -12406,6 +12406,17 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             : "Unlimited coaching and the full picture from your linked accounts."}
         </div>
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
+      </div>
+    )}
+    {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
+    {storeSubscription&&(
+      <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Subscription</div>
+        <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>{storeSubscription.line}</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+          {storeSubscription.onManage&&<Btn label="Manage subscription" onClick={storeSubscription.onManage} color={C.mutedHi} outline small/>}
+          <Btn label="Restore purchases" onClick={storeSubscription.onRestore} color={C.mutedHi} outline small/>
+        </div>
       </div>
     )}
     {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
@@ -13688,8 +13699,8 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 // Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
 // The prices are the store's own strings, the free month is offered only when the store says this account may
 // have it, and access follows the server's answer after the store's sheet, never the SDK's. Restore, the Terms
-// of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is a
-// full screen with no app shell behind it, so it brings the one ModalHost the delete confirmation needs.
+// of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is drawn
+// OVER the app (item 3), whose one ModalHost sits above it, so the delete confirmation shows on top.
 function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
   const [elig,setElig]=useState({});              // iOS introductory-offer eligibility, by product id
@@ -13740,8 +13751,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
   return(
-    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",paddingTop:INSET.top,...safeX(0)}}>
-      <ModalHost/>
+    <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
         <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:0,marginBottom:SPACE.sm}}>{PAYWALL_COPY.title}</h1>
@@ -16648,6 +16658,7 @@ export default function FlourishApp(){
   const [storeStatus,setStoreStatus]=useState(null);
   const [storeAskedFor,setStoreAskedFor]=useState(null);
   const purchasesRef = useRef(null);
+  const [storePurchases,setStorePurchases]=useState(null);
   // The founding link (src/lib/foundingLink.js): ?checkout=founding, or one opened on this device while
   // signed out in the last 7 days. Never in a store app. The parameter comes off the address bar at once.
   const [foundingLink,setFoundingLink]=useState(()=>{
@@ -16821,7 +16832,7 @@ export default function FlourishApp(){
         const { isConfigured } = await Purchases.isConfigured();
         if(!isConfigured) await Purchases.configure({ apiKey:key, appUserID:user.id });
         else await Purchases.logIn({ appUserID:user.id });
-        if(!cancelled) purchasesRef.current = Purchases;
+        if(!cancelled){ purchasesRef.current = Purchases; setStorePurchases(()=>Purchases); }
       }catch(e){ console.warn("[store] RevenueCat unavailable:", e?.message||e); }
     })();
     return ()=>{ cancelled = true; };
@@ -16873,6 +16884,33 @@ export default function FlourishApp(){
     setPlan(sp);
     setIsPremium(sp === "premium" || sp === "beta_founder" || sp === "trial");
   },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
+  // VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK. The store paywall is drawn OVER the app, never in place of
+  // it: whatever screen, sheet or half-typed form was open stays mounted underneath with its state, and once the
+  // household subscribes it is exactly where it was. It is decided only at a safe point (lib/storeBilling.js
+  // paywallDecision): this account's first answer after the app starts or the household signs in, and each
+  // return from the background. An answer that changes in between waits; an unknown answer never puts it up.
+  const paywallOpenRef = useRef(true);
+  const [paywallUp,setPaywallUp]=useState(false);
+  const [paywallLegal,setPaywallLegal]=useState(null);     // "terms" | "privacy", shown inside the overlay
+  const storeEntitled = (!storeBilling || !user?.id || profilePlan===null || storeAskedFor!==user.id || !storeStatus)
+    ? null : storePlan(profilePlan, { paid: storeStatus.paid === true }) !== "free";
+  useEffect(()=>{ paywallOpenRef.current = true; },[user?.id]);
+  useEffect(()=>{
+    if(!storeBilling){ setPaywallUp(false); return; }
+    const d = paywallDecision({ open: paywallOpenRef.current, entitled: storeEntitled });
+    paywallOpenRef.current = d.open;
+    if(d.up !== null) setPaywallUp(d.up);
+  },[storeBilling, storeEntitled, storeStatus]);
+  useEffect(()=>{
+    if(!storeBilling || !user?.id) return;
+    const onVisible = ()=>{
+      if(document.visibilityState!=="visible") return;
+      paywallOpenRef.current = true;               // back from the background: a safe point
+      askStore("store_status").then(s=>{ if(s) setStoreStatus(s); }).catch(()=>{});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return ()=>document.removeEventListener("visibilitychange", onVisible);
+  },[storeBilling, user?.id, askStore]);
   // The founding link: the checkout screen once this account's status is in and billing is on; in a store
   // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
   // answer in that status, never this link's.
@@ -17909,7 +17947,9 @@ export default function FlourishApp(){
   };
 
   const deleteAllData = async ()=>{
-    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone.",confirmLabel:"Delete account",destructive:true}))) return;
+    // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
+    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider) : null;
+    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone."+(storeNote?` ${storeNote}`:""),confirmLabel:"Delete account",destructive:true}))) return;
 
     // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
     // the account was actually deleted. Any failure leaves the session + local data intact
@@ -17978,9 +18018,39 @@ export default function FlourishApp(){
     window.location.reload();
   };
 
+  // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
+  // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
+  // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
+  // Terms and Privacy open inside the overlay, so nothing behind it unmounts.
+  const storePaywallOverlay = (storeBilling && paywallUp) ? (
+    <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+      {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
+        : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
+        : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} onSignOut={signOut} onDeleteAccount={deleteAllData}/>}
+    </div>
+  ) : null;
+  // Version 1.1: Settings' Subscription card, in a selling build only.
+  const storeSubscription = storeBilling ? {
+    line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
+    onManage: storeStatus?.paid && (storeStatus.provider==="app_store" || storeStatus.provider==="play_store") ? manageStoreSubscription : null,
+    onRestore: async ()=>{
+      if(!storePurchases) return;
+      const r = await storeRestore({ restorePurchases: ()=>storePurchases.restorePurchases(), serverSync: ()=>askStore("store_sync") });
+      const st = await askStore("store_status").catch(()=>null);
+      if(st) setStoreStatus(st);
+      if(r.outcome!=="paid") alertModal({message: PAYWALL_COPY.outcomes[r.outcome] || PAYWALL_COPY.outcomes.failed});
+    },
+  } : null;
+  function manageStoreSubscription(){
+    try{
+      if(window.Capacitor?.getPlatform?.()==="ios" && storePurchases) { storePurchases.showManageSubscriptions(); return; }
+      window.location.href = "https://play.google.com/store/account/subscriptions?package=com.flourishmoney.app";
+    }catch{ /* the store's own page is the fallback the household can always reach */ }
+  }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
@@ -18110,7 +18180,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overflowX:"hidden",overscrollBehavior:"contain",flexShrink:0}}>
@@ -18213,7 +18283,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",...safeX(0)}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>

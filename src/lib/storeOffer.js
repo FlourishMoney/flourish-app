@@ -81,3 +81,21 @@ export const PAYWALL_COPY = Object.freeze({
     nothing_to_restore: "No subscription was found for this store account.",
   }),
 });
+
+/** Settings' Subscription card: where this household's subscription is, in words. No price. */
+export function subscriptionLine(status, { entitled = null } = {}) {
+  if (status && status.paid) {
+    if (status.provider === "app_store") return "Your subscription is through the App Store.";
+    if (status.provider === "play_store") return "Your subscription is through Google Play.";
+    return "Your subscription is through the Flourish website.";
+  }
+  if (entitled === true) return "This account has full access.";
+  return "There's no subscription on this account yet.";
+}
+
+/** Deleting the account does not cancel a store subscription; the confirmation says where it is cancelled. */
+export function storeCancelNote(provider) {
+  if (provider === "app_store") return "The App Store subscription carries on until you cancel it in your Apple Account settings, under Subscriptions.";
+  if (provider === "play_store") return "The Google Play subscription carries on until you cancel it in Google Play, under Payments and subscriptions.";
+  return null;
+}
