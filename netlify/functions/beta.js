@@ -5,6 +5,8 @@
  * Actions:
  *   count  — returns current beta signup count + cap + spots remaining
  *   check  — returns {allowed: bool} — whether signup is still open
+ *   waitlist_count — returns {waitlistCount: N}: the waitlist rows that are not test rows, and nothing
+ *            else (no address, no row). 503 {error:"unavailable"} if it cannot be counted. Cached 60 s.
  *
  * Env vars needed:
  *   SUPABASE_URL         — your Supabase project URL
@@ -85,6 +87,36 @@ async function getUserCount(supabaseUrl, secretKey) {
   const data = await res.json();
   // Supabase returns total in the response
   return data.total || (data.users?.length ? data.users.length : 0);
+}
+
+// The number of waitlist rows that are not test rows, or null. HEAD + count=exact: the total arrives in
+// Content-Range and no row is read. Kept 60 s per instance; a failure is never kept.
+const WAITLIST_COUNT_CACHE_MS = 60 * 1000;
+let _waitlistCountCache = null; // { at, n }
+async function waitlistCount(supabaseUrl, secretKey, now = Date.now()) {
+  if (_waitlistCountCache && now - _waitlistCountCache.at < WAITLIST_COUNT_CACHE_MS) return _waitlistCountCache.n;
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist?select=id&is_test=is.false`, {
+      method: "HEAD",
+      headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
+      signal: controller.signal,
+    });
+    if (!res.ok) { console.error("[beta] waitlist count failed", res.status); return null; }
+    const range = res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : null;
+    const m = typeof range === "string" && /\/(\d+)\s*$/.exec(range);
+    if (!m) { console.error("[beta] waitlist count failed", "no_count_header"); return null; }
+    const n = Number(m[1]);
+    _waitlistCountCache = { at: now, n };
+    return n;
+  } catch (err) {
+    const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+    console.error("[beta] waitlist count failed", aborted ? "timeout" : "no_status");
+    return null;
+  } finally {
+    clearTimeout(deadline);
+  }
 }
 
 // ─── Waitlist confirmation email ─────────────────────────────────────────────────────────────────
@@ -233,6 +265,16 @@ async function handle(event) {
       statusCode: 500, headers: CORS,
       body: JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars" }),
     };
+  }
+
+  // How many households are on the waitlist (2026-10-15). One number: rows not marked is_test, counted
+  // by PostgREST (HEAD with count=exact, so no row and no address is read). Nothing else is returned and
+  // nothing about authentication changes: like the default count, it is public and read-only.
+  if (action === "waitlist_count") {
+    const n = await waitlistCount(supabaseUrl, secretKey);
+    return n === null
+      ? { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }
+      : { statusCode: 200, headers: CORS, body: JSON.stringify({ waitlistCount: n }) };
   }
 
   // Sprint Z #5: beta/promo-code validation lives server-side — codes never ship in the client bundle.
