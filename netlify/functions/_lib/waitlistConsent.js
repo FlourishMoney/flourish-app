@@ -46,13 +46,26 @@ const CONSENT_COVERS = Object.freeze({
 });
 
 // THE FOUNDING LINK EMAIL (_lib/foundingLinkEmail.js) goes to every version whose words asked for updates.
-// It is not the launch email: the site says "Payments open October 26" separately from "we'll email you
-// when flourish launches". So the legacy rows, which asked for the launch email only, do not get it unless
-// Amanda decides October 26 is the launch they asked to hear about (docs/ops/BILLING-DAY-OCT-26.md section 6:
-// a human decision, not something this file guesses). A version not listed above gets nothing.
+// A version not listed above gets nothing.
 const FOUNDING_LINK_CONSENT_VERSIONS = Object.freeze(Object.keys(CONSENT_COVERS).filter(v => CONSENT_COVERS[v].includes("updates")));
 function mayEmailFoundingLink(row) {
   return !!row && !row.unsubscribed_at && FOUNDING_LINK_CONSENT_VERSIONS.includes(row.consent_version);
+}
+
+// THE LAUNCH EMAIL, for the pre-2026-10-01 rows only. Amanda's decision (2026-10-14): October 26, with
+// signup open (OPEN_SIGNUP), is the Canada launch those rows asked to hear about, so that version, and no
+// other, gets the launch email, which carries its founding link (_lib/foundingLinkEmail.js, kind "launch").
+// Its words asked for the launch email and nothing else, so it is the one email they get.
+const LAUNCH_EMAIL_CONSENT_VERSIONS = Object.freeze([LEGACY_CONSENT_VERSION]);
+
+// Which founding email this row gets: "founding_link", "launch", or null. `launched` is true only once
+// signup is open on billing day (the sweep reads OPEN_SIGNUP). Never both: a row's version decides one.
+function foundingEmailKindFor(row, { launched = false } = {}) {
+  if (!row || row.unsubscribed_at) return null;
+  if (mayEmailFoundingLink(row)) return "founding_link";
+  if (launched === true && LAUNCH_EMAIL_CONSENT_VERSIONS.includes(row.consent_version)
+      && (CONSENT_COVERS[row.consent_version] || []).includes("launch")) return "launch";
+  return null;
 }
 
 // WHERE ON THE PAGE the form sat (stored in metadata.placement). The homepage form tags "hero" and
@@ -88,4 +101,4 @@ function mayEmailWaitlistRow(row, kind) {
   return !!v && v !== LEGACY_CONSENT_VERSION && Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v);
 }
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };
+module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, LAUNCH_EMAIL_CONSENT_VERSIONS, foundingEmailKindFor, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };

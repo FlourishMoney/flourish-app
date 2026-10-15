@@ -6,8 +6,9 @@
 // link email follows: every version whose words asked for updates, and no other. Pinned here:
 //   1. every version ever shown is classified (a new one cannot slip in unreviewed);
 //   2. each classification is read from that version's own words;
-//   3. the founding link email goes to 2026-10-01, 2026-10-05 and 2026-10-06, and not to pre-2026-10-01
-//      (launch email only: a human decision, not a guess) or to any version the site never showed;
+//   3. the founding link email goes to 2026-10-01, 2026-10-05 and 2026-10-06; pre-2026-10-01 gets the
+//      LAUNCH email instead, and only once signup is open (Amanda's decision, 2026-10-14: October 26 with
+//      OPEN_SIGNUP on is the launch those rows asked about); no version the site never showed gets either;
 //   4. the sweep asks the database for exactly those versions.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -46,20 +47,31 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
     const p = E.foundingLinkEmailPayload("household@example.test", row(v));
     t.ok(!!p && p.tags[1].value === v && p.text.includes(`Consent on record: version ${v}.`), `3b ${v}: the email goes, and records ${v}`);
   }
-  for (const [why, v] of [["pre-2026-10-01 (a human decision)", C.LEGACY_CONSENT_VERSION], ["a version the site never showed", "2026-10-07"], ["no version", null]]) {
+  for (const [why, v] of [["pre-2026-10-01 before signup opens", C.LEGACY_CONSENT_VERSION], ["a version the site never showed", "2026-10-07"], ["no version", null]]) {
     t.eq(E.foundingLinkEmailPayload("household@example.test", row(v)), null, `3c ${why}: no email`);
-    t.eq(C.mayEmailFoundingLink(row(v)), false, `3d ${why}: the rule says no`);
+    t.eq(C.mayEmailFoundingLink(row(v)), false, `3d ${why}: the founding link rule says no`);
   }
+  t.eq([...C.LAUNCH_EMAIL_CONSENT_VERSIONS], [C.LEGACY_CONSENT_VERSION], "3d2 the launch email: pre-2026-10-01 only");
+  const launched = { launched: true };
+  t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION), launched), "launch", "3d3 pre-2026-10-01 with signup open: the launch email");
+  t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION)), null, "3d4 …and nothing before signup opens");
+  for (const v of ["2026-10-01", "2026-10-05", "2026-10-06"]) {
+    t.eq(C.foundingEmailKindFor(row(v), launched), "founding_link", `3d5 ${v} with signup open: still the founding link email, never the launch one`);
+  }
+  t.eq([C.foundingEmailKindFor(row("2026-10-07"), launched), C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION, { unsubscribed_at: "2026-10-20T00:00:00Z" }), launched)],
+    [null, null], "3d6 an unknown version, or an unsubscribed legacy row: nothing, even with signup open");
   t.eq(C.mayEmailFoundingLink(row("2026-10-06", { unsubscribed_at: "2026-10-20T00:00:00Z" })), false, "3e unsubscribed: never");
-  t.eq(C.mayEmailWaitlistRow(row(C.LEGACY_CONSENT_VERSION), "launch"), true, "3f (unchanged) the legacy rows may still get the launch email itself");
+  t.eq(C.mayEmailWaitlistRow(row(C.LEGACY_CONSENT_VERSION), "launch"), true, "3f (unchanged) the shared CASL rule lets the legacy rows have the launch email");
 
   // ── 4. the sweep asks for exactly those versions ────────────────────────────────────────────────
   const sweep = fs.readFileSync(path.join(REPO, "netlify", "functions", "founding-link-sweep.js"), "utf8");
-  t.ok(/&consent_version=in\.\(\$\{FOUNDING_LINK_CONSENT_VERSIONS\.map\(encodeURIComponent\)\.join\(","\)\}\)/.test(sweep), "4a the sweep's query names exactly those versions");
-  t.ok(/!mayEmailFoundingLink\(row\)/.test(sweep), "4b …and checks each row again");
+  t.ok(/const versionsFor = \(launched\) => \[\.\.\.FOUNDING_LINK_CONSENT_VERSIONS, \.\.\.\(launched \? LAUNCH_EMAIL_CONSENT_VERSIONS : \[\]\)\];/.test(sweep)
+    && /&consent_version=in\.\(\$\{versionsFor\(launched\)\.map\(encodeURIComponent\)\.join\(","\)\}\)/.test(sweep), "4a the sweep's query names exactly those versions (the legacy one only with signup open)");
+  t.ok(/const launched = flagOn\("OPEN_SIGNUP"\);/.test(sweep) && /const kind = foundingEmailKindFor\(row, \{ launched \}\);\s*\n\s*if \(!kind \|\| !mayEmailWaitlistRow\(row, kind\)\)/.test(sweep),
+    "4b …reads signup from OPEN_SIGNUP, and checks each row again for the email it gets");
   const doc = fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8");
-  t.ok(Object.keys(C.CONSENT_COVERS).every(v => doc.includes(`| \`${v}\` |`)) && /\*\*Human decision: the `pre-2026-10-01` rows\.\*\*/.test(doc),
-    "4c the runbook tables every version and flags the legacy rows as a human decision");
+  t.ok(Object.keys(C.CONSENT_COVERS).every(v => doc.includes(`| \`${v}\` |`)) && /\*\*Amanda's decision \(2026-10-14\): the `pre-2026-10-01` rows get the launch email\.\*\*/.test(doc)
+    && /\| \*\*Yes, as the launch email\*\*, once signup is open/.test(doc), "4c the runbook tables every version and records the launch decision for the legacy rows");
 
   t.summary("consentCoverage.test");
 })();

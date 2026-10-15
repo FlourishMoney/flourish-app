@@ -294,18 +294,18 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
 
    | consent_version | the words the person saw | founding link email |
    |---|---|---|
-   | `pre-2026-10-01` | none recorded (no consent line yet). The form said "Join the waitlist and we'll email you the moment flourish launches" and, once joined, "We'll email you the moment flourish launches. No spam, just the launch news." | **No**: launch email only. **Human decision** below. |
+   | `pre-2026-10-01` | none recorded (no consent line yet). The form said "Join the waitlist and we'll email you the moment flourish launches" and, once joined, "We'll email you the moment flourish launches. No spam, just the launch news." | **Yes, as the launch email**, once signup is open (Amanda's decision below) |
    | `2026-10-01` | "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time." (with the identity line) | Yes |
    | `2026-10-05` | "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time." | Yes |
    | `2026-10-06` | "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below." | Yes |
    | anything else | not a version the site ever showed | No |
 
-   **Human decision: the `pre-2026-10-01` rows.** They asked to hear when flourish launches, and the site
-   treats "Payments open October 26" as separate from the launch. Numbering ran in join order, so they
-   likely hold the lowest founding numbers, and nothing has told them they are founding. They get this
-   email only if you decide October 26 is the launch they asked to hear about (and CASL's implied consent
-   from an inquiry may also bear on rows under six months old). That is a code change and a deploy, not a
-   setting. Counts per version, read-only, no addresses:
+   **Amanda's decision (2026-10-14): the `pre-2026-10-01` rows get the launch email.** They asked to
+   hear when flourish launches; October 26 with signup open is that launch. So that version, and only that
+   one, gets a launch email that carries their founding link (subject "flourish has launched in Canada").
+   It is sent by the same sweep, behind the same `FOUNDING_LINK_EMAIL` switch, and only while `OPEN_SIGNUP`
+   is also on; a row gets one founding email or the other, never both, and it is their only waitlist
+   email. Counts per version, read-only, no addresses:
 
 ```sql
 select coalesce(consent_version, '(none)') as consent_version,
@@ -467,7 +467,7 @@ where w.founding_position between 1 and 50 and not w.is_test
    the buttons say "See plans", not "Try Free" or "Start 14 days free" (checkout starts no free trial),
    and the checkout's prices are the landing page's words: "$11.99 a month", "$99.99 a year", "$79.99 a
    year", plus tax, with no monthly equivalent or percentage. `tests/upgradeEntryPoints.test.cjs`.
-4. **Human decision (round 3, section 6 step 2): the earliest founding households will not get the founding link email.** Rows whose consent is
+4. **Decided (round 4): the earliest founding households get the launch email with their founding link** (section 6 step 2). Before that decision: Rows whose consent is
    from before the consent line (`pre-2026-10-01`) agreed only to the launch-day email
    (`mayEmailWaitlistRow`), so the sweep skips them. Numbering ran in join order, so they likely hold the
    lowest numbers, and their welcome email predates the founding line: nothing has told them they are

@@ -23,22 +23,30 @@
 // unsubscribed row, and not the pre-2026-10-01 rows, which asked for the launch email only (a human
 // decision, docs/ops/BILLING-DAY-OCT-26.md section 6).
 //
-// FAILS CLOSED. No row id, no founding number from 1 to 50, a test row, no consent on record, no signed
-// unsubscribe link: no email (the payload is null).
+// THE LAUNCH EMAIL (kind "launch"). The pre-2026-10-01 rows asked only for an email when flourish
+// launches. Amanda decided (2026-10-14) that October 26, with signup open, is that launch, so those rows
+// get this one instead: the launch news, with their founding link (foundingEmailKindFor in
+// _lib/waitlistConsent.js; the sweep passes `launched` only while OPEN_SIGNUP is on). Same link, same price
+// sentence, same footer. One email per row either way: both kinds share the send record and Resend key.
+//
+// FAILS CLOSED. No row id, no founding number from 1 to 50, a test row, no consent that covers the kind, no
+// signed unsubscribe link: no email (the payload is null).
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { mayEmailWaitlistRow, mayEmailFoundingLink } = require("./waitlistConsent");
+const { mayEmailWaitlistRow, foundingEmailKindFor } = require("./waitlistConsent");
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
 const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort");
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 5000;
 const FOUNDING_LINK_KIND = "founding_link";
+const LAUNCH_KIND = "launch";
 const FOUNDING_LINK_URL = "https://flourishmoney.app/?checkout=founding";
 const FROM = "Flourish <hello@flourishmoney.app>";
 const REPLY_TO = "hello@flourishmoney.app";
 const SUBJECT = "Your founding price is ready";
+const LAUNCH_SUBJECT = "flourish has launched in Canada";
 
 // The landing page's founding price sentence, word for word. The one price in this email.
 const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.";
@@ -58,19 +66,35 @@ function foundingLinkParagraphs(position) {
   ];
 }
 
+// The launch email's words, for the pre-2026-10-01 rows (they asked to hear when flourish launches).
+function launchParagraphs(position) {
+  return [
+    "flourish has launched in Canada. When you joined the waitlist, you asked us to email you when it did, so here it is.",
+    `You joined early, so you're founding household #${position} of ${FOUNDING_COHORT_LIMIT}, and your founding price is ready:`,
+    LANDING_PRICE_SENTENCE,
+    `Your link: ${FOUNDING_LINK_URL}`,
+    "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
+    "This is the one email you asked for when you joined, so we won't send you anything else from the waitlist.",
+    "Questions? Just reply to this email.",
+    "Amanda, founder of Flourish",
+  ];
+}
+const paragraphsFor = (kind, position) => (kind === LAUNCH_KIND ? launchParagraphs(position) : foundingLinkParagraphs(position));
+const subjectFor = (kind) => (kind === LAUNCH_KIND ? LAUNCH_SUBJECT : SUBJECT);
+
 const consentLine = (version) => `Consent on record: version ${version}.`;
 const footerLines = (url, version) => [WHY_LINE, consentLine(version), ...CONTACT_BLOCK, `Unsubscribe with one click: ${url}`];
 
 const _esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const _para = (html, extra) => `<p style="margin:0 0 16px;${extra || ""}">${html}</p>`;
 const _small = "font-size:13px;color:rgba(26,32,53,0.66);";
-function foundingLinkHtml(position, url, version) {
-  const body = foundingLinkParagraphs(position).map(t => t.startsWith("Your link: ")
+function foundingLinkHtml(position, url, version, kind = FOUNDING_LINK_KIND) {
+  const body = paragraphsFor(kind, position).map(t => t.startsWith("Your link: ")
     ? _para(`<a href="${FOUNDING_LINK_URL}" style="color:#1A2035;font-weight:700;">Open your founding price link</a>`)
     : _para(_esc(t)));
   return [
     '<!doctype html>',
-    `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${SUBJECT}</title></head>`,
+    `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${subjectFor(kind)}</title></head>`,
     '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
     '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
     'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
@@ -84,13 +108,15 @@ function foundingLinkHtml(position, url, version) {
 }
 
 // The whole message for one waitlist row, or null. row: { id, founding_position, is_test, unsubscribed_at,
-// consent_version } exactly as the database returned them.
-function foundingLinkEmailPayload(to, row) {
+// consent_version } exactly as the database returned them. opts.launched: signup is open (billing day), which
+// is what lets a pre-2026-10-01 row have its launch email; without it that row gets nothing.
+function foundingLinkEmailPayload(to, row, opts = {}) {
   if (typeof to !== "string" || !to.trim()) return null;
   if (!row || row.id == null || String(row.id) === "") return null;
   if (row.is_test === true) return null;
   if (!isFoundingPosition(row.founding_position)) return null;
-  if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND) || !mayEmailFoundingLink(row)) return null;
+  const kind = foundingEmailKindFor(row, { launched: opts.launched === true });
+  if (!kind || !mayEmailWaitlistRow(row, kind)) return null;
   const url = unsubscribeUrl(row.id);
   const headers = listUnsubscribeHeaders(row.id);
   if (!url || !headers) return null;
@@ -99,21 +125,21 @@ function foundingLinkEmailPayload(to, row) {
     from: FROM,
     reply_to: REPLY_TO,
     to: [to],
-    subject: SUBJECT,
-    text: [...foundingLinkParagraphs(row.founding_position), ...footerLines(url, version)].join("\n\n"),
-    html: foundingLinkHtml(row.founding_position, url, version),
+    subject: subjectFor(kind),
+    text: [...paragraphsFor(kind, row.founding_position), ...footerLines(url, version)].join("\n\n"),
+    html: foundingLinkHtml(row.founding_position, url, version, kind),
     headers,
     // Resend keeps these with the message: which email this was, and the consent it was sent under.
-    tags: [{ name: "kind", value: FOUNDING_LINK_KIND }, { name: "consent_version", value: version }],
+    tags: [{ name: "kind", value: kind }, { name: "consent_version", value: version }],
   };
 }
 
 // { sent: true } when Resend accepted it, else { sent: false, reason }. Logs a fixed message and a status
 // word only: never the address, the key, the row id, the payload or the response body.
-async function sendFoundingLinkEmail(to, row) {
+async function sendFoundingLinkEmail(to, row, opts = {}) {
   const key = (process.env.RESEND_API_KEY || "").trim();
   if (!key) return { sent: false, reason: "no_api_key" };
-  const payload = foundingLinkEmailPayload(to, row);
+  const payload = foundingLinkEmailPayload(to, row, opts);
   if (!payload) return { sent: false, reason: "not_eligible" };
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
@@ -141,6 +167,6 @@ async function sendFoundingLinkEmail(to, row) {
 }
 
 module.exports = {
-  FOUNDING_LINK_KIND, FOUNDING_LINK_URL, SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
-  consentLine, foundingLinkParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
+  FOUNDING_LINK_KIND, LAUNCH_KIND, FOUNDING_LINK_URL, SUBJECT, LAUNCH_SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
+  consentLine, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
 };

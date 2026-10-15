@@ -11,14 +11,18 @@
  *                        (docs/ops/BILLING-DAY-OCT-26.md). Unset it and the next run sends nothing.
  * Either one unset: the run reads nothing, sends nothing and writes nothing.
  *
- * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, with a consent
- * version whose words asked for updates (mayEmailFoundingLink, _lib/waitlistConsent.js), not sent before
+ * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, not sent before,
+ * with a consent version that covers one of the two founding emails (foundingEmailKindFor,
+ * _lib/waitlistConsent.js): the founding link email for versions that asked for updates; the LAUNCH email
+ * for pre-2026-10-01 rows, and only while OPEN_SIGNUP is also exactly "true" (Amanda's decision: October 26
+ * with signup open is the launch those rows asked about). Without OPEN_SIGNUP those rows are not even asked
+ * for. Not sent before
  * (metadata.founding_link is empty). Then, per row, the same lookup billing uses
  * (waitlist_founding_position_for_email, migration 0016) must still return that row's own number: an
  * ended number, a test row or an unreadable lookup (0016 not applied) sends nothing. Lowest number first.
  *
  * RECORDED. After Resend accepts a message, the row's metadata gains founding_link: { sent_at,
- * consent_version, position }. That is the record of what was sent under which consent, and what stops a
+ * consent_version, position, kind }. That is the record of what was sent under which consent, and what stops a
  * second send. The write is filtered on founding_link still being empty, and Resend's Idempotency-Key
  * (founding-link/<row id>) covers a retry inside its window. A record that cannot be written stops the run.
  *
@@ -28,13 +32,13 @@
  *
  * LOGS: counts only. Never an address, a row id or a key.
  *
- * Env: BILLING_ENABLED, FOUNDING_LINK_EMAIL, SUPABASE_URL, SUPABASE_SECRET_KEY, RESEND_API_KEY,
+ * Env: BILLING_ENABLED, FOUNDING_LINK_EMAIL, OPEN_SIGNUP (the launch email), SUPABASE_URL, SUPABASE_SECRET_KEY, RESEND_API_KEY,
  * WAITLIST_UNSUBSCRIBE_SECRET (optional; see _lib/waitlistUnsubscribe.js).
  */
 "use strict";
 
-const { sendFoundingLinkEmail, FOUNDING_LINK_KIND } = require("./_lib/foundingLinkEmail");
-const { mayEmailWaitlistRow, mayEmailFoundingLink, FOUNDING_LINK_CONSENT_VERSIONS } = require("./_lib/waitlistConsent");
+const { sendFoundingLinkEmail } = require("./_lib/foundingLinkEmail");
+const { mayEmailWaitlistRow, foundingEmailKindFor, FOUNDING_LINK_CONSENT_VERSIONS, LAUNCH_EMAIL_CONSENT_VERSIONS } = require("./_lib/waitlistConsent");
 const { normalizeEmail, isFoundingPosition, FOUNDING_COHORT_LIMIT } = require("./_lib/foundingCohort");
 
 const PER_RUN_CAP = 10;
@@ -74,14 +78,17 @@ async function countSentSince(supabaseUrl, key, sinceIso) {
 }
 
 // The rows still owed their email, lowest founding number first, or null.
-async function selectOwed(supabaseUrl, key, limit) {
+// The consent versions asked for: the founding link email's, plus the launch email's once signup is open.
+const versionsFor = (launched) => [...FOUNDING_LINK_CONSENT_VERSIONS, ...(launched ? LAUNCH_EMAIL_CONSENT_VERSIONS : [])];
+
+async function selectOwed(supabaseUrl, key, limit, launched = false) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
     + `?select=id,email,founding_position,is_test,unsubscribed_at,consent_version,metadata`
     + `&founding_position=gte.1&founding_position=lte.${FOUNDING_COHORT_LIMIT}`
     + `&is_test=is.false`
     + `&unsubscribed_at=is.null`
     // Only the consent versions whose words asked for updates (waitlistConsent.js). Checked again per row.
-    + `&consent_version=in.(${FOUNDING_LINK_CONSENT_VERSIONS.map(encodeURIComponent).join(",")})`
+    + `&consent_version=in.(${versionsFor(launched).map(encodeURIComponent).join(",")})`
     + `&metadata->founding_link=is.null`
     + `&order=founding_position.asc`
     + `&limit=${limit}`;
@@ -117,9 +124,9 @@ async function honouredNumber(supabaseUrl, key, email) {
 }
 
 // The record of the send, on the row. Only where none is there yet.
-async function recordSent(supabaseUrl, key, row, sentAtIso) {
+async function recordSent(supabaseUrl, key, row, sentAtIso, kind) {
   const metadata = { ...(row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {}),
-    founding_link: { sent_at: sentAtIso, consent_version: row.consent_version, position: row.founding_position } };
+    founding_link: { sent_at: sentAtIso, consent_version: row.consent_version, position: row.founding_position, kind } };
   const res = await fetchWithDeadline(`${supabaseUrl}/rest/v1/waitlist?id=eq.${encodeURIComponent(row.id)}&metadata->founding_link=is.null`, {
     method: "PATCH",
     headers: { ...authHeaders(key), "Content-Type": "application/json", "Prefer": "return=minimal" },
@@ -146,6 +153,8 @@ async function runFoundingLinkSweep(opts = {}) {
   if (!flagOn("BILLING_ENABLED")) return done("billing_off");
   if (!flagOn("FOUNDING_LINK_EMAIL")) return done("founding_link_email_off");
   if (!(process.env.RESEND_API_KEY || "").trim()) return done("no_api_key");
+  // Signup open on billing day is the launch the pre-2026-10-01 rows asked to hear about.
+  const launched = flagOn("OPEN_SIGNUP");
 
   const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
   const key = (process.env.SUPABASE_SECRET_KEY || "").trim();
@@ -163,7 +172,7 @@ async function runFoundingLinkSweep(opts = {}) {
   }
 
   const limit = Math.min(perRunCap, remaining);
-  const rows = await selectOwed(supabaseUrl, key, limit);
+  const rows = await selectOwed(supabaseUrl, key, limit, launched);
   if (rows === null) return done("select_failed");
 
   let sent = 0, failed = 0, notHonoured = 0, stoppedEarly = false, lookupDown = false, recordDown = false;
@@ -171,17 +180,18 @@ async function runFoundingLinkSweep(opts = {}) {
   for (const row of batch) {
     if (clock() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email || !isFoundingPosition(row.founding_position) || row.is_test === true) { notHonoured++; continue; }
-    if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND) || !mayEmailFoundingLink(row)) { notHonoured++; continue; }
+    const kind = foundingEmailKindFor(row, { launched });
+    if (!kind || !mayEmailWaitlistRow(row, kind)) { notHonoured++; continue; }
     if (row.metadata && row.metadata.founding_link) { notHonoured++; continue; }
     const honoured = await honouredNumber(supabaseUrl, key, row.email);
     if (honoured === undefined) { lookupDown = true; break; }      // fail closed: no lookup, no email
     if (honoured !== row.founding_position) { notHonoured++; continue; }
-    const result = await sendFoundingLinkEmail(row.email, row);
+    const result = await sendFoundingLinkEmail(row.email, row, { launched });
     if (!result.sent) { failed++; continue; }
     sent++;
     // A send that cannot be recorded stops the run: nothing more goes out until the record can be kept.
     // The next run retries this row, and Resend's Idempotency-Key keeps that retry from a second copy.
-    if (!(await recordSent(supabaseUrl, key, row, new Date(clock()).toISOString()))) { recordDown = true; break; }
+    if (!(await recordSent(supabaseUrl, key, row, new Date(clock()).toISOString(), kind))) { recordDown = true; break; }
   }
 
   // Counts only. No address, no id, no key, ever.
