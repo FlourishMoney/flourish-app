@@ -47,6 +47,8 @@ run_checks() {
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway-local-only "$IMAGE" >/dev/null
 for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -U postgres -h localhost >/dev/null 2>&1 && break; sleep 2; done
 sleep 4   # the image runs its own init scripts after it first accepts connections
+# What the image lacks and production has (auth.jwt()), as supabase_admin over the container's own socket.
+docker exec -i "$NAME" psql -U supabase_admin -d postgres -q -v ON_ERROR_STOP=1 < "$HERE/local-shims.sql" >/dev/null
 
 echo "1. production's shape: the migrations production has, then seed.sql"
 for f in 00000_waitlist.sql 00001_plaid_items.sql 0001_profiles.sql 0002_profiles_guard.sql \
@@ -87,6 +89,7 @@ if [ "$WITH_0017" = 1 ]; then
   docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway-local-only "$IMAGE" >/dev/null
   for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -U postgres -h localhost >/dev/null 2>&1 && break; sleep 2; done
   sleep 4
+  docker exec -i "$NAME" psql -U supabase_admin -d postgres -q -v ON_ERROR_STOP=1 < "$HERE/local-shims.sql" >/dev/null
   for f in 00000_waitlist.sql 00001_plaid_items.sql 0001_profiles.sql 0002_profiles_guard.sql \
            0003_founder_grandfather.sql 0004_plaid_cursor.sql 0005_z3_ai_consent_beta_seats.sql \
            0006_waitlist_welcomed_at.sql 0007_trial_only_signups.sql 0008_coach_usage_weekly.sql \

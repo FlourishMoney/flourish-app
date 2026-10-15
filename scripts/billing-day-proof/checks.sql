@@ -150,4 +150,30 @@ begin
 end $$;
 reset role;
 
+-- 6. Opening signup (OPEN_SIGNUP=true on Monday) cannot make anyone a beta founder: every new account gets
+--    the 14-day trial and founder_flag false (0007 handle_new_user), and only the service role may change
+--    founder_flag (0002 profiles_guard_privileged).
+insert into auth.users (id, email) values ('33333333-3333-3333-3333-333333333333', 'newcomer@example.test');
+do $$
+begin
+  assert (select plan = 'trial' and founder_flag = false and trial_ends_at > now()
+            from public.profiles where user_id = '33333333-3333-3333-3333-333333333333'),
+         '6a a new account gets the 14-day trial and founder_flag false';
+end $$;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}', true);
+select set_config('request.jwt.claim.sub', '33333333-3333-3333-3333-333333333333', true);
+do $$
+declare refused boolean := false;
+begin
+  begin
+    update public.profiles set founder_flag = true where user_id = '33333333-3333-3333-3333-333333333333';
+  exception when raise_exception or insufficient_privilege then refused := true;
+  end;
+  assert refused or (select founder_flag = false from public.profiles where user_id = '33333333-3333-3333-3333-333333333333'),
+         '6b a signed-in account could make itself a founder';
+end $$;
+rollback;
+
 \echo 'checks.sql: every assertion passed'

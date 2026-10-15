@@ -101,11 +101,13 @@ const M0016 = "0016_waitlist_founding_billing.sql";
 
   // ── 7. the proof stays local; 0017 is not here ───────────────────────────────────────────────────
   const proofDir = path.join(REPO, "scripts", "billing-day-proof");
-  const proof = ["run.sh", "seed.sql", "checks.sql", "checks-0017.sql"].map(f => {
+  const proof = ["run.sh", "seed.sql", "checks.sql", "checks-0017.sql", "local-shims.sql"].map(f => {
     const p = path.join(proofDir, f);
     return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
   });
-  t.ok(proof.every(Boolean), "7a scripts/billing-day-proof has run.sh, seed.sql, checks.sql and checks-0017.sql");
+  t.ok(proof.every(Boolean), "7a scripts/billing-day-proof has run.sh, seed.sql, checks.sql, checks-0017.sql and local-shims.sql");
+  t.ok(/-U supabase_admin -d postgres/.test(proof[0]) && !/-h localhost[^\n]*supabase_admin|supabase_admin[^\n]*-h localhost/.test(proof[0]),
+    "7a2 the local shims run as the container's own supabase_admin, over its socket");
   t.ok(!proof.some(s => /supabase\.co|pooler|SUPABASE_URL|SUPABASE_SECRET|DATABASE_URL/i.test(s)), "7b the proof names no production host, URL or key");
   t.ok(!/docker run[^\n]*\s-p\s/.test(proof[0]) && /trap cleanup EXIT/.test(proof[0]), "7c its container publishes no port and is removed on exit");
   t.ok(/git -C "\$REPO" show origin\/founding-test-rows:/.test(proof[0]) && !/git (checkout|switch|merge|rebase|push)/.test(proof[0]),
@@ -131,13 +133,26 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     t.ok(blocks.every(b => /^\s*select\b/i.test(b.replace(/--[^\n]*\n/g, ""))), "8g …each one starts with select");
     t.ok(!/@(?!flourishmoney\.app)[a-z0-9-]+\.[a-z]/i.test(blocks.join("\n")), "8h no SQL block holds an email address");
     t.ok(/curl -s -o \/dev\/null -w '%\{http_code\}\\n' -X POST https:\/\/flourishmoney\.app\/api\/billing/.test(doc), "8i it gives the no-secret on/off check (401 on, 404 off)");
-    for (const h of ["## 3. Turn billing on", "## 4. The first smoke purchase, and its refund", "## 6. The first hour",
-      "## 7. The stop condition, and turning billing off", "## 8. What cannot be undone once a real charge clears", "## 9. Holding 0017 (PR #69): what it means on Monday",
-      "## 10. Reported, not fixed: what could stop a household paying, or getting what it paid for"]) {
+    for (const h of ["## Monday, in order", "## 3. Turn billing on", "## 4. The first smoke purchase, and its refund", "## 5. Open signup",
+      "## 6. The founding link email", "## 7. The first hour",
+      "## 8. The stop condition, and turning billing off", "## 9. What cannot be undone once a real charge clears", "## 10. Holding 0017 (PR #69): what it means on Monday",
+      "## 11. Reported, not fixed: what could stop a household paying, or getting what it paid for"]) {
       t.ok(doc.includes(h), `8j it has the section "${h.replace(/^## /, "")}"`);
     }
     t.ok(/create a new deploy/.test(doc) && /Trigger deploy/.test(doc), "8k it says a variable change needs a deploy (Netlify functions keep the values they were deployed with)");
     t.ok(!/sk_live_[A-Za-z0-9]|sk_test_[A-Za-z0-9]|whsec_[A-Za-z0-9]|re_[A-Za-z0-9]{8}|price_[A-Za-z0-9]{8}|eyJ[A-Za-z0-9]/.test(doc), "8l it holds no key, signing secret or price id");
+    // Round 2: OPEN_SIGNUP is a numbered step with its own deploy, in the right place in Monday's order.
+    const glance = (doc.match(/## Monday, in order\n([\s\S]*?)\n---/) || ["", ""])[1];
+    const steps = [...glance.matchAll(/^(\d+)\. (.*)$/gm)].map(m => m[2]);
+    const at = (rx) => steps.findIndex(x => rx.test(x));
+    const order = [/^Run 0009/, /^Run 0010/, /^Run 0016/, /^`BILLING_ENABLED=true`/, /^Smoke purchase/, /^`OPEN_SIGNUP=true`/, /^`FOUNDING_LINK_EMAIL=true`/].map(at);
+    t.ok(order.every(i => i >= 0) && order.every((i, k) => k === 0 || i > order[k - 1]),
+      "8m Monday, in order: 0009, 0010, 0016, billing on, the smoke purchase, OPEN_SIGNUP, the founding link email");
+    t.ok(/`OPEN_SIGNUP=true`, Production, Trigger deploy \(\*\*D2\*\*\)/.test(glance), "8n OPEN_SIGNUP comes with its own deploy (D2)");
+    const signupSec = doc.slice(doc.indexOf("## 5. Open signup"), doc.indexOf("## 6. The founding link email"));
+    t.ok(/add `OPEN_SIGNUP`, value exactly `true`/.test(signupSec) && /Trigger deploy → Deploy site/.test(signupSec) && /\{"action":"signup_status"\}/.test(signupSec),
+      "8o section 5: the variable, its deploy, and a no-secret check that signup is open");
+    t.ok(/\*\*Only after section 4 passed and signup is open \(section 5\):\*\*/.test(doc), "8p the founding link email waits for signup to be open");
   }
 
   t.summary("billingDayMigrations.test");

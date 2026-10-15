@@ -13,6 +13,24 @@ production's shape; never touches production), and `tests/billingDayMigrations.t
 
 ---
 
+## Monday, in order
+
+Before Monday: section 1, ending with deploy **D0** (live Stripe variables; billing off, signup shut).
+
+1. Pre-check, read-only (2.1).
+2. Run 0009, then its read-only check (2.2).
+3. Run 0010, then its read-only check (2.3).
+4. Run 0016, then its read-only check (2.4).
+5. `BILLING_ENABLED=true`, Production, Trigger deploy (**D1**); the curl answers 401 (section 3).
+6. Smoke purchase: Monthly on Amanda's own card, the read-only checks, refund, cancel (section 4).
+7. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true` (section 5).
+8. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**) (section 6).
+9. Watch the first hour (section 7). Stop if section 8 says so.
+
+Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
+
+---
+
 ## 1. Before Monday (by Friday 2026-10-23)
 
 1. **Stripe, live mode.** Follow `docs/ops/BILLING-SETUP.md` section 1 with **Test mode OFF**: product
@@ -34,13 +52,12 @@ production's shape; never touches production), and `tests/billingDayMigrations.t
    deploy; that is wrong. After every change below: **Deploys → Trigger deploy → Deploy site**, and wait
    for "Published".
 5. **Deploy D0.** After step 3, trigger one deploy with billing still off. Write down its deploy id.
-   D0 is the instant way back (section 7): it has the live webhook secret and billing off.
-6. **Decide how a founding household gets an account.** Signup is invite-only unless `OPEN_SIGNUP` is
-   exactly `true`. A founding household with no account cannot reach checkout. An invite code alone may
-   not be enough: with signup shut, a full 30-seat beta cap refuses even a valid code (section 10,
-   item 1). In practice that means `OPEN_SIGNUP=true` and a deploy. The founding link email (section 5)
-   tells them to sign in or create an account, so it waits for this.
-7. **PR #69 (0017) stays held** unless Amanda decides otherwise. Section 9 says what that means Monday.
+   D0 is the instant way back (section 8): it has the live webhook secret, billing off and signup shut.
+6. **Signup opens on Monday (section 5).** A founding household with no account cannot reach checkout,
+   and with signup shut a full 30-seat beta cap refuses even a valid invite code (section 11, item 1).
+   So `OPEN_SIGNUP=true` goes in on Monday, after the smoke purchase and before the founding link email
+   (section 6), which tells them to sign in or create an account.
+7. **PR #69 (0017) stays held** unless Amanda decides otherwise. Section 10 says what that means Monday.
 8. **No merges to `main` on Monday.** "Deploy site" builds the latest `main`; Monday's deploys should all
    be the same code.
 
@@ -169,7 +186,7 @@ deletion's Stripe cancel and `/api/founding` do not depend on it.
 
 Amanda's own account, her own card, **the Monthly plan**. Never Founding Annual for a smoke test:
 cancelling a founding subscription stamps `founding_ended_at` and the ledger's `ended_at`, and that
-household's founding price never comes back (section 8).
+household's founding price never comes back (section 9).
 
 1. Signed in on a computer: Settings → Flourish Plus → See plans → Monthly → pay in Stripe Checkout.
 2. Back on flourishmoney.app with "Payment received…". Then, read-only:
@@ -190,19 +207,50 @@ handle), none `failed`.
 5. Read again: the subscriptions row says `canceled`; the new events are `processed`.
 
 A refund alone does not cancel; a cancel alone does not refund. Do both. If any expectation fails, go to
-section 7.
+section 8.
 
 ---
 
-## 5. The founding link email
+## 5. Open signup
+
+Monday's second switch, after the smoke purchase passed (section 4) and before the founding link email
+(section 6). **Who:** Amanda, in Netlify.
+
+1. Site configuration → Environment variables → add `OPEN_SIGNUP`, value exactly `true` (not `TRUE`, not
+   `1`), **Production** context only.
+2. Deploys → Trigger deploy → Deploy site. Wait for "Published". This is deploy **D2**.
+3. Check from a terminal (no login, no secret). `true` means open; `false` means the deploy has not picked
+   it up:
+
+```bash
+curl -s -X POST https://flourishmoney.app/api/beta -H 'Content-Type: application/json' -d '{"action":"signup_status"}'
+```
+
+4. In a private window on flourishmoney.app: Log in → Sign Up no longer asks for a code.
+
+What opening signup changes, and what it does not (`tests/billingDaySignup.test.cjs`):
+- Anyone can create an account without a code. It gets the 14-day trial (0007) and must confirm its
+  email before it can sign in.
+- **Invite codes still work.** A valid code is still an invited, confirmed signup and takes one of the 30
+  seats while any are left. A wrong code is still refused. A full cap no longer locks a code holder out:
+  they join as a self-serve signup and confirm their email.
+- **The beta founder flag.** No signup can set it (0007 gives every new account `founder_flag` false, and
+  0002 lets only the service role change it). Existing founders keep the founder plan and the founding
+  price.
+- **The founding price** still follows the account's confirmed email to its waitlist spot. Signing up
+  takes no founding number and touches no waitlist row.
+
+---
+
+## 6. The founding link email
 
 The welcome email promised every founding household "your link to the founding price when payments open
 on October 26". `netlify/functions/founding-link-sweep.js` sends it, once per household, every 15 minutes,
 only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `true`.
 
-**Only after section 4 passed and section 1 step 6 (how they get an account) is done:**
+**Only after section 4 passed and signup is open (section 5):**
 
-1. Add `FOUNDING_LINK_EMAIL` = `true`, Production only. Trigger deploy. This is **D2**.
+1. Add `FOUNDING_LINK_EMAIL` = `true`, Production only. Trigger deploy. This is **D3**.
 2. Who gets it: founding number 1 to 50, not a test row, not unsubscribed, consent version 2026-10-01 or
    later, and billing's own lookup still honours the number. Rows with consent from before the consent
    line (`pre-2026-10-01`) do **not** get it: they agreed only to the launch-day email. Count them first:
@@ -225,7 +273,7 @@ from public.waitlist where founding_position between 1 and 50 and not is_test;
 
 At most 10 a run and 40 a day. The Resend allowance is shared with the welcome emails and with GrowSmart.
 
-To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D1 (section 7).
+To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 (section 8).
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
@@ -233,7 +281,7 @@ for the signed-in account's own confirmed email, so a forwarded link gives nobod
 
 ---
 
-## 6. The first hour
+## 7. The first hour
 
 Every 15 minutes:
 
@@ -259,7 +307,7 @@ select (select count(*) from public.billing_events where status = 'failed') as f
 
 ---
 
-## 7. The stop condition, and turning billing off
+## 8. The stop condition, and turning billing off
 
 **Turn billing off at once if any one of these is true:**
 
@@ -271,7 +319,9 @@ select (select count(*) from public.billing_events where status = 'failed') as f
 5. The `billing` or `stripe-webhook` log shows `server_misconfigured` or `price_not_configured`.
 
 **Off, fastest:** Netlify → Deploys → D0 → **Publish deploy**. Instant, no build: D0 was deployed with
-billing off. (Netlify may then stop auto-publishing; switch it back on once things are fixed.) Then remove
+billing off. It also shuts signup again and stops the founding emails, because D0 predates both. To stop
+billing but keep signup open, remove `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` and deploy instead (a few
+minutes, not instant). (Netlify may then stop auto-publishing; switch it back on once things are fixed.) Then remove
 `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` from the variables, so the next deploy is off too.
 
 **Check it is off:** the curl in section 3 answers 404.
@@ -285,7 +335,7 @@ cancel for them in Stripe if they ask (hello@flourishmoney.app).
 
 ---
 
-## 8. What cannot be undone once a real charge clears
+## 9. What cannot be undone once a real charge clears
 
 - **The money moved.** A refund is a second transaction, not an erasure. The household sees the charge
   and the refund on their statement, and the refund takes days to reach them.
@@ -297,11 +347,13 @@ cancel for them in Stripe if they ask (hello@flourishmoney.app).
   as to a real household.
 - **No tax is added at checkout.** Stripe Tax is off (P16, `automatic_tax: false`), so the charge is the
   price itself. An invoice cannot be re-issued with tax afterwards.
-- **Turning billing off does not unwind anything** (section 7).
+- **Accounts made while signup is open stay.** Shutting signup again, or publishing D0, stops new ones; it
+  removes none.
+- **Turning billing off does not unwind anything** (section 8).
 
 ---
 
-## 9. Holding 0017 (PR #69): what it means on Monday
+## 10. Holding 0017 (PR #69): what it means on Monday
 
 Proved on the local copy of production's shape (`scripts/billing-day-proof/run.sh --with-0017`).
 
@@ -322,21 +374,24 @@ holders, but the landing page keeps saying 22 until #69 merges.
 
 ---
 
-## 10. Reported, not fixed: what could stop a household paying, or getting what it paid for
+## 11. Reported, not fixed: what could stop a household paying, or getting what it paid for
 
 Found while preparing this checklist (2026-10-14). None is fixed on this branch; each is Amanda's call.
 Worst first.
 
-1. **A founding household may not be able to create an account.** Checkout needs a signed-in account
-   with a confirmed email. Signup is invite-only unless `OPEN_SIGNUP` is exactly `true`, and with the
-   door shut a full 30-seat beta cap refuses even a valid invite code (`beta.js`, `cap_reached`;
-   `beta_signups` was backfilled from every existing account). So unless `OPEN_SIGNUP=true` is set (and
-   deployed) on Monday, most founding households cannot pay at all. Section 1 step 6.
+1. **Addressed (round 2): signup opens on Monday** (section 5), after the smoke purchase and before the
+   founding link email. With signup shut, a full 30-seat beta cap refused even a valid invite code.
+   `tests/billingDaySignup.test.cjs` shows that opening it keeps invite codes working, leaves the beta
+   founder flag out of every signup's reach, and leaves the founding lookup on the confirmed email.
+   **Still open:** an invited (coded) signup is confirmed the moment it is created, without proving the
+   address. The codes are shared, so someone holding one could register a founding household's address
+   first and be offered its founding price; the household would then be told the address is taken. A
+   self-serve signup must confirm the address, so it cannot.
 2. **Fixed (round 2): a paying web household gets the paid tier.** The web app now combines the
    profile's plan with the billing status's `paid`, which the server works out from Stripe's status and
    the paid period (`webPlan`, `planRules.isPaidSubscription`). A subscription cancelled at period end
    counts until that period ends. A store app is unchanged. While billing is off, the app is exactly as
-   before (section 7). `tests/webPaidPlan.test.cjs`.
+   before (section 8). `tests/webPaidPlan.test.cjs`.
 3. **Fixed (round 2): every upgrade button reaches the real checkout.** Today, Goals, the Credit gate,
    the coach's out-of-messages gate and What-If (six call sites) now go through `openUpgrade()`: with
    billing on, the checkout screen; with it off, the old paywall and its words, unchanged. With billing on
@@ -347,7 +402,7 @@ Worst first.
    from before the consent line (`pre-2026-10-01`) agreed only to the launch-day email
    (`mayEmailWaitlistRow`), so the sweep skips them. Numbering ran in join order, so they likely hold the
    lowest numbers, and their welcome email predates the founding line: nothing has told them they are
-   founding. Section 5 step 2 counts them. Whether Monday's email counts as the launch-day email for them
+   founding. Section 6 step 2 counts them. Whether Monday's email counts as the launch-day email for them
    is a CASL decision.
 5. **The Stripe customer portal could sell the founding price to anyone.** If plan switching is enabled
    and the founding price is listed, a subscriber can switch to $79.99 in the portal; our founding rules
