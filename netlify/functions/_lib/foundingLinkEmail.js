@@ -18,16 +18,17 @@
 // CASL. The footer says why they got it and which consent version is on record for them, carries the
 // landing page's Contact block word for word, and a signed one-click unsubscribe link; the message goes out
 // with List-Unsubscribe headers. The send itself is recorded on the row (metadata.founding_link: sent_at,
-// consent_version, position) by the sweep. Who may receive it is the shared rule, mayEmailWaitlistRow,
-// asked for the kind "founding_link": an unsubscribed row never, and a row whose consent predates the
-// consent line (pre-2026-10-01) never, because this is not the launch-day email those rows agreed to.
+// consent_version, position) by the sweep. Who may receive it: mayEmailFoundingLink (_lib/waitlistConsent.js),
+// every consent version whose words asked for updates (2026-10-01, 2026-10-05, 2026-10-06). Never an
+// unsubscribed row, and not the pre-2026-10-01 rows, which asked for the launch email only (a human
+// decision, docs/ops/BILLING-DAY-OCT-26.md section 6).
 //
 // FAILS CLOSED. No row id, no founding number from 1 to 50, a test row, no consent on record, no signed
 // unsubscribe link: no email (the payload is null).
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { mayEmailWaitlistRow } = require("./waitlistConsent");
+const { mayEmailWaitlistRow, mayEmailFoundingLink } = require("./waitlistConsent");
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
 const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort");
 
@@ -89,7 +90,7 @@ function foundingLinkEmailPayload(to, row) {
   if (!row || row.id == null || String(row.id) === "") return null;
   if (row.is_test === true) return null;
   if (!isFoundingPosition(row.founding_position)) return null;
-  if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND)) return null;
+  if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND) || !mayEmailFoundingLink(row)) return null;
   const url = unsubscribeUrl(row.id);
   const headers = listUnsubscribeHeaders(row.id);
   if (!url || !headers) return null;

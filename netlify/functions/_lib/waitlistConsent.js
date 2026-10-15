@@ -32,6 +32,29 @@ const CONSENT_VERSIONS = {
 };
 const LEGACY_CONSENT_VERSION = "pre-2026-10-01";
 
+// WHAT EACH VERSION'S WORDS ASKED FOR (billing day review, 2026-10-14). "launch": an email when flourish
+// launches in Canada. "updates": a few updates before then. Read from the wording above, word for word.
+// The legacy rows have no recorded wording; the form they joined from said (git history, before 2026-09-30)
+// "Join the waitlist and we'll email you the moment flourish launches" and, once joined, "We'll email you
+// the moment flourish launches. No spam, just the launch news." That asked for the launch email only.
+// Every version ever shown is here; tests/consentCoverage.test.cjs fails if one is added without it.
+const CONSENT_COVERS = Object.freeze({
+  [LEGACY_CONSENT_VERSION]: Object.freeze(["launch"]),
+  "2026-10-01": Object.freeze(["launch", "updates"]),
+  "2026-10-05": Object.freeze(["launch", "updates"]),
+  "2026-10-06": Object.freeze(["launch", "updates"]),
+});
+
+// THE FOUNDING LINK EMAIL (_lib/foundingLinkEmail.js) goes to every version whose words asked for updates.
+// It is not the launch email: the site says "Payments open October 26" separately from "we'll email you
+// when flourish launches". So the legacy rows, which asked for the launch email only, do not get it unless
+// Amanda decides October 26 is the launch they asked to hear about (docs/ops/BILLING-DAY-OCT-26.md section 6:
+// a human decision, not something this file guesses). A version not listed above gets nothing.
+const FOUNDING_LINK_CONSENT_VERSIONS = Object.freeze(Object.keys(CONSENT_COVERS).filter(v => CONSENT_COVERS[v].includes("updates")));
+function mayEmailFoundingLink(row) {
+  return !!row && !row.unsubscribed_at && FOUNDING_LINK_CONSENT_VERSIONS.includes(row.consent_version);
+}
+
 // WHERE ON THE PAGE the form sat (stored in metadata.placement). The homepage form tags "hero" and
 // "bottom_cta" ("landing" is the form's own default); the benefit calendar and CCB clawback pages will use
 // "calendar" and "clawback". Anything else is refused: it is our own code, so an unknown value is a bug.
@@ -65,4 +88,4 @@ function mayEmailWaitlistRow(row, kind) {
   return !!v && v !== LEGACY_CONSENT_VERSION && Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v);
 }
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };
+module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };

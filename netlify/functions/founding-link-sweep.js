@@ -11,8 +11,8 @@
  *                        (docs/ops/BILLING-DAY-OCT-26.md). Unset it and the next run sends nothing.
  * Either one unset: the run reads nothing, sends nothing and writes nothing.
  *
- * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, with consent on
- * record that covers this email (mayEmailWaitlistRow, kind "founding_link"), not sent before
+ * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, with a consent
+ * version whose words asked for updates (mayEmailFoundingLink, _lib/waitlistConsent.js), not sent before
  * (metadata.founding_link is empty). Then, per row, the same lookup billing uses
  * (waitlist_founding_position_for_email, migration 0016) must still return that row's own number: an
  * ended number, a test row or an unreadable lookup (0016 not applied) sends nothing. Lowest number first.
@@ -34,7 +34,7 @@
 "use strict";
 
 const { sendFoundingLinkEmail, FOUNDING_LINK_KIND } = require("./_lib/foundingLinkEmail");
-const { mayEmailWaitlistRow, LEGACY_CONSENT_VERSION } = require("./_lib/waitlistConsent");
+const { mayEmailWaitlistRow, mayEmailFoundingLink, FOUNDING_LINK_CONSENT_VERSIONS } = require("./_lib/waitlistConsent");
 const { normalizeEmail, isFoundingPosition, FOUNDING_COHORT_LIMIT } = require("./_lib/foundingCohort");
 
 const PER_RUN_CAP = 10;
@@ -80,8 +80,8 @@ async function selectOwed(supabaseUrl, key, limit) {
     + `&founding_position=gte.1&founding_position=lte.${FOUNDING_COHORT_LIMIT}`
     + `&is_test=is.false`
     + `&unsubscribed_at=is.null`
-    + `&consent_version=not.is.null`
-    + `&consent_version=neq.${encodeURIComponent(LEGACY_CONSENT_VERSION)}`
+    // Only the consent versions whose words asked for updates (waitlistConsent.js). Checked again per row.
+    + `&consent_version=in.(${FOUNDING_LINK_CONSENT_VERSIONS.map(encodeURIComponent).join(",")})`
     + `&metadata->founding_link=is.null`
     + `&order=founding_position.asc`
     + `&limit=${limit}`;
@@ -171,7 +171,7 @@ async function runFoundingLinkSweep(opts = {}) {
   for (const row of batch) {
     if (clock() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email || !isFoundingPosition(row.founding_position) || row.is_test === true) { notHonoured++; continue; }
-    if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND)) { notHonoured++; continue; }
+    if (!mayEmailWaitlistRow(row, FOUNDING_LINK_KIND) || !mayEmailFoundingLink(row)) { notHonoured++; continue; }
     if (row.metadata && row.metadata.founding_link) { notHonoured++; continue; }
     const honoured = await honouredNumber(supabaseUrl, key, row.email);
     if (honoured === undefined) { lookupDown = true; break; }      // fail closed: no lookup, no email

@@ -230,9 +230,11 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
       t.eq([r.result.sent, r.resend.length, r.patches.length], [2, 2, 2], "5b two founding households owed their email: two sent, two recorded");
       const select = decodeURIComponent(r.calls.find(c => c.url.includes("/rest/v1/waitlist?select=id,email,")).url);
       for (const f of ["founding_position=gte.1", "founding_position=lte.50", "is_test=is.false", "unsubscribed_at=is.null",
-        "consent_version=not.is.null", `consent_version=neq.${LEGACY_CONSENT_VERSION}`, "metadata->founding_link=is.null", "order=founding_position.asc"]) {
+        "consent_version=in.(2026-10-01,2026-10-05,2026-10-06)", "metadata->founding_link=is.null", "order=founding_position.asc"]) {
         t.ok(select.includes(f), `5c the select asks for ${f}`);
       }
+      t.ok(!select.includes(LEGACY_CONSENT_VERSION) && !/consent_version=(neq|not)\./.test(select),
+        "5c2 …and names the allowed versions outright: never the legacy rows, never \"anything but\"");
       t.eq(r.resend.map(c => c.headers["Idempotency-Key"]), [`founding-link/${FIRST.id}`, `founding-link/${OTHER.id}`], "5d one Idempotency-Key per row, from its id alone");
       const sentTo = r.resend.map(c => JSON.parse(c.body).to[0]);
       t.eq(sentTo, [ADDRESS, OTHER.email], "5e each to its own address");

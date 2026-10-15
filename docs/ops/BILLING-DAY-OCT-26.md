@@ -265,16 +265,33 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
 **Only after section 4 passed and signup is open (section 5):**
 
 1. Add `FOUNDING_LINK_EMAIL` = `true`, Production only. Trigger deploy. This is **D3**.
-2. Who gets it: founding number 1 to 50, not a test row, not unsubscribed, consent version 2026-10-01 or
-   later, and billing's own lookup still honours the number. Rows with consent from before the consent
-   line (`pre-2026-10-01`) do **not** get it: they agreed only to the launch-day email. Count them first:
+2. Who gets it: founding number 1 to 50, not a test row, not unsubscribed, billing's own lookup still
+   honours the number, and a consent version whose words asked for updates. Every consent version ever
+   recorded, and what its words said:
+
+   | consent_version | the words the person saw | founding link email |
+   |---|---|---|
+   | `pre-2026-10-01` | none recorded (no consent line yet). The form said "Join the waitlist and we'll email you the moment flourish launches" and, once joined, "We'll email you the moment flourish launches. No spam, just the launch news." | **No**: launch email only. **Human decision** below. |
+   | `2026-10-01` | "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time." (with the identity line) | Yes |
+   | `2026-10-05` | "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time." | Yes |
+   | `2026-10-06` | "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below." | Yes |
+   | anything else | not a version the site ever showed | No |
+
+   **Human decision: the `pre-2026-10-01` rows.** They asked to hear when flourish launches, and the site
+   treats "Payments open October 26" as separate from the launch. Numbering ran in join order, so they
+   likely hold the lowest founding numbers, and nothing has told them they are founding. They get this
+   email only if you decide October 26 is the launch they asked to hear about (and CASL's implied consent
+   from an inquiry may also bear on rows under six months old). That is a code change and a deploy, not a
+   setting. Counts per version, read-only, no addresses:
 
 ```sql
-select count(*) as founding_rows,
-       count(*) filter (where is_test) as test_rows,
-       count(*) filter (where unsubscribed_at is not null) as unsubscribed,
-       count(*) filter (where consent_version is null or consent_version = 'pre-2026-10-01') as legacy_consent_no_email
-from public.waitlist where founding_position between 1 and 50;
+select coalesce(consent_version, '(none)') as consent_version,
+       count(*) as all_rows,
+       count(*) filter (where founding_position between 1 and 50 and not is_test) as founding_rows,
+       count(*) filter (where founding_position between 1 and 50 and not is_test and unsubscribed_at is null) as founding_subscribed,
+       count(*) filter (where unsubscribed_at is not null) as unsubscribed
+from public.waitlist
+group by 1 order by 1;
 ```
 
 3. Progress, every 15 minutes (counts only):
@@ -427,7 +444,7 @@ where w.founding_position between 1 and 50 and not w.is_test
    the buttons say "See plans", not "Try Free" or "Start 14 days free" (checkout starts no free trial),
    and the checkout's prices are the landing page's words: "$11.99 a month", "$99.99 a year", "$79.99 a
    year", plus tax, with no monthly equivalent or percentage. `tests/upgradeEntryPoints.test.cjs`.
-4. **The earliest founding households will not get the founding link email.** Rows whose consent is
+4. **Human decision (round 3, section 6 step 2): the earliest founding households will not get the founding link email.** Rows whose consent is
    from before the consent line (`pre-2026-10-01`) agreed only to the launch-day email
    (`mayEmailWaitlistRow`), so the sweep skips them. Numbering ran in join order, so they likely hold the
    lowest numbers, and their welcome email predates the founding line: nothing has told them they are
