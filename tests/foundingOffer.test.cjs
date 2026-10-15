@@ -29,7 +29,7 @@ const stripSql = (src) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/g
 
 const HEADING = "Founding price for the first 50 households";
 const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.";
-const REGULAR_LINE = "Regular price: $99.99 a year or $11.99 a month, plus tax.";
+const REGULAR_LINE = "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.";
 const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
 const EMAIL_LINE = (n) => `You're founding household #${n} of 50. We'll email your link to the founding price when payments open on October 26.`;

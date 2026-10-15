@@ -14750,7 +14750,6 @@ function FoundingCard() {
       <span className="fll-fc-eyebrow">{parts.eyebrow}</span>
       <span className="fll-fc-row">
         <span className="fll-fc-price">{parts.price}</span>
-        <s className="fll-fc-regular">{parts.regular}</s>
         {parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
       </span>
       <span className="fll-fc-save">{parts.save}</span>
@@ -15063,7 +15062,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-fc-eyebrow{ display:block; font-size:13px; font-weight:800; letter-spacing:0.08em; line-height:1.3; color:#c8f169; }
             .fll-fc-row{ display:flex; flex-wrap:wrap; align-items:center; column-gap:${SPACE.sm}px; row-gap:${SPACE.xs}px; margin-block:${SPACE.xs}px; }
             .fll-fc-price{ font-family:'Playfair Display',serif; font-weight:900; font-size:24px; line-height:1.1; color:#fdf6ec; }
-            .fll-fc-regular{ font-size:13px; font-weight:600; color:#c5d3c1; text-decoration-thickness:2px; }
             .fll-fc-pill{ display:inline-block; padding:${SPACE.xs}px ${SPACE.sm}px; border-radius:99px; background:#c8f169; color:#15321a; font-size:13px; font-weight:800; line-height:1.2; white-space:nowrap; }
             .fll-fc-save{ display:block; font-size:14px; font-weight:800; line-height:1.35; color:#fdf6ec; }
             .fll-fc-small{ display:block; margin-top:${SPACE.xs}px; font-size:13px; font-weight:500; line-height:1.4; color:#d9e2d6; }

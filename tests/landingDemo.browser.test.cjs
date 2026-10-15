@@ -276,8 +276,8 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   }
   // ── The founding card above the email field: phones and tablets only (2026-10-07) ─────────────
   {
-    const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "$99.99 a year", "35 of 50 left",
-      "$20 a year less than the regular $99.99.",
+    const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
+      "Everyone else: $99.99 a year, plus tax.",
       "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
@@ -295,8 +295,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       const m = await page.evaluate(() => {
         const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
         const card = document.querySelector(".fll-founding-card");
-        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-regular", ".fll-fc-pill", ".fll-fc-save", ".fll-fc-small"].map(s => (card.querySelector(s) || {}).textContent || null) : null;
-        return { rows, struck: card ? getComputedStyle(card.querySelector(".fll-fc-regular")).textDecorationLine : null,
+        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-pill", ".fll-fc-save", ".fll-fc-small"].map(s => (card.querySelector(s) || {}).textContent || null) : null;
+        const struck = card ? !!card.querySelector("s, del, strike") || [card, ...card.querySelectorAll("*")].some(e => getComputedStyle(e).textDecorationLine.includes("line-through")) : null;
+        return { rows, struck,
           card: r(".fll-founding-card"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"),
           live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
       });
@@ -304,7 +305,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       // Under 960px the block does not repeat the card's price or count.
       const block = await page.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean));
       t.eq(block, ["How founding spots work", "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
-        "Regular price: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
+        "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
         `10k ${mode}: the founding block says how the spots work${mode === "zero" ? ", and that they are full" : ""}`);
       t.eq(await page.evaluate(() => (document.body.innerText.match(/\$79\.99/g) || []).length), mode === "zero" ? 0 : 1,
         `10l ${mode}: the founding price shows ${mode === "zero" ? "nowhere (the spots are gone)" : "once, on the card"}`);
@@ -312,9 +313,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         t.eq(m.rows, null, "10b 0 left: no founding card");
         t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
       } else {
-        t.eq(m.rows, mode === "count" ? ROWS : ROWS.map((r, k) => (k === 3 ? null : r)),
+        t.eq(m.rows, mode === "count" ? ROWS : ROWS.map((r, k) => (k === 2 ? null : r)),
           mode === "count" ? "10d the card, row by row, with the live count in the pill" : "10e no count read: only the pill is left out");
-        t.eq(m.struck, "line-through", `10f ${mode}: the regular price is struck through`);
+        t.eq(m.struck, false, `10f ${mode}: no price on the card is struck through (2026-10-14)`);
         t.ok(m.card.top >= 0 && m.card.bottom <= 844 && m.card.bottom <= m.input.top && m.input.top - m.card.bottom <= 16,
           `10g ${mode}: the card is fully on screen (${Math.round(m.card.top)} to ${Math.round(m.card.bottom)}), directly above the email field`);
         t.ok(m.join.bottom <= 844 && m.top.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the $1,944 card's top (${Math.round(m.top.top)}) stay above the fold`);
@@ -333,7 +334,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
     t.eq(await fd.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean)),
       ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
-        "Regular price: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
+        "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
         "35 of 50 founding spots left"], "10m desktop: the founding block is unchanged, with its count");
     await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });

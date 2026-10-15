@@ -21,7 +21,7 @@ export function foundingOfferCopy() {
   return {
     heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
     price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.`,
-    regular: `Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
+    regular: `Standard price for everyone else: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
     join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
     // Under 960px the founding card at the top already shows the price and the count, so the block
     // says how the spots work instead (2026-10-07): this heading, phoneJoin, then the regular price.
@@ -44,20 +44,18 @@ export function foundingLiveLine(spotsLeft) {
 }
 
 // THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line
-// version). Four rows. The prices are read from pricing.js and the saving is worked out from the two annual
-// prices, never typed here. No count read: no pill. 0 left: no card (the block below still says full).
-const _wholeOrCents = (n) => (Number.isInteger(n) ? `$${n}` : formatPrice(n));
+// version). Four rows. The prices are read from pricing.js, never typed here. No count read: no pill. 0 left:
+// no card (the block below still says full). 2026-10-14: no struck-through price beside the founding one,
+// and no saving claim; the price everyone else pays is stated plainly instead.
 export function foundingCardParts(spotsLeft) {
   if (spotsLeft === 0) return null;
   const p = getPricing("CA");
   const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
-  const saving = Math.round((p.annual - p.foundingAnnual) * 100) / 100;
   return {
     eyebrow: `FOUNDING PRICE · FIRST ${FOUNDING_HOUSEHOLDS} HOUSEHOLDS`,
     price: `${formatPrice(p.foundingAnnual)} a year`,
-    regular: `${formatPrice(p.annual)} a year`,
     pill: n === null ? null : `${n} of ${FOUNDING_HOUSEHOLDS} left`,
-    save: `${_wholeOrCents(saving)} a year less than the regular ${formatPrice(p.annual)}.`,
+    save: `Everyone else: ${formatPrice(p.annual)} a year, plus tax.`,
     small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
   };
 }
