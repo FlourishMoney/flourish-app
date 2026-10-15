@@ -4,8 +4,9 @@
 //
 // A founding household needs an account to reach checkout, and with signup shut a full 30-seat beta cap
 // refuses even a valid invite code. So Monday opens signup. This pins that opening it breaks nothing else:
-//   1. invite codes: a valid code still signs up as "invited", confirmed, and takes a seat while seats are
-//      left; a wrong code is still refused; a full cap no longer locks a code holder out;
+//   1. invite codes: a valid code still signs up as "invited" and takes a seat while seats are left (and,
+//      from round 3, confirms its address by link like everyone else); a wrong code is still refused; a full
+//      cap no longer locks a code holder out;
 //   2. the beta founder flag: no signup, open or coded, can set it; an existing founder keeps the founding
 //      price and the founder plan, with the door open or shut;
 //   3. the waitlist founding lookup: signing up touches no waitlist row and no founding number, and the
@@ -71,7 +72,8 @@ async function signup(env, body, over = {}) {
   {
     const coded = await signup(OPEN, { code: "FLOURISH2026" });
     t.eq([coded.data.ok, coded.data.source], [true, "invited"], "1a door open, a valid code: still an invited signup");
-    t.eq(coded.state.created[0].email_confirm, true, "1b …confirmed on creation, as invited signups always have been");
+    // Round 3: with signup open, a coded signup confirms its address by link (tests/foundingVerifiedEmail.test.cjs).
+    t.eq([coded.state.created[0].email_confirm, coded.data.needsConfirmation], [false, true], "1b …and, signup being open, it confirms its address by link");
     t.eq(coded.state.rpc.map(r => r.fn), ["reserve_beta_seat"], "1c …and it takes one of the 30 seats");
     t.eq((await signup(OPEN, { code: " beta100 " })).data.source, "invited", "1d case and spaces in a code still do not matter");
     const wrong = await signup(OPEN, { code: "NOT-A-CODE" });
@@ -146,9 +148,11 @@ async function signup(env, body, over = {}) {
       if (open) process.env.OPEN_SIGNUP = "true"; else delete process.env.OPEN_SIGNUP;
       const unconfirmed = await ask({ email: HOLDER, email_confirmed_at: null });
       t.eq([unconfirmed.may, unconfirmed.asked], [false, []], `3b signup ${open ? "open" : "shut"}: a new account with a founding address is not offered the price before the address is confirmed`);
-      const confirmed = await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z" });
-      t.eq([confirmed.may, confirmed.asked], [true, ["founder.household@example.test"]], `3c …once confirmed it is, matched on the normalised address`);
-      t.eq((await ask({ email: "someone.else@example.test", email_confirmed_at: "2026-10-26T15:00:00Z" })).may, false, "3d …and another address is not");
+      const confirmed = await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } });
+      t.eq([confirmed.may, confirmed.asked], [true, ["founder.household@example.test"]], `3c …once confirmed from our link it is, matched on the normalised address`);
+      const auto = await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "auto" } });
+      t.eq([auto.may, auto.asked], [false, []], `3c2 …but never when the address was confirmed on creation`);
+      t.eq((await ask({ email: "someone.else@example.test", email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } })).may, false, "3d …and another address is not");
     }
     delete process.env.OPEN_SIGNUP;
   }

@@ -134,7 +134,10 @@ function load(modPath, state, stripeLog = []) {
 
 const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
 const CONFIRMED = "2026-10-01T00:00:00Z";
-const acct = (email, confirmed = CONFIRMED) => ({ email, email_confirmed_at: confirmed });
+// A founding household's account: its address confirmed by clicking our link (round 3: the founding price
+// needs that, never an address confirmed on creation; tests/foundingVerifiedEmail.test.cjs). `how` = "auto"
+// is an account confirmed on creation.
+const acct = (email, confirmed = CONFIRMED, how = "link") => ({ email, email_confirmed_at: confirmed, app_metadata: { email_confirmation: how } });
 // 60 households joined: numbers 1..50, then null, as start() and the trigger number them.
 const sixty = () => Array.from({ length: 60 }, (_, i) => ({
   email: `h${i + 1}@example.test`, is_test: false, founding_position: i < 50 ? i + 1 : null,

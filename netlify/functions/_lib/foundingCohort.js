@@ -24,8 +24,13 @@
 // case and whitespace on both sides and skips test rows. The address is normalised here as well, so
 // the question asked is the same either way.
 //
-// The email is the account's own, from Supabase Auth, and only once it is CONFIRMED: an address
-// nobody has proved they own cannot claim someone else's place.
+// The email is the account's own, from Supabase Auth, and only once the HOUSEHOLD has confirmed it by
+// clicking the link we emailed (round 3): an address nobody has proved they own cannot claim someone
+// else's place. beta.js records how each account's address gets confirmed in app_metadata, which only
+// the server can write: "link" (created unconfirmed; confirmed only when the link is clicked) or "auto"
+// (confirmed on creation: an invite code while signup was shut). An auto-confirmed address never gets the
+// founding price. Accounts made before that marker existed have none and count as not verified. A beta
+// founder (founder_flag) never needed the waitlist, so this changes nothing for them.
 //
 // FAILS CLOSED. If the lookup errors, the function is not applied yet, or the answer is not a position
 // from 1 to 50, the answer is "no": the regular prices are still offered. Offering a price we then
@@ -84,16 +89,22 @@ async function isBetaFounder(admin, user_id) {
   }
 }
 
+// Did the household confirm this account's address by clicking our link? Never true for an address that
+// was confirmed on creation, and never true without the marker.
+function emailVerifiedByLink(user) {
+  return !!(user && user.email_confirmed_at && user.app_metadata && user.app_metadata.email_confirmation === "link");
+}
+
 // The account (its id, and the user as Supabase Auth holds it) -> may it buy the founding price?
 async function mayBuyFoundingPrice(admin, user_id, user) {
   if (!user_id) return false;
   if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
   if (await isBetaFounder(admin, user_id)) return true;
-  if (!user || !user.email || !user.email_confirmed_at) return false;
+  if (!user || !user.email || !emailVerifiedByLink(user)) return false;
   return (await foundingPositionForEmail(admin, user.email)) !== null;
 }
 
 module.exports = {
   FOUNDING_COHORT_LIMIT, normalizeEmail, isFoundingPosition, foundingPositionForEmail,
-  foundingEndedForAccount, isBetaFounder, mayBuyFoundingPrice,
+  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, mayBuyFoundingPrice,
 };

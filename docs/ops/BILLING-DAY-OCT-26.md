@@ -23,7 +23,7 @@ Before Monday: section 1, ending with deploy **D0** (live Stripe variables; bill
 4. Run 0016, then its read-only check (2.4).
 5. `BILLING_ENABLED=true`, Production, Trigger deploy (**D1**); the curl answers 401 (section 3).
 6. Smoke purchase: Monthly on Amanda's own card, the read-only checks, refund, cancel (section 4).
-7. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true` (section 5).
+7. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
 8. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**) (section 6).
 9. Watch the first hour (section 7). Stop if section 8 says so.
 
@@ -227,13 +227,27 @@ curl -s -X POST https://flourishmoney.app/api/beta -H 'Content-Type: application
 ```
 
 4. In a private window on flourishmoney.app: Log in → Sign Up no longer asks for a code.
+5. After the first few new accounts (read-only, counts only): every account made since D2 must say
+   `link`. Anything else means the marker is not being kept, and no new account will be offered the
+   founding price (it fails closed): stop the founding emails (section 8) and look before going on.
+
+```sql
+select coalesce(raw_app_meta_data->>'email_confirmation', '(none)') as how_confirmed,
+       count(*) as accounts,
+       count(*) filter (where confirmed_at is not null) as confirmed
+from auth.users
+where created_at >= timestamptz '2026-10-26 00:00 America/Toronto'
+group by 1 order by 1;
+```
 
 What opening signup changes, and what it does not (`tests/billingDaySignup.test.cjs`):
 - Anyone can create an account without a code. It gets the 14-day trial (0007) and must confirm its
   email before it can sign in.
-- **Invite codes still work.** A valid code is still an invited, confirmed signup and takes one of the 30
-  seats while any are left. A wrong code is still refused. A full cap no longer locks a code holder out:
-  they join as a self-serve signup and confirm their email.
+- **Every new account confirms its email from our link, code or not** (round 3). A code shows you handed
+  it out, not that the person owns the address they typed, and the founding price follows the address.
+- **Invite codes still work.** A valid code is still an invited signup and takes one of the 30 seats
+  while any are left; it now confirms its email like everyone else. A wrong code is still refused. A full
+  cap no longer locks a code holder out.
 - **The beta founder flag.** No signup can set it (0007 gives every new account `founder_flag` false, and
   0002 lets only the service role change it). Existing founders keep the founder plan and the founding
   price.
@@ -383,10 +397,25 @@ Worst first.
    founding link email. With signup shut, a full 30-seat beta cap refused even a valid invite code.
    `tests/billingDaySignup.test.cjs` shows that opening it keeps invite codes working, leaves the beta
    founder flag out of every signup's reach, and leaves the founding lookup on the confirmed email.
-   **Still open:** an invited (coded) signup is confirmed the moment it is created, without proving the
-   address. The codes are shared, so someone holding one could register a founding household's address
-   first and be offered its founding price; the household would then be told the address is taken. A
-   self-serve signup must confirm the address, so it cannot.
+   **Fixed (round 3): the founding price needs an address the household verified.** It is offered only to
+   an account whose address was confirmed by clicking our link (`app_metadata.email_confirmation` =
+   `link`, which only the server can write), never to one confirmed on creation; and with signup open,
+   no account is confirmed on creation, code or not. `tests/foundingVerifiedEmail.test.cjs`.
+   **Needs a human decision:** accounts made before this marker existed (invited, confirmed on creation)
+   count as not verified, so one that holds a founding address is offered only the regular prices. Beta
+   founders are unaffected. How many there are, read-only:
+
+```sql
+select count(*) as founding_addresses_held_by_older_accounts
+from auth.users u
+join public.waitlist w on public.waitlist_email_key(w.email) = public.waitlist_email_key(u.email)
+where w.founding_position between 1 and 50 and not w.is_test
+  and coalesce(u.raw_app_meta_data->>'email_confirmation', '') <> 'link'
+  and not exists (select 1 from public.profiles p where p.user_id = u.id and p.founder_flag);
+```
+
+   If it is above 0, each one is yours to decide (for example, confirm the person yourself, then set
+   their marker in Supabase), not something the code should guess.
 2. **Fixed (round 2): a paying web household gets the paid tier.** The web app now combines the
    profile's plan with the billing status's `paid`, which the server works out from Stripe's status and
    the paid period (`webPlan`, `planRules.isPaidSubscription`). A subscription cancelled at period end

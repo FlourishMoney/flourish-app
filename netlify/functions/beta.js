@@ -450,11 +450,18 @@ async function handle(event) {
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
-    // CHECKED BEFORE THE ACCOUNT EXISTS. A self-serve account is unusable until its address is
-    // confirmed, so creating one we cannot possibly email would leave a person holding an account
-    // that can never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration,
-    // and it is answered as one, before anything is written.
-    if (!gate.usedCode) {
+    // WHO IS CONFIRMED ON CREATION (billing day, round 3). With signup shut, an invited (coded) signup is
+    // confirmed on creation, as it always has been. Once signup is open, nobody is: a code shows Amanda
+    // handed it out, not that this person owns the address they typed, and the founding price follows the
+    // address (_lib/foundingCohort.js). So every account created while the door is open confirms its
+    // email by clicking the link we send.
+    const confirmOnCreate = gate.usedCode && !open;
+
+    // CHECKED BEFORE THE ACCOUNT EXISTS. An account that must confirm its address is unusable until it
+    // does, so creating one we cannot possibly email would leave a person holding an account that can
+    // never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration, and it is
+    // answered as one, before anything is written.
+    if (!confirmOnCreate) {
       try { getPublicClient(); }
       catch (e) {
         console.error("[beta:signup] cannot send confirmations:", e.message);
@@ -511,12 +518,16 @@ async function handle(event) {
       const { error: createErr } = await admin.auth.admin.createUser({
         email,
         password,
-        // A CODED signup is confirmed on creation, exactly as it has always been: Amanda handed that
-        // person the code, so the address is already known to her. A SELF-SERVE signup is created
-        // UNCONFIRMED, because nobody has yet shown they own the address — they prove it by opening
-        // the email. Until they do, _lib/auth.js refuses their token, so the account cannot call
-        // /api/coach or anything else.
-        email_confirm: gate.usedCode,
+        // Signup shut: a CODED signup is confirmed on creation, exactly as it has always been. Signup
+        // open: every account is created UNCONFIRMED, coded or not, because nobody has yet shown they
+        // own the address; they prove it by opening the email. Until they do, _lib/auth.js refuses
+        // their token, so the account cannot call /api/coach or anything else.
+        email_confirm: confirmOnCreate,
+        // HOW THIS ADDRESS GETS CONFIRMED, where only the server can write it (app_metadata: "Only a
+        // service role can modify"): "link" when the person must click the link we email, "auto" when it
+        // was confirmed here. _lib/foundingCohort.js offers the founding price only to "link" accounts
+        // whose address has been confirmed, so an auto-confirmed address never gets it.
+        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link" },
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
@@ -544,10 +555,10 @@ async function handle(event) {
     // `self_serve` is a stranger who found the app. No email and no identifier is logged.
     console.log(`[beta:signup] signup_completed source=${gate.source}`);
 
-    // A self-serve account is unusable until the address is confirmed, so the email is the last step
+    // An unconfirmed account is unusable until the address is confirmed, so the email is the last step
     // of the signup rather than an afterthought. If Supabase would not take it the account still
     // exists and still needs confirming, so the answer says so and the screen offers Resend.
-    if (!gate.usedCode) {
+    if (!confirmOnCreate) {
       const sent = await sendConfirmation(email, event);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
     }
