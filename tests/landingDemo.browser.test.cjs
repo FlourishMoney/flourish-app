@@ -276,9 +276,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   }
   // ── The founding card above the email field: phones and tablets only (2026-10-07) ─────────────
   {
+    // In the order they show (2026-10-15): eyebrow, price, pill, the price's terms, then what everyone else pays.
     const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
-      "Everyone else: $99.99 a year, plus tax.",
-      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps."];
+      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+      "Everyone else: $99.99 a year, plus tax."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
     for (const mode of ["count", "fail", "zero"]) {
@@ -295,7 +296,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       const m = await page.evaluate(() => {
         const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
         const card = document.querySelector(".fll-founding-card");
-        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-pill", ".fll-fc-save", ".fll-fc-small"].map(s => (card.querySelector(s) || {}).textContent || null) : null;
+        // Read in the order the rows sit on screen, top to bottom (the pill shares the price's line), so the
+        // check pins the order as well as the words.
+        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-pill", ".fll-fc-small", ".fll-fc-save"].map(s => card.querySelector(s))
+          .filter(Boolean).sort((a, b) => (a.getBoundingClientRect().top - b.getBoundingClientRect().top) || (a.getBoundingClientRect().left - b.getBoundingClientRect().left))
+          .map(e => e.textContent) : null;
         const struck = card ? !!card.querySelector("s, del, strike") || [card, ...card.querySelectorAll("*")].some(e => getComputedStyle(e).textDecorationLine.includes("line-through")) : null;
         return { rows, struck,
           card: r(".fll-founding-card"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"),
@@ -313,7 +318,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         t.eq(m.rows, null, "10b 0 left: no founding card");
         t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
       } else {
-        t.eq(m.rows, mode === "count" ? ROWS : ROWS.map((r, k) => (k === 2 ? null : r)),
+        t.eq(m.rows, mode === "count" ? ROWS : ROWS.filter((r, k) => k !== 2),
           mode === "count" ? "10d the card, row by row, with the live count in the pill" : "10e no count read: only the pill is left out");
         t.eq(m.struck, false, `10f ${mode}: no price on the card is struck through (2026-10-14)`);
         t.ok(m.card.top >= 0 && m.card.bottom <= 844 && m.card.bottom <= m.input.top && m.input.top - m.card.bottom <= 16,

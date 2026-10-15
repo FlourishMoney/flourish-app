@@ -16,8 +16,8 @@ const ROWS = {
   eyebrow: "FOUNDING PRICE · FIRST 50 HOUSEHOLDS",
   price: "$79.99 a year",
   pill: "35 of 50 left",
-  save: "Everyone else: $99.99 a year, plus tax.",
   small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+  save: "Everyone else: $99.99 a year, plus tax.",
 };
 
 (async () => {
@@ -85,6 +85,9 @@ const ROWS = {
     t.ok([ROWS.eyebrow, ROWS.price, ROWS.save, ROWS.small].every(r => text.includes(r)) && !/of 50 left/.test(text),
       "4d before any count is read: every row, and no pill");
     const cardHtml = html.slice(at, inputAt);
+    // The order on the card (2026-10-15): "$79.99 a year", then its terms, then "Everyone else: …".
+    const iPrice = text.indexOf(ROWS.price), iSmall = text.indexOf(ROWS.small), iSave = text.indexOf(ROWS.save);
+    t.ok(iPrice >= 0 && iSmall > iPrice && iSave > iSmall, "4d2 in this order: the founding price, its terms (\"Plus tax, for as long as…\"), then \"Everyone else: $99.99 a year, plus tax.\"");
     t.ok(!/<s[ >]|<del[ >]|<strike/i.test(cardHtml) && !/fll-fc-regular/.test(APP), "4e no price on the card is struck through (2026-10-14)");
   }
 

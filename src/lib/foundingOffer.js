@@ -55,8 +55,9 @@ export function foundingCardParts(spotsLeft) {
     eyebrow: `FOUNDING PRICE · FIRST ${FOUNDING_HOUSEHOLDS} HOUSEHOLDS`,
     price: `${formatPrice(p.foundingAnnual)} a year`,
     pill: n === null ? null : `${n} of ${FOUNDING_HOUSEHOLDS} left`,
-    save: `Everyone else: ${formatPrice(p.annual)} a year, plus tax.`,
+    // In this order on the card (2026-10-15): the founding price, its terms, then what everyone else pays.
     small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+    save: `Everyone else: ${formatPrice(p.annual)} a year, plus tax.`,
   };
 }
 
