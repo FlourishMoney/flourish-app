@@ -366,6 +366,9 @@ Unsubscribe any time. Who we are: see Contact below.", and a signup under it is 
 `2026-10-26`, which covers the founding link email only. Once the spots are full, the forms and the
 founding block go, and the hero shows one button, "Create your account", that opens sign-up, with the line
 "Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps."
+After "Get my founding spot" the thank-you reads "Your founding spot is saved". If the last spot goes while
+a founding form is open, that signup is not stored (no number, no email) and the form shows "The founding
+spots just filled up", "You can still create your account at flourishmoney.app." and "Create your account".
 From October 26 the page keeps that area's space empty until `/api/founding` answers (at most 4 seconds),
 so no form is shown and then swapped; before October 26 nothing is held and the page is exactly as today
 (`tests/landingWaitlist.test.cjs`, `tests/foundingSpotConsent.test.cjs`, `landingDemo.browser.test.cjs`

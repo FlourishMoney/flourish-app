@@ -14551,15 +14551,16 @@ const WAITLIST_FORM_CSS = `
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             .fll-account .fll-consent{ margin-block:10px 0; }
             .fll-held{ visibility:hidden; }
+            .fll-done .fll-btn{ margin-top:16px; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
               .fll-input{ width:auto; }
               .fll-btn{ width:auto; }
             }
 `;
-function WaitlistForm({ source = "landing", founding = false, held = false }) {
+function WaitlistForm({ source = "landing", founding = false, held = false, onCreateAccount = null }) {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
+  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "full" | "error" | "stale"
   const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
   // The wording this form shows, and the version it sends with it: always the same pair.
   const shownText = founding ? FOUNDING_SPOT_CONSENT_TEXT : CONSENT_TEXT;
@@ -14586,19 +14587,32 @@ function WaitlistForm({ source = "landing", founding = false, held = false }) {
         body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: shownVersion }),
       });
       const data = await res.json();
-      if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
+      // The last founding spot went while this form was open: no number, no email (beta.js join_waitlist).
+      if (data.spotsFull === true) setStatus("full");
+      else if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
       else setStatus(res.status === 400 && data.error === "Consent required" ? "stale" : "error");
     } catch {
       setStatus("error");
     }
   };
 
+  // Approved by ChatGPT and Grok (2026-10-15): the founding spots filled up while the form was open.
+  if (status === "full") {
+    return (
+      <div className="fll-capture fll-done">
+        <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+        <div className="fll-done-t">The founding spots just filled up</div>
+        <div className="fll-done-b">You can still create your account at flourishmoney.app.</div>
+        {onCreateAccount && <button type="button" className="fll-btn" onClick={onCreateAccount}>Create your account</button>}
+      </div>
+    );
+  }
   if (status === "success" || status === "already") {
     return (
       <div className="fll-capture fll-done">
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
         <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
-        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : "You're on the list"}</div>
+        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : founding ? "Your founding spot is saved" : "You're on the list"}</div>
         <div className="fll-done-b">{founding ? "We'll email you your founding price link." : "We'll email you when flourish launches in Canada."}</div>
       </div>
     );
@@ -15278,7 +15292,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               </figure>
               <div className="fll-hero-form">
                 <FoundingCard/>
-                {(waitlistForms || waitlistHeld) && <WaitlistForm source="hero" founding={waitlistArea !== "waitlist"} held={waitlistHeld}/>}
+                {(waitlistForms || waitlistHeld) && <WaitlistForm source="hero" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
                 {waitlistArea === "account" && (
@@ -15367,7 +15381,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches in Canada.</p>
               </>}
-              <WaitlistForm source="bottom_cta" founding={waitlistArea !== "waitlist"} held={waitlistHeld}/>
+              <WaitlistForm source="bottom_cta" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>
             </div>
           </div>
           )}

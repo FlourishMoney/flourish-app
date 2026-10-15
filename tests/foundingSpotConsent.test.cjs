@@ -42,7 +42,7 @@ async function withFetch(answer, fn) {
   finally { global.fetch = real; Object.assign(console, { error: quiet.e, log: quiet.l, warn: quiet.w }); }
 }
 
-async function join({ open, consentVersion, insert = { status: 201, body: [{ id: "row-1", founding_position: 31 }] } }) {
+async function join({ open, consentVersion, insert = { status: 201, body: [{ id: "row-1", founding_position: 31 }] }, ledger = null, exists = false }) {
   process.env.SUPABASE_URL = "https://example.supabase.co"; process.env.SUPABASE_SECRET_KEY = "test-service-role";
   process.env[KEY_NAME] = "re_TESTONLY_notarealkey"; delete process.env.WAITLIST_UNSUBSCRIBE_SECRET;
   if (open) process.env.OPEN_SIGNUP = "true"; else delete process.env.OPEN_SIGNUP;
@@ -50,12 +50,14 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
   const { result, calls } = await withFetch((u, o) => {
     if (u.includes("api.resend.com")) return { status: 200, body: { id: "x" } };
     if (u.endsWith("/rest/v1/waitlist") && o.method === "POST") return insert;
+    if (u.includes("/rest/v1/waitlist_founding_ledger")) return ledger ? { status: 200, headers: { "content-range": ledger }, body: null } : { status: 500, body: {} };
+    if (u.includes("/rest/v1/waitlist?email=eq.")) return { status: 200, body: exists ? [{ id: "row-0" }] : [] };
     if (u.includes("/rest/v1/waitlist")) return { status: 204, body: [] };
     return { status: 200, body: {} };
   }, () => beta.handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "join_waitlist", email: "household@example.test", country: "CA", placement: "hero", consentVersion }) }));
   delete process.env.OPEN_SIGNUP;
   const ins = calls.find(c => c.method === "POST" && c.url.endsWith("/rest/v1/waitlist"));
-  return { status: result.statusCode, body: JSON.parse(result.body || "{}"), insert: ins ? JSON.parse(ins.body) : null,
+  return { status: result.statusCode, body: JSON.parse(result.body || "{}"), insert: ins ? JSON.parse(ins.body) : null, ledgerReads: calls.filter(c => c.url.includes("waitlist_founding_ledger")).length,
     patches: calls.filter(c => c.method === "PATCH").map(c => JSON.parse(c.body)), sends: calls.filter(c => c.url.includes("api.resend.com")) };
 }
 
@@ -130,6 +132,23 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
     }, () => fresh(FN("waitlist-sweep.js")).runSweep({ minAgeMs: 0 }));
     const wsel = decodeURIComponent((w.calls.find(c => c.url.includes("/rest/v1/waitlist?select=") && c.url.includes("welcomed_at=is.null")) || {}).url || "");
     t.ok(wsel.includes("consent_version=in.(2026-10-01,2026-10-05,2026-10-06)") && !wsel.includes("2026-10-26"), "4c the welcome sweep never asks for 2026-10-26 rows");
+  }
+
+  // ── 5. the last spot went while the founding form was open (approved by ChatGPT and Grok, 2026-10-15) ──
+  {
+    const full = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/50" });
+    t.eq([full.status, full.body, full.insert, full.sends.length], [200, { joined: false, spotsFull: true }, null, 0],
+      "5a all 50 taken: nothing stored (so no number), no email, and the page is told the spots filled up");
+    const room = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/49" });
+    t.eq([room.body.joined, room.body.spotsFull, !!room.insert], [true, undefined, true], "5b one spot left: the signup goes ahead (the check is not blind)");
+    const holder = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/50", exists: true, insert: { status: 409, body: {}, text: "" } });
+    t.eq([holder.body.joined, holder.body.alreadyJoined, holder.body.spotsFull], [true, true, undefined], "5c an address already on the list goes on as before (it may hold a number)");
+    const unread = await join({ open: true, consentVersion: "2026-10-26", ledger: null });
+    t.eq([unread.body.joined, !!unread.insert], [true, true], "5d the count cannot be read: the signup goes ahead, and the returned row settles it");
+    const raced = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/49", insert: { status: 201, body: [{ id: "row-2", founding_position: null }] } });
+    t.eq([raced.body, raced.sends.length], [{ joined: true, alreadyJoined: false, spotsFull: true }, 0], "5e the last spot went between the count and the insert: no number, no email, \"spots just filled up\"");
+    const shut = await join({ open: false, consentVersion: "2026-10-06", ledger: "*/50" });
+    t.eq([shut.body.joined, shut.body.spotsFull, shut.ledgerReads], [true, undefined, 0], "5f signup shut: today's signup, the count not even read");
   }
 
   t.summary("foundingSpotConsent.test");

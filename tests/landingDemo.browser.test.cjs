@@ -403,8 +403,33 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.locator(".fll-done .fll-done-b").waitFor();
     t.eq(seen.joins.map(j => [j.consentVersion, j.placement]), [["2026-10-26", "hero"]], "11g the signup carries the founding spot line's version, 2026-10-26");
     t.eq(await page.evaluate(() => [document.querySelector(".fll-done .fll-done-t").textContent, document.querySelector(".fll-done .fll-done-b").textContent]),
-      ["You're on the list", "We'll email you your founding price link."], "11h the thank-you: \"You're on the list\" / \"We'll email you your founding price link.\"");
+      ["Your founding spot is saved", "We'll email you your founding price link."], "11h the thank-you: \"Your founding spot is saved\" / \"We'll email you your founding price link.\"");
     t.eq([seen.founding, seen.status], [1, 0], "11i one /api/founding read, no signup_status call");
+    await ctx.close();
+  }
+  {
+    // The last spot went while the form was open: the server says so instead of joining.
+    const { ctx, page, seen } = await landingAt({ open: true, spots: 1 });
+    await page.unroute("**/api/beta");
+    await page.route("**/api/beta", r => { seen.joins.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: '{"joined":false,"spotsFull":true}' }); });
+    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
+    await page.locator(".fll-hero .fll-input").fill("late.household@example.test");
+    await page.getByRole("button", { name: "Get my founding spot" }).first().click();
+    await page.getByText("The founding spots just filled up").waitFor();
+    const done = await page.evaluate(() => { const d = document.querySelector(".fll-hero-form .fll-done"); return [d.querySelector(".fll-done-t").textContent, d.querySelector(".fll-done-b").textContent, [...d.querySelectorAll("button")].map(b => b.textContent.trim())]; });
+    t.eq(done, ["The founding spots just filled up", "You can still create your account at flourishmoney.app.", ["Create your account"]], "11n spots filled while the form was open: the title, the line and the button, in place of the thank-you");
+    await page.locator(".fll-hero-form .fll-done").getByRole("button", { name: "Create your account" }).click();
+    await page.getByText("Create your free account").waitFor();
+    t.ok(await page.locator('input[type="password"]').first().isVisible(), "11o …and the button opens sign-up");
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await landingAt({ open: false, spots: 35 });
+    await page.locator(".fll-hero .fll-input").fill("today.household@example.test");
+    await page.getByRole("button", { name: "Join the waitlist" }).first().click();
+    await page.locator(".fll-done .fll-done-b").waitFor();
+    t.eq(await page.evaluate(() => [document.querySelector(".fll-done .fll-done-t").textContent, document.querySelector(".fll-done .fll-done-b").textContent]),
+      ["You're on the list", "We'll email you when flourish launches in Canada."], "11p signup shut: the thank-you unchanged");
     await ctx.close();
   }
   {

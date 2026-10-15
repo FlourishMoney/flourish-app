@@ -73,7 +73,7 @@ const ROWS = {
   // ── 4. phones and tablets only, directly above the email field ─────────────────────────────
   const desk = APP.slice(APP.indexOf("@media(min-width:960px){"), APP.indexOf("@media(min-width:960px){") + 3000);
   t.ok(/\.fll-founding-card\{ display:none; \}/.test(desk) && /\.fll-founding-card\{ display:block;/.test(APP), "4a shown in the one-column layout, hidden at 960px and up");
-  t.ok(/<div className="fll-hero-form">\s+<FoundingCard\/>\s+\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}\/>\}/.test(APP), "4b it sits in the hero form, directly above the email field (shown while a waitlist form is)");
+  t.ok(/<div className="fll-hero-form">\s+<FoundingCard\/>\s+\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}/.test(APP), "4b it sits in the hero form, directly above the email field (shown while a waitlist form is)");
   let A = {};
   try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A.AuthScreen) {

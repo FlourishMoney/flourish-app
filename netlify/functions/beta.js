@@ -91,7 +91,8 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
-const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor } = require("./_lib/waitlistConsent");
+const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor, FOUNDING_SPOT_CONSENT_VERSION } = require("./_lib/waitlistConsent");
+const { FOUNDING_WAITLIST_LIMIT, countFromContentRange, isFoundingPosition } = require("./_lib/foundingWaitlist");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -105,6 +106,27 @@ const CONFIRM_TIMEOUT_MS = 2000;
 // answering does not mean Postgres did not commit, and telling someone their signup failed when the
 // row is there is the worse error: they try again, hit the unique constraint, and are told they are
 // already on a list they were just told they were not on.
+// THE FOUNDING SPOTS ARE ALL TAKEN? (billing day, 2026-10-15) true, false, or null when the count cannot be
+// read. The same count /api/founding uses: the numbers issued in the ledger, never freed.
+async function foundingSpotsFull(supabaseUrl, secretKey) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position`, {
+      method: "HEAD",
+      headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const n = countFromContentRange(res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : null);
+    return n === null ? null : n >= FOUNDING_WAITLIST_LIMIT;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
 async function waitlistRowExists(supabaseUrl, secretKey, email) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), CONFIRM_TIMEOUT_MS);
@@ -311,6 +333,16 @@ async function handle(event) {
       };
     }
 
+    // THE LAST SPOT WENT WHILE THE FOUNDING FORM WAS OPEN (approved by ChatGPT and Grok, 2026-10-15). A signup
+    // under the founding spot line asks for one thing, the founding price link; with every spot taken there
+    // is no number to give and no email to send, so nothing is stored and the page says the spots just
+    // filled up. An address already on the list goes on as before (it may hold a number). If the count
+    // cannot be read, the signup goes ahead, and the row returned below settles it.
+    const foundingForm = currentVersion === FOUNDING_SPOT_CONSENT_VERSION;
+    if (foundingForm && (await foundingSpotsFull(supabaseUrl, secretKey)) === true && !(await waitlistRowExists(supabaseUrl, secretKey, emailAddr))) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ joined: false, spotsFull: true }) };
+    }
+
     // Use service role to insert (bypasses RLS)
     const insertController = new AbortController();
     const insertDeadline = setTimeout(() => insertController.abort(), INSERT_TIMEOUT_MS);
@@ -408,6 +440,12 @@ async function handle(event) {
     const rowForGuard = { consent_version: currentVersion, unsubscribed_at: null, ...(insertedRow || {}) };
     if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
+    }
+
+    // The last spot went between the count and the insert: the row came back with no founding number. It
+    // gets no email (the founding link email needs a number), and the page says the spots just filled up.
+    if (foundingForm && insertedRow && !isFoundingPosition(insertedRow.founding_position)) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ joined: true, alreadyJoined: false, spotsFull: true }) };
     }
 
     return {
