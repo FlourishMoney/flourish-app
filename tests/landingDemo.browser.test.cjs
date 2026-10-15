@@ -345,6 +345,40 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");
     await dctx.close();
   }
+  // ── 11. The waitlist forms go once signup is open and the founding spots are full (2026-10-15) ────
+  // tests/landingWaitlist.test.cjs has the rule. Here, the built page: open with 0 left, no waitlist form,
+  // no "Be first to know", no founding block, no "Join the waitlist" anywhere; open with spots left, or shut
+  // with 0 left, the forms stay. signup_status is asked only once the count reads 0.
+  for (const [mode, open, spots] of [["open, full", true, 0], ["open, spots left", true, 35], ["shut, full", false, 0]]) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    let statusCalls = 0;
+    await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots }) }));
+    await page.route("**/api/beta", r => {
+      if (/signup_status/.test(r.request().postData() || "")) statusCalls++;
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ openSignup: open }) });
+    });
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByText("Real screens from the app.").waitFor();
+    if (open && spots === 0) await page.waitForFunction(() => !document.querySelector(".fll-input"), null, { timeout: 8000 }).catch(() => {});
+    else await page.waitForTimeout(1200);
+    const seen = await page.evaluate(() => ({
+      inputs: document.querySelectorAll(".fll-input").length,
+      cta2: document.body.innerText.includes("Be first to know."),
+      block: !!document.querySelector(".fll-founding"),
+      join: /Join the waitlist/.test(document.body.innerText),
+      hero: !!document.querySelector(".fll-hero .fll-h1") && !!document.querySelector(".fll-hero-card img"),
+    }));
+    if (open && spots === 0) {
+      t.eq([seen.inputs, seen.cta2, seen.block, seen.join], [0, false, false, false], "11a open, full: no waitlist form, no \"Be first to know\", no founding block, no \"Join the waitlist\"");
+      t.ok(seen.hero, "11b …and the rest of the hero is still there (headline, the card)");
+    } else {
+      t.eq([seen.inputs, seen.cta2], [2, true], `11c ${mode}: both waitlist forms stay`);
+    }
+    t.eq(statusCalls, spots === 0 ? 1 : 0, `11d ${mode}: signup_status asked ${spots === 0 ? "once" : "not at all (spots remain)"}`);
+    await ctx.close();
+  }
+
   await browser.close(); server.close();
   t.summary("LANDING DEMO (browser)");
 })();

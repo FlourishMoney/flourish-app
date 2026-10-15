@@ -36,3 +36,35 @@ export function signupCodeState({ openSignup, showCodeField = false } = {}) {
 export function signupSubmittable({ openSignup, code = "" } = {}) {
   return !signupCodeState({ openSignup }).codeRequired || String(code).trim().length > 0;
 }
+
+// THE LANDING'S WAITLIST FORMS (billing day, 2026-10-15). The waitlist consent promises an email at launch.
+// After the launch (signup open) the only waitlist email is the founding link email, and only a household
+// that joins while a founding spot is left gets one (netlify/functions/_lib/waitlistConsent.js). So once
+// signup is open AND the spots read 0, a new joiner would get no email at all: the forms go. Anything less
+// certain (not asked yet, no answer, a count not read) keeps them, as the page is today.
+export function showWaitlistForms({ openSignup, spotsLeft } = {}) {
+  return !(openSignup === true && spotsLeft === 0);
+}
+
+// The landing's ONE signup_status read per page load. Never throws: anything but a clear yes is false.
+let _signupStatus = null;
+export function sharedSignupStatus(base = "", fetchImpl = (typeof fetch === "function" ? fetch : null)) {
+  if (!_signupStatus) {
+    _signupStatus = (async () => {
+      if (!fetchImpl) return false;
+      try {
+        const res = await fetchImpl(`${base}/api/beta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "signup_status" }),
+        });
+        return statusFromResponse(await res.json().catch(() => ({})));
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return _signupStatus;
+}
+// For tests: forget the shared answer.
+export function _resetSharedSignupStatus() { _signupStatus = null; }

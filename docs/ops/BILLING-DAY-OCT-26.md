@@ -357,8 +357,10 @@ To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 
 ("when flourish launches in Canada, plus a few updates before then") ends at the October 26 launch, so
 emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15). After a row's
 founding link or launch email, the shared rule (`mayEmailWaitlistRow`) refuses it every other email; and
-from D2 (signup open) it refuses every waitlist email but those two, so a new waitlist signup is still
-stored but gets no welcome email (`tests/launchEmail.test.cjs` section 6).
+from D2 (signup open) it refuses every waitlist email but those two, so a new waitlist signup gets no
+welcome email (`tests/launchEmail.test.cjs` section 6). One that takes a founding spot still gets its
+founding link email; once the spots are full, the landing's waitlist forms and founding block go
+(`tests/landingWaitlist.test.cjs`), so nobody joins for an email that will not come.
 
 The link is `https://flourishmoney.app/?checkout=founding`. It carries nothing about the household. It
 opens sign-in, then the checkout screen. Whether the founding price is offered is decided by the server
@@ -535,8 +537,9 @@ where w.founding_position between 1 and 50 and not w.is_test
    added at checkout (wording approved by ChatGPT and Grok; Last updated October 14, 2026).
    `docs/ops/LEGAL-PACKET.md` and BEFORE-MONDAY.md section 3, counsel's copies, quote the same sentence
    (`tests/termsTax.test.cjs`).
-10. Smaller: the welcome email stops at D2 (no waitlist email after the launch), and the landing page's
-    waitlist form still takes signups after it, promising a launch email they will not get; the
+10. Smaller: the welcome email stops at D2 (no waitlist email after the launch); the landing's waitlist
+    forms stay while founding spots remain (a joiner gets the founding link email) and go once they are
+    full; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
     GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,
     because the status is read once per sign-in; `beta.js` writes an address into its "ORPHAN SEAT" log

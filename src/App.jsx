@@ -36,7 +36,7 @@ import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardP
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
-import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
+import { signupCodeState, statusFromResponse, signupSubmittable, showWaitlistForms, sharedSignupStatus } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
@@ -14817,6 +14817,21 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   // page for people who cannot use the product yet; someone who has installed the app already can.
   // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
   const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
+  // The landing's waitlist forms, and the founding block that says "Join the waitlist", go once signup is
+  // open and the founding spots are full (signupUi.js showWaitlistForms): a household joining then would
+  // get no email. signup_status is asked only after the founding count reads 0, so while spots remain the
+  // landing makes no extra function call. Web only; until both answers are in, the page is as it was.
+  const [waitlistGate, setWaitlistGate] = useState({ openSignup: null, spotsLeft: null });
+  useEffect(() => {
+    if (isNativeApp()) return undefined;
+    let live = true;
+    sharedFoundingSpots().then(spotsLeft => {
+      if (spotsLeft !== 0) { if (live) setWaitlistGate({ openSignup: null, spotsLeft }); return undefined; }
+      return sharedSignupStatus(API_BASE).then(openSignup => { if (live) setWaitlistGate({ openSignup, spotsLeft }); });
+    });
+    return () => { live = false; };
+  }, []);
+  const waitlistForms = showWaitlistForms(waitlistGate);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15251,10 +15266,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               </figure>
               <div className="fll-hero-form">
                 <FoundingCard/>
-                <WaitlistForm source="hero"/>
+                {waitlistForms && <WaitlistForm source="hero"/>}
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
-              <FoundingOffer/>
+              {waitlistForms && <FoundingOffer/>}
               <div className="fll-hero-demo">
                 <LandingHowTo/>
                 <section className="fll-familiar" aria-labelledby="fll-familiar-t">
@@ -15322,6 +15337,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           </div>
 
           {/* Second email capture */}
+          {waitlistForms && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
@@ -15329,6 +15345,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               <WaitlistForm source="bottom_cta"/>
             </div>
           </div>
+          )}
 
           {/* Footer */}
           <div className="fll-foot">
