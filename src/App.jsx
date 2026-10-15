@@ -83,7 +83,8 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey } from "./lib/storeBilling.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore } from "./lib/storeBilling.js";
+import { offerCopy, introEligible, PAYWALL_COPY } from "./lib/storeOffer.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -13683,6 +13684,99 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   );
 }
 
+// VERSION 1.1, ITEM 2: THE STORE APPS' PAYWALL (lib/storeOffer.js has the offer and what may be claimed).
+// Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
+// The prices are the store's own strings, the free month is offered only when the store says this account may
+// have it, and access follows the server's answer after the store's sheet, never the SDK's. Restore, the Terms
+// of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is a
+// full screen with no app shell behind it, so it brings the one ModalHost the delete confirmation needs.
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount}){
+  const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
+  const [elig,setElig]=useState({});              // iOS introductory-offer eligibility, by product id
+  const [loadFailed,setLoadFailed]=useState(false);
+  const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
+  const [outcome,setOutcome]=useState(null);
+  const foundingAvailable = !!status?.founding?.available;
+  useEffect(()=>{
+    let cancelled=false;
+    (async ()=>{
+      setLoadFailed(false);
+      try{
+        if(!purchases) throw new Error("store_unavailable");
+        const off = await purchases.getOfferings();
+        const chosen = choosePackages(off, { foundingAvailable });
+        if(!chosen.monthly && !chosen.annual && !chosen.founding) throw new Error("no_products");
+        let e = {};
+        if(platform==="ios"){
+          const ids=[chosen.monthly,chosen.annual,chosen.founding].filter(Boolean).map(p=>p.product.identifier);
+          try{ e = (await purchases.checkTrialOrIntroductoryPriceEligibility({productIdentifiers:ids})) || {}; }catch{ e = {}; }
+        }
+        if(!cancelled){ setPkgs(chosen); setElig(e); }
+      }catch{ if(!cancelled) setLoadFailed(true); }
+    })();
+    return ()=>{ cancelled=true; };
+  },[purchases, platform, foundingAvailable]);
+
+  const deps = {
+    serverStatus: ()=>askStore("store_status"),
+    serverSync: ()=>askStore("store_sync"),
+    purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
+    restorePurchases: ()=>purchases.restorePurchases(),
+  };
+  const finish = async (r)=>{
+    setOutcome(r.outcome);
+    // Version 1.1, item 4: no review ask soon after a payment the store declined, or one that did not finish.
+    if(r.outcome==="failed" || r.outcome==="pending" || r.outcome==="cancelled" || r.outcome==="unconfirmed") noteReviewTrouble();
+    if(r.outcome==="paid" || r.outcome==="already_paid"){
+      try{ const s = await askStore("store_status"); if(s) onResolved(s); }catch{ /* the next status call settles it */ }
+    }
+  };
+  const doBuy = async (planKey, pkg)=>{ if(busy) return; setBusy(planKey); setOutcome(null); try{ await finish(await storeBuy(deps, pkg)); } finally { setBusy(null); } };
+  const doRestore = async ()=>{ if(busy) return; setBusy("restore"); setOutcome(null); try{ await finish(await storeRestore(deps)); } finally { setBusy(null); } };
+
+  const cards = pkgs ? [["monthly",pkgs.monthly],["annual",pkgs.annual],["founding_annual",pkgs.founding]].filter(([,p])=>!!p).map(([plan,p])=>({
+    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, eligible: introEligible(p, platform, elig), platform }),
+  })).filter(c=>!!c.copy) : [];
+  const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
+  const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
+  return(
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",paddingTop:INSET.top,...safeX(0)}}>
+      <ModalHost/>
+      <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:0,marginBottom:SPACE.sm}}>{PAYWALL_COPY.title}</h1>
+        <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
+        {!pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
+        {loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
+          {cards.map(({plan,pkg,copy})=>(
+            <div key={plan} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
+                <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
+              </div>
+              {copy.trialLine&&<div style={{color:C.greenBright,fontSize:13,marginTop:SPACE.xs,fontWeight:700}}>{copy.trialLine}</div>}
+              <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>
+                {busy===plan?PAYWALL_COPY.checking:copy.button}
+              </button>
+              {copy.terms.map((line,i)=><div key={i} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:i?SPACE.xs:SPACE.sm}}>{line}</div>)}
+            </div>
+          ))}
+        </div>
+        {said&&<div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{said}</div>}
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
+          <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
+          <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>
+          <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
+          <button onClick={onSignOut} style={link}>{PAYWALL_COPY.signOut}</button>
+          <button onClick={onDeleteAccount} style={link}>{PAYWALL_COPY.deleteAccount}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Paywall({onClose,onPromoValid,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
@@ -16611,8 +16705,15 @@ export default function FlourishApp(){
     // there and an expired trial surfaced upgrade dead-ends Apple rejects — but the answer to a
     // dead-end is to hide the upgrade, not to hand everyone premium. Native gets the same 14 days
     // and then the same free tier; what is hidden on native is the way to pay, not the truth.
+    // Version 1.1, item 2: a store build that sells starts no trial of its own, on install or on update. Its
+    // one trial is the store's free month, which begins when the household confirms the subscription
+    // (lib/storeOffer.js). Every other build runs the lifecycle exactly as before.
+    if(!storeBillingBuild()){
     startTrialIfEligible();
     expireTrialIfNeeded();
+    } else if(getPlan()==="trial"){
+      setPlan("free");   // a trial cached on this phone by 1.0 does not carry into 1.1: the store's month is the trial
+    }
     // isPremium is DERIVED from the plan, never remembered. This used to only ever raise it, so a
     // trial that ended while the device was offline left premium switched on for the whole session
     // — expireTrialIfNeeded() moves the plan to free but cannot touch React state, and the profile

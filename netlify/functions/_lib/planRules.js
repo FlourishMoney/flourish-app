@@ -105,10 +105,14 @@ const isStoreRow = (sub) => !!sub && STORE_PROVIDERS.includes(sub.provider);
 // STORE APPS THAT SELL (1.1, storeBilling: true, _lib/cors.js isStoreBillingRequest): a web subscription
 // counts too, because the same subscription can now be bought in the app (3.1.3(b), multiplatform), and
 // asking a household that already pays on the web to pay again in the store would charge it twice.
-// The founder flag still applies.
+// The store's own offer is the only trial such a build honours (version 1.1, item 2): one free month, which
+// starts when the household confirms the subscription in the store and arrives here as a 'trialing' store row.
+// So the profile's 14-day signup trial is not counted there: no trial starts on install or on update. The
+// founder flag still applies.
 function deriveEntitlement(profile, subscription, now = Date.now(), { native = false, storeBilling = false } = {}) {
   if (native && !storeBilling) subscription = null;
-  const fromProfile = derivePlan(profile, now);
+  let fromProfile = derivePlan(profile, now);
+  if (native && storeBilling && fromProfile === "trial") fromProfile = "free";
   if (fromProfile !== "free") {
     return { plan: fromProfile, unlimited: true, paidSubscription: isPaidSubscription(subscription, now) };
   }

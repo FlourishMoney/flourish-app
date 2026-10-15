@@ -100,8 +100,13 @@ export function webPlan(profilePlan, { paid = false, native = false } = {}) {
  * can be bought in this build (Apple 3.1.3(b), multiplatform). Mirrors planRules.deriveEntitlement with
  * { native: true, storeBilling: true }; tests/storeBilling.test.cjs holds the two together.
  */
+//
+// THE ONLY TRIAL IN SUCH A BUILD IS THE STORE'S FREE MONTH (version 1.1, item 2), which starts when the household
+// confirms the subscription and reaches here as `paid` (a 'trialing' row). The profile's 14-day signup trial is
+// "free" here, so nothing starts on install or on update.
 export function storePlan(profilePlan, { paid = false } = {}) {
-  const p = PLANS.includes(profilePlan) ? profilePlan : "free";
+  let p = PLANS.includes(profilePlan) ? profilePlan : "free";
+  if (p === "trial") p = "free";
   if (p !== "free") return p;
   return paid === true ? "premium" : "free";
 }
