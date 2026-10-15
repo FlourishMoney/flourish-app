@@ -18,7 +18,8 @@
 //      get null.
 //   6. Grants: every new table has RLS and a service_role grant in its own file; every new function
 //      is revoked from PUBLIC, anon and authenticated and granted to the service role only.
-//   7. The proof script stays local, and 0017 is not on this branch.
+//   7. The proof script stays local. 0017 lives on PR #69's branch (this one, once merged from main) and is
+//      not part of Monday's runbook.
 //   8. The runbook (docs/ops/BILLING-DAY-OCT-26.md) runs the same three, in the same order, and every
 //      SQL block it gives is read-only.
 // -----------------------------------------------------------------------------
@@ -113,7 +114,10 @@ const M0016 = "0016_waitlist_founding_billing.sql";
   t.ok(/git -C "\$REPO" show origin\/founding-test-rows:/.test(proof[0]) && !/git (checkout|switch|merge|rebase|push)/.test(proof[0]),
     "7d it reads the held 0017 with git show and never checks out, merges or pushes");
   t.ok(!proof.slice(1).some(s => /@(?!example\.test|getgrowsmart\.com)[a-z0-9-]+\.[a-z]/i.test(s)), "7e its addresses are made up (example.test, and the test domain)");
-  t.ok(!fs.readdirSync(MIG).some(f => /^0017/.test(f)), "7f 0017 is not on this branch (PR #69 holds it)");
+  // On main while PR #69 is held, 0017 was absent. This IS PR #69's branch: 0017 is here, once, and the
+  // runbook still says Monday does not run it (8d). It reaches main only when Amanda merges #69 after her
+  // dry run.
+  t.eq(fs.readdirSync(MIG).filter(f => /^0017/.test(f)), ["0017_waitlist_founding_test_rows.sql"], "7f PR #69's branch: 0017 is here, exactly once (held from Monday's runbook, 8d)");
 
   // ── 8. the runbook (docs/ops/BILLING-DAY-OCT-26.md) says the same thing ───────────────────────────
   {
