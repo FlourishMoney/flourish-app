@@ -42,5 +42,25 @@ const path = require("path");
   // ── 4. nothing secret is introduced ─────────────────────────────────────────────────────────
   t.ok(!/SENTRY_AUTH_TOKEN|sntrys_|sntryu_/.test(src), "4a no Sentry token is referenced — the release needs no new secret");
 
+  // ── 5. the environment says which Netlify build sent it (2026-10-15) ─────────────────────────
+  // The build mode is "production" on every Netlify build, so a deploy-preview crash used to report as a
+  // production error. Netlify's CONTEXT is baked in at build time and becomes the environment.
+  t.ok(/environment: sentryEnvironment\(import\.meta\.env\.VITE_DEPLOY_CONTEXT, import\.meta\.env\.MODE\),/.test(init) && !/environment: import\.meta\.env\.MODE/.test(init), "5a the environment is chosen by sentryEnvironment(), not the bare build mode");
+  t.ok(/const DEPLOY_CONTEXT = \(process\.env\.CONTEXT \|\| ''\)\.trim\(\)/.test(vite) && /'import\.meta\.env\.VITE_DEPLOY_CONTEXT': JSON\.stringify\(DEPLOY_CONTEXT\)/.test(vite),
+    "5b vite bakes Netlify's CONTEXT into the bundle at build time");
+  {
+    const E = await import("../src/lib/errorReporting.js").catch(() => null);
+    if (E && E.sentryEnvironment) {
+      t.eq(["production", "deploy-preview", "branch-deploy", "", "dev", undefined].map(c => E.sentryEnvironment(c, "production")),
+        ["production", "deploy-preview", "branch-deploy", "production", "production", "production"],
+        "5c production, deploy-preview and branch-deploy are tagged separately; a native or local build keeps the build mode");
+      t.eq(E.sentryEnvironment("", "development"), "development", "5d …so local development stays \"development\"");
+    } else {
+      t.ok(/export function sentryEnvironment\(context, mode\)/.test(src)
+        && /SENTRY_CONTEXTS\.includes\(context\) \? context : mode/.test(src), "5c the environment is the Netlify context when it is one of the three, the build mode otherwise");
+    }
+  }
+  t.ok(!/SENTRY_AUTH_TOKEN|sntrys_|sntryu_/.test(vite), "5e no Sentry token in the build config either: no new secret");
+
   t.summary("sentryRelease.test");
 })();

@@ -25,12 +25,18 @@ function resolveBuildSha() {
 
 const BUILD_SHA = resolveBuildSha()
 
+// Which kind of Netlify build this is, for Sentry's environment (2026-10-15): Netlify sets CONTEXT to
+// "production", "deploy-preview" or "branch-deploy". Empty outside Netlify (a native ship build, a local
+// build), where errorReporting.js falls back to the build mode. Not a secret: it is the build's own label.
+const DEPLOY_CONTEXT = (process.env.CONTEXT || '').trim()
+
 export default defineConfig({
   plugins: [react()],
   // Static replacement — bakes the literal SHA in wherever the app reads import.meta.env.VITE_BUILD_SHA.
   // Only this exact member is defined, so other import.meta.env reads (Supabase, Sentry) are untouched.
   define: {
     'import.meta.env.VITE_BUILD_SHA': JSON.stringify(BUILD_SHA),
+    'import.meta.env.VITE_DEPLOY_CONTEXT': JSON.stringify(DEPLOY_CONTEXT),
   },
   // Sprint 6b: strip console.log/info/warn/debug from PRODUCTION bundles. esbuild marks these
   // as side-effect-free (their return is always unused) and dead-code-eliminates them during
