@@ -15,17 +15,17 @@ production's shape; never touches production), and `tests/billingDayMigrations.t
 
 ## Monday, in order
 
-Before Monday: section 1, ending with deploy **D0** (live Stripe variables; billing off, signup shut).
+Before Monday: section 1 (including Stripe Tax: the GST/HST registration, settings, prices Exclusive), ending with deploy **D0** (live Stripe variables; billing, tax and signup off).
 
 1. Pre-check, read-only (2.1).
 2. Run 0009, then its read-only check (2.2).
 3. Run 0010, then its read-only check (2.3).
 4. Run 0016, then its read-only check (2.4).
-5. Stripe portal pre-check: `node scripts/stripe-portal-check.cjs` says `OK` (section 3, step 1). Not OK: stop.
-6. `BILLING_ENABLED=true`, Production, Trigger deploy (**D1**); the curl answers 401 (section 3).
-7. Smoke purchase: Monthly on Amanda's own card, the read-only checks, refund, cancel (section 4).
+5. Stripe pre-checks: `node scripts/stripe-portal-check.cjs` and `node scripts/stripe-tax-check.cjs` both say `OK` (section 3, step 1): the portal cannot sell the founding price, the GST/HST registration is active in Stripe Tax, and every price is tax-exclusive. Not OK: stop.
+6. `BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`, both Production, one Trigger deploy (**D1**); the curl answers 401 (section 3).
+7. Smoke purchase: Monthly on Amanda's own card; the receipt shows tax; the read-only checks, refund, cancel (section 4).
 8. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
-9. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**) (section 6).
+9. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**): the founding link emails, and the launch email for the `pre-2026-10-01` rows (section 6).
 10. Watch the first hour (section 7). Stop if section 8 says so.
 
 Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
@@ -43,11 +43,21 @@ Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
    to the founding price.** If plan switching is on and the founding price is listed, any subscriber can
    move themselves onto $79.99 in the portal; the founding rules are only enforced in our checkout. The
    exact screen, setting and a read-only check are section 3, step 1, which must pass before D1.
+2b. **Stripe Tax, live mode** (tax is charged from the first sale). **Tax → Registrations → Add
+   registration:** Canada, GST/HST, with GrowSmart's GST/HST number and its start date (a "standard"
+   registration; a "simplified" one is for businesses outside Canada). **Settings → Tax:** the head office
+   address, default tax behavior **Exclusive**, and the default product tax code. **Each of the three
+   prices:** Tax behavior **Exclusive**. Stripe does not let a price's tax behavior change once it is
+   inclusive or exclusive ("Once specified as either inclusive or exclusive, it cannot be changed", Prices
+   API). So if a live price was made **Inclusive**, make a new price with Exclusive, put its id in its
+   `STRIPE_PRICE_*_CAD` variable, and archive the old one, before D1. A price left unspecified can be set
+   to Exclusive once, or follows the default. Section 3 step 1 checks all of it.
 3. **Netlify variables, Production context only** (Site configuration → Environment variables). Deploy
    previews and branch deploys keep the test values, so a preview can never charge a real card:
    `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (the live endpoint's own `whsec_`),
    `STRIPE_PRICE_MONTHLY_CAD`, `STRIPE_PRICE_ANNUAL_CAD`, `STRIPE_PRICE_FOUNDING_ANNUAL_CAD` (live ids),
-   `APP_ORIGIN` = `https://flourishmoney.app`. Leave `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` **unset**.
+   `APP_ORIGIN` = `https://flourishmoney.app`. Leave `BILLING_ENABLED`, `STRIPE_TAX_ENABLED` and
+   `FOUNDING_LINK_EMAIL` **unset**.
 4. **A variable change needs a deploy.** Netlify gives a deployed function the variables that were set
    when it was deployed ("To apply updated environment variable values, create a new deploy", Netlify
    docs, Functions → Environment variables). Some code comments say flipping `BILLING_ENABLED` needs no
@@ -166,29 +176,34 @@ Nothing else runs in the SQL editor on Monday. **Not** 0017, **not** `waitlist_f
 
 **Who:** Amanda, in Stripe and then Netlify. Nobody else holds either login.
 
-1. **Pre-check, before D1: the customer portal cannot switch anyone to the founding price.** Our
+1. **Pre-checks, before D1.** (a) **The customer portal cannot switch anyone to the founding price.** Our
    checkout decides who may have $79.99 a year; Stripe's portal does not, and billing.js opens the
    portal with its **default** configuration.
    - **The screen:** Stripe Dashboard in **live mode** (Test mode off) → **Settings** → **Billing** →
      **Customer portal** (dashboard.stripe.com/settings/billing/portal).
    - **The setting:** under subscriptions, **Switch plan**. Leave it **off**, or, if it is on, make sure
      the **Founding Annual** price ($79.99 a year) is not one of the prices it lists. Save.
-   - **Confirm it, read-only,** from the main checkout once this branch is merged. The key is typed
-     hidden, used for this one command, and never printed or stored. A live restricted key with read
-     access to the customer portal and to prices is enough; the live secret key also works. The script
-     only makes GET requests and changes nothing:
+   (b) **Stripe Tax is ready** (section 1 step 2b): Tax settings complete, an active GST/HST registration
+   for Canada, and each of the three live prices tax-exclusive.
+   - **Confirm both, read-only,** from the main checkout once this branch is merged. The key is typed
+     hidden, used for these two commands, and never printed or stored. A live restricted key with read
+     access to the customer portal, prices and Tax is enough; the live secret key also works. The scripts
+     only make GET requests and change nothing:
 
 ```zsh
 cd ~/Projects/flourish-app
 read -rs "STRIPE_READ_KEY?Stripe live key, read-only (hidden): "; echo
 STRIPE_READ_KEY="$STRIPE_READ_KEY" node scripts/stripe-portal-check.cjs
+STRIPE_READ_KEY="$STRIPE_READ_KEY" node scripts/stripe-tax-check.cjs
 unset STRIPE_READ_KEY
 ```
 
-   Expect a line starting `OK:` (Switch plan off, or on without the founding price; it lists the prices
-   it offers). `NOT OK:` (including a test-mode key) means stop: fix the portal and run it again.
-2. Site configuration → Environment variables → add `BILLING_ENABLED`, value exactly `true` (not
-   `TRUE`, not `1`), **Production** context only.
+   Expect every line to start `OK:` (the portal: Switch plan off, or on without the founding price; tax:
+   settings complete, the GST/HST registration active, each price exclusive). Any `NOT OK:` (including a
+   test-mode key) means stop: fix it in Stripe and run them again.
+2. Site configuration → Environment variables → add `BILLING_ENABLED` **and** `STRIPE_TAX_ENABLED`, each
+   value exactly `true` (not `TRUE`, not `1`), **Production** context only. Both go in this one deploy: tax
+   is charged from the first sale. `STRIPE_TAX_ENABLED` is a rollback switch only (section 8).
 3. Deploys → Trigger deploy → Deploy site. Wait for "Published". This is deploy **D1**.
 4. Check from a terminal (no login, no secret). 401 means on; 404 means still off:
 
@@ -212,6 +227,7 @@ cancelling a founding subscription stamps `founding_ended_at` and the ledger's `
 household's founding price never comes back (section 9).
 
 1. Signed in on a computer: Settings → Flourish Plus → See plans → Monthly → pay in Stripe Checkout.
+   Checkout asks for your billing address and shows tax on top of $11.99 before you pay.
 2. Back on flourishmoney.app with "Payment received…". Then, read-only:
 
 ```sql
@@ -225,9 +241,13 @@ select type, status, attempts from public.billing_events order by received_at de
 Expect `active`, `monthly`, `true`, `true`; the events `processed` (or `ignored` for types we do not
 handle), none `failed`.
 
-3. Refund it: Stripe (live) → Payments → the 11.99 payment → Refund → full amount.
-4. Cancel it: Stripe → Customers → that customer → the subscription → Cancel → **immediately**.
-5. Read again: the subscriptions row says `canceled`; the new events are `processed`.
+3. **The receipt must show tax.** Stripe's emailed receipt, and Stripe (live) → Payments → the payment,
+   show a GST/HST line for the province of the billing address (Ontario, HST 13%: $11.99 + $1.56 =
+   $13.55). No tax line means stop (section 8).
+4. Refund it: Stripe (live) → Payments → the payment ($11.99 plus tax) → Refund → full amount; the tax is
+   refunded with it.
+5. Cancel it: Stripe → Customers → that customer → the subscription → Cancel → **immediately**.
+6. Read again: the subscriptions row says `canceled`; the new events are `processed`.
 
 A refund alone does not cancel; a cancel alone does not refund. Do both. If any expectation fails, go to
 section 8.
@@ -367,10 +387,16 @@ select (select count(*) from public.billing_events where status = 'failed') as f
 
 1. `failed_events` or `stuck_events` is above 0 and a Stripe retry has not cleared it within 10 minutes.
 2. A payment succeeded in Stripe and that household has no `active` subscriptions row 10 minutes later.
-3. A charge is for any amount other than 11.99, 99.99 or 79.99 CAD, or a Founding Annual charge went to
-   an account the founding price was not offered to.
+3. A charge's price before tax is any amount other than 11.99, 99.99 or 79.99 CAD, or a Founding Annual
+   charge went to an account the founding price was not offered to.
 4. Anything about paying (a price, a plan, a checkout) appears in the iPhone or Android app.
 5. The `billing` or `stripe-webhook` log shows `server_misconfigured` or `price_not_configured`.
+6. A charge has no tax line while `STRIPE_TAX_ENABLED` is on.
+
+**Tax only: the rollback switch.** If Stripe Tax itself fails at checkout (the `billing` log shows
+`billing_provider_error` and Stripe's dashboard logs name tax or the address), remove `STRIPE_TAX_ENABLED`
+and deploy. New checkouts then go through without tax; subscriptions already made keep theirs. Sales made
+in that window carry no tax: decide with your accountant how to handle them, then turn it back on.
 
 **Off, fastest:** Netlify → Deploys → D0 → **Publish deploy**. Instant, no build: D0 was deployed with
 billing off. It also shuts signup again and stops the founding emails, because D0 predates both. To stop
@@ -399,8 +425,9 @@ cancel for them in Stripe if they ask (hello@flourishmoney.app).
   stamps `subscriptions.founding_ended_at` and the ledger's `ended_at` once and never clears them. The
   number is never given to anyone else. This is the rule ("ended is final"). It applies to a test as much
   as to a real household.
-- **No tax is added at checkout.** Stripe Tax is off (P16, `automatic_tax: false`), so the charge is the
-  price itself. An invoice cannot be re-issued with tax afterwards.
+- **Tax collected is GrowSmart's to remit.** From the first sale, each charge includes GST/HST worked out
+  by Stripe Tax and recorded in Stripe's tax reports. A refund reverses it there, but filing and remitting
+  stay GrowSmart's. An invoice already issued cannot be re-issued with different tax.
 - **Accounts made while signup is open stay.** Shutting signup again, or publishing D0, stops new ones; it
   removes none.
 - **Turning billing off does not unwind anything** (section 8).
@@ -490,8 +517,11 @@ where w.founding_position between 1 and 50 and not w.is_test
    that monthly and annual still are. `tests/checkoutRefusal.test.cjs`.
 8. **Fixed (round 2): the webhook stores the paid period on either Stripe API version** (on the
    subscription before 2025-03-31, on its item after), so "paid until the period ends" holds.
-9. **No tax is charged, while every page says "plus tax".** Stripe Tax is off (P16), so the household
-   pays the bare price. Not a blocker for paying; a tax question (P8) for GrowSmart.
+9. **Fixed (round 4): tax is charged from the first sale.** Checkout uses Stripe Tax
+   (`STRIPE_TAX_ENABLED`, set with `BILLING_ENABLED` in D1): automatic tax, the billing address always
+   collected and saved to the customer, prices tax-exclusive. **Still open:** the Terms say prices are
+   "inclusive of applicable taxes" and in "USD for US users"; replacement wording is proposed in PR #73, not
+   changed here (legal text).
 10. Smaller: the welcome email still says "when payments open on October 26" after that date; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
     GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,

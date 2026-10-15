@@ -49,8 +49,10 @@ products, separate prices, separate webhook endpoints, separate keys.
 5. Optional but worth it before the cohort: statement descriptor, business name, and the
    test-mode branding on Checkout.
 
-**No Stripe Tax registration is needed** while it stays off. That is a separate track from
-P8 (whether GrowSmart Inc. holds an RT account).
+**Stripe Tax is on from the first sale (2026-10-26).** Checkout runs with automatic tax when
+`STRIPE_TAX_ENABLED` is exactly `true` (a rollback switch only). It needs, in live mode, an active GST/HST
+registration under Tax → Registrations, complete Tax settings, and tax-exclusive prices: see
+docs/ops/BILLING-DAY-OCT-26.md (section 1 step 2b, and `scripts/stripe-tax-check.cjs`).
 
 ## 2. Netlify environment variables
 
