@@ -205,3 +205,10 @@ PurchasesPlugin, FlourishReview, Capacitor's own), their JavaScript-facing metho
 `restorePurchases`, `getOfferings`, `requestReview`, `share`, `schedule`), and the WebView bridge's
 `@JavascriptInterface` methods kept. **Not run on a device**: the first R8 build must be opened on a phone or
 the emulator (and in Play's pre-launch report) before it is uploaded.
+
+**(c) Android's back key.** It used to leave the app from Settings (Capacitor's default with no back handler).
+Now (`src/lib/backButton.js`, `@capacitor/app`): an open dialog or registered sheet closes first; then the app
+goes back one screen at a time (the paywall's Terms or Privacy page, the bank consent sheet, Settings, the
+notifications, What-If, the money summary, the check-in, the upgrade screen, a full page, any tab) down to Today;
+on Today with nothing open, or on the store paywall (which back never dismisses), the app goes to the background
+with its state. Not tried on a device (no emulator, item 8a).

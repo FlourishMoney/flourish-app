@@ -85,6 +85,7 @@ import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision } from "./lib/storeBilling.js";
 import { offerCopy, introEligible, PAYWALL_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -15723,6 +15724,11 @@ function ModalHost() {
     _modalListener = (cfg) => { setVal(cfg.defaultValue || ""); setM(prev => { if (prev && prev._resolve) prev._resolve(prev.kind === "confirm" ? false : prev.kind === "prompt" ? null : undefined); return cfg; }); };
     return () => { _modalListener = null; };
   }, []);
+  // Version 1.1, item 8c: an open dialog takes Android's back key first, exactly as Escape closes it.
+  useEffect(() => {
+    if (!m) return;
+    return pushBackHandler(() => { const r = m._resolve; setM(null); if (r) r(m.kind === "prompt" ? null : m.kind === "confirm" ? false : undefined); return true; });
+  }, [m]);
   useEffect(() => {
     if (!m) return;
     const onKey = (e) => { if (e.key === "Escape") { const r = m._resolve; setM(null); if (r) r(m.kind === "prompt" ? null : m.kind === "confirm" ? false : undefined); } };
@@ -16912,6 +16918,34 @@ export default function FlourishApp(){
     document.addEventListener("visibilitychange", onVisible);
     return ()=>document.removeEventListener("visibilitychange", onVisible);
   },[storeBilling, user?.id, askStore]);
+  // VERSION 1.1, ITEM 8c: ANDROID'S BACK KEY GOES BACK ONE SCREEN (lib/backButton.js). A dialog or sheet on top
+  // closes first; then the app's own screens, one at a time, down to Today; on Today with nothing open (or on the
+  // store paywall, which back never dismisses) the app goes to the background, keeping its state. Android only.
+  const backStateRef = useRef({});
+  backStateRef.current = { paywallUp: storeBilling && paywallUp, paywallLegal, pendingPlaid, showSettings, showNotifs, showWhatIf, showWrapped, showCheckIn, showUpgrade, showPaywall, screen };
+  useEffect(()=>{
+    if(window.Capacitor?.getPlatform?.()!=="android") return;
+    let handle=null, cancelled=false;
+    import("@capacitor/app").then(({ App: CapApp })=>CapApp.addListener("backButton", ()=>{
+      if(handleBackLayers()) return;
+      const act = backAction(backStateRef.current);
+      if(!act){ CapApp.minimizeApp(); return; }
+      const go = {
+        closePaywallLegal: ()=>setPaywallLegal(null),
+        closeBankConsent: ()=>setPendingPlaid(null),
+        closeSettings: ()=>{ setShowSettings(false); setPendingPlaid(null); },
+        closeNotifications: ()=>setShowNotifs(false),
+        closeWhatIf: ()=>{ setShowWhatIf(false); setWhatIfQuery(""); setWhatIfType(null); setWhatIfAutoRun(false); },
+        closeWrapped: ()=>setShowWrapped(false),
+        closeCheckIn: ()=>setShowCheckIn(false),
+        closeUpgrade: ()=>setShowUpgrade(false),
+        closePaywall: ()=>setShowPaywall(false),
+        home: ()=>{ try{ window.history.replaceState(null,"","/"); }catch{ /* no history */ } setScreen("home"); },
+      }[act];
+      if(go) go();
+    })).then(h=>{ if(cancelled) h.remove(); else handle=h; }).catch(()=>{ /* no plugin: Capacitor's default stays */ });
+    return ()=>{ cancelled=true; if(handle) handle.remove(); };
+  },[]); // eslint-disable-line
   // The founding link: the checkout screen once this account's status is in and billing is on; in a store
   // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
   // answer in that status, never this link's.
