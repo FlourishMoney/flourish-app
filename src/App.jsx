@@ -31,7 +31,7 @@ import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts,
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
-import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
+import { getPricing, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
@@ -13658,11 +13658,12 @@ function Paywall({onClose,onPromoValid,country}){
   const [promoNote,setPromoNote]=useState("");
   const [upgradeNote,setUpgradeNote]=useState("");
   const isCA=country==="CA";
-  // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
+  // Step 3: all prices come from src/lib/pricing.js. Only the two prices and their billing periods: no
+  // saving, no percentage, no monthly equivalent (billing day, approved 2026-10-15; tests/planCopy.test.cjs).
   const _pr = getPricing(country);
   const plans={
-    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Billed yearly"},
-    monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
+    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,badge:"Billed yearly"},
+    monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,badge:null},
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
@@ -13698,8 +13699,6 @@ function Paywall({onClose,onPromoValid,country}){
               {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
               <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
-              {plan.monthly&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>{plan.monthly} · billed annually</div>}
-              {plan.save&&<div style={{color:C.greenBright,fontSize:13,fontWeight:700,marginTop:4}}>{plan.save}</div>}
             </button>
           ))}
         </div>
