@@ -781,7 +781,10 @@ async function activationSession() {
     return session?.user?.id && session?.access_token ? { userId: session.user.id, jwt: session.access_token } : null;
   } catch { return null; }
 }
-const signalActivation = (metric, demo) => sendActivationOnce(metric, { demo: !!demo, getSession: activationSession, apiBase: API_BASE });
+// Off for the App Review and screenshot sample households (loadSampleHousehold): they are not households.
+let _activationOff = false;
+const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
+  : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
 
 // ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
 // Module-level, NOT component state, so "at most once per session" survives the AICoach component
@@ -5550,8 +5553,6 @@ function SetupChecklistCard({items,onDismiss,style}){
 
 function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
-  // Activation (2026-10-15): Today showed the safe-to-spend figure. Once per account; never in the demo.
-  useEffect(()=>{ if(!data?.demo) signalActivation("safe_view", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
   const [showTransparency,setShowTransparency]=useState(false);
@@ -5611,6 +5612,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const displayedSafe = displayedSafeToSpend(data); // what Today shows; Decisions' move-to-savings is 25% of it, as Meet's extra is
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
+  // Activation (2026-10-15): Today is SHOWING the safe-to-spend figure: the card is on, and there is a cash
+  // account and an income (otherwise it shows "Connect an account…" or "Add your income…"). Sent the first
+  // time it shows; never in the demo.
+  const showsSafeFigure = isVisible('hero') && hasCashAccount && !_ss.noIncome;
+  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
@@ -9101,7 +9107,7 @@ function SpendScreen({data, setAppData, setScreen}){
         <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":data.bankConnected?"Live from your bank":"From your statements and entries"}</div>
       </div>
       <div style={{textAlign:"right"}}>
-        <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${(totalSpent||0).toFixed(0)}</div>
+        <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${formatNumber(totalSpent||0)}</div>
         <div style={{color:C.green,fontSize:13}}>+${formatNumber(totalIn||0)} in</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>
           {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
@@ -10171,7 +10177,8 @@ const HOUSEHOLD_ENABLED = false;
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
 function MeetAgenda({ data, isCouple, setScreen, setAppData }){
-  // Activation (2026-10-15): a money meeting was opened. Once per account; never in the demo.
+  // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
+  // Once per account; never in the demo.
   useEffect(()=>{ if(!data?.demo) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
@@ -16739,6 +16746,7 @@ export default function FlourishApp(){
     // data; we deliberately never set hydratedUidRef, so the save gate stays closed and this state
     // is never written to the DB.
     const loadSampleHousehold = () => {
+      _activationOff = true; // a sample household is not a household: no activation counts (lib/activation.js)
       const dd = buildDemoState();
       // Auto-build a budget so the Budget screen shows a populated plan, not the empty "Build Your
       // Budget Plan" state. generateBudgetSuggestions returns the exact data.budgets shape
@@ -16751,6 +16759,7 @@ export default function FlourishApp(){
       setFirstVisitDone(true);
       setHydrated(true);
     };
+    _activationOff = false;
     if (normalizeEmail(user.email) === SCREENSHOT_EMAIL) { loadSampleHousehold(); return; }
     let cancelled = false;
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
@@ -16848,8 +16857,8 @@ export default function FlourishApp(){
   // data has loaded, never the demo. Each is sent once (app_open once a day): lib/activation.js.
   useEffect(() => {
     if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
-    signalActivation("app_open", false);
-    if (hasDataSource(appData)) signalActivation("data_source", false);
+    signalActivation("app_open", false, user.id);
+    if (hasDataSource(appData)) signalActivation("data_source", false, user.id);
   }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──

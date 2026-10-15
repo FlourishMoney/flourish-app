@@ -44,7 +44,7 @@ and leave the build in closed testing.
 ## C. Where each link goes
 
 Each link is the website with the campaign code, so the waitlist counts each source separately
-(`WAITLIST_SRCS`; read the counts with migration 0018's report). Use exactly these, one per place:
+(`WAITLIST_SRCS`; once migration 0018 has run, its report counts signups by source and day). Use exactly these, one per place:
 
 | Place | Link |
 |---|---|
@@ -98,7 +98,8 @@ for their phones. What you can do:
   **Save**. Then fix forward: a new build, submitted for review, with an expedited review requested at
   `https://developer.apple.com/contact/app-store/?topic=expedite`.
 - **Google Play, during a staged rollout:** **Test and release** → **Production** → **Releases** → the
-  release → **Halt rollout** stops it reaching more people. At 100% there is no halt.
+  release → **Halt rollout** stops it reaching more people. If the release is already at 100%, look for
+  **Halt release** on the same page first; unpublish (next line) only if there is no halt.
 - **Google Play, after a full release:** you cannot put the previous version back. To stop new installs,
   **Test and release** → **Setup** → **Advanced settings** → **App availability** → **Unpublish**. Fix
   forward with a new release.

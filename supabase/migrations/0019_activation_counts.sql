@@ -2,16 +2,20 @@
 -- -----------------------------------------------------------------------------
 -- ACTIVATION COUNTS, AGGREGATE ONLY (2026-10-15). NOT APPLIED.
 --
--- Per signup day ("cohort day", Toronto time): accounts created, and of them how many added a data source
--- (a bank, an imported statement or a balance they entered), viewed safe to spend within 7 days, opened a
--- first money meeting, and came back on day 1 and on day 7 of their own signup.
+-- Per signup day ("cohort day", Toronto time): confirmed accounts created, and of them how many added a
+-- data source (a bank, an imported statement or a balance they entered), viewed safe to spend within 7
+-- days, opened the money meeting for the first time, and came back on day 1 and on day 7 of their own
+-- signup.
 --
--- NOTHING HERE IDENTIFIES A HOUSEHOLD. public.activation_daily holds a day, a metric name from a fixed
--- list and a count. There is no account id, no address, no amount and no free text in it: the server
+-- NO ACCOUNT ID IS STORED. public.activation_daily holds a day, a metric name from a fixed list and a
+-- count: no account id, no address, no amount and no free text. The server
 -- (netlify/functions/activation.js) checks the signed-in account, works out the cohort day and the
--- metric, adds 1 to that day's counter, and keeps nothing else. Accounts created comes from Supabase
--- Auth's own created_at. Accounts at the test domains (getgrowsmart.com, flourishmoney.app) are never
--- counted.
+-- metric, adds 1 to that day's counter, and keeps nothing else. Small cohorts can still be matched to the
+-- few accounts created that day, so this report is for Flourish only, never published.
+-- Accounts created comes from Supabase Auth's own created_at, confirmed accounts only. Accounts at the
+-- test domains (getgrowsmart.com, flourishmoney.app) and the App Review and screenshot accounts are never
+-- counted. The other counters are close estimates: the app sends each signal once per device, so a
+-- household on two devices can be counted twice and a counter can exceed accounts created.
 --
 -- No third-party analytics. Read the counts in the Supabase SQL editor:
 --   select * from public.activation_counts('2026-10-01', '2026-10-31');
@@ -57,7 +61,10 @@ as $$
   created as (
     select (u.created_at at time zone 'America/Toronto')::date as cohort_day, count(*)::integer as n
     from auth.users u
-    where lower(coalesce(u.email, '')) !~ '@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$'
+    where u.email_confirmed_at is not null
+      and lower(coalesce(u.email, '')) !~ '@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$'
+      and lower(trim(coalesce(u.email, ''))) <> 'snap@flourish.app'
+      and encode(extensions.digest(lower(trim(coalesce(u.email, ''))), 'sha256'), 'hex') <> 'af552e5b3f4529120915257ae8073ff990043c65e6163630d694fe2b6516dc7b'
     group by 1
   )
   select d.cohort_day,

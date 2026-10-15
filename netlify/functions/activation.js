@@ -11,15 +11,20 @@
  * signup day in Toronto time ("cohort day"):
  *   data_source    -> data_source
  *   safe_view      -> safe_view_7d, only within 7 days of the account being created
- *   meeting_opened -> first_meeting
+ *   meeting_opened -> first_meeting (the household opened the money meeting agenda; not that it was held)
  *   app_open       -> returned_d1 on the day after signup, returned_d7 seven days after; other days nothing
  *
- * NOTHING ELSE IS KEPT. Not the account id, the address, an amount, a device, an IP or any text: the
+ * NO ACCOUNT ID IS STORED. Not the account id, the address, an amount, a device, an IP or any text: the
  * request body is one metric name from the list above, and the stored row is a day, a metric and a
  * count. The account is looked up only to check it is signed in, to read its signup day, and to leave
- * out Flourish's own test addresses. No third-party analytics.
+ * out Flourish's own test addresses and the App Review and screenshot accounts. Small cohorts can still
+ * be matched to the few accounts created that day, so the report is for Flourish, never published. The
+ * counts are close estimates: the app sends each metric once per device, so they can exceed accounts
+ * created. No third-party analytics.
  *
- * Answers 204 with no body whether or not a counter moved, so the answer says nothing about the account.
+ * Answers 204 with no body whether or not a counter moved, so the answer says nothing about the account;
+ * 503 when the counter could not be written (migration 0019 not applied, the database down), so the app
+ * keeps the signal and sends it again later instead of losing it.
  * 401 without a valid session, 400 for anything that is not one of the four metrics, 405 for not POST.
  * The app sends each metric once per account (app_open once per day): see src/lib/activation.js.
  *
@@ -43,6 +48,17 @@ function isTestEmail(email) {
 }
 
 const METRICS = ["data_source", "safe_view", "meeting_opened", "app_open"];
+
+// The screenshot account by its address, and the App Review account by the SHA-256 of its address only
+// (src/lib/sampleHouseholdAccount.js; the review address is never written in this repository).
+const SCREENSHOT_EMAIL = "snap@flourish.app";
+const REVIEW_ACCOUNT_SHA256 = "af552e5b3f4529120915257ae8073ff990043c65e6163630d694fe2b6516dc7b";
+function isSampleAccount(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return false;
+  if (e === SCREENSHOT_EMAIL) return true;
+  return require("crypto").createHash("sha256").update(e).digest("hex") === REVIEW_ACCOUNT_SHA256;
+}
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // A date's day in Toronto, as "YYYY-MM-DD".
@@ -80,20 +96,23 @@ async function handler(event, _context, now = new Date()) {
   if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
 
   const done = { statusCode: 204, headers: CORS, body: "" };
+  const retryLater = { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
   try {
     const admin = getAdminClient();
     const { data, error } = await admin.auth.admin.getUserById(user_id);
-    const user = !error && data && data.user;
-    if (!user || isTestEmail(user.email)) return done;
+    if (error) { console.error("[activation] account read failed"); return retryLater; }
+    const user = data && data.user;
+    if (!user || isTestEmail(user.email) || isSampleAccount(user.email)) return done;
     const counter = counterFor(metric, user.created_at, now);
     if (!counter) return done;
     const { error: bumpError } = await admin.rpc("activation_bump", { p_cohort_day: torontoDay(new Date(user.created_at)), p_metric: counter });
-    if (bumpError) console.error("[activation] bump failed", counter);
+    if (bumpError) { console.error("[activation] bump failed", counter); return retryLater; }
   } catch {
     console.error("[activation] failed");
+    return retryLater;
   }
   return done;
 }
 
 exports.handler = (event, context) => handler(event, context);
-exports._test = { handler, counterFor, torontoDay, isTestEmail, METRICS, TEST_EMAIL_DOMAINS };
+exports._test = { handler, counterFor, torontoDay, isTestEmail, isSampleAccount, METRICS, TEST_EMAIL_DOMAINS };

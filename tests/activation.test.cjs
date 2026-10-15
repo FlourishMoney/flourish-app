@@ -76,7 +76,15 @@ async function call({ metric = "app_open", body, user = { id: "u1", email: "alex
     t.eq([r.res.statusCode, r.rpcs.length], [400, 0], `3c ${why}: 400, nothing counted`);
   }
   t.eq((await call({ method: "GET", now: day(1) })).res.statusCode, 405, "3d only POST");
-  t.eq((await call({ now: day(1), rpcError: { message: "x" } })).res.statusCode, 204, "3e a failed write still answers 204: the app never depends on it");
+  t.eq((await call({ now: day(1), rpcError: { message: "relation activation_daily does not exist" } })).res.statusCode, 503,
+    "3e a failed write (0019 not applied yet, the database down) answers 503, so the app keeps the signal and sends it again later");
+  for (const email of ["snap@flourish.app", " SNAP@Flourish.app "]) {
+    const r = await call({ now: day(1), user: { id: "s", email, created_at: day(0) } });
+    t.eq([r.res.statusCode, r.rpcs.length], [204, 0], `3f the screenshot account (${email.trim()}) is never counted`);
+  }
+  const F = require(FN)._test;
+  t.ok(F.isSampleAccount("snap@flourish.app") && !F.isSampleAccount("alex@example.ca") && !F.isSampleAccount(""), "3g the App Review account is matched by the SHA-256 of its address only; other addresses are not");
+  t.ok(!/@(?!flourish\.app|getgrowsmart|flourishmoney|example)[a-z0-9.-]+\.[a-z]{2,}/i.test(fs.readFileSync(FN, "utf8").replace(/snap@flourish\.app/g, "")), "3h the review address itself is not written in the function");
 
   // ── 4. the app's side ────────────────────────────────────────────────────────────────────────
   const A = await import("../src/lib/activation.js");
@@ -89,6 +97,14 @@ async function call({ metric = "app_open", body, user = { id: "u1", email: "alex
   t.eq(sent.map(s => [s.url, s.body]), [["https://flourishmoney.app/api/activation", '{"metric":"safe_view"}']], "4b …to our own /api/activation, with the metric as the whole body");
   t.eq(sent[0].headers.Authorization, "Bearer token", "4c …signed in");
   t.eq([await A.sendActivationOnce("app_open", opts), await A.sendActivationOnce("app_open", opts), await A.sendActivationOnce("app_open", { ...opts, today: new Date(2026, 9, 12, 9) })], [true, false, true], "4d app_open: once a day");
+  // The day is Toronto's, as on the server: 22:00 in Vancouver (05:00Z next day) is already the next Toronto day.
+  t.eq([A.torontoDay(new Date("2026-10-17T05:00:00Z")), A.torontoDay(new Date("2026-10-17T03:59:00Z")), A.torontoDay(new Date("2026-10-17T04:00:00Z"))], ["2026-10-17", "2026-10-16", "2026-10-17"],
+    "4d2 app_open's once-a-day key is the Toronto day, the day the server counts by");
+  t.eq(A.activationKey("app_open", "u9", new Date("2026-10-17T05:00:00Z")), A.activationKey("app_open", "u9", new Date("2026-10-17T16:00:00Z")),
+    "4d3 …so an open at 10 pm in Vancouver and one the next morning are the same counted day, sent once");
+  const sentBefore = sent.length;
+  t.eq(await A.sendActivationOnce("safe_view", { ...opts, userId: "u1", getSession: async () => { throw new Error("must not be read"); } }), false, "4d4 a metric already sent is skipped before the session is read");
+  t.eq(sent.length, sentBefore, "4d5 …with no request");
   sent.length = 0;
   t.eq(await A.sendActivationOnce("meeting_opened", { ...opts, demo: true }), false, "4e never in the demo");
   t.eq(await A.sendActivationOnce("meeting_opened", { ...opts, getSession: async () => null }), false, "4f never without a session");
@@ -107,9 +123,13 @@ async function call({ metric = "app_open", body, user = { id: "u1", email: "alex
     A.hasDataSource({ demo: true, bankConnected: true, accounts: [{ institution: "RBC" }] }),
   ], [false, true, true, true, true, false], "4l a data source: a linked bank, an imported statement or an entered balance (PR #72); the empty manual account and the demo are not");
   const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-  t.ok(/useEffect\(\(\)=>\{ if\(!data\?\.demo\) signalActivation\("safe_view", false\); \},\[\]\);/.test(APP) && /useEffect\(\(\)=>\{ if\(!data\?\.demo\) signalActivation\("meeting_opened", false\); \},\[\]\);/.test(APP)
-    && /if \(!\(user && hydratedUidRef\.current === user\.id && !appData\?\.demo\)\) return;\s+signalActivation\("app_open", false\);\s+if \(hasDataSource\(appData\)\) signalActivation\("data_source", false\);/.test(APP),
-    "4m the app sends safe_view from Today, meeting_opened from the meeting, app_open and data_source once its data has loaded, and none of them in the demo");
+  t.ok(/const showsSafeFigure = isVisible\('hero'\) && hasCashAccount && !_ss\.noIncome;\s+useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);/.test(APP),
+    "4m safe_view is sent only when Today is SHOWING the figure (the card on, a cash account, an income), never for \"Connect an account\" or \"Add your income\"");
+  t.ok(/useEffect\(\(\)=>\{ if\(!data\?\.demo\) signalActivation\("meeting_opened", false\); \},\[\]\);/.test(APP)
+    && /if \(!\(user && hydratedUidRef\.current === user\.id && !appData\?\.demo\)\) return;\s+signalActivation\("app_open", false, user\.id\);\s+if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);/.test(APP),
+    "4m2 meeting_opened from the meeting agenda, app_open and data_source once the account's data has loaded; none in the demo");
+  t.ok(/const loadSampleHousehold = \(\) => \{\s+_activationOff = true;/.test(APP) && /_activationOff = false;\s+if \(normalizeEmail\(user\.email\) === SCREENSHOT_EMAIL\)/.test(APP)
+    && /const signalActivation = \(metric, demo, userId\) => \(_activationOff \? Promise\.resolve\(false\)/.test(APP), "4m3 the App Review and screenshot sample households send nothing");
   t.ok(!/posthog|mixpanel|amplitude|segment\.com|googletagmanager|gtag\(/i.test(APP + fs.readFileSync(path.join(__dirname, "..", "src", "lib", "activation.js"), "utf8")), "4n no third-party analytics");
 
   // ── 5. migration 0019 ────────────────────────────────────────────────────────────────────────
@@ -127,7 +147,11 @@ async function call({ metric = "app_open", body, user = { id: "u1", email: "alex
   }
   const rep = SQL.slice(SQL.indexOf("function public.activation_counts("), SQL.indexOf("$$;", SQL.indexOf("function public.activation_counts(")));
   t.ok(/returns table \(cohort_day date, accounts_created integer, data_source integer, safe_view_7d integer,\s+first_meeting integer, returned_d1 integer, returned_d7 integer\)/.test(SQL), "5e the report returns a day and six counts");
-  t.ok(/from auth\.users u\s+where lower\(coalesce\(u\.email, ''\)\) !~ '@\(\[a-z0-9-\]\+\\\.\)\*\(getgrowsmart\\\.com\|flourishmoney\\\.app\)\$'/.test(rep), "5f accounts created comes from Supabase Auth, test addresses left out (the address is only matched, never returned)");
+  t.ok(/from auth\.users u\s+where u\.email_confirmed_at is not null\s+and lower\(coalesce\(u\.email, ''\)\) !~ '@\(\[a-z0-9-\]\+\\\.\)\*\(getgrowsmart\\\.com\|flourishmoney\\\.app\)\$'/.test(rep),
+    "5f accounts created comes from Supabase Auth: confirmed accounts only, test addresses left out (an address is only matched, never returned)");
+  t.ok(/<> 'snap@flourish\.app'/.test(rep) && /encode\(extensions\.digest\(lower\(trim\(coalesce\(u\.email, ''\)\)\), 'sha256'\), 'hex'\) <> 'af552e5b3f4529120915257ae8073ff990043c65e6163630d694fe2b6516dc7b'/.test(rep),
+    "5g …and the screenshot and App Review accounts left out (the review account by hash only)");
+  t.ok(!/NOTHING HERE IDENTIFIES/.test(RAW) && /Small cohorts can still be matched/.test(RAW) && /close estimates/.test(RAW), "5h the migration claims no more than it does: no account id is stored, small cohorts can be matched, the counts are estimates");
   t.summary("activation.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();
