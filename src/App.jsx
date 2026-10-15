@@ -82,7 +82,8 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { rememberHostedLink, hostedLinkFor, runHostedLink, successMetadata, savePlaidPending, readPlaidPending, clearPlaidPending, HOSTED_LINK_COPY } from "./lib/plaidHostedLink.js";
+import { rememberHostedLink, hostedLinkFor, runHostedLink, successMetadata, savePlaidPending, readPlaidPending, clearPlaidPending, appStorage, HOSTED_LINK_COPY } from "./lib/plaidHostedLink.js";
+import { planOAuthReturn, redirectUriFor, OAUTH_RETURN_COPY } from "./lib/plaidOAuthReturn.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -939,7 +940,7 @@ async function openHostedLink({ linkToken, intent, onSuccess, onProblem }) {
   try {
     const [{ Browser }, { App: CapApp }] = await Promise.all([import("@capacitor/browser"), import("@capacitor/app")]);
     const ios = window.Capacitor?.getPlatform?.() === "ios";
-    savePlaidPending(localStorage, { mode: "hosted", link_token: linkToken, result_key: hosted.resultKey, intent });
+    savePlaidPending(appStorage(), { mode: "hosted", link_token: linkToken, result_key: hosted.resultKey, intent });
     const res = await runHostedLink({
       openBrowser: (url) => Browser.open({ url }),
       closeBrowser: () => (ios ? Browser.close() : undefined),
@@ -947,7 +948,7 @@ async function openHostedLink({ linkToken, intent, onSuccess, onProblem }) {
       addBrowserFinishedListener: (fn) => Browser.addListener("browserFinished", fn),
       fetchResult: async () => callPlaid("hosted_link_result", { link_token: linkToken, result_key: hosted.resultKey }, { jwt: await getJwt() }),
     }, { url: hosted.url });
-    clearPlaidPending(localStorage);
+    clearPlaidPending(appStorage());
     if (res.outcome === "success") { onSuccess(res.result.public_token, successMetadata(res.result)); return; }
     if (res.outcome === "failed") { console.warn("[plaid] hosted link did not finish:", res.reason); noteReviewTrouble(); }
     onProblem?.(res.outcome === "closed" ? "closed" : "failed");
@@ -966,8 +967,9 @@ async function openHostedLink({ linkToken, intent, onSuccess, onProblem }) {
 // In a store app the same hook opens Plaid Hosted Link instead (openHostedLink above), and Plaid's web
 // SDK is never loaded into the WebView: Plaid has deprecated it there. onProblem("closed"|"failed") is
 // how a store app hears that no bank was added; intent ("onboarding", "add", "reconnect", or a function
-// returning one) goes into the pending record.
-function usePlaidLinkSDK(linkToken, onSuccess, { intent = null, onProblem = null } = {}) {
+// returning one) goes into the pending record. On the website, receivedRedirectUri re-opens Link after a
+// bank's OAuth sign-in (lib/plaidOAuthReturn.js), and pending() adds fields to the record (a draft).
+function usePlaidLinkSDK(linkToken, onSuccess, { intent = null, onProblem = null, receivedRedirectUri = null, pending = null } = {}) {
   const native = isNativeApp();
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
@@ -978,6 +980,8 @@ function usePlaidLinkSDK(linkToken, onSuccess, { intent = null, onProblem = null
   useEffect(() => { onProblemRef.current = onProblem; }, [onProblem]);
   const intentRef = useRef(intent);
   useEffect(() => { intentRef.current = intent; }, [intent]);
+  const pendingRef = useRef(pending);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
 
   useEffect(() => {
     if (native) return;   // store apps: Hosted Link, no script
@@ -1012,12 +1016,18 @@ function usePlaidLinkSDK(linkToken, onSuccess, { intent = null, onProblem = null
       return;
     }
     if (!sdkReady || !window.Plaid || !linkToken) return;
+    // A bank's OAuth sign-in brings the browser back to /plaid/oauth, which needs this token to re-open
+    // Link (lib/plaidOAuthReturn.js). Kept until Link ends, here or there.
+    const i = typeof intentRef.current === "function" ? intentRef.current() : intentRef.current;
+    const extra = typeof pendingRef.current === "function" ? pendingRef.current() : null;
+    savePlaidPending(appStorage(), { mode: "web", link_token: linkToken, intent: i, ...(extra || {}) });
     window.Plaid.create({
       token: linkToken,
-      onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
+      ...(receivedRedirectUri ? { receivedRedirectUri } : {}),
+      onSuccess: (...args) => { clearPlaidPending(appStorage()); onSuccessRef.current(...args); },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } clearPlaidPending(appStorage()); },
     }).open();
-  }, [native, sdkReady, linkToken]);
+  }, [native, sdkReady, linkToken, receivedRedirectUri]);
 
   return { openPlaidLink, plaidReady: native ? !!hostedLinkFor(linkToken) : sdkReady && !!linkToken, plaidSdkError: native ? false : sdkError };
 }
@@ -4162,7 +4172,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
   );
 }
 
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected}){
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,oauthReturn=null,onOAuthReturnUsed}){
   const [step,setStep]=useState(0);
   // profile.province holds CA province code when country=CA, US state code when country=US.
   // Defaults: ON for CA, CA (California) for US.
@@ -4304,7 +4314,20 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     setHostedRetry(true);
   },[]);
   useEffect(()=>{ if(hostedRetry && !linkToken){ setHostedRetry(false); fetchLinkToken(true); } },[hostedRetry, linkToken]); // eslint-disable-line
-  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess,{ intent:"onboarding", onProblem:onHostedProblem });
+  // Website: back from a bank's OAuth sign-in (lib/plaidOAuthReturn.js). Resume on the bank step with the
+  // answers already given, and re-open Link with the same token; or say plainly this page couldn't finish.
+  const [oauthResume,setOauthResume]=useState(null);
+  useEffect(()=>{
+    if(!oauthReturn) return;
+    onOAuthReturnUsed?.();
+    if(oauthReturn.kind==="lost"){ setBankError(OAUTH_RETURN_COPY.lost); return; }
+    if(oauthReturn.draft?.p){ setP(prev=>({...prev,...oauthReturn.draft.p})); setStep(2); }
+    setLinkToken(oauthReturn.linkToken);
+    setOauthResume(oauthReturn);
+  },[]); // eslint-disable-line
+  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess,{ intent:"onboarding", onProblem:onHostedProblem, receivedRedirectUri:redirectUriFor(oauthResume,linkToken), pending:()=>({ draft:{ p } }) });
+  const oauthResumed=useRef(false);
+  useEffect(()=>{ if(oauthResume && !oauthResumed.current && plaidReady && linkToken===oauthResume.linkToken){ oauthResumed.current=true; openPlaidLink(); } },[oauthResume, plaidReady, linkToken]); // eslint-disable-line
   const isLinkReady = plaidReady && !linkTokenLoading;
   const initError   = plaidSdkError ? "Plaid SDK failed to load. Try refreshing the page." : null;
   const canConnect = isLinkReady && !initError;
@@ -16632,6 +16655,12 @@ export default function FlourishApp(){
   // and only at one-time migration of existing beta users to Supabase.
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
+  // Website: Plaid's OAuth return (lib/plaidOAuthReturn.js), read once at load. The address goes back to
+  // "/" straight away (Link is given the full return address as receivedRedirectUri). Onboarding takes it
+  // while the household is still onboarding; otherwise it is resumed below once signed in.
+  const [plaidOAuthReturn,setPlaidOAuthReturn]=useState(()=> isNativeApp() ? null : planOAuthReturn(window.location, readPlaidPending(appStorage())));
+  useEffect(()=>{ if(plaidOAuthReturn){ try{ window.history.replaceState(null,"","/"); }catch{ /* no history */ } } },[]); // eslint-disable-line
+  const [reconnectResume,setReconnectResume]=useState(null);
   // Apple 5.1.1/5.1.2: which Plaid action is waiting on the consent disclosure — "add" | "reconnect"
   // | null. Replaces the old boolean, which only covered the add path and only fired once.
   const [pendingPlaid,setPendingPlaid]=useState(null);
@@ -17647,8 +17676,19 @@ export default function FlourishApp(){
     confirmModal({ message: HOSTED_LINK_COPY[kind] || HOSTED_LINK_COPY.failed, confirmLabel: HOSTED_LINK_COPY.tryAgain, cancelLabel: HOSTED_LINK_COPY.notNow })
       .then(again=>{ if(again) setPendingPlaid(intent); });
   },[]);
-  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess, { intent: ()=>linkIntentRef.current, onProblem: onHostedProblem });
-  useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
+  const { openPlaidLink: openReconnectLink, plaidReady: reconnectReady } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess, { intent: ()=>linkIntentRef.current, onProblem: onHostedProblem, receivedRedirectUri: redirectUriFor(reconnectResume, reconnectToken) });
+  // Opens once there is a token AND Link can open: after an OAuth return the page has just loaded, and
+  // Plaid's script may still be on its way.
+  useEffect(()=>{ if(reconnectToken && reconnectReady) openReconnectLink(); },[reconnectToken, reconnectReady]); // eslint-disable-line
+  useEffect(()=>{
+    if(!plaidOAuthReturn || !user || !hydrated || !onboarded) return;   // still onboarding: Onboarding takes it
+    const r = plaidOAuthReturn;
+    setPlaidOAuthReturn(null);
+    if(r.kind === "lost"){ alertModal({ message: OAUTH_RETURN_COPY.lost }); return; }
+    linkIntentRef.current = r.intent === "reconnect" ? "reconnect" : "add";
+    setReconnectResume(r);
+    setReconnectToken(r.linkToken);
+  },[plaidOAuthReturn, user, hydrated, onboarded]);
   // Store apps: a Hosted Link session that ended while the system had closed the app. Its record is
   // read once when the app opens; a session that added a bank finishes connecting it here, through the
   // same success handler. Anything else is dropped: the household is back at the start of the app.
@@ -17656,9 +17696,9 @@ export default function FlourishApp(){
   useEffect(()=>{
     if(hostedRecoveryRan.current || !user || !hydrated || !isNativeApp()) return;
     hostedRecoveryRan.current = true;
-    const rec = readPlaidPending(localStorage);
+    const rec = readPlaidPending(appStorage());
     if(!rec || rec.mode !== "hosted") return;
-    clearPlaidPending(localStorage);
+    clearPlaidPending(appStorage());
     (async ()=>{
       try {
         const r = await callPlaid("hosted_link_result", { link_token: rec.link_token, result_key: rec.result_key }, { jwt: await getJwt() });
@@ -17728,6 +17768,8 @@ export default function FlourishApp(){
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding
+    oauthReturn={plaidOAuthReturn}
+    onOAuthReturnUsed={()=>setPlaidOAuthReturn(null)}
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
     onComplete={d=>{

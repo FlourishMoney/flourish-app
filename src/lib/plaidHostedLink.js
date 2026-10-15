@@ -69,6 +69,11 @@ export function isPlaidHostedUrl(url) {
 }
 
 // ── The pending record ────────────────────────────────────────────────────────────────────────────
+// The browser's storage, or null where even reading window.localStorage throws (storage blocked).
+export function appStorage(win = typeof window === "undefined" ? undefined : window) {
+  try { return win ? win.localStorage : null; } catch { return null; }
+}
+
 export function savePlaidPending(storage, record, now = Date.now()) {
   try { storage.setItem(PLAID_PENDING_KEY, JSON.stringify({ ...record, at: now })); } catch { /* storage unavailable */ }
 }

@@ -30,8 +30,10 @@
 const crypto = require("crypto");
 
 const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
-// The website's OAuth return. Must be in Plaid Dashboard → Developers → API → Allowed redirect URIs.
-const WEB_REDIRECT_URI = "https://flourishmoney.app";
+// The website's OAuth return (src/lib/plaidOAuthReturn.js): the page a bank sends the browser back to,
+// where Link is re-opened with receivedRedirectUri. Must be in Plaid Dashboard → Developers → API →
+// Allowed redirect URIs BEFORE this ships: Plaid refuses a link token whose redirect_uri is not listed.
+const WEB_REDIRECT_URI = "https://flourishmoney.app/plaid/oauth";
 // The store apps' universal link / App Link. Its own path, so the website's return is never captured by
 // the app. Must be in Allowed redirect URIs too, and served by public/.well-known (AASA, assetlinks.json).
 const APP_REDIRECT_URI = "https://flourishmoney.app/plaid/app";
@@ -52,6 +54,7 @@ function linkTokenBody({ userId, country, accessToken = null, native = false }) 
         access_token: accessToken,
         webhook:      WEBHOOK_URL,
         language:     "en",
+        redirect_uri: WEB_REDIRECT_URI,   // Plaid: specify it in update mode too, for an OAuth bank
       }
     : {
         user:              { client_user_id: userId },

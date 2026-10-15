@@ -37,13 +37,14 @@ const TOKEN = "link-sandbox-af1a0311-da53-4636-b754-dd15cc058176";
   // ── 1. The link token ─────────────────────────────────────────────────────────────────────────
   {
     const web = L.linkTokenBody({ userId: "u1", country: "CA" });
-    t.eq([web.hosted_link, web.redirect_uri, web.country_codes, web.products], [undefined, "https://flourishmoney.app", ["CA"], ["transactions"]], "1a the website: web SDK, no hosted_link");
+    t.eq([web.hosted_link, web.redirect_uri, web.country_codes, web.products], [undefined, "https://flourishmoney.app/plaid/oauth", ["CA"], ["transactions"]], "1a the website: web SDK, no hosted_link, back to /plaid/oauth after an OAuth bank");
     const app = L.linkTokenBody({ userId: "u1", country: "US", native: true });
     t.eq(app.hosted_link, { completion_redirect_uri: "flourishmoney://plaid/complete", is_mobile_app: true }, "1b a store app: Hosted Link, back to the app's own scheme, in an in-app browser");
     t.eq([app.redirect_uri, app.country_codes, app.user, app.webhook], ["https://flourishmoney.app/plaid/app", ["US"], { client_user_id: "u1" }, L.WEBHOOK_URL], "1c …with the app's universal link as redirect_uri (required with is_mobile_app)");
     const upd = L.linkTokenBody({ userId: "u1", country: "CA", accessToken: "access-sandbox-x", native: true });
     t.eq([upd.access_token, upd.products, !!upd.hosted_link, upd.redirect_uri], ["access-sandbox-x", undefined, true, "https://flourishmoney.app/plaid/app"], "1d update mode in a store app is Hosted Link too");
-    t.eq(L.linkTokenBody({ userId: "u1", country: "CA", accessToken: "access-sandbox-x" }).hosted_link, undefined, "1e update mode on the website is not");
+    const webUpd = L.linkTokenBody({ userId: "u1", country: "CA", accessToken: "access-sandbox-x" });
+    t.eq([webUpd.hosted_link, webUpd.redirect_uri], [undefined, "https://flourishmoney.app/plaid/oauth"], "1e update mode on the website is not, and returns to /plaid/oauth too");
     t.eq(L.linkTokenBody({ userId: "u1", country: "XX" }).country_codes, ["CA"], "1f an unknown country is Canada");
     t.ok(L.APP_REDIRECT_URI !== L.WEB_REDIRECT_URI && /^https:\/\//.test(L.APP_REDIRECT_URI), "1g the app's universal link has its own path, so the website's return is never captured by the app");
   }
@@ -104,7 +105,7 @@ const TOKEN = "link-sandbox-af1a0311-da53-4636-b754-dd15cc058176";
     try {
       const web = await call(WEB, { action: "create_link_token", country: "CA" });
       t.eq([web.status, Object.keys(web.body).sort()], [200, ["link_token"]], "3a the website gets a link token and nothing else");
-      t.eq(sent.at(-1).body.hosted_link, undefined, "3b …and Plaid was not asked for Hosted Link");
+      t.eq([sent.at(-1).body.hosted_link, sent.at(-1).body.redirect_uri], [undefined, "https://flourishmoney.app/plaid/oauth"], "3b …and Plaid was not asked for Hosted Link");
       for (const [name, origin] of [["iOS", IOS], ["Android", ANDROID]]) {
         const r = await call(origin, { action: "create_link_token", country: "CA" });
         t.eq([r.status, r.body.link_token, r.body.hosted_link_url, r.body.result_key === L.resultKey("u1", TOKEN)], [200, TOKEN, hostedUrl, true], `3c the ${name} app gets the token, the hosted_link_url and its result key`);
@@ -290,18 +291,18 @@ const TOKEN = "link-sandbox-af1a0311-da53-4636-b754-dd15cc058176";
     t.eq([mints.length, mints.every(m => /rememberHostedLink\(d\);\s*set(?:Link|Reconnect)Token\(d\.link_token\)/.test(m))], [3, true], "6d every link token minted (onboarding, add, reconnect) has its hosted URL remembered first");
     const fn = APP.slice(APP.indexOf("async function openHostedLink("), APP.indexOf("function usePlaidLinkSDK("));
     t.ok(/closeBrowser: \(\) => \(ios \? Browser\.close\(\) : undefined\)/.test(fn), "6e the sheet is closed on iOS only (Android is already back in the app)");
-    t.ok(/savePlaidPending\(localStorage, \{ mode: "hosted", link_token: linkToken, result_key: hosted\.resultKey, intent \}\);[\s\S]*?const res = await runHostedLink/.test(fn) && /clearPlaidPending\(localStorage\);/.test(fn), "6f the pending record is kept while the browser is up, then removed");
+    t.ok(/savePlaidPending\(appStorage\(\), \{ mode: "hosted", link_token: linkToken, result_key: hosted\.resultKey, intent \}\);[\s\S]*?const res = await runHostedLink/.test(fn) && /clearPlaidPending\(appStorage\(\)\);/.test(fn), "6f the pending record is kept while the browser is up, then removed");
     t.ok(/if \(res\.outcome === "success"\) \{ onSuccess\(res\.result\.public_token, successMetadata\(res\.result\)\); return; \}/.test(fn), "6g success goes to the same success handler as the web SDK (then exchange_token)");
     t.ok(/onProblem\?\.\(res\.outcome === "closed" \? "closed" : "failed"\);/.test(fn) && /catch \(err\) \{[\s\S]*?onProblem\?\.\("failed"\);/.test(fn), "6h anything else is a problem the screen hears about, never silence");
     const ob = APP.slice(APP.indexOf("const onHostedProblem=useCallback((kind)=>{"), APP.indexOf("const onHostedProblem=useCallback((kind)=>{") + 700);
     t.ok(/setBankError\(`\$\{HOSTED_LINK_COPY\[kind\]\|\|HOSTED_LINK_COPY\.failed\} \$\{HOSTED_LINK_COPY\.again\}`\);/.test(ob) && /fetchLinkToken\(true\)/.test(ob), "6i onboarding says what happened on the bank step and makes Connect ready again");
-    t.ok(/usePlaidLinkSDK\(linkToken,onPlaidSuccess,\{ intent:"onboarding", onProblem:onHostedProblem \}\)/.test(APP), "6j …through the onboarding hook");
+    t.ok(/usePlaidLinkSDK\(linkToken,onPlaidSuccess,\{ intent:"onboarding", onProblem:onHostedProblem[,}]/.test(APP), "6j …through the onboarding hook");
     const top = APP.slice(APP.indexOf("const onHostedProblem = useCallback((kind)=>{"), APP.indexOf("const onHostedProblem = useCallback((kind)=>{") + 600);
     t.ok(/confirmModal\(\{ message: HOSTED_LINK_COPY\[kind\] \|\| HOSTED_LINK_COPY\.failed, confirmLabel: HOSTED_LINK_COPY\.tryAgain, cancelLabel: HOSTED_LINK_COPY\.notNow \}\)/.test(top) && /if\(again\) setPendingPlaid\(intent\);/.test(top),
       "6k Settings says what happened and offers Try again, through the same consent sheet");
-    t.ok(/usePlaidLinkSDK\(reconnectToken, onReconnectSuccess, \{ intent: \(\)=>linkIntentRef\.current, onProblem: onHostedProblem \}\)/.test(APP), "6l …through the add/reconnect hook");
+    t.ok(/usePlaidLinkSDK\(reconnectToken, onReconnectSuccess, \{ intent: \(\)=>linkIntentRef\.current, onProblem: onHostedProblem[,}]/.test(APP), "6l …through the add/reconnect hook");
     const rec = APP.slice(APP.indexOf("const hostedRecoveryRan = useRef(false);"), APP.indexOf("const hostedRecoveryRan = useRef(false);") + 1100);
-    t.ok(/!isNativeApp\(\)\) return;/.test(rec) && /readPlaidPending\(localStorage\)/.test(rec) && /if\(r\?\.status !== "success" \|\| !r\.public_token\) return;/.test(rec) && /onReconnectSuccess\(r\.public_token, successMetadata\(r\)\)/.test(rec),
+    t.ok(/!isNativeApp\(\)\) return;/.test(rec) && /readPlaidPending\(appStorage\(\)\)/.test(rec) && /if\(r\?\.status !== "success" \|\| !r\.public_token\) return;/.test(rec) && /onReconnectSuccess\(r\.public_token, successMetadata\(r\)\)/.test(rec),
       "6m a session that added a bank while the system had closed the app is finished when it opens again");
     t.ok(/"hosted_link_result"/.test(APP.slice(APP.indexOf("const RETRY_SAFE"), APP.indexOf("const RETRY_SAFE") + 200)), "6n reading the result is retried on a dropped connection (a read)");
     t.ok(/if \(path === "\/plaid\/app"\) return "plaid-app";/.test(APP) && /if\(screen==="plaid-app"\)return <PlaidAppReturnPage\/>;/.test(APP), "6o /plaid/app opened in a browser says to go back to the app, never a blank page");
