@@ -45,6 +45,19 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
     t.ok(txt.includes(NEW) && txt.includes("Last updated October 14, 2026"), "5 rendered on the web: the sentence and the date");
   }
 
+  // 6. Counsel's documents quote what is in the app (2026-10-15).
+  const packet = fs.readFileSync(path.join(REPO, "docs", "ops", "LEGAL-PACKET.md"), "utf8");
+  const pTerms = packet.slice(packet.indexOf("## 3. Terms of Service"), packet.indexOf("\n## 4."));
+  t.ok(pTerms.includes(NEW) && pTerms.includes("last updated October 14, 2026"), "6a the legal packet's Terms quote the sentence and the date in the app");
+  const nativeLine = (terms.match(/isNativeApp\(\) \? "(The iOS and Android apps[^"]+)"/) || [])[1];
+  t.ok(!!nativeLine && pTerms.includes(nativeLine), "6b …and the store apps' paragraph as the app has it");
+  const before = fs.readFileSync(path.join(REPO, "docs", "ops", "BEFORE-MONDAY.md"), "utf8");
+  const offerTerms = before.slice(before.indexOf("## 3. Founding offer terms"), before.indexOf("\n## 4."));
+  t.ok(offerTerms.includes(NEW), "6c the founding terms summary quotes the Terms sentence in the app");
+  t.ok(![packet, offerTerms].some(d => /inclusive of applicable taxes|USD for US users, plus|regular annual price|regular price applies|regular plan|regular price change|provided free of charge on iOS/i.test(d)),
+    "6d neither says the old sentence, \"regular annual price\" or the old iOS line");
+  t.ok(/standard price for everyone else/.test(offerTerms) && /standard price for everyone else/.test(packet), "6e both say \"standard price for everyone else\"");
+
   t.summary("termsTax.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();

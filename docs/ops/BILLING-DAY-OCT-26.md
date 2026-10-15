@@ -533,7 +533,8 @@ where w.founding_position between 1 and 50 and not w.is_test
    collected and saved to the customer, prices tax-exclusive. **The Terms (round 5):** they now say prices
    are in Canadian dollars and do not include sales tax, which is calculated from the billing address and
    added at checkout (wording approved by ChatGPT and Grok; Last updated October 14, 2026).
-   `docs/ops/LEGAL-PACKET.md` is the snapshot sent to counsel and still quotes the old sentence.
+   `docs/ops/LEGAL-PACKET.md` and BEFORE-MONDAY.md section 3, counsel's copies, quote the same sentence
+   (`tests/termsTax.test.cjs`).
 10. Smaller: the welcome email stops at D2 (no waitlist email after the launch), and the landing page's
     waitlist form still takes signups after it, promising a launch email they will not get; the
     Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and

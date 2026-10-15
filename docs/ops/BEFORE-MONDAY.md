@@ -22,7 +22,7 @@ The September draft that was here is out of date (regular price, 14 days free, f
 ## 3. Founding offer terms (plain-language summary for the lawyer packet)
 
 1. Founding membership is offered to the first 50 households that subscribe on the annual plan during the founding period (founding cohort changed from 100 to 50 on 2026-09-23 — see docs/product/DECISIONS.md).
-2. Price: 79.99 CAD per year plus applicable taxes (about 90.39 in Ontario), compared with the regular annual price of 99.99 CAD plus applicable taxes. The founding price renews at 79.99 for as long as the subscription remains continuously active. If the subscription lapses or is cancelled and later restarted, the regular price applies.
+2. Price: 79.99 CAD per year plus applicable taxes (about 90.39 in Ontario), compared with the standard price for everyone else, 99.99 CAD per year plus applicable taxes. The founding price renews at 79.99 for as long as the subscription remains continuously active. If the subscription lapses or is cancelled and later restarted, the standard price for everyone else applies.
 3. The 14-day free trial comes first; no card is required for the trial. Payment is collected only when the member subscribes at the end of the trial.
 4. Founding includes everything in Plus: unlimited coaching, linked accounts, the Meet facilitator, and a second household login when that ships.
 5. Purchases made on the web are billed by Stripe and can be managed or cancelled any time from Manage subscription. Cancellation stops renewal; access continues to the end of the paid period. No partial-year refunds except where required by law.
@@ -30,7 +30,7 @@ The September draft that was here is out of date (regular price, 14 days free, f
 7. flourish provides calculations and educational information. It is not investment, legal or tax advice and GrowSmart Inc. is not a licensed adviser.
 8. Eligibility: residents of Canada outside Quebec, or of the United States, 18 or older (decision 17 excludes Quebec until French-language copy and Law 25 basics exist).
 
-Questions for the lawyer: the price is plus tax (decision 16, answered Monday; the Terms sentence ships Thursday); whether item 2's lock survives a price change to the regular plan; whether item 5's no-refund line is enforceable under Ontario's Consumer Protection Act for online subscriptions; whether the Anthropic Usage Policy's financial-advice clause (disclosure plus professional review) is satisfied by the education framing and the per-reply footer; and whether the privacy policy should be drafted to Bill C-36's express consent standard now.
+Questions for the lawyer: the price is plus tax (decision 16; the Terms say, as of October 14, 2026: "Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout."); whether item 2's lock survives a change to the standard price for everyone else; whether item 5's no-refund line is enforceable under Ontario's Consumer Protection Act for online subscriptions; whether the Anthropic Usage Policy's financial-advice clause (disclosure plus professional review) is satisfied by the education framing and the per-reply footer; and whether the privacy policy should be drafted to Bill C-36's express consent standard now.
 
 ## 4. CASL lines
 
