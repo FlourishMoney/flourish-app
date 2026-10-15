@@ -84,6 +84,7 @@ import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
+import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -771,6 +772,16 @@ async function getJwt() {
     return session?.access_token || null;
   } catch { return null; }
 }
+
+// Activation counts (2026-10-15): the signed-in account's id and token for /api/activation, or null.
+// Only the metric name is sent; the server keeps an aggregate per-day count and nothing else (lib/activation.js).
+async function activationSession() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id && session?.access_token ? { userId: session.user.id, jwt: session.access_token } : null;
+  } catch { return null; }
+}
+const signalActivation = (metric, demo) => sendActivationOnce(metric, { demo: !!demo, getSession: activationSession, apiBase: API_BASE });
 
 // ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
 // Module-level, NOT component state, so "at most once per session" survives the AICoach component
@@ -5539,6 +5550,8 @@ function SetupChecklistCard({items,onDismiss,style}){
 
 function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
+  // Activation (2026-10-15): Today showed the safe-to-spend figure. Once per account; never in the demo.
+  useEffect(()=>{ if(!data?.demo) signalActivation("safe_view", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
   const [showTransparency,setShowTransparency]=useState(false);
@@ -10158,6 +10171,8 @@ const HOUSEHOLD_ENABLED = false;
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
 function MeetAgenda({ data, isCouple, setScreen, setAppData }){
+  // Activation (2026-10-15): a money meeting was opened. Once per account; never in the demo.
+  useEffect(()=>{ if(!data?.demo) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
@@ -16828,6 +16843,14 @@ export default function FlourishApp(){
       getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }
   }, [onboarded,appData,household,isPremium,checkInBonus,user]);
+  // Activation (2026-10-15): the app was opened (the server keeps it only on day 1 and day 7 after
+  // signup), and the household has a data source. Same gate as the save above: a signed-in account whose
+  // data has loaded, never the demo. Each is sent once (app_open once a day): lib/activation.js.
+  useEffect(() => {
+    if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
+    signalActivation("app_open", false);
+    if (hasDataSource(appData)) signalActivation("data_source", false);
+  }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──
   // A lightweight signature over the notification-relevant slices (bills, account balances, txns,

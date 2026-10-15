@@ -70,6 +70,13 @@
   to     = "/.netlify/functions/founding"
   status = 200
 
+# Redirect: the app's once-per-account activation signals → Netlify function. POST only, signed in;
+# adds 1 to an aggregate per-day counter and keeps nothing else (netlify/functions/activation.js).
+[[redirects]]
+  from   = "/api/activation"
+  to     = "/.netlify/functions/activation"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"
