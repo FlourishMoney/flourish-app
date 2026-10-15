@@ -10391,9 +10391,10 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
         const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
         const markDone = () => {
           setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
-          // The store's own review sheet, once, after the FIRST meeting (reviewRules.js decides; never
-          // on the web or in demo mode, never within 24 hours of trouble, and nothing in front of it).
-          reviewOnMeetingDone({ demo: !!data.demo, firstMeeting: !last });
+          // The store's own review sheet after a completed meeting (reviewRules.js decides: once per meeting,
+          // at most three times in 365 days, never on the web or in demo mode, never within 24 hours of
+          // trouble, and nothing in front of it).
+          reviewOnMeetingDone({ demo: !!data.demo });
         };
         return heldToday
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>

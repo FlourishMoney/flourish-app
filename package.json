@@ -15,7 +15,6 @@
     "build:native": "node scripts/check-native-build.mjs --env && vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact"
   },
   "dependencies": {
-    "@capacitor-community/in-app-review": "^8.0.0",
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
