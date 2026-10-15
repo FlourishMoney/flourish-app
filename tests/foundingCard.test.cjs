@@ -2,8 +2,9 @@
 // -----------------------------------------------------------------------------
 // THE FOUNDING CARD above the hero's email field (2026-10-07), on phones and tablets only. It replaced the
 // one-line version. The rendered page is checked in landingDemo.browser.test.cjs (section 10); this pins the
-// words and the rules: the four rows exactly, the $20 worked out from the two annual prices, no pill when no
-// count was read, no card at 0, one shared request, phones only, the tap target, and AA on every row.
+// words and the rules: the four rows exactly, the price everyone else pays read from pricing.js (2026-10-14:
+// no struck-through price and no saving claim), no pill when no count was read, no card at 0, one shared
+// request, phones only, the tap target, and AA on every row.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -14,10 +15,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 const ROWS = {
   eyebrow: "FOUNDING PRICE · FIRST 50 HOUSEHOLDS",
   price: "$79.99 a year",
-  regular: "$99.99 a year",
   pill: "35 of 50 left",
-  save: "$20 a year less than the regular $99.99.",
   small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+  save: "Everyone else: $99.99 a year, plus tax.",
 };
 
 (async () => {
@@ -35,19 +35,20 @@ const ROWS = {
   }
   t.eq(O.foundingCardParts(0), null, "1d 0 left: no card");
 
-  // ── 2. the prices and the $20 come from pricing.js ───────────────────────────────────────────
+  // ── 2. the prices come from pricing.js; no saving claim (2026-10-14) ─────────────────────────
   const p = P.getPricing("CA");
-  t.eq(Math.round((p.annual - p.foundingAnnual) * 100) / 100, 20, "2a the two annual prices differ by $20");
+  const cardFn = LIB.slice(LIB.indexOf("export function foundingCardParts("), LIB.indexOf("\n}\n", LIB.indexOf("export function foundingCardParts(")));
+  t.ok(/save: `Everyone else: \$\{formatPrice\(p\.annual\)\} a year, plus tax\.`,/.test(cardFn) && !/regular:/.test(cardFn), "2a the card states the annual price everyone else pays, read from pricing.js, and no struck-through regular price");
   t.ok(!/\d+\.\d{2}|\$20\b|\b20 a year/.test(LIB.replace(/^\s*\/\/.*$/gm, "")), "2b no price and no saving is typed in foundingOffer.js");
-  t.ok(/const saving = Math\.round\(\(p\.annual - p\.foundingAnnual\) \* 100\) \/ 100;/.test(LIB), "2c the saving is the regular annual less the founding annual");
+  t.ok(!/a year less|less than the regular|saving|\bsave \$/i.test(Object.values(O.foundingCardParts(35)).join(" ")) && !/p\.annual - p\.foundingAnnual/.test(LIB), "2c no saving is worked out or claimed");
   {
     // Change the prices and the card follows: nothing on it is a fixed figure.
     const saved = { ...P.PRICING.CA };
     try {
       P.PRICING.CA.annual = 109.99; P.PRICING.CA.foundingAnnual = 84.49;
       const c = O.foundingCardParts(12);
-      t.eq([c.price, c.regular, c.save], ["$84.49 a year", "$109.99 a year", "$25.50 a year less than the regular $109.99."],
-        "2d other prices give other figures, and a saving with cents keeps its cents");
+      t.eq([c.price, c.save, c.regular], ["$84.49 a year", "Everyone else: $109.99 a year, plus tax.", undefined],
+        "2d other prices give other figures: nothing on the card is a fixed figure");
     } catch (e) { t.ok(false, `2d PRICING is not writable here (${e.message})`); }
     finally { Object.assign(P.PRICING.CA, saved); }
   }
@@ -81,9 +82,13 @@ const ROWS = {
     const at = html.indexOf('class="fll-founding-card"'), inputAt = html.indexOf('class="fll-input"');
     t.ok(at > 0 && inputAt > at, "4c rendered: the card comes before the email field");
     const text = textOf(html.slice(at, inputAt));
-    t.ok([ROWS.eyebrow, ROWS.price, ROWS.regular, ROWS.save, ROWS.small].every(r => text.includes(r)) && !/of 50 left/.test(text),
+    t.ok([ROWS.eyebrow, ROWS.price, ROWS.save, ROWS.small].every(r => text.includes(r)) && !/of 50 left/.test(text),
       "4d before any count is read: every row, and no pill");
-    t.ok(/<s class="fll-fc-regular">\$99\.99 a year<\/s>/.test(html), "4e the regular price is struck through");
+    const cardHtml = html.slice(at, inputAt);
+    // The order on the card (2026-10-15): "$79.99 a year", then its terms, then "Everyone else: …".
+    const iPrice = text.indexOf(ROWS.price), iSmall = text.indexOf(ROWS.small), iSave = text.indexOf(ROWS.save);
+    t.ok(iPrice >= 0 && iSmall > iPrice && iSave > iSmall, "4d2 in this order: the founding price, its terms (\"Plus tax, for as long as…\"), then \"Everyone else: $99.99 a year, plus tax.\"");
+    t.ok(!/<s[ >]|<del[ >]|<strike/i.test(cardHtml) && !/fll-fc-regular/.test(APP), "4e no price on the card is struck through (2026-10-14)");
   }
 
   // ── 5. tapping it goes to the founding block ───────────────────────────────────────────────
@@ -97,7 +102,7 @@ const ROWS = {
   const colour = (sel, prop = "color") => ((rule(sel).match(new RegExp(`(?:^|[ ;{])${prop}:#([0-9a-f]{6})`)) || [])[1]);
   const BG = colour(".fll-founding-card", "background"), PILL = colour(".fll-fc-pill", "background");
   t.eq(BG, "15321a", "6a the card is the brand's dark green");
-  for (const [sel, name] of [[".fll-fc-eyebrow", "eyebrow"], [".fll-fc-price", "price"], [".fll-fc-regular", "struck regular price"], [".fll-fc-save", "saving"], [".fll-fc-small", "small print"]]) {
+  for (const [sel, name] of [[".fll-fc-eyebrow", "eyebrow"], [".fll-fc-price", "price"], [".fll-fc-save", "everyone else's price"], [".fll-fc-small", "small print"]]) {
     const r = ratio(colour(sel), BG);
     t.ok(r >= 4.5, `6b ${name}: ${r.toFixed(1)}:1 on the card (AA)`);
   }

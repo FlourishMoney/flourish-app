@@ -282,9 +282,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   }
   // ── The founding card above the email field: phones and tablets only (2026-10-07) ─────────────
   {
-    const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "$99.99 a year", "35 of 50 left",
-      "$20 a year less than the regular $99.99.",
-      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps."];
+    // In the order they show (2026-10-15): eyebrow, price, pill, the price's terms, then what everyone else pays.
+    const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
+      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+      "Everyone else: $99.99 a year, plus tax."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
     for (const mode of ["count", "fail", "zero"]) {
@@ -301,8 +302,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       const m = await page.evaluate(() => {
         const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
         const card = document.querySelector(".fll-founding-card");
-        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-regular", ".fll-fc-pill", ".fll-fc-save", ".fll-fc-small"].map(s => (card.querySelector(s) || {}).textContent || null) : null;
-        return { rows, struck: card ? getComputedStyle(card.querySelector(".fll-fc-regular")).textDecorationLine : null,
+        // Read in the order the rows sit on screen, top to bottom (the pill shares the price's line), so the
+        // check pins the order as well as the words.
+        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-pill", ".fll-fc-small", ".fll-fc-save"].map(s => card.querySelector(s))
+          .filter(Boolean).sort((a, b) => (a.getBoundingClientRect().top - b.getBoundingClientRect().top) || (a.getBoundingClientRect().left - b.getBoundingClientRect().left))
+          .map(e => e.textContent) : null;
+        const struck = card ? !!card.querySelector("s, del, strike") || [card, ...card.querySelectorAll("*")].some(e => getComputedStyle(e).textDecorationLine.includes("line-through")) : null;
+        return { rows, struck,
           card: r(".fll-founding-card"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"),
           live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
       });
@@ -310,7 +316,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       // Under 960px the block does not repeat the card's price or count.
       const block = await page.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean));
       t.eq(block, ["How founding spots work", "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
-        "Regular price: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
+        "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
         `10k ${mode}: the founding block says how the spots work${mode === "zero" ? ", and that they are full" : ""}`);
       t.eq(await page.evaluate(() => (document.body.innerText.match(/\$79\.99/g) || []).length), mode === "zero" ? 0 : 1,
         `10l ${mode}: the founding price shows ${mode === "zero" ? "nowhere (the spots are gone)" : "once, on the card"}`);
@@ -318,9 +324,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         t.eq(m.rows, null, "10b 0 left: no founding card");
         t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
       } else {
-        t.eq(m.rows, mode === "count" ? ROWS : ROWS.map((r, k) => (k === 3 ? null : r)),
+        t.eq(m.rows, mode === "count" ? ROWS : ROWS.filter((r, k) => k !== 2),
           mode === "count" ? "10d the card, row by row, with the live count in the pill" : "10e no count read: only the pill is left out");
-        t.eq(m.struck, "line-through", `10f ${mode}: the regular price is struck through`);
+        t.eq(m.struck, false, `10f ${mode}: no price on the card is struck through (2026-10-14)`);
         t.ok(m.card.top >= 0 && m.card.bottom <= 844 && m.card.bottom <= m.input.top && m.input.top - m.card.bottom <= 16,
           `10g ${mode}: the card is fully on screen (${Math.round(m.card.top)} to ${Math.round(m.card.bottom)}), directly above the email field`);
         t.ok(m.join.bottom <= 844 && m.top.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the $1,944 card's top (${Math.round(m.top.top)}) stay above the fold`);
@@ -339,7 +345,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
     t.eq(await fd.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean)),
       ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
-        "Regular price: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
+        "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
         "35 of 50 founding spots left"], "10m desktop: the founding block is unchanged, with its count");
     await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -350,6 +356,37 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(dm.card.left > dm.h1.right && dm.card.left > dm.form.right && dm.form.top > dm.h1.top && dm.card.top < 900,
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");
     await dctx.close();
+    // 2026-10-14: from 1024px the card sits level with the headline and wholly in the first screen, the
+    // founding box directly under it in the right column, and the videos, "Sound familiar?" and the demo
+    // button are one full-width row below the hero. (Under 1024px nothing changed; the 390 x 844 hero is
+    // checked in 6b above.)
+    for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900]]) {
+      const c = await browser.newContext({ viewport: { width: w, height: h } });
+      const pg = await c.newPage(); pg.setDefaultTimeout(15000);
+      const errs = []; pg.on("pageerror", e => errs.push(String(e.message)));
+      await pg.goto(base, { waitUntil: "load" });
+      await pg.getByText("Real screens from the app.").waitFor();
+      await pg.locator(".fll-hero-card img").evaluate(img => img.decode());
+      await pg.evaluate(async () => { await document.fonts.ready; });
+      const m = await pg.evaluate(() => {
+        const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect();
+        return { h1: r(".fll-h1"), sub: r(".fll-sub"), form: r(".fll-input"), join: r(".fll-btn"), founding: document.querySelector(".fll-founding").getBoundingClientRect(),
+          card: r(".fll-hero-card"), walk: r(".fll-walk"), familiar: r(".fll-familiar"), demo: r(".fll-demo"), wrap: document.querySelector(".fll-hero .fll-hero-grid").getBoundingClientRect(),
+          hScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+      });
+      const tag = `${w}x${h}`;
+      t.ok(Math.abs(m.card.top - m.h1.top) <= 2 && m.card.bottom <= h && m.card.left > m.h1.right && m.card.left > m.form.right,
+        `6i ${tag}: the $1,944 card is on the right, its top level with the headline's, wholly in the first screen (card ${Math.round(m.card.top)}-${Math.round(m.card.bottom)}, headline top ${Math.round(m.h1.top)})`);
+      t.ok(m.join.bottom <= h && m.form.top > m.sub.bottom, `6j ${tag}: Join is in the first screen (${Math.round(m.join.top)}-${Math.round(m.join.bottom)}), with the form under the subline`);
+      t.ok(m.founding.top >= m.card.bottom && m.founding.top - m.card.bottom <= 24 && Math.abs(m.founding.left - m.card.left) <= 2 && Math.abs(m.founding.right - m.card.right) <= 2 && m.founding.left > m.form.right,
+        `6n ${tag}: the founding box is in the right column, directly under the card and as wide (box ${Math.round(m.founding.top)}-${Math.round(m.founding.bottom)}, card bottom ${Math.round(m.card.bottom)})`);
+      t.ok(m.walk.top > m.founding.bottom && m.walk.top > m.card.bottom && m.walk.left < m.h1.right && m.walk.right > m.card.left && m.familiar.top > m.walk.bottom && m.demo.top > m.familiar.bottom,
+        `6k ${tag}: the videos are one row below the hero across both columns, then "Sound familiar?", then the demo button`);
+      t.ok(Math.abs((m.walk.left + m.walk.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2 && Math.abs((m.demo.left + m.demo.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2,
+        `6l ${tag}: that row and the demo button are centred`);
+      t.ok(!m.hScroll && errs.length === 0, `6m ${tag}: no sideways scroll and no page errors`);
+      await c.close();
+    }
   }
   // ── 11. The landing after the launch (approved by ChatGPT and Grok, 2026-10-15) ─────────────────────
   // tests/landingWaitlist.test.cjs has the rule. Here, the built page, with /api/founding answering

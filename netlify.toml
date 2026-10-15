@@ -3,7 +3,7 @@
   publish   = "dist"
 
 [build.environment]
-  NODE_VERSION           = "18"
+  NODE_VERSION           = "22"
   SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
 
 # Scheduled: the waitlist welcome sweep. Every 15 minutes it emails any waitlist row whose
@@ -81,6 +81,13 @@
 [[redirects]]
   from   = "/api/founding"
   to     = "/.netlify/functions/founding"
+  status = 200
+
+# Redirect: the app's once-per-account activation signals → Netlify function. POST only, signed in;
+# adds 1 to an aggregate per-day counter and keeps nothing else (netlify/functions/activation.js).
+[[redirects]]
+  from   = "/api/activation"
+  to     = "/.netlify/functions/activation"
   status = 200
 
 # SPA fallback — all routes → index.html

@@ -85,6 +85,7 @@ import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
+import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -772,6 +773,19 @@ async function getJwt() {
     return session?.access_token || null;
   } catch { return null; }
 }
+
+// Activation counts (2026-10-15): the signed-in account's id and token for /api/activation, or null.
+// Only the metric name is sent; the server keeps an aggregate per-day count and nothing else (lib/activation.js).
+async function activationSession() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id && session?.access_token ? { userId: session.user.id, jwt: session.access_token } : null;
+  } catch { return null; }
+}
+// Off for the App Review and screenshot sample households (loadSampleHousehold): they are not households.
+let _activationOff = false;
+const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
+  : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
 
 // ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
 // Module-level, NOT component state, so "at most once per session" survives the AICoach component
@@ -5599,6 +5613,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   const displayedSafe = displayedSafeToSpend(data); // what Today shows; Decisions' move-to-savings is 25% of it, as Meet's extra is
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
+  // Activation (2026-10-15): Today is SHOWING the safe-to-spend figure: the card is on, and there is a cash
+  // account and an income (otherwise it shows "Connect an account…" or "Add your income…"). Sent the first
+  // time it shows; never in the demo.
+  const showsSafeFigure = isVisible('hero') && hasCashAccount && !_ss.noIncome;
+  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
@@ -8856,7 +8875,7 @@ function SpendScreen({data, setAppData, setScreen}){
             </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
               <div style={{color:C.tealBright,fontSize:13,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+ordinalSuffix(billForm.date) : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
@@ -9090,8 +9109,8 @@ function SpendScreen({data, setAppData, setScreen}){
         <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":data.bankConnected?"Live from your bank":"From your statements and entries"}</div>
       </div>
       <div style={{textAlign:"right"}}>
-        <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${(totalSpent||0).toFixed(0)}</div>
-        <div style={{color:C.green,fontSize:13}}>+${(totalIn||0).toFixed(0)} in</div>
+        <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${formatNumber(totalSpent||0)}</div>
+        <div style={{color:C.green,fontSize:13}}>+${formatNumber(totalIn||0)} in</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>
           {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
         </div>
@@ -9210,7 +9229,7 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-              {txn.amount<0?"+":"−"}${Math.abs(txn.amount).toFixed(2)}
+              {txn.amount<0?"+":"−"}${formatNumber(Math.abs(txn.amount),{cents:true})}
             </div>
             {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:13,fontWeight:700}}>⚠️ Cash advance</div>:(()=>{
               // "Income" only when it counts (it repeats like pay, or the household said so). A deposit they
@@ -10160,6 +10179,9 @@ const HOUSEHOLD_ENABLED = false;
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
 function MeetAgenda({ data, isCouple, setScreen, setAppData }){
+  // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
+  // Once per account; never in the demo.
+  useEffect(()=>{ if(!data?.demo) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
@@ -14803,11 +14825,10 @@ function FoundingCard() {
       <span className="fll-fc-eyebrow">{parts.eyebrow}</span>
       <span className="fll-fc-row">
         <span className="fll-fc-price">{parts.price}</span>
-        <s className="fll-fc-regular">{parts.regular}</s>
         {parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
       </span>
-      <span className="fll-fc-save">{parts.save}</span>
       <span className="fll-fc-small">{parts.small}</span>
+      <span className="fll-fc-save">{parts.save}</span>
     </button>
   );
 }
@@ -15136,10 +15157,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-fc-eyebrow{ display:block; font-size:13px; font-weight:800; letter-spacing:0.08em; line-height:1.3; color:#c8f169; }
             .fll-fc-row{ display:flex; flex-wrap:wrap; align-items:center; column-gap:${SPACE.sm}px; row-gap:${SPACE.xs}px; margin-block:${SPACE.xs}px; }
             .fll-fc-price{ font-family:'Playfair Display',serif; font-weight:900; font-size:24px; line-height:1.1; color:#fdf6ec; }
-            .fll-fc-regular{ font-size:13px; font-weight:600; color:#c5d3c1; text-decoration-thickness:2px; }
             .fll-fc-pill{ display:inline-block; padding:${SPACE.xs}px ${SPACE.sm}px; border-radius:99px; background:#c8f169; color:#15321a; font-size:13px; font-weight:800; line-height:1.2; white-space:nowrap; }
-            .fll-fc-save{ display:block; font-size:14px; font-weight:800; line-height:1.35; color:#fdf6ec; }
-            .fll-fc-small{ display:block; margin-top:${SPACE.xs}px; font-size:13px; font-weight:500; line-height:1.4; color:#d9e2d6; }
+            .fll-fc-save{ display:block; margin-top:${SPACE.xs}px; font-size:14px; font-weight:800; line-height:1.35; color:#fdf6ec; }
+            .fll-fc-small{ display:block; font-size:13px; font-weight:500; line-height:1.4; color:#d9e2d6; }
             .fll-founding-card:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
             .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
             .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
@@ -15247,6 +15267,32 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               .fll-walk-tile-n{ align-self:start; }
               .fll-walk-tile-s{ align-self:end; }
             }
+            /* Desktop, 1024px and up (2026-10-14). The hero is two columns: badge, headline, subline and form on
+               the left; on the right the $1,944 card, its top level with the headline's (the badge's 16px line,
+               7px padding and 1px border each side, and its 22px bottom margin), so the whole card is in the
+               first screen at 1280 x 800 and 1440 x 900, and the founding box directly under it, so the two
+               columns end at about the same height. "See how it works", "Sound
+               familiar?", the demo button and the read-only line move to one full-width row below the hero:
+               the player on the left, its title, subline and tiles beside it, centred on the player; then
+               "Sound familiar?" and the button, centred. Under 1024px nothing here applies. */
+            @media(min-width:1024px){
+              .fll-hero-grid{ grid-template-areas:"text card" "form card" "form founding" "demo demo"; grid-template-rows:auto auto auto auto; }
+              .fll-badge{ line-height:${SPACE.lg}px; }
+              .fll-hero-card{ align-self:start; margin-top:${SPACE.lg + 2 * 7 + 2 * 1 + 22}px; margin-bottom:0; }
+              .fll-founding{ justify-self:end; margin-top:-${SPACE.xl - SPACE.lg}px; }
+              .fll-hero-demo{ justify-self:stretch; max-width:none; margin-top:${SPACE.xl}px; }
+              .fll-walk{ display:grid; max-width:960px; margin-inline:auto; margin-block:0 ${SPACE.xl}px; grid-template-columns:minmax(0,360px) minmax(0,1fr);
+                grid-template-rows:1fr auto auto auto 1fr auto; grid-template-areas:"stage ." "stage t" "stage sub" "stage grid" "stage ." "note ."; column-gap:${SPACE.xxl + SPACE.lg}px; text-align:left; }
+              .fll-walk-t{ grid-area:t; }
+              .fll-walk-sub{ grid-area:sub; }
+              .fll-walk-stage{ grid-area:stage; }
+              .fll-walk-grid{ grid-area:grid; margin-block:0; }
+              .fll-walk-note{ grid-area:note; }
+              .fll-familiar{ max-width:560px; margin-inline:auto; text-align:center; }
+              .fll-familiar ul{ display:inline-block; }
+              .fll-hero-demo .fll-demo{ max-width:440px; margin-inline:auto; }
+              .fll-trust-row{ text-align:center; }
+            }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
               .fll-shot{ width:216px; }
@@ -15263,8 +15309,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           </div>
 
           {/* Hero. Mobile, one column: pill, H1, subline, the form (field, Join, consent line), the card, then
-              the demo button and the read-only line, so Join is on screen at 390 x 844. Desktop: text, form
-              and demo button on the left, the card on the right (grid areas in .fll-hero-grid). */}
+              the demo button and the read-only line, so Join is on screen at 390 x 844. 960 to 1023px: text,
+              form and demo button on the left, the card on the right. 1024px and up: the card beside the text
+              and form, top-aligned with the headline, and the videos, "Sound familiar?" and the demo button in
+              a full-width row below (grid areas in .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
             <div className="fll-hero-grid">
               <div className="fll-hero-text">
@@ -16830,6 +16878,7 @@ export default function FlourishApp(){
     // data; we deliberately never set hydratedUidRef, so the save gate stays closed and this state
     // is never written to the DB.
     const loadSampleHousehold = () => {
+      _activationOff = true; // a sample household is not a household: no activation counts (lib/activation.js)
       const dd = buildDemoState();
       // Auto-build a budget so the Budget screen shows a populated plan, not the empty "Build Your
       // Budget Plan" state. generateBudgetSuggestions returns the exact data.budgets shape
@@ -16842,6 +16891,7 @@ export default function FlourishApp(){
       setFirstVisitDone(true);
       setHydrated(true);
     };
+    _activationOff = false;
     if (normalizeEmail(user.email) === SCREENSHOT_EMAIL) { loadSampleHousehold(); return; }
     let cancelled = false;
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
@@ -16934,6 +16984,14 @@ export default function FlourishApp(){
       getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }
   }, [onboarded,appData,household,isPremium,checkInBonus,user]);
+  // Activation (2026-10-15): the app was opened (the server keeps it only on day 1 and day 7 after
+  // signup), and the household has a data source. Same gate as the save above: a signed-in account whose
+  // data has loaded, never the demo. Each is sent once (app_open once a day): lib/activation.js.
+  useEffect(() => {
+    if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
+    signalActivation("app_open", false, user.id);
+    if (hasDataSource(appData)) signalActivation("data_source", false, user.id);
+  }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──
   // A lightweight signature over the notification-relevant slices (bills, account balances, txns,

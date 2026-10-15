@@ -84,6 +84,15 @@ function buildRelease() {
   return typeof sha === "string" && sha && sha !== "unknown" && sha !== "dev" ? sha : null;
 }
 
+// The Sentry environment (2026-10-15). A deploy preview used to report as "production", because the build
+// mode is "production" on every Netlify build. Netlify's CONTEXT, baked in by vite.config.js, tells them
+// apart: production, deploy-preview and branch-deploy are each their own environment. Anything else (a
+// native ship build, which is the production app; a local run) keeps the build mode, as before.
+export const SENTRY_CONTEXTS = ["production", "deploy-preview", "branch-deploy"];
+export function sentryEnvironment(context, mode) {
+  return SENTRY_CONTEXTS.includes(context) ? context : mode;
+}
+
 export async function initErrorReporting() {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) return; // inert until a DSN is configured — Sentry chunk is never loaded
@@ -91,7 +100,7 @@ export async function initErrorReporting() {
     const Sentry = await import("@sentry/react");
     Sentry.init({
       dsn,
-      environment: import.meta.env.MODE,
+      environment: sentryEnvironment(import.meta.env.VITE_DEPLOY_CONTEXT, import.meta.env.MODE),
       // WITHOUT THIS THE RELEASES PAGE IS EMPTY. Sentry only lists a release once events carry one,
       // so every error so far has been filed against "no release" and no deploy has ever appeared.
       // The SHA is already baked at build time by vite.config.js — from Netlify's COMMIT_REF in
