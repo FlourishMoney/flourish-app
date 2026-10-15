@@ -103,18 +103,20 @@ const TOKEN = "link-sandbox-af1a0311-da53-4636-b754-dd15cc058176";
       return { status: res.statusCode, body: JSON.parse(res.body || "{}") };
     };
     try {
-      const web = await call(WEB, { action: "create_link_token", country: "CA" });
-      t.eq([web.status, Object.keys(web.body).sort()], [200, ["link_token"]], "3a the website gets a link token and nothing else");
+      const web = await call(WEB, { action: "create_link_token", country: "CA", hosted_link: true });
+      t.eq([web.status, Object.keys(web.body).sort()], [200, ["link_token"]], "3a the website gets a link token and nothing else (even if it asks for Hosted Link)");
       t.eq([sent.at(-1).body.hosted_link, sent.at(-1).body.redirect_uri], [undefined, "https://flourishmoney.app/plaid/oauth"], "3b …and Plaid was not asked for Hosted Link");
       for (const [name, origin] of [["iOS", IOS], ["Android", ANDROID]]) {
-        const r = await call(origin, { action: "create_link_token", country: "CA" });
+        const old = await call(origin, { action: "create_link_token", country: "CA" });
+        t.eq([old.status, Object.keys(old.body).sort(), sent.at(-1).body.hosted_link], [200, ["link_token"], undefined], `3c0 a ${name} build from before Hosted Link (no hosted_link option) still gets the web SDK's link token`);
+        const r = await call(origin, { action: "create_link_token", country: "CA", hosted_link: true });
         t.eq([r.status, r.body.link_token, r.body.hosted_link_url, r.body.result_key === L.resultKey("u1", TOKEN)], [200, TOKEN, hostedUrl, true], `3c the ${name} app gets the token, the hosted_link_url and its result key`);
         t.eq([sent.at(-1).body.hosted_link, sent.at(-1).body.redirect_uri], [{ completion_redirect_uri: "flourishmoney://plaid/complete", is_mobile_app: true }, "https://flourishmoney.app/plaid/app"], `3d …from a Hosted Link request (${name})`);
       }
-      const reconnect = await call(IOS, { action: "create_link_token", item_id: "item-1", country: "CA" });
+      const reconnect = await call(IOS, { action: "create_link_token", item_id: "item-1", country: "CA", hosted_link: true });
       t.eq([reconnect.status, sent.at(-1).body.access_token, !!sent.at(-1).body.hosted_link], [200, "access-sandbox-item", true], "3e a store app's reconnect (update mode) is Hosted Link too");
       hostedUrl = null;
-      const none = await call(ANDROID, { action: "create_link_token", country: "CA" });
+      const none = await call(ANDROID, { action: "create_link_token", country: "CA", hosted_link: true });
       t.eq([none.status, none.body.error, none.body.link_token], [502, "Could not start bank connection.", undefined], "3f no hosted_link_url from Plaid: the app is told, never handed a token it cannot open");
       hostedUrl = "https://hosted.sandbox.plaid.com/link/abc123";
 
@@ -289,6 +291,8 @@ const TOKEN = "link-sandbox-af1a0311-da53-4636-b754-dd15cc058176";
     t.ok(/plaidReady: native \? !!hostedLinkFor\(linkToken\) : sdkReady && !!linkToken, plaidSdkError: native \? false : sdkError/.test(APP), "6c …and is ready once its hosted URL is known");
     const mints = [...APP.matchAll(/callPlaid\("create_link_token"[\s\S]{0,260}?(set(?:Link|Reconnect)Token\(d\.link_token\))/g)].map(m => m[0]);
     t.eq([mints.length, mints.every(m => /rememberHostedLink\(d\);\s*set(?:Link|Reconnect)Token\(d\.link_token\)/.test(m))], [3, true], "6d every link token minted (onboarding, add, reconnect) has its hosted URL remembered first");
+    const asks = [...APP.matchAll(/hosted_link: isNativeApp\(\)/g)].length;
+    t.eq(asks, 4, "6d2 every create_link_token request from a store app asks for Hosted Link (onboarding, add, reconnect by item, reconnect fresh)");
     const fn = APP.slice(APP.indexOf("async function openHostedLink("), APP.indexOf("function usePlaidLinkSDK("));
     t.ok(/closeBrowser: \(\) => \(ios \? Browser\.close\(\) : undefined\)/.test(fn), "6e the sheet is closed on iOS only (Android is already back in the app)");
     t.ok(/savePlaidPending\(appStorage\(\), \{ mode: "hosted", link_token: linkToken, result_key: hosted\.resultKey, intent \}\);[\s\S]*?const res = await runHostedLink/.test(fn) && /clearPlaidPending\(appStorage\(\)\);/.test(fn), "6f the pending record is kept while the browser is up, then removed");

@@ -60,7 +60,8 @@ const path = require("path");
   const bodyFields = [...PLAID.matchAll(/const \{([^}]+)\} = body;|body\.([a-zA-Z_]+)/g)]
     .flatMap((m) => (m[1] ? m[1].split(",").map((x) => x.split("=")[0].trim()) : [m[2]])).filter(Boolean);
   // link_token and result_key: hosted_link_result (a store app's Hosted Link session), a token and its HMAC.
-  const allowed = new Set(["action", "country", "public_token", "institution_name", "institution_id", "days", "full_resync", "transactions", "item_id", "tokens", "link_token", "result_key"]);
+  // hosted_link: create_link_token's option, a store build that opens Hosted Link.
+  const allowed = new Set(["action", "country", "public_token", "institution_name", "institution_id", "days", "full_resync", "transactions", "item_id", "tokens", "link_token", "result_key", "hosted_link"]);
   t.eq(bodyFields.filter((f) => !allowed.has(f)), [], `3a plaid.js reads only tokens, ids and options from a request (${[...new Set(bodyFields)].join(", ")})`);
   const endpoints = [...new Set([...PLAID.matchAll(/plaid\(["'`](\/[a-z_/]+)/g)].map((m) => m[1]))].sort();
   const tokenEndpoints = ["/accounts/get", "/investments/holdings/get", "/item/get", "/item/public_token/exchange", "/item/remove", "/liabilities/get", "/link/token/create", "/link/token/get", "/transactions/enrich", "/transactions/get", "/transactions/sync"];

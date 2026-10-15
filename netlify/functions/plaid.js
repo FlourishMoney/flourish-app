@@ -124,8 +124,10 @@ exports.handler = async (event) => {
         updateAccessToken = data.access_token;
       }
 
-      // A store app gets Plaid Hosted Link (_lib/plaidLink.js); the website keeps the web SDK.
-      const native = isNativeRequest(event);
+      // A store app gets Plaid Hosted Link (_lib/plaidLink.js); the website keeps the web SDK. Only a
+      // build that asks for it (hosted_link: true): a store build from before Hosted Link still opens
+      // Link with the web SDK, and keeps getting the link token it understands.
+      const native = isNativeRequest(event) && body.hosted_link === true;
       const linkBody = linkTokenBody({ userId: user_id, country, accessToken: updateAccessToken, native });
       const data = await plaid("/link/token/create", linkBody);
       if (!native) return ok({ link_token: data.link_token });

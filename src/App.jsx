@@ -4230,7 +4230,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     setLinkTokenLoading(true);
     if(!keepError) setBankError(null);
     const jwt = await getJwt();
-    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
+    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2)), hosted_link: isNativeApp()}, {jwt})
       .then(d=>{ rememberHostedLink(d); setLinkToken(d.link_token); setLinkTokenLoading(false); })
       .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
@@ -17815,14 +17815,14 @@ export default function FlourishApp(){
     try {
       const country = appData?.profile?.country || "CA";
       const jwt = await getJwt();
-      let payload = { country, user_id: user?.id };
+      let payload = { country, user_id: user?.id, hosted_link: isNativeApp() };
       if (jwt) {
         const items = await getUserItems();
         // Pick the item that triggered reconnect: prefer status==="error" or "pending_expiration"
         const broken = items.find(it => it.status === "error" || it.status === "pending_expiration");
         const target = broken || items[0];
         if (target?.item_id) {
-          payload = { item_id: target.item_id, country };
+          payload = { item_id: target.item_id, country, hosted_link: isNativeApp() };
         }
       }
       // create_link_token is auth-required now — always pass the JWT.
@@ -17845,7 +17845,7 @@ export default function FlourishApp(){
     setReconnectLoading(true);
     const country = appData?.profile?.country || "CA";
     const jwt = await getJwt();
-    callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
+    callPlaid("create_link_token", { country, user_id: user?.id, hosted_link: isNativeApp() }, {jwt})
       .then(d=>{ rememberHostedLink(d); setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
