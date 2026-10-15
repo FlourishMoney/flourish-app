@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's own background (src/App.jsx, the light theme's bg), behind the system bars on Android 15
+         and later, where the app is drawn edge to edge. Matches the page, so nothing shows as a strip. -->
+    <color name="flourish_window">#F4F1EB</color>
+</resources>

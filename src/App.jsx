@@ -17585,6 +17585,13 @@ export default function FlourishApp(){
 
   // ── Apply theme palette BEFORE any render ───────────────────────
   C = theme==="light" ? LIGHT_C : DARK_C;
+  // Edge to edge on Android 15 and later (version 1.1, item 8a): the status bar is transparent over the page,
+  // so its icons follow the APP's theme, not the phone's (a dark app on a light phone would otherwise draw dark
+  // icons on a dark page). Capacitor's own SystemBars; Android only; nothing on the web or iOS.
+  useEffect(()=>{
+    if(window.Capacitor?.getPlatform?.()!=="android") return;
+    import("@capacitor/core").then(({ SystemBars })=>SystemBars?.setStyle?.({ style: theme==="dark" ? "DARK" : "LIGHT" })).catch(()=>{});
+  },[theme]);
   const toggleTheme=()=>{
     const next=theme==="dark"?"light":"dark";
     setTheme(next);
