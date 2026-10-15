@@ -11,9 +11,10 @@
 // comes from the verified JWT, and the price comes from the environment via
 // _lib/billingPlans.js. A request that names a price is refused by not being read.
 //
-// STRIPE TAX IS OFF (P16: prices are quoted plus tax). automatic_tax is sent explicitly
-// as false rather than omitted, so switching it on is a one-line change here plus the
-// dashboard setting, and the columns in migration 0009 are already waiting for it.
+// STRIPE TAX (from the first sale, 2026-10-26). Prices are quoted "plus tax" (P16) and their Stripe prices
+// are tax-exclusive, so with STRIPE_TAX_ENABLED on, Checkout works out GST/HST (and provincial tax where
+// GrowSmart is registered) from the billing address it collects, and adds it on top. Off, automatic_tax is
+// sent as false, exactly as before. See taxParams() below.
 // -----------------------------------------------------------------------------
 "use strict";
 
@@ -41,6 +42,19 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 function confirmSendStore() {
   try { return getStore("founding_confirm_sends"); }
   catch { console.error("[billing] founding confirm", "store_unavailable"); return null; }
+}
+
+// STRIPE_TAX_ENABLED IS A ROLLBACK SWITCH. It is on from the first sale (docs/ops/BILLING-DAY-OCT-26.md,
+// set with BILLING_ENABLED). Unset it, and deploy, only if Stripe Tax itself fails at checkout: new checkouts
+// then go through without tax, while subscriptions already made keep theirs. Exactly "true" or it is off.
+const taxEnabled = () => process.env.STRIPE_TAX_ENABLED === "true";
+// What a Checkout Session needs for Stripe Tax (Stripe's "Collect tax with Checkout", existing customers):
+// automatic tax on; the billing address, always (Canada's tax follows the province); and that address saved to
+// the customer we pass, so renewals are taxed from it too.
+function taxParams() {
+  return taxEnabled()
+    ? { automatic_tax: { enabled: true }, billing_address_collection: "required", customer_update: { address: "auto" } }
+    : { automatic_tax: { enabled: false } };          // P16: prices are quoted plus tax
 }
 
 const APP_ORIGIN = () => (process.env.APP_ORIGIN || "https://flourishmoney.app").trim();
@@ -155,7 +169,7 @@ exports.handler = async (event) => {
         // for every later customer.subscription.* event, which never sees the session.
         metadata: { user_id, plan_key: planKey },
         subscription_data: { metadata: { user_id, plan_key: planKey } },
-        automatic_tax: { enabled: false },          // P16 — prices are quoted plus tax
+        ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
         allow_promotion_codes: true,
         success_url: `${APP_ORIGIN()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?billing=cancelled`,
