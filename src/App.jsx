@@ -9102,7 +9102,7 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${(totalSpent||0).toFixed(0)}</div>
-        <div style={{color:C.green,fontSize:13}}>+${(totalIn||0).toFixed(0)} in</div>
+        <div style={{color:C.green,fontSize:13}}>+${formatNumber(totalIn||0)} in</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>
           {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
         </div>
@@ -9221,7 +9221,7 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-              {txn.amount<0?"+":"−"}${Math.abs(txn.amount).toFixed(2)}
+              {txn.amount<0?"+":"−"}${formatNumber(Math.abs(txn.amount),{cents:true})}
             </div>
             {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:13,fontWeight:700}}>⚠️ Cash advance</div>:(()=>{
               // "Income" only when it counts (it repeats like pay, or the household said so). A deposit they
