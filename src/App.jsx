@@ -8867,7 +8867,7 @@ function SpendScreen({data, setAppData, setScreen}){
             </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
               <div style={{color:C.tealBright,fontSize:13,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+ordinalSuffix(billForm.date) : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
