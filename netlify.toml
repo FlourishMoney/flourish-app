@@ -69,6 +69,13 @@
   to     = "/.netlify/functions/billing"
   status = 200
 
+# Redirect: the link in "Confirm your email address for your founding price" → Netlify function.
+# GET shows one button and changes nothing; POST confirms (netlify/functions/founding-confirm.js).
+[[redirects]]
+  from   = "/api/founding-confirm"
+  to     = "/.netlify/functions/founding-confirm"
+  status = 200
+
 # Redirect: the landing page's founding offer reads /api/founding → Netlify function.
 # GET only; answers a count of spots left and nothing else (netlify/functions/founding.js).
 [[redirects]]

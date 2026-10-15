@@ -454,8 +454,12 @@ where w.founding_position between 1 and 50 and not w.is_test
   and not exists (select 1 from public.profiles p where p.user_id = u.id and p.founder_flag);
 ```
 
-   If it is above 0, each one is yours to decide (for example, confirm the person yourself, then set
-   their marker in Supabase), not something the code should guess.
+   **Addressed (round 4): such an account can confirm itself.** Its checkout screen shows "Your founding
+   spot" with one button, "Send me a confirmation link" (at most 3 in 24 hours). The emailed link opens a
+   page with one button ("Confirm my email address"); pressing it sets the "link" marker, and the founding
+   price is then offered. Opening the link alone changes nothing, because mail scanners open links. The link
+   lasts 24 hours and stops working if the account's address changes. Signed with
+   `FOUNDING_CONFIRM_SECRET`, or a key derived from the Supabase secret key when that is unset.
 2. **Fixed (round 2): a paying web household gets the paid tier.** The web app now combines the
    profile's plan with the billing status's `paid`, which the server works out from Stripe's status and
    the paid period (`webPlan`, `planRules.isPaidSubscription`). A subscription cancelled at period end

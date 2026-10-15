@@ -33,7 +33,7 @@ import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amo
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
-import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
+import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -13547,7 +13547,23 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
 function UpgradeScreen({status, mode, notice, onClose, onManage}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
+  // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
+  const [confirmState,setConfirmState]=useState("idle");
   const plans = offeredPlans({status});
+
+  const sendConfirm = async () => {
+    setConfirmState("sending");
+    try{
+      const jwt = await getJwt();
+      if(!jwt) throw new Error("signed_out");
+      const res = await fetch(`${API_BASE}/api/billing`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+        body: JSON.stringify({action:"send_founding_confirmation"}),
+      });
+      setConfirmState(foundingConfirmResult(res.status));
+    }catch{ setConfirmState("failed"); }
+  };
 
   const go = async (planKey) => {
     setBusy(planKey); setError("");
@@ -13600,6 +13616,18 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {foundingConfirmOffered(status)&&(
+              <div style={{background:C.card,border:`2px solid ${C.gold}77`,borderRadius:16,padding:"16px 18px"}}>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:SPACE.xs}}>{FOUNDING_CONFIRM_COPY.title}</div>
+                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:SPACE.md}}>{FOUNDING_CONFIRM_COPY.body}</div>
+                {confirmState==="sent"||confirmState==="limited"
+                  ? <div role="status" style={{color:confirmState==="sent"?C.greenBright:C.mutedHi,fontSize:13,lineHeight:1.6}}>{FOUNDING_CONFIRM_COPY[confirmState]}</div>
+                  : <button onClick={sendConfirm} disabled={confirmState==="sending"} style={{width:"100%",minHeight:44,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"12px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                      {confirmState==="sending"?FOUNDING_CONFIRM_COPY.sending:FOUNDING_CONFIRM_COPY.button}
+                    </button>}
+                {confirmState==="failed"&&<div role="status" style={{color:C.redBright,fontSize:13,marginTop:SPACE.sm,lineHeight:1.6}}>{FOUNDING_CONFIRM_COPY.failed}</div>}
+              </div>
+            )}
             {plans.map(plan=>(
               <button key={plan.key} onClick={()=>go(plan.key)} disabled={!!busy} style={{textAlign:"left",background:C.card,border:`2px solid ${plan.key==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px",cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy&&busy!==plan.key?0.5:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}>

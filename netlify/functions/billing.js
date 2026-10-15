@@ -19,7 +19,9 @@
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
-const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice } = require("./_lib/foundingCohort");
+const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = require("./_lib/foundingCohort");
+const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
+const { getStore } = require("@netlify/blobs");
 const { stripePost } = require("./_lib/stripeApi");
 const { isPaidSubscription } = require("./_lib/planRules");
 
@@ -34,6 +36,12 @@ const { corsHeadersFor } = require("./_lib/cors");
 // The response is 404, deliberately: an endpoint that is not open yet should look absent rather
 // than advertise that billing exists and is merely switched off.
 const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+
+// The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
+function confirmSendStore() {
+  try { return getStore("founding_confirm_sends"); }
+  catch { console.error("[billing] founding confirm", "store_unavailable"); return null; }
+}
 
 const APP_ORIGIN = () => (process.env.APP_ORIGIN || "https://flourishmoney.app").trim();
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -99,7 +107,10 @@ exports.handler = async (event) => {
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
-      const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, await authUser(admin, user_id));
+      const user = await authUser(admin, user_id);
+      const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, user);
+      // An older account holding a founding address may ask for a confirmation link (round 4).
+      const confirmEmail = !foundingAvailable && await foundingConfirmNeeded(admin, user_id, user);
       return json(200, CORS, {
         enabled: true,
         // The server's own rule (_lib/planRules.js isPaidSubscription): Stripe says active or trialing AND
@@ -108,7 +119,7 @@ exports.handler = async (event) => {
         // the webhook that says so is late. A store app never asks.
         paid: isPaidSubscription(row),
         manageable: !!row?.provider_customer_id,
-        founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT },
+        founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
       });
     }
 
@@ -151,6 +162,19 @@ exports.handler = async (event) => {
       }, { idempotencyKey: `checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}` });
 
       return json(200, CORS, { url: session.url });
+    }
+
+    // "Send me a confirmation link" (round 4): only for an account that needs one, at most three in 24 hours,
+    // to the account's own address. The link sets the server-only "link" marker (founding-confirm.js).
+    if (action === "send_founding_confirmation") {
+      const user = await authUser(admin, user_id);
+      if (!(await foundingConfirmNeeded(admin, user_id, user))) return json(409, CORS, { error: "not_needed" });
+      const limit = await checkSendLimit(confirmSendStore(), user_id);
+      if (!limit.allowed) return json(limit.reason === "rate_limited" ? 429 : 503, CORS, { error: limit.reason });
+      const url = confirmUrl(user_id, user.email);
+      if (!url) { console.error("[billing] founding confirm", "no_secret"); return json(500, CORS, { error: "server_misconfigured" }); }
+      const sent = await sendFoundingConfirmEmail(user.email, url, `founding-confirm/${user_id}/${new URL(url).searchParams.get("x")}`);
+      return sent ? json(200, CORS, { sent: true }) : json(502, CORS, { error: "send_failed" });
     }
 
     if (action === "create_portal_session") {

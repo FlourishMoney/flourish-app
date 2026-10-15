@@ -78,6 +78,8 @@ export function foundingLinkNotice(status) {
   if (!billingIsOn(status)) return null;
   if (status.paid === true) return null;
   if (status.founding && status.founding.available === true) return null;
+  // An older account holding a founding address: the screen's own card says what to do (round 4).
+  if (status.founding && status.founding.confirmEmail === true) return null;
   return { kind: "founding", text: FOUNDING_NOT_MATCHED_NOTE };
 }
 

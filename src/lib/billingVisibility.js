@@ -139,5 +139,26 @@ export function checkoutErrorText({ status, error } = {}) {
   return "Couldn't reach checkout. Try again in a moment.";
 }
 
+// AN OLDER ACCOUNT HOLDING A FOUNDING ADDRESS (round 4). The status says founding.confirmEmail when this
+// account's address holds a founding spot but was never confirmed from our link. The checkout screen then
+// offers one tap to email a confirmation link (billing.js "send_founding_confirmation"). The words, exactly:
+export const FOUNDING_CONFIRM_COPY = Object.freeze({
+  title: "Your founding spot",
+  body: "This account's email address holds a founding spot on the waitlist. To get the founding price, confirm the address from a link we email to it.",
+  button: "Send me a confirmation link",
+  sending: "Sending…",
+  sent: "Sent. The link is in your inbox and works for 24 hours. After you confirm, come back to this screen.",
+  limited: "A link was sent recently. Check your inbox, or ask again tomorrow.",
+  failed: "Couldn't send the link. Try again in a moment.",
+});
+export function foundingConfirmOffered(status) {
+  return billingIsOn(status) && status.paid !== true && !!status.founding
+    && status.founding.confirmEmail === true && status.founding.available !== true;
+}
+// What the screen says after the tap, from the HTTP status: "sent" | "limited" | "failed".
+export function foundingConfirmResult(httpStatus) {
+  return httpStatus === 200 ? "sent" : httpStatus === 429 ? "limited" : "failed";
+}
+
 // The query keys this feature owns, so the caller can strip them from the URL afterwards.
 export const BILLING_RETURN_PARAMS = Object.freeze(["billing", "session_id"]);

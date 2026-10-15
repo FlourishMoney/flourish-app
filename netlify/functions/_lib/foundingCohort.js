@@ -95,6 +95,18 @@ function emailVerifiedByLink(user) {
   return !!(user && user.email_confirmed_at && user.app_metadata && user.app_metadata.email_confirmation === "link");
 }
 
+// AN OLDER ACCOUNT HOLDING A FOUNDING ADDRESS (round 4): its address is confirmed, but not by our link, and
+// the address holds a founding spot. It may ask for a confirmation link (_lib/foundingConfirm.js), which sets
+// the "link" marker. Never for a beta founder, an account whose founding subscription ended, or one already
+// verified by link. Fails closed: any answer it cannot read is "no".
+async function foundingConfirmNeeded(admin, user_id, user) {
+  if (!user_id || !user || !user.email || !user.email_confirmed_at) return false;
+  if (emailVerifiedByLink(user)) return false;
+  if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
+  if (await isBetaFounder(admin, user_id)) return false;
+  return (await foundingPositionForEmail(admin, user.email)) !== null;
+}
+
 // The account (its id, and the user as Supabase Auth holds it) -> may it buy the founding price?
 async function mayBuyFoundingPrice(admin, user_id, user) {
   if (!user_id) return false;
@@ -106,5 +118,5 @@ async function mayBuyFoundingPrice(admin, user_id, user) {
 
 module.exports = {
   FOUNDING_COHORT_LIMIT, normalizeEmail, isFoundingPosition, foundingPositionForEmail,
-  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, mayBuyFoundingPrice,
+  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, foundingConfirmNeeded, mayBuyFoundingPrice,
 };

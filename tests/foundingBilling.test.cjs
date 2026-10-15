@@ -254,7 +254,9 @@ async function deliver(state, id, type, object, created = T) {
     const r = await asAccount({ waitlist: sixty(), user: acct("h51@example.test"), extra });
     notFounding(r, "5a a client claiming a number, an email, the flag or a price");
     t.ok(r.state.rpcCalls.every(c => c.args.p_email === "h51@example.test"), "5b the lookup always asks about the account's own email");
-    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit", "5c the client is told yes or no and the cohort size, never a number or a count");
+    // Round 4 adds confirmEmail: another yes or no about this account (may it ask for a confirmation link).
+    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit,confirmEmail", "5c the client is told yes or no and the cohort size, never a number or a count");
+    t.eq([typeof r.status.founding.available, typeof r.status.founding.confirmEmail], ["boolean", "boolean"], "5c2 …both answers are plain yes or no");
   }
 
   // ── 6. fails closed ──────────────────────────────────────────────────────────────────────────
