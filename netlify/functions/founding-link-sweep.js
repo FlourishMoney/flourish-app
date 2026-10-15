@@ -13,10 +13,11 @@
  *
  * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, not sent before,
  * with a consent version that covers one of the two founding emails (foundingEmailKindFor,
- * _lib/waitlistConsent.js): the founding link email for versions that asked for updates; the LAUNCH email
- * for pre-2026-10-01 rows, and only while OPEN_SIGNUP is also exactly "true" (Amanda's decision: October 26
- * with signup open is the launch those rows asked about). Without OPEN_SIGNUP those rows are not even asked
- * for. Not sent before
+ * _lib/waitlistConsent.js): the founding link email for versions that asked for updates (founding number 1
+ * to 50); the CANADA LAUNCH email for pre-2026-10-01 rows (any number, or none: it names no number, price or
+ * link), and only while OPEN_SIGNUP is also exactly "true" (Amanda's decision: October 26 with signup open is
+ * the launch those rows asked about). That launch email is the one email those rows ever get. Without
+ * OPEN_SIGNUP they are not even asked for. Not sent before
  * (metadata.founding_link is empty). Then, per row, the same lookup billing uses
  * (waitlist_founding_position_for_email, migration 0016) must still return that row's own number: an
  * ended number, a test row or an unreadable lookup (0016 not applied) sends nothing. Lowest number first.
@@ -38,7 +39,7 @@
 "use strict";
 
 const { sendFoundingLinkEmail } = require("./_lib/foundingLinkEmail");
-const { mayEmailWaitlistRow, foundingEmailKindFor, FOUNDING_LINK_CONSENT_VERSIONS, LAUNCH_EMAIL_CONSENT_VERSIONS } = require("./_lib/waitlistConsent");
+const { mayEmailWaitlistRow, foundingEmailKindFor, FOUNDING_LINK_CONSENT_VERSIONS, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND } = require("./_lib/waitlistConsent");
 const { normalizeEmail, isFoundingPosition, FOUNDING_COHORT_LIMIT } = require("./_lib/foundingCohort");
 
 const PER_RUN_CAP = 10;
@@ -84,13 +85,16 @@ const versionsFor = (launched) => [...FOUNDING_LINK_CONSENT_VERSIONS, ...(launch
 async function selectOwed(supabaseUrl, key, limit, launched = false) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
     + `?select=id,email,founding_position,is_test,unsubscribed_at,consent_version,metadata`
-    + `&founding_position=gte.1&founding_position=lte.${FOUNDING_COHORT_LIMIT}`
+    // A founding number 1 to 50, or (signup open) a pre-2026-10-01 row, number or not.
+    + (launched
+      ? `&or=(and(founding_position.gte.1,founding_position.lte.${FOUNDING_COHORT_LIMIT}),consent_version.in.(${LAUNCH_EMAIL_CONSENT_VERSIONS.map(encodeURIComponent).join(",")}))`
+      : `&founding_position=gte.1&founding_position=lte.${FOUNDING_COHORT_LIMIT}`)
     + `&is_test=is.false`
     + `&unsubscribed_at=is.null`
     // Only the consent versions whose words asked for updates (waitlistConsent.js). Checked again per row.
     + `&consent_version=in.(${versionsFor(launched).map(encodeURIComponent).join(",")})`
     + `&metadata->founding_link=is.null`
-    + `&order=founding_position.asc`
+    + `&order=founding_position.asc.nullslast`
     + `&limit=${limit}`;
   const res = await fetchWithDeadline(url, { headers: authHeaders(key) }, READ_TIMEOUT_MS, "select");
   if (!res) return null;
@@ -179,13 +183,17 @@ async function runFoundingLinkSweep(opts = {}) {
   const batch = rows.slice(0, limit);
   for (const row of batch) {
     if (clock() - startedAt >= budgetMs) { stoppedEarly = true; break; }
-    if (!row || !row.email || !isFoundingPosition(row.founding_position) || row.is_test === true) { notHonoured++; continue; }
+    if (!row || !row.email || row.is_test === true) { notHonoured++; continue; }
     const kind = foundingEmailKindFor(row, { launched });
     if (!kind || !mayEmailWaitlistRow(row, kind)) { notHonoured++; continue; }
     if (row.metadata && row.metadata.founding_link) { notHonoured++; continue; }
-    const honoured = await honouredNumber(supabaseUrl, key, row.email);
-    if (honoured === undefined) { lookupDown = true; break; }      // fail closed: no lookup, no email
-    if (honoured !== row.founding_position) { notHonoured++; continue; }
+    // The founding link email: a founding number billing itself still honours. The launch email names none.
+    if (kind !== CANADA_LAUNCH_KIND) {
+      if (!isFoundingPosition(row.founding_position)) { notHonoured++; continue; }
+      const honoured = await honouredNumber(supabaseUrl, key, row.email);
+      if (honoured === undefined) { lookupDown = true; break; }      // fail closed: no lookup, no email
+      if (honoured !== row.founding_position) { notHonoured++; continue; }
+    }
     const result = await sendFoundingLinkEmail(row.email, row, { launched });
     if (!result.sent) { failed++; continue; }
     sent++;

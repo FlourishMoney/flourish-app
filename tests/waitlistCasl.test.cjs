@@ -233,13 +233,18 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
       t.eq(r.insert && r.insert.country, "CA", `7c a signup sending country ${JSON.stringify(c)} is stored as Canada`);
     }
 
-    // Pre-consent rows only ever get the launch-day email.
+    // Pre-consent rows get exactly one email, ever: the Canada launch email, once (round 5; their consent was
+    // launch news only). A generic "launch" kind (a store release-day email, say) is not it.
     const may = C.mayEmailWaitlistRow;
     const legacy = { consent_version: "pre-2026-10-01", unsubscribed_at: null };
     const current = { consent_version: "2026-10-01", unsubscribed_at: null };
-    t.eq([may(legacy, "launch"), may(legacy, "welcome"), may(legacy, "update")], [true, false, false], "7d a pre-2026-10-01 row may get the launch email and nothing else");
-    t.eq([may({ consent_version: null }, "launch"), may({ consent_version: null }, "welcome"), may({}, "update")], [true, false, false], "7e …and so may a row with no version at all");
-    t.eq([may(current, "launch"), may(current, "welcome"), may(current, "update")], [true, true, true], "7f a row with current consent may get any waitlist email");
+    t.eq([may(legacy, "canada_launch"), may(legacy, "launch"), may(legacy, "welcome"), may(legacy, "update")], [true, false, false, false],
+      "7d a pre-2026-10-01 row may get the Canada launch email and nothing else");
+    t.eq(may({ ...legacy, metadata: { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:00:00Z" } } }, "canada_launch"), false, "7d2 …once: after it, nothing");
+    t.eq([may({ consent_version: null }, "canada_launch"), may({ consent_version: null }, "launch"), may({ consent_version: null }, "welcome"), may({}, "update")], [false, false, false, false],
+      "7e a row with no version at all gets nothing (fails closed)");
+    t.eq([may(current, "launch"), may(current, "welcome"), may(current, "update"), may(current, "canada_launch")], [true, true, true, false],
+      "7f a row with current consent may get any waitlist email, but not the pre-2026-10-01 rows' Canada launch email");
     t.eq([may({ ...current, unsubscribed_at: "2026-10-02T00:00:00Z" }, "launch"), may({ ...legacy, unsubscribed_at: "2026-10-02T00:00:00Z" }, "launch")], [false, false], "7g an unsubscribed row gets nothing, not even the launch email");
     t.eq(may({ consent_version: "2099-01-01" }, "update"), false, "7h a version this code does not know is treated as no consent");
 

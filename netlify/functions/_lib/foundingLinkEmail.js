@@ -18,16 +18,15 @@
 // CASL. The footer says why they got it and which consent version is on record for them, carries the
 // landing page's Contact block word for word, and a signed one-click unsubscribe link; the message goes out
 // with List-Unsubscribe headers. The send itself is recorded on the row (metadata.founding_link: sent_at,
-// consent_version, position) by the sweep. Who may receive it: mayEmailFoundingLink (_lib/waitlistConsent.js),
-// every consent version whose words asked for updates (2026-10-01, 2026-10-05, 2026-10-06). Never an
-// unsubscribed row, and not the pre-2026-10-01 rows, which asked for the launch email only (a human
-// decision, docs/ops/BILLING-DAY-OCT-26.md section 6).
+// consent_version, position, kind) by the sweep. Who may receive it: mayEmailFoundingLink
+// (_lib/waitlistConsent.js), every consent version whose words asked for updates (2026-10-01, 2026-10-05,
+// 2026-10-06). Never an unsubscribed row, and never a pre-2026-10-01 row.
 //
-// THE LAUNCH EMAIL (kind "launch"). The pre-2026-10-01 rows asked only for an email when flourish
-// launches. Amanda decided (2026-10-14) that October 26, with signup open, is that launch, so those rows
-// get this one instead: the launch news, with their founding link (foundingEmailKindFor in
-// _lib/waitlistConsent.js; the sweep passes `launched` only while OPEN_SIGNUP is on). Same link, same price
-// sentence, same footer. One email per row either way: both kinds share the send record and Resend key.
+// THE CANADA LAUNCH EMAIL (kind "canada_launch", round 5). The pre-2026-10-01 rows asked only for launch
+// news. Amanda decided (2026-10-14) that October 26, with signup open, is that launch. Their consent was launch
+// news only (CASL), so this email is launch news only: no price, no founding number, no checkout link. The
+// words were approved by ChatGPT and Grok. Same CASL footer. It is the one email those rows ever get
+// (mayEmailWaitlistRow), and the sweep passes `launched` only while OPEN_SIGNUP is on.
 //
 // FAILS CLOSED. No row id, no founding number from 1 to 50, a test row, no consent that covers the kind, no
 // signed unsubscribe link: no email (the payload is null).
@@ -41,7 +40,7 @@ const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort"
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 5000;
 const FOUNDING_LINK_KIND = "founding_link";
-const LAUNCH_KIND = "launch";
+const LAUNCH_KIND = "canada_launch";
 const FOUNDING_LINK_URL = "https://flourishmoney.app/?checkout=founding";
 const FROM = "Flourish <hello@flourishmoney.app>";
 const REPLY_TO = "hello@flourishmoney.app";
@@ -66,20 +65,18 @@ function foundingLinkParagraphs(position) {
   ];
 }
 
-// The launch email's words, for the pre-2026-10-01 rows (they asked to hear when flourish launches).
-function launchParagraphs(position) {
+// The Canada launch email's words, for the pre-2026-10-01 rows, exactly as approved (round 5). Launch news
+// only: no price, no founding number, no checkout link.
+function launchParagraphs() {
   return [
     "flourish has launched in Canada. When you joined the waitlist, you asked us to email you when it did, so here it is.",
-    `You joined early, so you're founding household #${position} of ${FOUNDING_COHORT_LIMIT}, and your founding price is ready:`,
-    LANDING_PRICE_SENTENCE,
-    `Your link: ${FOUNDING_LINK_URL}`,
-    "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
+    "flourish is now available in Canada at flourishmoney.app.",
     "This is the one email you asked for when you joined, so we won't send you anything else from the waitlist.",
     "Questions? Just reply to this email.",
-    "Amanda, founder of Flourish",
+    "Amanda, founder of flourish",
   ];
 }
-const paragraphsFor = (kind, position) => (kind === LAUNCH_KIND ? launchParagraphs(position) : foundingLinkParagraphs(position));
+const paragraphsFor = (kind, position) => (kind === LAUNCH_KIND ? launchParagraphs() : foundingLinkParagraphs(position));
 const subjectFor = (kind) => (kind === LAUNCH_KIND ? LAUNCH_SUBJECT : SUBJECT);
 
 const consentLine = (version) => `Consent on record: version ${version}.`;
@@ -108,15 +105,16 @@ function foundingLinkHtml(position, url, version, kind = FOUNDING_LINK_KIND) {
 }
 
 // The whole message for one waitlist row, or null. row: { id, founding_position, is_test, unsubscribed_at,
-// consent_version } exactly as the database returned them. opts.launched: signup is open (billing day), which
-// is what lets a pre-2026-10-01 row have its launch email; without it that row gets nothing.
+// consent_version, metadata } exactly as the database returned them. opts.launched: signup is open (billing
+// day), which is what lets a pre-2026-10-01 row have its Canada launch email; without it that row gets nothing.
+// The founding link email needs a founding number 1 to 50; the launch email needs none (it names none).
 function foundingLinkEmailPayload(to, row, opts = {}) {
   if (typeof to !== "string" || !to.trim()) return null;
   if (!row || row.id == null || String(row.id) === "") return null;
   if (row.is_test === true) return null;
-  if (!isFoundingPosition(row.founding_position)) return null;
   const kind = foundingEmailKindFor(row, { launched: opts.launched === true });
   if (!kind || !mayEmailWaitlistRow(row, kind)) return null;
+  if (kind === FOUNDING_LINK_KIND && !isFoundingPosition(row.founding_position)) return null;
   const url = unsubscribeUrl(row.id);
   const headers = listUnsubscribeHeaders(row.id);
   if (!url || !headers) return null;

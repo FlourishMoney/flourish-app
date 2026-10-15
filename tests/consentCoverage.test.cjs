@@ -53,7 +53,8 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
   }
   t.eq([...C.LAUNCH_EMAIL_CONSENT_VERSIONS], [C.LEGACY_CONSENT_VERSION], "3d2 the launch email: pre-2026-10-01 only");
   const launched = { launched: true };
-  t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION), launched), "launch", "3d3 pre-2026-10-01 with signup open: the launch email");
+  t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION), launched), "canada_launch", "3d3 pre-2026-10-01 with signup open: the Canada launch email");
+  t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION, { metadata: { founding_link: { kind: "canada_launch" } } }), launched), null, "3d3b …once only");
   t.eq(C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION)), null, "3d4 …and nothing before signup opens");
   for (const v of ["2026-10-01", "2026-10-05", "2026-10-06"]) {
     t.eq(C.foundingEmailKindFor(row(v), launched), "founding_link", `3d5 ${v} with signup open: still the founding link email, never the launch one`);
@@ -61,7 +62,8 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
   t.eq([C.foundingEmailKindFor(row("2026-10-07"), launched), C.foundingEmailKindFor(row(C.LEGACY_CONSENT_VERSION, { unsubscribed_at: "2026-10-20T00:00:00Z" }), launched)],
     [null, null], "3d6 an unknown version, or an unsubscribed legacy row: nothing, even with signup open");
   t.eq(C.mayEmailFoundingLink(row("2026-10-06", { unsubscribed_at: "2026-10-20T00:00:00Z" })), false, "3e unsubscribed: never");
-  t.eq(C.mayEmailWaitlistRow(row(C.LEGACY_CONSENT_VERSION), "launch"), true, "3f (unchanged) the shared CASL rule lets the legacy rows have the launch email");
+  t.eq([C.mayEmailWaitlistRow(row(C.LEGACY_CONSENT_VERSION), "canada_launch"), C.mayEmailWaitlistRow(row(C.LEGACY_CONSENT_VERSION), "launch")], [true, false],
+    "3f the shared CASL rule lets the legacy rows have the Canada launch email, and not a generic \"launch\" one");
 
   // ── 4. the sweep asks for exactly those versions ────────────────────────────────────────────────
   const sweep = fs.readFileSync(path.join(REPO, "netlify", "functions", "founding-link-sweep.js"), "utf8");
