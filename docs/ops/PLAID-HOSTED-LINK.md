@@ -47,3 +47,39 @@ Plaid support (dashboard.plaid.com → **Support** → **Submit a request**):
 If Plaid says Canada is not fully supported, the branch can still merge: the website gets the
 `/plaid/oauth` return, and Hosted Link is used only by a store build that asks for it (`hosted_link: true`
 on `create_link_token`). Just do not ship new store builds from it until Plaid confirms.
+
+---
+
+## 2. Values Amanda sets (one per line, with the menu path)
+
+**Before this PR merges** (the website's link tokens carry the new redirect_uri from the first deploy, and
+Plaid refuses a link token whose redirect_uri is not on the list):
+
+1. Plaid Dashboard → **Developers** → **API** → **Allowed redirect URIs** → add `https://flourishmoney.app/plaid/oauth`
+2. Plaid Dashboard → **Developers** → **API** → **Allowed redirect URIs** → add `https://flourishmoney.app/plaid/app`
+3. Plaid Dashboard → **Developers** → **API** → **Allowed redirect URIs** → leave `https://flourishmoney.app` where it is (nothing sends it after this ships; remove it later if you like)
+
+If that page has a Sandbox / Production switch, add 1 and 2 in both.
+
+**Before the new store builds go out:**
+
+4. developer.apple.com → **Account** → **Certificates, IDs & Profiles** → **Identifiers** → `app.flourishmoney` → **Capabilities** → tick **Associated Domains** → **Save** (Xcode's automatic signing may do this itself on the next build; check it took)
+5. Xcode → `ios/App/App.xcodeproj` → target **App** → **Signing & Capabilities** → confirm **Associated Domains** lists `applinks:flourishmoney.app` and there is no signing error (nothing to type: it comes from `App/App.entitlements`)
+6. Xcode → target **App** → **Info** → **URL Types** → confirm `flourishmoney` is listed (nothing to type: it comes from `Info.plist`)
+7. Play Console → **Flourish** → **Test and release** → **App integrity** → **App signing** → **App signing key certificate** → copy the **SHA-256 certificate fingerprint** and send it to Claude (it goes into `public/.well-known/assetlinks.json` next to the upload key's, which App Links do not use for store installs)
+
+**Nothing to set:**
+
+- Plaid Hosted Link: no Dashboard setting and no request. Plaid's guide says it is no longer necessary to ask
+  an account manager to enable it. The completion address `flourishmoney://plaid/complete` must **not** be
+  registered anywhere; Plaid says it does not need to be.
+- Plaid webhook: no new URL. The app reads the result from `/link/token/get`. Every link token already names
+  `https://flourishmoney.app/.netlify/functions/plaid-webhook`; Hosted Link's `SESSION_FINISHED` arrives there
+  with no item_id and is acknowledged and ignored.
+- Plaid **Allowed Android package names**: not used. Plaid cannot use `android_package_name` with Hosted Link.
+- Netlify, Supabase: nothing. The two `.well-known` files deploy with the site, served as JSON (`netlify.toml`).
+
+**After the next deploy**, check (no login needed):
+
+- `https://flourishmoney.app/.well-known/apple-app-site-association` and
+  `https://flourishmoney.app/.well-known/assetlinks.json` open as JSON, not the app's page.
