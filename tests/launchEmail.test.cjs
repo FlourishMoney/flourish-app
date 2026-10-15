@@ -172,12 +172,14 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
       "_lib/foundingLinkEmail.js": "waitlist: the founding link and Canada launch emails (asks mayEmailWaitlistRow)",
       "_lib/waitlistWelcome.js": "waitlist: the welcome email (both callers ask mayEmailWaitlistRow, \"welcome\")",
       "_lib/foundingConfirm.js": "not a waitlist send: a confirmation the account holder asked for, to their own account address",
+      "_lib/foundingReminderEmail.js": "waitlist: the founding reminders, worded consent only (asks mayEmailWaitlistRow)",
     };
     const extra = senders.filter(f => !KNOWN[f]);
     t.eq(extra, [], "5e every module that sends email is known and reviewed for the one-email rule");
     const ask = (f, rx) => rx.test(fs.readFileSync(path.join(fnDir, f), "utf8"));
     t.ok(ask("_lib/foundingLinkEmail.js", /mayEmailWaitlistRow\(row, kind\)/) && ask("waitlist-sweep.js", /mayEmailWaitlistRow\(row, "welcome"\)/)
-      && ask("beta.js", /mayEmailWaitlistRow\(rowForGuard, "welcome"\)/), "5f …and each waitlist sender asks the shared rule");
+      && ask("beta.js", /mayEmailWaitlistRow\(rowForGuard, "welcome"\)/) && ask("_lib/foundingReminderEmail.js", /mayEmailWaitlistRow\(row, kind\)/)
+      && ask("founding-reminder-sweep.js", /mayEmailWaitlistRow\(row, kind\)/), "5f …and each waitlist sender asks the shared rule");
   }
 
   process.env = saved;
