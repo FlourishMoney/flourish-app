@@ -105,6 +105,11 @@ const API_BASE = (() => {
   // local server instead of the site. isNativeApp() is the rule the rest of the app already uses for
   // "is this a store app", and it names both platforms (tests/nativeParity.test.cjs pins that), so
   // this reuses it rather than keeping a second, narrower copy here.
+  // Sandbox testing only (docs/ops/PLAID-HOSTED-LINK.md, section 3): a debug build may point the store
+  // app at a local function server running Plaid's Sandbox. A store build never carries it: build:native
+  // refuses to start while VITE_NATIVE_API_BASE is set (scripts/check-native-build.mjs).
+  const sandboxBase = String(import.meta.env?.VITE_NATIVE_API_BASE || "").trim();
+  if (sandboxBase && isNativeApp()) return sandboxBase;
   return isNativeApp() ? "https://flourishmoney.app" : "";
 })();
 

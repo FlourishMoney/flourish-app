@@ -83,3 +83,94 @@ If that page has a Sandbox / Production switch, add 1 and 2 in both.
 
 - `https://flourishmoney.app/.well-known/apple-app-site-association` and
   `https://flourishmoney.app/.well-known/assetlinks.json` open as JSON, not the app's page.
+
+---
+
+## 3. Sandbox test: "Platypus OAuth Bank" on the flourish-test emulator and the iOS simulator
+
+For when Plaid **Sandbox** keys are on this Mac. Never Production keys. Not yet run: written from the code
+and Plaid's Sandbox docs, so the first run is also the test of these steps.
+
+**Why there is setup.** A store build sends every request to `https://flourishmoney.app`, whose functions run
+Plaid Production, where Platypus does not exist. A Sandbox test build points the app at a function server on
+this Mac instead (`VITE_NATIVE_API_BASE`, read only by a store app; `build:native` refuses to build while it
+is set, so it can never reach a store). That server checks each sign-in against its own Supabase, so the test
+uses the local Supabase stack, not production.
+
+### A. Once: the Sandbox keys (zsh, values never shown or saved in the repo)
+
+```bash
+mkdir -p ~/.flourish-sandbox && chmod 700 ~/.flourish-sandbox && read -rs 'CID?Plaid Sandbox client_id: ' && echo && read -rs 'SEC?Plaid Sandbox secret: ' && echo && printf 'PLAID_ENV=sandbox\nPLAID_CLIENT_ID=%s\nPLAID_SECRET=%s\n' "$CID" "$SEC" > ~/.flourish-sandbox/plaid.env && chmod 600 ~/.flourish-sandbox/plaid.env && unset CID SEC && echo saved
+```
+
+### B. Each time: the local stack, the function server, the test build
+
+1. `cd ~/Projects/flourish-plaid-oauth` (or the repo once merged).
+2. Local Supabase: `docker ps --format '{{.Names}}' | grep supabase_` first. If another session's stack is
+   running, do not stop it: wait, or ask Amanda. Then `npx supabase start` (applies `supabase/migrations`).
+3. Function server, in its own Terminal tab, with Plaid Sandbox and the local stack (`--offline`: the Netlify
+   CLI never fetches the site's own variables, so Production keys never reach this Mac):
+   ```bash
+   eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')" && set -a && source ~/.flourish-sandbox/plaid.env && set +a && SUPABASE_URL="$API_URL" SUPABASE_SECRET_KEY="$SERVICE_ROLE_KEY" npx netlify dev --offline --port 8888
+   ```
+4. Test build, in another tab (shell variables win over `.env.local`; plain `vite build`, because
+   `build:native` refuses this build by design):
+   ```bash
+   eval "$(npx supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')" && VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY" VITE_NATIVE_API_BASE=http://localhost:8888 npx vite build && npx cap sync
+   ```
+5. Android only, for this test build only (never commit it): add `android:usesCleartextTraffic="true"` to
+   `<application>` in `android/app/src/main/AndroidManifest.xml`, because the function server is plain http.
+
+### C. Android: the flourish-test emulator
+
+1. `~/Library/Android/sdk/platform-tools/adb devices`. If an emulator is already running for another session,
+   ask before using it: installing replaces the Flourish app on it. Otherwise start it:
+   `~/Library/Android/sdk/emulator/emulator -avd flourish-test &`
+2. Let the emulator's `localhost` reach this Mac:
+   `~/Library/Android/sdk/platform-tools/adb reverse tcp:8888 tcp:8888 && ~/Library/Android/sdk/platform-tools/adb reverse tcp:54321 tcp:54321`
+3. Install and open: `cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew installDebug && cd ..`, then open Flourish on the emulator.
+4. Run the cases in section D.
+
+### D. The cases (both devices)
+
+Sign up with any address (the local stack's mail viewer, http://localhost:54324, has the confirmation email
+if one is asked for). On **About you**, choose **United States**: Platypus OAuth Bank is a US Sandbox bank.
+
+1. **Success, onboarding.** **Connect My Bank Securely** → **Connect My Bank** on the consent sheet → the
+   in-app browser opens Plaid → search **Platypus OAuth Bank** → continue to the **First Platypus OAuth**
+   screen → leave the drop-down on success → continue → choose accounts → finish. Expected: the browser
+   closes by itself, "Connecting securely…", then **Connected!** with the accounts. The function server's
+   output shows `create_link_token`, then `hosted_link_result`, `exchange_token`, `get_accounts`.
+2. **Closed browser.** Fresh account (or Settings → **Connected Accounts** → **+ Connect Another Bank**). When Plaid opens, close
+   the browser before finishing (iOS: **Done**; Android: the **X** or Back). Expected, about two seconds
+   later: "Your bank wasn't connected. The bank window closed before it finished. You can try again." with
+   Connect ready again (onboarding), or a **Try again** / **Not now** dialog (Settings; Try again shows the
+   consent sheet again).
+3. **Left Link inside Plaid.** Open Plaid, tap Plaid's own close button and confirm exit. Expected: the same
+   message as case 2.
+4. **Failure.** Platypus OAuth Bank → on the **First Platypus OAuth** screen choose **ACCESS_NOT_GRANTED**
+   from the drop-down → continue → exit when Plaid shows the error. Expected: "Your bank wasn't connected.
+   Something went wrong on the way back from your bank. You can try again." (Plaid: `error_` passwords do
+   not work with OAuth banks; the drop-down is the way.)
+5. **Settings path.** Settings → **Connected Accounts** → **+ Connect Another Bank**, then case 1. Expected: the new bank listed.
+6. **Android, the app closed by the system.** Emulator **Settings** → **System** → **Developer options** →
+   turn on **Don't keep activities**. Run case 1. Expected: the app restarts on return and, once signed in,
+   the bank is connected anyway. Turn the option off afterwards.
+7. **iOS, "Open in Flourish?".** If iOS asks before returning to the app, tap **Open**: case 1's result. Run
+   it again and tap **Cancel**, then **Done**: still connected (the result is read from Plaid either way).
+
+### E. iOS simulator
+
+1. Steps B1 to B4 (no cleartext edit; the simulator shares this Mac's `localhost`).
+2. `open ios/App/App.xcodeproj` → scheme **App** → an iPhone simulator (iOS 27.x) → **Run**. Xcode 27.1:
+   `export DEVELOPER_DIR=/Applications/Xcode-27.1.app/Contents/Developer` for command-line builds.
+3. Run the cases in section D.
+
+### F. Afterwards
+
+- `git checkout android/app/src/main/AndroidManifest.xml` (the cleartext line), then `git status` shows nothing.
+- Stop the function server (Ctrl-C in its tab) and `npx supabase stop` (only the stack you started).
+- Rebuild the payload normally before any other native work: `npm run build && npx cap sync`.
+
+The website's `/plaid/oauth` return is not part of this: its redirect_uri is the production address. It is
+checked on the live site with a US OAuth bank after the merge.
