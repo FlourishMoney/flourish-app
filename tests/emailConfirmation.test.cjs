@@ -100,15 +100,21 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.eq(r.state.resends[0].options.emailRedirectTo, "https://flourishmoney.app/confirmed", "…landing on the site's confirmed page");
   }
 
-  // ── 2. A coded signup is unchanged: confirmed on creation, no email ────────────────────────────
+  // ── 2. A coded signup: confirmed on creation only while signup is shut ───────────────────────
+  // Round 3 (billing day): once signup is open, a code shows Amanda handed it out, not that this person
+  // owns the address they typed, and the founding price follows the address. So with the door open every
+  // account, coded or not, confirms its email from the link; with it shut, a coded signup is exactly as
+  // before. app_metadata.email_confirmation records which, where only the server can write it.
   {
     const r = await signup(OPEN, { code: "BETA100" });
-    t.eq(r.state.created[0].email_confirm, true, "a coded signup is still confirmed on creation");
-    t.eq(r.data, { ok: true, source: "invited" }, "…and its answer is unchanged: no confirmation step");
-    t.eq(r.state.resends.length, 0, "…no email is sent");
+    t.eq(r.state.created[0].email_confirm, false, "signup open: a coded signup is created UNCONFIRMED, like every other");
+    t.eq(r.data, { ok: true, source: "invited", needsConfirmation: true, sent: true }, "…still invited, and the answer says the address must be confirmed");
+    t.eq([r.state.resends.length, r.state.resends[0] && r.state.resends[0].type], [1, "signup"], "…so Supabase's \"Confirm your signup\" email is sent");
+    t.eq(r.state.created[0].app_metadata, { email_confirmation: "link" }, "…and the account is marked as confirming by link");
     const shut = await signup({ BETA_CODES: CODES }, { code: "FLOURISH2026" });
-    t.eq([shut.state.created[0].email_confirm, shut.data], [true, { ok: true, source: "invited" }], "…and with the door shut it is identical");
-    t.eq(shut.state.resends.length, 0, "…still no email");
+    t.eq([shut.state.created[0].email_confirm, shut.data], [true, { ok: true, source: "invited" }], "signup shut: a coded signup is confirmed on creation, as before");
+    t.eq(shut.state.resends.length, 0, "…no email");
+    t.eq(shut.state.created[0].app_metadata, { email_confirmation: "auto" }, "…and marked as confirmed on creation, which never earns the founding price");
   }
 
   // ── 3. The email failing does not lose the account ────────────────────────────────────────────
@@ -123,7 +129,10 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.eq([noKey.status, noKey.data], [500, { error: "server_misconfig" }], "a missing SUPABASE_ANON_KEY is refused as a misconfiguration");
     t.eq(noKey.state.created.length, 0, "…and no account is created that could never be confirmed");
     const codedNoKey = await signup(OPEN, { code: "BETA100" }, { noAnonKey: true });
-    t.eq(codedNoKey.data, { ok: true, source: "invited" }, "…while a coded signup, which needs no email, is unaffected");
+    t.eq([codedNoKey.data, codedNoKey.state.created.length], [{ error: "server_misconfig" }, 0],
+      "…and so is a coded signup while signup is open, which now needs the email too");
+    const codedShutNoKey = await signup({ BETA_CODES: CODES }, { code: "BETA100" }, { noAnonKey: true });
+    t.eq(codedShutNoKey.data, { ok: true, source: "invited" }, "…while a coded signup with signup shut, which needs no email, is unaffected");
   }
 
   // ── 4. Resend: allowed, and it tells a stranger nothing ───────────────────────────────────────

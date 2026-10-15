@@ -123,7 +123,8 @@ async function waitlistCount(supabaseUrl, secretKey, now = Date.now()) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
-const { CONSENT_VERSION, WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
+const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor, FOUNDING_SPOT_CONSENT_VERSION } = require("./_lib/waitlistConsent");
+const { FOUNDING_WAITLIST_LIMIT, countFromContentRange, isFoundingPosition } = require("./_lib/foundingWaitlist");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -137,6 +138,27 @@ const CONFIRM_TIMEOUT_MS = 2000;
 // answering does not mean Postgres did not commit, and telling someone their signup failed when the
 // row is there is the worse error: they try again, hit the unique constraint, and are told they are
 // already on a list they were just told they were not on.
+// THE FOUNDING SPOTS ARE ALL TAKEN? (billing day, 2026-10-15) true, false, or null when the count cannot be
+// read. The same count /api/founding uses: the numbers issued in the ledger, never freed.
+async function foundingSpotsFull(supabaseUrl, secretKey) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position`, {
+      method: "HEAD",
+      headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const n = countFromContentRange(res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : null);
+    return n === null ? null : n >= FOUNDING_WAITLIST_LIMIT;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
 async function waitlistRowExists(supabaseUrl, secretKey, email) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), CONFIRM_TIMEOUT_MS);
@@ -173,7 +195,7 @@ async function waitlistRowExists(supabaseUrl, secretKey, email) {
 // changes. Best effort: a failure is logged (status only, never the address) and the person is still told
 // they are on the list, while the row stays as it was, so no one is emailed without a recorded consent.
 const REPEAT_CONSENT_TIMEOUT_MS = 3000;
-async function recordRepeatConsent(supabaseUrl, secretKey, email) {
+async function recordRepeatConsent(supabaseUrl, secretKey, email, consentVersion) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), REPEAT_CONSENT_TIMEOUT_MS);
   try {
@@ -185,7 +207,7 @@ async function recordRepeatConsent(supabaseUrl, secretKey, email) {
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
       },
-      body: JSON.stringify({ unsubscribed_at: null, consent_version: CONSENT_VERSION, consented_at: new Date().toISOString() }),
+      body: JSON.stringify({ unsubscribed_at: null, consent_version: consentVersion, consented_at: new Date().toISOString() }),
       signal: controller.signal,
     });
     if (!res.ok) console.error("[waitlist] repeat consent update failed", res.status);
@@ -342,12 +364,25 @@ async function handle(event) {
     // CASL: the signup must carry the version of the consent wording the form showed, and only the
     // current wording is accepted. That version and the time are stored with the row as the consent
     // record. A form showing out-of-date wording (a stale cached page) is refused rather than recorded
-    // as agreeing to words it did not show.
-    if (consentVersion !== CONSENT_VERSION) {
+    // as agreeing to words it did not show. "Current" follows the signup state (billing day): while signup
+    // is open the landing shows the founding spot line (version 2026-10-26), while it is shut the launch
+    // line (2026-10-06), so a page left open across the switch is told to refresh.
+    const currentVersion = waitlistConsentVersionFor({ open: openSignupEnabled() });
+    if (consentVersion !== currentVersion) {
       return {
         statusCode: 400, headers: CORS,
-        body: JSON.stringify({ error: "Consent required", consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ error: "Consent required", consentVersion: currentVersion }),
       };
+    }
+
+    // THE LAST SPOT WENT WHILE THE FOUNDING FORM WAS OPEN (approved by ChatGPT and Grok, 2026-10-15). A signup
+    // under the founding spot line asks for one thing, the founding price link; with every spot taken there
+    // is no number to give and no email to send, so nothing is stored and the page says the spots just
+    // filled up. An address already on the list goes on as before (it may hold a number). If the count
+    // cannot be read, the signup goes ahead, and the row returned below settles it.
+    const foundingForm = currentVersion === FOUNDING_SPOT_CONSENT_VERSION;
+    if (foundingForm && (await foundingSpotsFull(supabaseUrl, secretKey)) === true && !(await waitlistRowExists(supabaseUrl, secretKey, emailAddr))) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ joined: false, spotsFull: true }) };
     }
 
     // Use service role to insert (bypasses RLS)
@@ -369,7 +404,7 @@ async function handle(event) {
           source,
           // utm_* and referrer exactly as the form captured them, plus where the form sat.
           metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
-          consent_version: CONSENT_VERSION,
+          consent_version: currentVersion,
           consented_at: new Date().toISOString(),
         }),
         signal: insertController.signal,
@@ -403,7 +438,7 @@ async function handle(event) {
     if (insertRes.status === 409) {
       // Unique violation — already on waitlist. Signing up again with the current wording is new consent:
       // it re-subscribes an unsubscribed address and records this consent (Amanda, 2026-09-30).
-      await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
+      await recordRepeatConsent(supabaseUrl, secretKey, emailAddr, currentVersion);
       return {
         statusCode: 200, headers: CORS,
         body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -414,7 +449,7 @@ async function handle(event) {
       const errText = await insertRes.text();
       // Check for Postgres unique violation in error body
       if (errText.includes("duplicate key") || errText.includes("23505")) {
-        await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
+        await recordRepeatConsent(supabaseUrl, secretKey, emailAddr, currentVersion);
         return {
           statusCode: 200, headers: CORS,
           body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -444,9 +479,15 @@ async function handle(event) {
     // The one shared rule (unsubscribed, or pre-consent) is asked here too, so no send path skips it.
     // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
     // one, takes precedence.
-    const rowForGuard = { consent_version: CONSENT_VERSION, unsubscribed_at: null, ...(insertedRow || {}) };
+    const rowForGuard = { consent_version: currentVersion, unsubscribed_at: null, ...(insertedRow || {}) };
     if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
+    }
+
+    // The last spot went between the count and the insert: the row came back with no founding number. It
+    // gets no email (the founding link email needs a number), and the page says the spots just filled up.
+    if (foundingForm && insertedRow && !isFoundingPosition(insertedRow.founding_position)) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ joined: true, alreadyJoined: false, spotsFull: true }) };
     }
 
     return {
@@ -492,11 +533,18 @@ async function handle(event) {
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
-    // CHECKED BEFORE THE ACCOUNT EXISTS. A self-serve account is unusable until its address is
-    // confirmed, so creating one we cannot possibly email would leave a person holding an account
-    // that can never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration,
-    // and it is answered as one, before anything is written.
-    if (!gate.usedCode) {
+    // WHO IS CONFIRMED ON CREATION (billing day, round 3). With signup shut, an invited (coded) signup is
+    // confirmed on creation, as it always has been. Once signup is open, nobody is: a code shows Amanda
+    // handed it out, not that this person owns the address they typed, and the founding price follows the
+    // address (_lib/foundingCohort.js). So every account created while the door is open confirms its
+    // email by clicking the link we send.
+    const confirmOnCreate = gate.usedCode && !open;
+
+    // CHECKED BEFORE THE ACCOUNT EXISTS. An account that must confirm its address is unusable until it
+    // does, so creating one we cannot possibly email would leave a person holding an account that can
+    // never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration, and it is
+    // answered as one, before anything is written.
+    if (!confirmOnCreate) {
       try { getPublicClient(); }
       catch (e) {
         console.error("[beta:signup] cannot send confirmations:", e.message);
@@ -553,12 +601,16 @@ async function handle(event) {
       const { error: createErr } = await admin.auth.admin.createUser({
         email,
         password,
-        // A CODED signup is confirmed on creation, exactly as it has always been: Amanda handed that
-        // person the code, so the address is already known to her. A SELF-SERVE signup is created
-        // UNCONFIRMED, because nobody has yet shown they own the address — they prove it by opening
-        // the email. Until they do, _lib/auth.js refuses their token, so the account cannot call
-        // /api/coach or anything else.
-        email_confirm: gate.usedCode,
+        // Signup shut: a CODED signup is confirmed on creation, exactly as it has always been. Signup
+        // open: every account is created UNCONFIRMED, coded or not, because nobody has yet shown they
+        // own the address; they prove it by opening the email. Until they do, _lib/auth.js refuses
+        // their token, so the account cannot call /api/coach or anything else.
+        email_confirm: confirmOnCreate,
+        // HOW THIS ADDRESS GETS CONFIRMED, where only the server can write it (app_metadata: "Only a
+        // service role can modify"): "link" when the person must click the link we email, "auto" when it
+        // was confirmed here. _lib/foundingCohort.js offers the founding price only to "link" accounts
+        // whose address has been confirmed, so an auto-confirmed address never gets it.
+        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link" },
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
@@ -586,10 +638,10 @@ async function handle(event) {
     // `self_serve` is a stranger who found the app. No email and no identifier is logged.
     console.log(`[beta:signup] signup_completed source=${gate.source}`);
 
-    // A self-serve account is unusable until the address is confirmed, so the email is the last step
+    // An unconfirmed account is unusable until the address is confirmed, so the email is the last step
     // of the signup rather than an afterthought. If Supabase would not take it the account still
     // exists and still needs confirming, so the answer says so and the screen offers Resend.
-    if (!gate.usedCode) {
+    if (!confirmOnCreate) {
       const sent = await sendConfirmation(email, event);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
     }

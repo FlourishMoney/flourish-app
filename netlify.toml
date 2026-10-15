@@ -13,6 +13,12 @@
 [functions."waitlist-sweep"]
   schedule = "*/15 * * * *"
 
+# Scheduled: the founding link email (payments open 2026-10-26). Every 15 minutes it sends each founding
+# household its link, once, and records the send on the row. It reads, sends and writes NOTHING unless
+# BILLING_ENABLED and FOUNDING_LINK_EMAIL are both exactly "true" (docs/ops/BILLING-DAY-OCT-26.md).
+[functions."founding-link-sweep"]
+  schedule = "*/15 * * * *"
+
 # Security headers
 [[headers]]
   for = "/*"
@@ -61,6 +67,13 @@
 [[redirects]]
   from   = "/api/billing"
   to     = "/.netlify/functions/billing"
+  status = 200
+
+# Redirect: the link in "Confirm your email address for your founding price" → Netlify function.
+# GET shows one button and changes nothing; POST confirms (netlify/functions/founding-confirm.js).
+[[redirects]]
+  from   = "/api/founding-confirm"
+  to     = "/.netlify/functions/founding-confirm"
   status = 200
 
 # Redirect: the landing page's founding offer reads /api/founding → Netlify function.

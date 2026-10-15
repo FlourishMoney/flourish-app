@@ -63,7 +63,7 @@ const ROWS = {
       t.eq([a, b, await O.sharedFoundingSpots(), calls], [35, 35, 35, 1], "3a the card and the block share one /api/founding request");
     } finally { global.fetch = real; O._resetSharedFoundingSpots(); }
   }
-  const block = APP.slice(APP.indexOf("function FoundingOffer()"), APP.indexOf("function FoundingCard()"));
+  const block = APP.slice(APP.indexOf("function FoundingOffer("), APP.indexOf("function FoundingCard()"));
   const card = APP.slice(APP.indexOf("function FoundingCard()"), APP.indexOf("function AuthScreen("));
   t.ok(/sharedFoundingSpots\(\)\.then/.test(block) && /sharedFoundingSpots\(\)\.then/.test(card) && !/fetchFoundingSpots\(/.test(block + card),
     "3b both read through sharedFoundingSpots, neither fetches on its own");
@@ -74,7 +74,7 @@ const ROWS = {
   // ── 4. phones and tablets only, directly above the email field ─────────────────────────────
   const desk = APP.slice(APP.indexOf("@media(min-width:960px){"), APP.indexOf("@media(min-width:960px){") + 3000);
   t.ok(/\.fll-founding-card\{ display:none; \}/.test(desk) && /\.fll-founding-card\{ display:block;/.test(APP), "4a shown in the one-column layout, hidden at 960px and up");
-  t.ok(/<div className="fll-hero-form">\s+<FoundingCard\/>\s+<WaitlistForm source="hero"\/>/.test(APP), "4b it sits in the hero form, directly above the email field");
+  t.ok(/<div className="fll-hero-form">\s+<FoundingCard\/>\s+\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}/.test(APP), "4b it sits in the hero form, directly above the email field (shown while a waitlist form is)");
   let A = {};
   try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A.AuthScreen) {

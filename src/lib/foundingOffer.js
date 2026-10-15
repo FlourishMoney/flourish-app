@@ -16,8 +16,13 @@ export const FOUNDING_HOUSEHOLDS = 50;
 export const FOUNDING_ENDPOINT = "/api/founding";
 
 // The words, exactly as approved (2026-10-07 review). The prices are read from pricing.js, never typed here.
-export function foundingOfferCopy() {
+// After the launch (signup open, `launched`), the two bits that went stale come out (Amanda, 2026-10-15):
+// "Join the waitlist." (the button now says "Get my founding spot") and "Payments open October 26."
+// Nothing is added.
+const LAUNCHED_JOIN = `The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Joining is free.`;
+export function foundingOfferCopy({ launched = false } = {}) {
   const p = getPricing("CA");
+  if (launched === true) return { ...foundingOfferCopy(), join: LAUNCHED_JOIN, phoneJoin: LAUNCHED_JOIN };
   return {
     heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
     price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.`,
@@ -61,24 +66,43 @@ export function foundingCardParts(spotsLeft) {
   };
 }
 
-// One read of the endpoint: the number, or null on any failure. Never throws.
-export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
-  if (!fetchImpl) return null;
+// Whether signup is open, from the same answer (billing day, 2026-10-15): true, false, or null when the
+// answer said nothing about it. Only a real boolean counts.
+export function openSignupFrom(body) {
+  const v = body && typeof body === "object" ? body.openSignup : undefined;
+  return v === true ? true : v === false ? false : null;
+}
+
+// One read of the endpoint: { spotsLeft, openSignup }. The count only from a 200; whether signup is open from
+// any answer that says (a 503 still does). Anything unreadable is null. Never throws.
+export async function fetchFoundingAnswer(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
+  if (!fetchImpl) return { spotsLeft: null, openSignup: null };
   try {
     const res = await fetchImpl(FOUNDING_ENDPOINT, { headers: { Accept: "application/json" } });
-    if (!res || !res.ok) return null;
-    return spotsLeftFrom(await res.json());
+    if (!res) return { spotsLeft: null, openSignup: null };
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    return { spotsLeft: res.ok ? spotsLeftFrom(body) : null, openSignup: openSignupFrom(body) };
   } catch {
-    return null;
+    return { spotsLeft: null, openSignup: null };
   }
 }
 
-// The ONE read per page load. The founding block and the founding line both ask; the first ask
-// starts the request and every later ask gets the same answer, so the page makes one /api/founding call.
+// The number alone, or null on any failure. Never throws.
+export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
+  return (await fetchFoundingAnswer(fetchImpl)).spotsLeft;
+}
+
+// The ONE read per page load. The founding block, the founding line and the landing's waitlist area all ask;
+// the first ask starts the request and every later ask gets the same answer, so the page makes one
+// /api/founding call.
 let _shared = null;
-export function sharedFoundingSpots() {
-  if (!_shared) _shared = fetchFoundingSpots();
+export function sharedFoundingAnswer() {
+  if (!_shared) _shared = fetchFoundingAnswer();
   return _shared;
+}
+export function sharedFoundingSpots() {
+  return sharedFoundingAnswer().then(a => a.spotsLeft);
 }
 // For tests: forget the shared answer.
 export function _resetSharedFoundingSpots() { _shared = null; }

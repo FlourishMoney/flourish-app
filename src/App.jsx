@@ -31,11 +31,12 @@ import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts,
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
-import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
-import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
-import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
+import { getPricing, formatPrice } from "./lib/pricing.js";
+import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
+import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
+import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
-import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
+import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea, LANDING_HOLD_MS } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
@@ -64,7 +65,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
+import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
@@ -76,7 +77,7 @@ import { demoCoachExchanges, demoFacilitatorLine, demoCheckInInsight } from "./l
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { derivePlan } from "./lib/planFromProfile.js";
+import { derivePlan, webPlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
@@ -5551,7 +5552,7 @@ function SetupChecklistCard({items,onDismiss,style}){
   );
 }
 
-function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -6659,7 +6660,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
-            <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Try Free →</div>
+            {/* Billing on: the card opens the real checkout, which starts no free trial. */}
+            <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn ? "See plans →" : "Try Free →"}</div>
           </div>
         )}
 
@@ -13448,7 +13450,7 @@ function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="April 28, 2026";
+  const last="October 14, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -13482,7 +13484,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -13509,7 +13511,7 @@ function TermsOfService({onBack}){
 }
 
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
-function PremiumGate({feature,desc,onUpgrade,nativeNote}){
+function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
       <div style={{width:72,height:72,borderRadius:24,background:`linear-gradient(135deg,${C.purple}30,${C.purple}08)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="sparkles" size={32} color={C.purpleBright} strokeWidth={1.35}/></div>
@@ -13537,11 +13539,12 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote}){
           </div>
         </div>
         <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-          {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+          {/* Billing on: the button opens the real checkout, which starts no free trial. Off: today's words. */}
+          {billingOn ? "See plans →" : getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
         </>
       )}
     </div>
@@ -13566,7 +13569,23 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote}){
 function UpgradeScreen({status, mode, notice, onClose, onManage}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
+  // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
+  const [confirmState,setConfirmState]=useState("idle");
   const plans = offeredPlans({status});
+
+  const sendConfirm = async () => {
+    setConfirmState("sending");
+    try{
+      const jwt = await getJwt();
+      if(!jwt) throw new Error("signed_out");
+      const res = await fetch(`${API_BASE}/api/billing`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+        body: JSON.stringify({action:"send_founding_confirmation"}),
+      });
+      setConfirmState(foundingConfirmResult(res.status));
+    }catch{ setConfirmState("failed"); }
+  };
 
   const go = async (planKey) => {
     setBusy(planKey); setError("");
@@ -13581,15 +13600,16 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           : {action:"create_checkout_session", plan_key:planKey}),
       });
       const body = await res.json().catch(()=>({}));
-      // The founding price can sell out between the screen rendering and the tap.
-      if(res.status===403 && body.error==="founding_cohort_full"){
-        setError("The founding price has just been taken up. The annual plan is still available.");
+      // The server refused the founding price for this account (billing.js 403). Retrying never helps,
+      // so it is said plainly, not as a connection error (src/lib/billingVisibility.js checkoutErrorText).
+      if(res.status===403){
+        setError(checkoutErrorText({ status: res.status, error: body.error }));
         setBusy(null); return;
       }
       if(!res.ok || !body.url) throw new Error(body.error||"unavailable");
       window.location.assign(body.url);      // Stripe Checkout, hosted by Stripe
     }catch(e){
-      setError(e.message==="signed_out" ? "Sign in again to continue." : "Couldn't reach checkout. Try again in a moment.");
+      setError(checkoutErrorText({ error: e.message }));
       setBusy(null);
     }
   };
@@ -13618,6 +13638,18 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {foundingConfirmOffered(status)&&(
+              <div style={{background:C.card,border:`2px solid ${C.gold}77`,borderRadius:16,padding:"16px 18px"}}>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:SPACE.xs}}>{FOUNDING_CONFIRM_COPY.title}</div>
+                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:SPACE.md}}>{FOUNDING_CONFIRM_COPY.body}</div>
+                {confirmState==="sent"||confirmState==="limited"
+                  ? <div role="status" style={{color:confirmState==="sent"?C.greenBright:C.mutedHi,fontSize:13,lineHeight:1.6}}>{FOUNDING_CONFIRM_COPY[confirmState]}</div>
+                  : <button onClick={sendConfirm} disabled={confirmState==="sending"} style={{width:"100%",minHeight:44,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"12px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                      {confirmState==="sending"?FOUNDING_CONFIRM_COPY.sending:FOUNDING_CONFIRM_COPY.button}
+                    </button>}
+                {confirmState==="failed"&&<div role="status" style={{color:C.redBright,fontSize:13,marginTop:SPACE.sm,lineHeight:1.6}}>{FOUNDING_CONFIRM_COPY.failed}</div>}
+              </div>
+            )}
             {plans.map(plan=>(
               <button key={plan.key} onClick={()=>go(plan.key)} disabled={!!busy} style={{textAlign:"left",background:C.card,border:`2px solid ${plan.key==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px",cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy&&busy!==plan.key?0.5:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}>
@@ -13648,11 +13680,12 @@ function Paywall({onClose,onPromoValid,country}){
   const [promoNote,setPromoNote]=useState("");
   const [upgradeNote,setUpgradeNote]=useState("");
   const isCA=country==="CA";
-  // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
+  // Step 3: all prices come from src/lib/pricing.js. Only the two prices and their billing periods: no
+  // saving, no percentage, no monthly equivalent (billing day, approved 2026-10-15; tests/planCopy.test.cjs).
   const _pr = getPricing(country);
   const plans={
-    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Billed yearly"},
-    monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
+    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,badge:"Billed yearly"},
+    monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,badge:null},
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
@@ -13688,8 +13721,6 @@ function Paywall({onClose,onPromoValid,country}){
               {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
               <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
-              {plan.monthly&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>{plan.monthly} · billed annually</div>}
-              {plan.save&&<div style={{color:C.greenBright,fontSize:13,fontWeight:700,marginTop:4}}>{plan.save}</div>}
             </button>
           ))}
         </div>
@@ -14521,6 +14552,9 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 // one as the row's source and anything else as "direct". The form's position goes in metadata.placement.
 // The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
 // only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
+// `founding` (billing day, approved by ChatGPT and Grok, 2026-10-15): while signup is open and founding spots
+// remain, the button says "Get my founding spot" and the line under it is the founding spot line, sent as
+// its own version (2026-10-26), whose one promise is the founding price link.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WAITLIST_FORM_CSS = `
             .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
@@ -14537,16 +14571,22 @@ const WAITLIST_FORM_CSS = `
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
             .fll-contact-link{ color:#1b5e20; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
+            .fll-account .fll-consent{ margin-block:10px 0; }
+            .fll-held{ visibility:hidden; }
+            .fll-done .fll-btn{ margin-top:16px; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
               .fll-input{ width:auto; }
               .fll-btn{ width:auto; }
             }
 `;
-function WaitlistForm({ source = "landing" }) {
+function WaitlistForm({ source = "landing", founding = false, held = false, onCreateAccount = null }) {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
+  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "full" | "error" | "stale"
   const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
+  // The wording this form shows, and the version it sends with it: always the same pair.
+  const shownText = founding ? FOUNDING_SPOT_CONSENT_TEXT : CONSENT_TEXT;
+  const shownVersion = founding ? FOUNDING_SPOT_CONSENT_VERSION : CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
   useEffect(() => { captureWaitlistSrc(); }, []);
 
@@ -14566,29 +14606,42 @@ function WaitlistForm({ source = "landing" }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: shownVersion }),
       });
       const data = await res.json();
-      if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
+      // The last founding spot went while this form was open: no number, no email (beta.js join_waitlist).
+      if (data.spotsFull === true) setStatus("full");
+      else if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
       else setStatus(res.status === 400 && data.error === "Consent required" ? "stale" : "error");
     } catch {
       setStatus("error");
     }
   };
 
+  // Approved by ChatGPT and Grok (2026-10-15): the founding spots filled up while the form was open.
+  if (status === "full") {
+    return (
+      <div className="fll-capture fll-done">
+        <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+        <div className="fll-done-t">The founding spots just filled up</div>
+        <div className="fll-done-b">You can still create your account at flourishmoney.app.</div>
+        {onCreateAccount && <button type="button" className="fll-btn" onClick={onCreateAccount}>Create your account</button>}
+      </div>
+    );
+  }
   if (status === "success" || status === "already") {
     return (
       <div className="fll-capture fll-done">
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
         <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
-        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : "You're on the list"}</div>
-        <div className="fll-done-b">We'll email you when flourish launches in Canada.</div>
+        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : founding ? "Your founding spot is saved" : "You're on the list"}</div>
+        <div className="fll-done-b">{founding ? "We'll email you your founding price link." : "We'll email you when flourish launches in Canada."}</div>
       </div>
     );
   }
   const busy = status === "submitting";
   return (
-    <div className="fll-capture">
+    <div className={held ? "fll-capture fll-held" : "fll-capture"} aria-hidden={held ? "true" : undefined}>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       <div className="fll-form">
         <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email"
@@ -14596,14 +14649,14 @@ function WaitlistForm({ source = "landing" }) {
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
         <button className="fll-btn" onClick={submit} disabled={busy}>
-          {busy ? "Joining…" : "Join the waitlist"}
+          {busy ? "Joining…" : founding ? "Get my founding spot" : "Join the waitlist"}
         </button>
         {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
             unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
             and its contact (the owner keeps the company name and address out of the form itself). */}
         <p className="fll-consent" id={`fll-consent-${tag}`}>{(() => {
-          const i = CONSENT_TEXT.lastIndexOf("Contact");
-          return i < 0 ? CONSENT_TEXT : <>{CONSENT_TEXT.slice(0, i)}<a className="fll-contact-link" href="#contact" onClick={e => { const el = document.getElementById("contact"); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Contact</a>{CONSENT_TEXT.slice(i + "Contact".length)}</>;
+          const i = shownText.lastIndexOf("Contact");
+          return i < 0 ? shownText : <>{shownText.slice(0, i)}<a className="fll-contact-link" href="#contact" onClick={e => { const el = document.getElementById("contact"); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Contact</a>{shownText.slice(i + "Contact".length)}</>;
         })()}</p>
       </div>
       {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
@@ -14702,7 +14755,7 @@ function LandingHowTo() {
 // The founding offer, directly under the hero's waitlist form (Amanda's decision, 2026-10-06). The
 // live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
-function FoundingOffer() {
+function FoundingOffer({ launched = false, held = false }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
   const box = useRef(null);
   useEffect(() => {
@@ -14729,10 +14782,10 @@ function FoundingOffer() {
     return () => { if (ro) ro.disconnect(); grid.style.removeProperty("--fll-founding-h"); };
   }, []);
   if (isNativeApp()) return null;
-  const copy = foundingOfferCopy();
+  const copy = foundingOfferCopy({ launched });
   const liveLine = foundingLiveLine(spotsLeft);
   return (
-    <section className="fll-founding" ref={box} aria-labelledby="fll-founding-h">
+    <section className={held ? "fll-founding fll-held" : "fll-founding"} ref={box} aria-labelledby="fll-founding-h" aria-hidden={held ? "true" : undefined}>
       {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
           at the top already shows the price and the count, so this block says how the spots work. Desktop
           reads as it always has. "Founding spots are full" shows at every width. */}
@@ -14780,7 +14833,7 @@ function FoundingCard() {
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo }) {
+function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14805,7 +14858,27 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
   // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
   // page for people who cannot use the product yet; someone who has installed the app already can.
-  const [showAuth, setShowAuth] = useState(isNativeApp());
+  // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
+  const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
+  // THE LANDING'S WAITLIST AREA (signupUi.js landingWaitlistArea): today's waitlist form while signup is shut;
+  // the founding spot form while it is open and founding spots remain; "Create your account" once they are
+  // all taken. Read from the one /api/founding answer the founding card and block already share, so the
+  // landing makes no extra call. Web only. From launch day on the area is held until that answer is in
+  // (no form shown and then swapped); the first to settle, the answer or LANDING_HOLD_MS, decides, and the
+  // page never switches after that.
+  const [foundingAnswer, setFoundingAnswer] = useState(null);
+  const [landingNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (isNativeApp()) return undefined;
+    let live = true;
+    const settle = (a) => { if (live) setFoundingAnswer(prev => prev || a); };
+    sharedFoundingAnswer().then(settle);
+    const timer = setTimeout(() => settle({ spotsLeft: null, openSignup: null }), LANDING_HOLD_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, []);
+  const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, now: landingNow, native: isNativeApp() });
+  const waitlistHeld = waitlistArea === "hold";
+  const waitlistForms = waitlistArea === "waitlist" || waitlistArea === "founding";
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15267,10 +15340,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </figure>
               <div className="fll-hero-form">
                 <FoundingCard/>
-                <WaitlistForm source="hero"/>
+                {(waitlistForms || waitlistHeld) && <WaitlistForm source="hero" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>}
+                {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
+                    waitlist, one button that opens sign-up, and the one line under it. */}
+                {waitlistArea === "account" && (
+                  <div className="fll-capture fll-account">
+                    <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+                    <button type="button" className="fll-btn" onClick={goSignup}>Create your account</button>
+                    <p className="fll-consent">Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.</p>
+                  </div>
+                )}
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
-              <FoundingOffer/>
+              {(waitlistForms || waitlistHeld) && <FoundingOffer launched={waitlistArea !== "waitlist"} held={waitlistHeld}/>}
               <div className="fll-hero-demo">
                 <LandingHowTo/>
                 <section className="fll-familiar" aria-labelledby="fll-familiar-t">
@@ -15338,13 +15420,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
           </div>
 
           {/* Second email capture */}
+          {(waitlistForms || waitlistHeld) && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
+              {/* The launch promise goes with the launch wording: after the launch the founding spot form stands
+                  alone (Amanda, 2026-10-15). */}
+              {waitlistArea === "waitlist" && <>
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches in Canada.</p>
-              <WaitlistForm source="bottom_cta"/>
+              </>}
+              <WaitlistForm source="bottom_cta" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>
             </div>
           </div>
+          )}
 
           {/* Footer */}
           <div className="fll-foot">
@@ -15420,6 +15508,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                       </button>
                     ))}
                   </div>
+                  {foundingNote && !isNativeApp() && <div style={{ color: "#EDE9E2", fontSize: 13, lineHeight: 1.6, marginBottom: SPACE.lg, background: "rgba(255,255,255,0.05)", padding: "10px 14px", borderRadius: 10 }}>{foundingNote}</div>}
                   {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   {pendingConfirm && mode === "login" && (
                     <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -16440,6 +16529,26 @@ export default function FlourishApp(){
   const [showUpgrade,setShowUpgrade]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   const [billingNotice,setBillingNotice]=useState(null);
+  // The plan the profiles row last gave (derivePlan), and whether the server's billing status says this
+  // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
+  const [profilePlan,setProfilePlan]=useState(null);
+  const webPaidRef = useRef(false);
+  // The account the status call has FINISHED for, whatever it answered: how the founding link tells
+  // "billing is off" from "not asked yet".
+  const [billingAskedFor,setBillingAskedFor]=useState(null);
+  // The founding link (src/lib/foundingLink.js): ?checkout=founding, or one opened on this device while
+  // signed out in the last 7 days. Never in a store app. The parameter comes off the address bar at once.
+  const [foundingLink,setFoundingLink]=useState(()=>{
+    if(isNativeApp()) return false;
+    try{
+      if(foundingLinkInUrl(window.location.search)){
+        rememberFoundingLink(localStorage);
+        window.history.replaceState({},"",window.location.pathname+withoutFoundingLink(window.location.search)+window.location.hash);
+        return true;
+      }
+      return foundingLinkPending(localStorage);
+    }catch{ return false; }
+  });
   // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
   // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
   // ── Plaid reconnect state ─────────────────────────────────────
@@ -16543,6 +16652,8 @@ export default function FlourishApp(){
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
       setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
+      // The web paid-subscription effect (after openUpgrade) applies the server's `paid` on top of this.
+      setProfilePlan(cp);
       return cp;
     } catch (e) {
       console.error("[profiles] plan reconcile failed:", e?.message || e);
@@ -16572,6 +16683,7 @@ export default function FlourishApp(){
         const body = await res.json();
         if(!cancelled) setBillingStatus(body);
       }catch{ /* offline or blocked: stay hidden */ }
+      finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
     return ()=>{ cancelled = true; };
   },[user?.id, nativeApp]);
@@ -16580,6 +16692,26 @@ export default function FlourishApp(){
   // The two entry points call this. While billing is off it opens the existing feature paywall,
   // exactly as it did before, so nothing about today's app changes.
   const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+  // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
+  // the paid period, planRules.isPaidSubscription): it lifts a free web household to premium, and it ends
+  // when the paid period does. A store app never asks and never counts it (Apple 3.1.3(b)). Billing off:
+  // there is no status, `paid` is false, and the plan is the profile's, exactly as before.
+  useEffect(()=>{
+    // Only this account's own answer counts: billingAskedFor is the account the status call finished for.
+    webPaidRef.current = !nativeApp && !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
+    if(profilePlan===null) return;
+    const plan = webPlan(profilePlan, { paid: webPaidRef.current, native: nativeApp });
+    setPlan(plan);
+    setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
+  },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
+  // The founding link: the checkout screen once this account's status is in and billing is on; in a store
+  // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
+  // answer in that status, never this link's.
+  useEffect(()=>{
+    const act = foundingLinkAction({ requested: foundingLink, native: nativeApp, signedIn: !!user?.id, asked: !!user?.id && billingAskedFor===user.id, status: billingStatus });
+    if(act==="open"){ const n = foundingLinkNotice(billingStatus); if(n) setBillingNotice(n); setShowUpgrade(true); }
+    if(act==="open" || act==="forget"){ try{ forgetFoundingLink(localStorage); }catch{} setFoundingLink(false); }
+  },[foundingLink, nativeApp, user?.id, billingAskedFor, billingStatus]);
 
   // Coming back from Stripe. THIS SETS NO PLAN. A success redirect means the card was accepted,
   // not that the subscription exists — and it is a URL anyone can type. The plan is whatever the
@@ -16770,7 +16902,7 @@ export default function FlourishApp(){
     if (localUid && localUid !== user.id) {
       console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
-      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setCheckInBonus(0);
+      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
     }
     // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
     // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —
@@ -17471,7 +17603,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -17491,7 +17623,7 @@ export default function FlourishApp(){
   if(!aiDisclosureSeen && !appData?.demo)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
@@ -17683,7 +17815,7 @@ export default function FlourishApp(){
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
@@ -17698,9 +17830,9 @@ export default function FlourishApp(){
       const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
       return <><div data-tour="do"><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/></div>
         {sub==="goals"
-          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
+          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={openUpgrade} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={()=>setShowPaywall(true)}/>)
+            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -17718,13 +17850,13 @@ export default function FlourishApp(){
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is
       // included, so say what actually happened and when it lifts, not that the feature is missing.
-      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={()=>setShowPaywall(true)}/>;
+      return <PremiumGate billingOn={billingUi.show} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={openUpgrade}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
+    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
   };
 
   const ALL_NAV=[
@@ -17841,7 +17973,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
-            <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
+            <div onClick={openUpgrade} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
               </div>
@@ -17927,7 +18059,7 @@ input,button,select,textarea { font-family:inherit; }
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>
               {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
             </span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            <button onClick={openUpgrade} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               Upgrade →
             </button>
           </div>
@@ -17936,7 +18068,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:DARK_C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={openUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>

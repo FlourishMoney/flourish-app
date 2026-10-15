@@ -25,7 +25,7 @@
 "use strict";
 
 const { sendWelcomeEmail, markWelcomed, hasResendKey } = require("./_lib/waitlistWelcome");
-const { mayEmailWaitlistRow, LEGACY_CONSENT_VERSION } = require("./_lib/waitlistConsent");
+const { mayEmailWaitlistRow, LEGACY_CONSENT_VERSION, WELCOME_CONSENT_VERSIONS } = require("./_lib/waitlistConsent");
 
 // A row must be this old before the sweep touches it, so it never races the request path: a signup made
 // seconds ago may have its email in flight right now.
@@ -107,6 +107,9 @@ async function selectPending(supabaseUrl, secretKey, cutoffIso, limit, columns =
     // version. Filtered here, and checked again per row below with the one shared rule.
     + `&unsubscribed_at=is.null`
     + `&consent_version=neq.${encodeURIComponent(LEGACY_CONSENT_VERSION)}`
+    // …and only the versions whose words promised the launch email (not the founding spot form's, which
+    // covers the founding link email alone).
+    + `&consent_version=in.(${WELCOME_CONSENT_VERSIONS.map(encodeURIComponent).join(",")})`
     + `&created_at=lt.${encodeURIComponent(cutoffIso)}`
     + `&order=created_at.asc`
     + `&limit=${limit}`;

@@ -2,8 +2,10 @@
  * Flourish — founding spots left
  * netlify/functions/founding.js   (GET /api/founding)
  *
- * Answers {"spotsLeft": N}: 50 less the founding numbers issued, never below 0. A count and nothing
- * else. No address, no id, no row leaves through this function, and it takes no input.
+ * Answers {"spotsLeft": N, "openSignup": true|false}: 50 less the founding numbers issued, never below 0,
+ * and whether signup is open (the same public answer as beta.js signup_status, from OPEN_SIGNUP). The
+ * landing reads both from this one call to pick its waitlist form (src/lib/signupUi.js). No address, no
+ * id, no row leaves through this function, and it takes no input.
  *
  * The count is of public.waitlist_founding_ledger (migration 0014), where every number ever issued is
  * recorded and none is ever freed: a household that never pays, whose founding subscription ended, or
@@ -12,7 +14,7 @@
  * If the count cannot be read (no env, Supabase down or slow, migration 0014 not applied yet, a reply
  * without a count) it answers 503 {"error":"unavailable"} and the landing page shows no number. An EMPTY
  * ledger is answered the same way: it means waitlist_founding_start() has not run yet (the list already
- * has households), and "50 left" would be wrong. It never answers with a remembered or default figure
+ * has households), and "50 left" would be wrong. Either way the answer still says whether signup is open. It never answers with a remembered or default figure
  * older than 60 s.
  *
  * Cache: 60 s. A good answer is kept in this instance's memory for 60 s and sent with max-age=60 for the
@@ -25,6 +27,7 @@
 
 const { corsHeadersFor } = require("./_lib/cors");
 const { spotsLeftFromCount, countFromContentRange } = require("./_lib/foundingWaitlist");
+const { openSignupEnabled } = require("./_lib/signupGate");
 
 const CACHE_MS = 60 * 1000;
 const READ_TIMEOUT_MS = 4000;
@@ -74,10 +77,11 @@ async function handler(event, _context, now = Date.now()) {
   if (event.httpMethod !== "GET" && event.httpMethod !== "HEAD") {
     return { statusCode: 405, headers: headersFor(event, false), body: JSON.stringify({ error: "Method not allowed" }) };
   }
-  const unavailable = () => ({ statusCode: 503, headers: headersFor(event, false), body: JSON.stringify({ error: "unavailable" }) });
+  const openSignup = openSignupEnabled();
+  const unavailable = () => ({ statusCode: 503, headers: headersFor(event, false), body: JSON.stringify({ error: "unavailable", openSignup }) });
 
   if (cached && now - cached.at < CACHE_MS) {
-    return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft: cached.spotsLeft }) };
+    return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft: cached.spotsLeft, openSignup }) };
   }
   cached = null;
 
@@ -90,7 +94,7 @@ async function handler(event, _context, now = Date.now()) {
   const spotsLeft = spotsLeftFromCount(issued);
   if (spotsLeft === null) return unavailable();
   cached = { at: now, spotsLeft };
-  return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft }) };
+  return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft, openSignup }) };
 }
 
 exports.handler = (event, context) => handler(event, context);

@@ -46,7 +46,7 @@ function fakeAdmin(state) {
       && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1 && r.founding_position <= 50);
     return { data: hits.length ? Math.min(...hits.map(r => r.founding_position)) : null, error: null };
   };
-  const user = state.user || { email: "a@b.c", email_confirmed_at: "2026-10-01T00:00:00Z" };
+  const user = state.user || { email: "a@b.c", email_confirmed_at: "2026-10-01T00:00:00Z", app_metadata: { email_confirmation: "link" } };
   return { from: api, rpc, auth: { admin: { getUserById: async () => ({ data: { user } }) } } };
 }
 
@@ -71,7 +71,8 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
 const waitlist = (n) => Array.from({ length: n }, (_, i) => ({
   email: `h${i + 1}@example.test`, is_test: false, founding_position: i < 50 ? i + 1 : null,
 }));
-const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z" });
+// Confirmed by clicking our link, as a founding household's account must be (round 3).
+const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z", app_metadata: { email_confirmation: "link" } });
 
 (async () => {
   const t = create();
