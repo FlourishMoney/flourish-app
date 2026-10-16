@@ -13450,7 +13450,7 @@ function PlaidAppReturnPage(){
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       <div style={{maxWidth:420,textAlign:"center"}}>
         <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>Go back to Flourish.</h1>
-        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Your bank sign-in finishes in the Flourish app. You can close this page.</p>
+        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:"0"}}>Your bank sign-in finishes in the Flourish app. You can close this page.</p>
       </div>
     </div>
   );
