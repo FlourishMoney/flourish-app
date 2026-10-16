@@ -22,7 +22,7 @@ material do not.
 |---|---|---|
 | id | `app.flourishmoney` | `com.flourishmoney.app` |
 | version | 1.0.0 | 1.0.0 (`versionName`) |
-| build | 526902 (`CURRENT_PROJECT_VERSION`) | 15 (`versionCode`) |
+| build | 526902 (`CURRENT_PROJECT_VERSION`) | 17 (`versionCode`) |
 
 The two ids differ, deliberately and confirmed: the App Store Connect record predates
 the Play draft. Do not "fix" one to match the other — changing a shipped id means a new
