@@ -5440,7 +5440,7 @@ function IncomeReconcileCard({data, setAppData}){
 // ── FEEDBACK (tester suggestions, item 6) ──────────────────────────────────────────────────────
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
-// "1.0.0 (526902)" on iOS, "1.0.0 (14)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+// "1.0.0 (526902)" on iOS, "1.0.0 (15)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
 const appVersionLabel = (platform = currentPlatform()) => {
   const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
   return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
@@ -18086,7 +18086,11 @@ input,button,select,textarea { font-family:inherit; }
             <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings" style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
         </div>
-        <div style={{flex:1,padding:"16px 18px 120px",overflowY:"auto",overscrollBehavior:"contain"}}>{content()}</div>
+        {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
+            (the page does), and current Chromium applies "contain" even to a scroller that cannot
+            scroll: every swipe that began on the content stopped here, and on the Play build no tab
+            could be scrolled (tests/phoneScroll.browser.test.cjs, tests/phoneScrollSource.test.cjs). */}
+        <div style={{flex:1,padding:"16px 18px 120px",overflowY:"auto"}}>{content()}</div>
         {!showNotifs&&!showSettings&&(
           <>
           {/* Floating pill nav */}
