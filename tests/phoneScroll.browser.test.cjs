@@ -11,8 +11,14 @@
 // chained it to the page anyway, which is why an emulator smoke test passed.
 //
 // Here the demo build runs in Playwright's Chromium at 390x844 with touch, and on each tab and on
-// Settings a real touch scroll gesture (CDP Input.synthesizeScrollGesture, the same path a finger takes)
-// and a mouse wheel must each move the screen. Before the fix both moved nothing on every tab.
+// Settings a finger's swipe (raw touch events, CDP Input.dispatchTouchEvent: touchStart, touchMoves,
+// touchEnd, which is what a phone's screen sends) and a mouse wheel must each move the screen. Before the
+// fix both moved nothing on every tab but Learn, whose conversation scrolls itself.
+//
+// The control: on each screen the same swipe is made again with vc14's overscroll-behavior: contain put
+// back on the column, and it must move nothing (Learn still moves). So the swipe is shown to reach the
+// page in this browser, and to fail exactly as vc14 did, in the same run on every machine. (The first
+// version used Input.synthesizeScrollGesture, which moved nothing at all in CI's Linux headless Chromium.)
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
@@ -70,9 +76,26 @@ const TO_TOP = () => { window.scrollTo(0, 0); for (const el of document.querySel
   const cdp = await ctx.newCDPSession(p);
   const errors = [];
   p.on("pageerror", (e) => errors.push(String(e.message).slice(0, 120)));
-  // A finger's swipe up from the middle of the content (well above the tab bar), 400px, at finger speed.
-  const swipe = () => cdp.send("Input.synthesizeScrollGesture", { x: W / 2, y: 560, yDistance: -400, xDistance: 0, gestureSourceType: "touch", speed: 1200 });
-  const check = async (label) => {
+  // A finger's swipe up from the middle of the content (well above the tab bar), 400px over about 200ms.
+  const swipe = async () => {
+    const x = W / 2, from = 560, to = 160, steps = 12;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from, id: 1 }] });
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: from + (to - from) * i / steps, id: 1 }] });
+      await p.waitForTimeout(16);
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  // vc14's column style, put on for the control, then the column's own value put back (so the build under
+  // test keeps whatever it really has: on vc14 itself, contain).
+  const vc14Column = (on) => p.evaluate((on) => {
+    const col = [...document.querySelectorAll("div")].find((d) => d.style.padding === "16px 18px 120px" && d.style.overflowY === "auto");
+    if (!col) return false;
+    if (on) { col.dataset.ownOverscroll = col.style.overscrollBehavior; col.style.overscrollBehavior = "contain"; }
+    else { col.style.overscrollBehavior = col.dataset.ownOverscroll || ""; delete col.dataset.ownOverscroll; }
+    return true;
+  }, on);
+  const check = async (label, inner = false) => {
     await p.evaluate(TO_TOP); await p.waitForTimeout(300);
     const room = await p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
     t.ok(room > 40, `${label}: (the screen is taller than the phone, by ${room}px, so it has somewhere to scroll)`);
@@ -85,6 +108,15 @@ const TO_TOP = () => { window.scrollTo(0, 0); for (const el of document.querySel
     await p.mouse.move(W / 2, 560); await p.mouse.wheel(0, 400); await p.waitForTimeout(500);
     const wheeled = await p.evaluate(SCROLLED);
     t.ok(wheeled >= need, `${label}: a mouse wheel scrolls it too (moved ${wheeled}px)`);
+    // The control: vc14's column, the same swipe.
+    await p.evaluate(TO_TOP); await p.waitForTimeout(300);
+    t.ok(await vc14Column(true), `${label}: (control: the phone column is found and given vc14's overscroll-behavior: contain)`);
+    const ctlBefore = await p.evaluate(SCROLLED);
+    await swipe(); await p.waitForTimeout(500);
+    const ctl = (await p.evaluate(SCROLLED)) - ctlBefore;
+    await vc14Column(false);
+    if (inner) t.ok(ctl >= need, `${label}: control, vc14's column: its own scroller still moves under the same swipe (moved ${ctl}px)`);
+    else t.ok(ctl <= 5, `${label}: control, vc14's column: the same swipe moves nothing, as vc14 froze (moved ${ctl}px)`);
   };
   try {
     await p.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
@@ -93,7 +125,7 @@ const TO_TOP = () => { window.scrollTo(0, 0); for (const el of document.querySel
     await p.waitForTimeout(800);
     for (const [name, label] of [["Today", "1 Today"], ["Watch", "2 Watch"], ["Do", "3 Do"], ["Learn", "4 Learn"], ["Meet", "5 Meet"]]) {
       await TAB(p, name); await p.waitForTimeout(700);
-      await check(label);
+      await check(label, name === "Learn");
     }
     await p.getByRole("button", { name: "Settings", exact: true }).first().click(); await p.waitForTimeout(700);
     await check("6 Settings");
