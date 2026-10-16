@@ -1317,15 +1317,17 @@ function AutopilotCard({data, setScreen}) {
       {/* Line items */}
       <div style={{padding:"14px 20px 6px",display:"flex",flexDirection:"column",gap:10}}>
         {lineItems.map((item,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:10,borderBottom:i<lineItems.length-1?`1px solid ${autoDivider}`:"none"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:GAP.controlToControl,paddingBottom:10,borderBottom:i<lineItems.length-1?`1px solid ${autoDivider}`:"none"}}>
+            {/* overlap-fix: at 320px with large text "$138 a day" ran past the card's edge and was cut; the
+                amount now takes its own line, at the right, when it cannot share one with its label. */}
+            <div style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 10em",minWidth:0}}>
               <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
               <div>
                 <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
                 <div style={{color:autoSubtle,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
               </div>
             </div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0}}>{item.amount}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0,marginLeft:"auto"}}>{item.amount}</div>
           </div>
         ))}
       </div>
