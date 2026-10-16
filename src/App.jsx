@@ -5533,7 +5533,7 @@ function IncomeReconcileCard({data, setAppData}){
 // ── FEEDBACK (tester suggestions, item 6) ──────────────────────────────────────────────────────
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
-// "1.0.0 (526902)" on iOS, "1.0.0 (15)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+// "1.0.0 (526902)" on iOS, "1.0.0 (18)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
 const appVersionLabel = (platform = currentPlatform()) => {
   const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
   return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
