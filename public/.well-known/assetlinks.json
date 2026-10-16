@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.flourishmoney.app",
+      "sha256_cert_fingerprints": [
+        "A4:A5:D0:A1:4E:DA:A4:9C:7E:CC:CC:CE:2D:4C:D5:01:29:8B:E7:04:31:12:C2:2C:4A:82:3F:8B:7A:41:0D:0B"
+      ]
+    }
+  }
+]
