@@ -49,6 +49,41 @@ const HTML = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
     t.eq(props["--text-scale"], "1.6", "3c and it is exposed as a variable for anything that needs it");
   }
 
+  // ── 6. exactly one of the engine and the app scales text (overlap-fix) ─────────────────────
+  // A fake document: the probe's font size is what an engine would compute for it.
+  {
+    const fake = ({ appleBody, medium, apple }) => {
+      const styles = {}, props = {};
+      const doc = {
+        defaultView: { CSS: { supports: (prop, val) => prop === "font" && val === "-apple-system-body" && appleBody } },
+        createElement: () => ({ style: {}, setAttribute() {}, parentNode: null }),
+        body: { appendChild(el) { el.parentNode = this; }, removeChild() {} },
+        documentElement: { style: { setProperty: (k, v) => { props[k] = v; },
+          set webkitTextSizeAdjust(v) { styles.webkit = v; }, get webkitTextSizeAdjust() { return styles.webkit; },
+          set textSizeAdjust(v) { styles.std = v; }, get textSizeAdjust() { return styles.std; } } },
+      };
+      global.getComputedStyle = (el) => ({ fontSize: /apple-system-body/.test(el.style.cssText) ? (appleBody ? apple : medium) : medium });
+      return { doc, styles, props };
+    };
+    // Android WebView at 130% system text: Chromium drops the iOS shorthand, the default size reads 20.8.
+    const a = fake({ appleBody: false, medium: "20.8px" });
+    const sa = S.initTextScale(a.doc);
+    t.eq([Math.round(sa * 100) / 100, a.styles.webkit, a.styles.std, a.props["--text-scale"]], [1.3, "100%", "100%", "1.3"],
+      "6a Android, 130% system text: measured as 1.3 (not 20.8 / 17 = 1.22), and text-size-adjust stays 100% because the WebView already scales");
+    t.eq(S.textSetting(a.doc).engineScales, true, "6e textSetting says the Android WebView scales on its own");
+    t.eq(Math.round(13 * sa * (parseFloat(a.styles.std) / 100) * 10) / 10, 16.9,
+      "6b …so a 13px label renders at 13 x 1.3 = 16.9px, not 13 x 1.3 x 1.22 = 20.6px");
+    // iOS at a larger Dynamic Type: WebKit knows the shorthand and does not scale the page itself.
+    const i = fake({ appleBody: true, medium: "16px", apple: "20.4px" });
+    S.initTextScale(i.doc);
+    t.eq([i.styles.webkit, i.props["--text-scale"]], ["120%", "1.2"], "6c iOS: the app applies Dynamic Type itself (20.4 / 17 = 120%)");
+    // The design size, anywhere: nothing to do.
+    const d = fake({ appleBody: false, medium: "16px" });
+    S.initTextScale(d.doc);
+    t.eq([d.styles.std, d.props["--text-scale"]], ["100%", "1"], "6d at the default text size nothing is scaled");
+    delete global.getComputedStyle;
+  }
+
   // ── 4. it runs before the first paint ────────────────────────────────────────────────────────
   t.ok(/import \{ initTextScale \} from '\.\/lib\/textScale\.js'/.test(MAIN), "4a main.jsx imports it");
   t.ok(/initTextScale\(\)/.test(MAIN), "4b …and calls it");

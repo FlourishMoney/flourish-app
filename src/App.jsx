@@ -1165,15 +1165,18 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {decisions.map((d,i)=>(
-          <button key={i} onClick={()=>setScreen(d.screen)} style={{background:C.card,border:`1.5px solid ${d.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .2s",width:"100%"}}
+          <button key={i} onClick={()=>setScreen(d.screen)} style={{background:C.card,border:`1.5px solid ${d.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-start",transition:"all .2s",width:"100%"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=d.color+"66";e.currentTarget.style.background=d.color+"0A";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=d.color+"28";e.currentTarget.style.background=C.card;}}>
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{d.icon}</span>
-            <div style={{flex:1,minWidth:0}}>
+            {/* overlap-fix: the text asks for at least 10em and the action keeps its width; when both cannot
+                fit (a narrow phone, larger text) the action moves to its own line instead of running over
+                the title. At the design size they share the line as before. */}
+            <div style={{flex:"1 1 10em",minWidth:0}}>
               <div style={{color:d.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{d.title}</div>
               <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55}}>{d.detail}</div>
             </div>
-            <div style={{color:d.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{d.action} →</div>
+            <div style={{color:d.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3,flexShrink:0,marginLeft:"auto"}}>{d.action} →</div>
           </button>
         ))}
       </div>
@@ -1264,7 +1267,8 @@ function AutopilotCard({data, setScreen}) {
     <div style={{background:autoBg,borderRadius:26,overflow:"hidden",border:autoBorder,boxShadow:autoShadow,backdropFilter:"blur(12px)"}}>
       {/* Header */}
       <div style={{padding:"18px 20px 0"}}>
-        <div style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5,whiteSpace:"nowrap"}}>Autopilot · {today}</div>
+        {/* overlap-fix: no nowrap. At 320px with larger text the date ran past the card's edge and was cut. */}
+        <div style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
         <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2,marginBottom:8}}>Today's Money Plan</div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{background:plan.mode==="low"?"rgba(110,240,160,0.15)":plan.mode==="medium"?"rgba(255,193,69,0.15)":"rgba(255,100,100,0.15)",border:`1px solid ${plan.mode==="low"?C.green+"55":plan.mode==="medium"?C.gold+"55":C.red+"55"}`,borderRadius:99,padding:"4px 10px",flexShrink:0,whiteSpace:"nowrap"}}>
@@ -1324,15 +1328,17 @@ function AutopilotCard({data, setScreen}) {
       {/* Line items */}
       <div style={{padding:"14px 20px 6px",display:"flex",flexDirection:"column",gap:10}}>
         {lineItems.map((item,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:10,borderBottom:i<lineItems.length-1?`1px solid ${autoDivider}`:"none"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:GAP.controlToControl,paddingBottom:10,borderBottom:i<lineItems.length-1?`1px solid ${autoDivider}`:"none"}}>
+            {/* overlap-fix: at 320px with large text "$138 a day" ran past the card's edge and was cut; the
+                amount now takes its own line, at the right, when it cannot share one with its label. */}
+            <div style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 10em",minWidth:0}}>
               <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
               <div>
                 <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
                 <div style={{color:autoSubtle,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
               </div>
             </div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0}}>{item.amount}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0,marginLeft:"auto"}}>{item.amount}</div>
           </div>
         ))}
       </div>
@@ -2998,18 +3004,19 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {opportunities.map(o=>(
-          <button key={o.id} onClick={()=>{if(o.tab&&setGoalsTab)setGoalsTab(o.tab);setScreen(o.screen);}} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
+          <button key={o.id} onClick={()=>{if(o.tab&&setGoalsTab)setGoalsTab(o.tab);setScreen(o.screen);}} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=o.color+"66";e.currentTarget.style.background=o.color+"08";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=o.color+"28";e.currentTarget.style.background=C.card;}}>
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{o.icon}</span>
-            <div style={{flex:1,minWidth:0}}>
+            {/* overlap-fix: as the decision rows above, the action takes its own line only when it must. */}
+            <div style={{flex:"1 1 10em",minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{color:o.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{o.title}</span>
                 <span style={{background:o.color+"22",color:o.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"2px 7px",borderRadius:99}}>{o.badge}</span>
               </div>
               <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{o.detail}</div>
             </div>
-            <div style={{color:o.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{o.action} →</div>
+            <div style={{color:o.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3,flexShrink:0,marginLeft:"auto"}}>{o.action} →</div>
           </button>
         ))}
       </div>
@@ -6924,7 +6931,9 @@ function BillManager({data, setAppData, onClose}){
           </div>
           <div>
             <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Amount</div>
-            <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
+            {/* overlap-fix: 80px held "$" and the digits at the design size but not at 160%: the box is now
+                6.2em of its own 13px, the same 80px at the design size, and grows with the text. */}
+            <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",fontSize:13,width:"6.2em"}}>
               <span style={{color:C.muted,fontSize:13,padding:"0 4px 0 6px"}}>$</span>
               <input aria-label={`${b.name||"Bill"} amount`} value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number" inputMode="decimal"
                 style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
@@ -7324,8 +7333,12 @@ function ScreenFootnote({ children }) {
 function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls}) {
   return (
     <div style={{marginBottom:LAYOUT.cardGap}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
-        <div style={{display:"flex",alignItems:"center",gap:SPACE.md,flex:1,minWidth:0}}>
+      {/* overlap-fix: the title never squeezes below its longest word. With minWidth:0 it did, and at
+          320px with the phone's text at 130% "Budget" and "Credit" ran under the button beside them.
+          The button now wraps to its own line, at the right, only when both cannot fit; at the design
+          size they share one line as before (tests/textOverlap.browser.test.cjs). */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:SPACE.md,flex:"1 1 auto",minWidth:"min-content"}}>
           {onBack&&(
             <button onClick={onBack} aria-label="Back" style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
               ...tap({width:LAYOUT.minTap,height:LAYOUT.minTap}),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
@@ -7342,7 +7355,7 @@ function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls})
         {cta&&onCta&&(
           <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
             borderRadius:99,padding:"10px 16px",color:ctaColor||C.greenBright,...TYPE.footnote,fontWeight:700,
-            cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:LAYOUT.minTap}}>
+            cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:LAYOUT.minTap,marginLeft:"auto"}}>
             {cta}
           </button>
         )}
@@ -7526,7 +7539,7 @@ function ManualBillForm({data, setAppData, onClose}){
                   <span aria-hidden="true" style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:13,pointerEvents:"none"}}>$</span>
                   <input key={x.b.name+"_"+x.b.amount} defaultValue={parseFloat(x.b.amount||0).toFixed(2)} type="number" inputMode="decimal" aria-label={`${x.b.name} amount`}
                     onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}} onBlur={e=>overrideObserved(x.b, e.currentTarget.value)}
-                    style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 18px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                    style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 1.4em",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
                 </div>
                 <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0,...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>✕</button>
               </div>
@@ -8547,15 +8560,18 @@ function BudgetPlanCard({data, setAppData}) {
           const isSuggested = !!suggestions[cat];
           const meta = isSuggested ? { why: suggestionRowNote(basis) } : BUDGET_CAT_META[cat];
           return (
-            <div key={cat} style={{display:"flex",alignItems:"center",gap:8,
+            <div key={cat} style={{display:"flex",alignItems:"center",gap:8,rowGap:GAP.textToControl,flexWrap:"wrap",
               padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
               <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
-              <div style={{flex:1,minWidth:0}}>
+              {/* overlap-fix: the name asks for at least 7em. With minWidth:0 alone, a narrow phone with larger
+                  text squeezed it below "Groceries" and the word ran under the amount box. When the name and
+                  the box cannot share the line, the box and its × move to their own line, at the right. */}
+              <div style={{flex:"1 1 7em",minWidth:0}}>
                 <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{cat}</div>
                 {meta?.why&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{meta.why}</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.card,
-                border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
+                border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0,marginLeft:"auto"}}>
                 <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>$</span>
                 <input aria-label={`${cat} budget`} type="number" inputMode="decimal" value={val}
                   onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
@@ -9530,10 +9546,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                   <div key={field}>
                     <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
                     <div style={{display:"flex",alignItems:"center",position:"relative",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                      {/* overlap-fix: the digits start 1.4em in (18px at the design size), so the "$" drawn over the
+                          field's left edge never reaches them when the text grows. */}
                       <span aria-hidden="true" style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:13,pointerEvents:"none"}}>$</span>
                       <input value={form[field]||""} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))}
                         type="number" inputMode="decimal" placeholder="0"
-                        style={{flex:1,minWidth:0,background:"none",border:"none",padding:"10px 8px 10px 18px",minHeight:LAYOUT.minTap,boxSizing:"border-box",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
+                        style={{flex:1,minWidth:0,background:"none",border:"none",padding:"10px 8px 10px 1.4em",minHeight:LAYOUT.minTap,boxSizing:"border-box",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
                     </div>
                   </div>
                 ))}
@@ -9753,7 +9771,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 
         {/* Hero banner */}
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
+          <div aria-hidden="true" style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
           <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name} Tax Credits and Benefits</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>These are the credits and benefits that may apply to you.</div>
           <div style={{display:"flex",gap:10}}>
@@ -9789,12 +9807,14 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                   <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Main</div>
                 </div>
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
-                <div>
+              {/* overlap-fix: the amount and the "Details" pill share the line while they fit; at a narrow
+                  width with larger text the pill moves to its own line instead of being cut by the card. */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:GAP.textToControl,paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
+                <div style={{flex:"1 1 8em",minWidth:0}}>
                   <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Amount</div>
                   <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
                 </div>
-                <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,marginLeft:"auto",maxWidth:"100%"}}>
                   {tip.action}
                 </span>
               </div>
@@ -11999,8 +12019,12 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
         {dedupedDisplay.length===0
           ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
           : dedupedDisplay.map((a,i)=>(
-            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
-              <div style={{flex:1,minWidth:0}}>
+            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,rowGap:GAP.textToControl,flexWrap:"wrap",padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
+              {/* overlap-fix: "Manage in Connected Banks" is one unbreakable line, and beside it a minWidth:0
+                  column was squeezed to a few letters on every phone: "investment" ran into the balance at
+                  375px with the text at 100%. The account keeps at least 9em; the note moves to its own line,
+                  at the right, when the three cannot share one (on a wide panel they still do). */}
+              <div style={{flex:"1 1 9em",minWidth:0}}>
                 <div style={{color:C.cream,fontSize:13,fontWeight:600,...wrapText()}}>{a.name}</div>
                 <div style={{color:C.muted,fontSize:13}}>{a.type} · {a.institution}{a.balanceEntered&&a.balanceAsOf?` · as of ${formatAsOf(a.balanceAsOf,new Date())}`:""}</div>
                 {/* manual-balances: a manual or imported account's balance is the household's to enter. */}
@@ -12010,7 +12034,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 {a.balance>=0?"$":"−$"}{Math.abs(a.balance||0).toFixed(2)}
               </span>
               {isPlaidLinked(a)
-                ? <span style={{color:C.muted,fontSize:13,flexShrink:0,whiteSpace:"nowrap"}}
+                ? <span style={{color:C.muted,fontSize:13,flexShrink:0,whiteSpace:"nowrap",marginLeft:"auto"}}
                     title="This account belongs to a connected bank. Disconnect it under Settings → Connected Banks.">Manage in Connected Banks</span>
                 : <button onClick={()=>removeAccount(a.id)}
                     style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
@@ -15293,7 +15317,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-walk-play{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); min-height:56px; padding:0 ${SPACE.xl}px; border:none; border-radius:99px; background:#1b5e20; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; font-size:17px; font-weight:800; box-shadow:0 10px 30px rgba(0,0,0,0.35); cursor:pointer; white-space:nowrap; }
             .fll-walk-play:focus-visible, .fll-walk-sound:focus-visible, .fll-walk-tile:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
             .fll-walk-sound{ position:absolute; top:${SPACE.md}px; right:${SPACE.md}px; min-height:44px; min-width:44px; padding:0 ${SPACE.md}px; border:none; border-radius:99px; background:rgba(0,0,0,0.62); color:#fff; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
-            .fll-walk-grid{ list-style:none; padding:0; margin-block:${SPACE.md}px 0; margin-inline:auto; max-width:360px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:${SPACE.sm}px; }
+            /* overlap-fix: two tiles a row while each gets 8.5em; with larger text on a narrow phone, one, so
+               "Overview" never runs into the next tile's play button. */
+            .fll-walk-grid{ list-style:none; padding:0; margin-block:${SPACE.md}px 0; margin-inline:auto; max-width:360px; display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,8.5em),1fr)); gap:${SPACE.sm}px; }
             .fll-walk-grid > li{ display:flex; }
             .fll-walk-tile{ width:100%; height:100%; min-height:44px; display:grid; grid-template-columns:auto 1fr; grid-template-areas:"img n" "img s"; column-gap:${SPACE.sm}px; align-items:center; text-align:left; padding:${SPACE.xs}px; border:1px solid rgba(46,139,46,0.18); border-radius:14px; background:#fff; cursor:pointer; }
             .fll-walk-tile img{ grid-area:img; width:40px; height:auto; aspect-ratio:9/16; object-fit:cover; border-radius:8px; display:block; }
@@ -16074,13 +16100,15 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                 const emoji = catEmoji[cat]||"📌";
                 const isSugg = !!suggestions[cat];
                 return (
-                  <div key={cat} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                  <div key={cat} style={{display:"flex",alignItems:"center",gap:8,rowGap:GAP.textToControl,flexWrap:"wrap",padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
                     <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
-                    <div style={{flex:1,minWidth:0}}>
+                    {/* overlap-fix: as the plan editor's rows, the name keeps 7em and the amount box takes its
+                        own line, at the right, only when they cannot share one. */}
+                    <div style={{flex:"1 1 7em",minWidth:0}}>
                       <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{cat}</div>
                       {isSugg&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{suggestionRowNote(basis)}</div>}
                     </div>
-                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0,marginLeft:"auto"}}>
                       <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
                       <input aria-label={`${cat} budget`} type="number" inputMode="decimal" value={val}
                         onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}

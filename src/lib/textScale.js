@@ -39,7 +39,9 @@ export function measureScale(doc = typeof document === "undefined" ? null : docu
     el.setAttribute("aria-hidden", "true");
     el.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;font:-apple-system-body;";
     doc.body.appendChild(el);
-    const ios = parseFloat(getComputedStyle(el).fontSize);
+    // Only WebKit knows the shorthand. Chromium drops it and the probe falls back to the default size,
+    // which on Android is already the system's: at 130% that read 20.8 / 17 = 1.22, not 1.3.
+    const ios = appleBody(doc) ? parseFloat(getComputedStyle(el).fontSize) : NaN;
     if (Number.isFinite(ios) && ios > 0 && Math.abs(ios - 17) > 0.5) return clampScale(ios / 17);
     // Android (and anything that ignored the shorthand): compare the default document size to 16.
     el.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;font-size:medium;";
@@ -66,7 +68,31 @@ export function applyTextScale(scale, doc = typeof document === "undefined" ? nu
   return s;
 }
 
+// Does this engine understand iOS's system font shorthand (WebKit), or not (Chromium)?
+function appleBody(doc) {
+  try {
+    const css = (doc && doc.defaultView && doc.defaultView.CSS) || (typeof globalThis !== "undefined" && globalThis.CSS) || null;
+    return !!(css && css.supports && css.supports("font", "-apple-system-body"));
+  } catch { return false; }
+}
+
+// WHO SCALES, THE ENGINE OR THE APP. Exactly one of them, never both.
+//   iOS: WKWebView does not apply Dynamic Type to a page, so the app does, with text-size-adjust.
+//   Android: WebView already renders every text size bigger under a larger system font (its textZoom,
+//   pixel sizes included); "medium" reading above 16 is that scaling, seen. Adding text-size-adjust on
+//   top multiplied the two in newer WebViews: 130% system text came out near 1.3 x 1.22 = 1.6x and text
+//   overlapped across the app (overlap-fix). There the app leaves text-size-adjust at 100% and only
+//   records the scale in --text-scale.
+export function textSetting(doc = typeof document === "undefined" ? null : document) {
+  const scale = measureScale(doc);
+  return { scale, engineScales: scale !== 1 && !appleBody(doc) };
+}
+
 // Read it and apply it. Called once at boot; iOS re-creates the WebView when the setting changes.
 export function initTextScale(doc = typeof document === "undefined" ? null : document) {
-  return applyTextScale(measureScale(doc), doc);
+  const { scale, engineScales } = textSetting(doc);
+  if (!engineScales) return applyTextScale(scale, doc);
+  applyTextScale(1, doc);
+  try { doc.documentElement.style.setProperty("--text-scale", String(scale)); } catch {}
+  return scale;
 }
