@@ -21,6 +21,7 @@
 const crypto = require("crypto");
 const { getAdminClient } = require("./_lib/auth");
 const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
+const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 
 const reply = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
@@ -65,9 +66,11 @@ async function handle(event, deps = {}) {
 
   const eventId = `rc:${evt.id}`;
   const accounts = accountsIn(evt);
+  // The account id is recorded as text (customer_id), not as user_id: user_id references auth.users, and an event
+  // for an account that has since been deleted must be acknowledged, not fail the insert and be retried for days.
   const { data: claimed, error: claimErr } = await admin.from("billing_events").insert({
     event_id: eventId, provider: "revenuecat", type: String(evt.type).slice(0, 80), status: "received",
-    user_id: isUuid(evt.app_user_id) ? evt.app_user_id : null,
+    customer_id: isUuid(evt.app_user_id) ? evt.app_user_id : null,
   }, { ignoreDuplicates: true }).select("event_id");
   if (claimErr) { console.error("[revenuecat-webhook] could not claim event:", claimErr.message); return reply(500, { error: "claim_failed" }); }
   if (!claimed || claimed.length === 0) {
@@ -82,20 +85,28 @@ async function handle(event, deps = {}) {
   }
 
   try {
-    const conflicts = [];
+    const notes = [];
+    let conflict = false;
     for (const userId of accounts) {
       let user = null;
       try { const { data } = await admin.auth.admin.getUserById(userId); user = data && data.user ? data.user : null; } catch { user = null; }
       if (!user) continue;                      // an account that no longer exists has nothing to update
-      const r = await syncStoreSubscription(admin, userId, { user, fetchSubscriber: deps.fetchSubscriber, now: deps.now });
-      if (r.conflict) conflicts.push(userId);
+      const r = await syncStoreSubscription(admin, userId, { user, fetchSubscriber: deps.fetchSubscriber, now: deps.now, mayBuyFounding: deps.mayBuyFounding || mayBuyFoundingPrice });
+      if (r.conflict) {
+        conflict = true;
+        notes.push(r.conflictKind === "web_needs_attention"
+          ? "conflict: a store purchase while the web subscription is still live (past_due); the household pays twice once the card works: cancel one"
+          : "conflict: the household already pays on the web and bought in the store too; cancel the web subscription or have the household ask the store for a refund (Apple refunds only on the customer's request; Google Play from Play Console)");
+      }
+      if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
+      if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }
     await admin.from("billing_events").update({
-      status: conflicts.length ? "ignored" : "processed",
+      status: conflict ? "ignored" : "processed",
       processed_at: new Date().toISOString(),
-      error: conflicts.length ? "conflict: the household already pays through another provider; refund the store purchase" : null,
+      error: notes.length ? notes.join(" | ").slice(0, 500) : null,
     }).eq("event_id", eventId);
-    return reply(200, { received: true, conflict: conflicts.length > 0 });
+    return reply(200, { received: true, conflict });
   } catch (e) {
     console.error("[revenuecat-webhook]", evt.type, e.message);
     await admin.from("billing_events").update({ status: "failed", error: String(e.message).slice(0, 500) }).eq("event_id", eventId);

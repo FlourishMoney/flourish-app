@@ -24,8 +24,9 @@
 
 export const ENTITLEMENT_ID = "plus";
 
-// The store product identifiers, one per plan. Apple: one subscription group, three products. Google: two
-// subscriptions with base plans, named "<subscription>:<base plan>" as RevenueCat names them.
+// The store product identifiers, one per plan. Apple: one subscription group, three products. Google: one
+// subscription with three base plans, named "<subscription>:<base plan>" as RevenueCat names them, so Google
+// never lets a household hold two at once.
 // docs/ops/IAP-1.1.md is Amanda's list for creating them; tests/storeBilling.test.cjs holds this table and the
 // server's (_lib/storeSubscriptions.js PRODUCT_PLANS) together.
 export const PRODUCT_IDS = Object.freeze({
@@ -37,7 +38,7 @@ export const PRODUCT_IDS = Object.freeze({
   android: Object.freeze({
     monthly: "flourish_plus:monthly",
     annual: "flourish_plus:annual",
-    founding_annual: "flourish_founding:annual",
+    founding_annual: "flourish_plus:founding",
   }),
 });
 
@@ -101,7 +102,10 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
   for (let i = 0; i < tries; i++) {
     if (i > 0) await sleep(delayMs);
     try { last = await deps.serverSync(); } catch { last = null; }
-    if (last && last.paid) return { outcome: last.conflict ? "already_paid" : "paid", provider: last.provider || null };
+    // A conflict after the store's sheet means the store took this purchase while the household already had a
+    // subscription: it was charged twice (or will be when a trial ends), and must be told so, honestly.
+    if (last && last.conflict) return { outcome: "charged_twice", provider: last.provider || null };
+    if (last && last.paid) return { outcome: "paid", provider: last.provider || null };
   }
   return { outcome: "unconfirmed" };
 }
@@ -110,6 +114,9 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
  * One purchase, start to finish. Resolves one of:
  *   paid          the server confirms the subscription
  *   already_paid  the household already pays (web or the other store): nothing was sold
+ *   web_attention its web subscription's last payment failed and Stripe is retrying: nothing was sold; the card
+ *                 is fixed on the website, or the subscription would charge twice
+ *   charged_twice the store took the purchase although the household already had a subscription (a race)
  *   cancelled     the household closed the store's sheet
  *   pending       the store is waiting (Ask to Buy, a slow payment); access follows when it completes
  *   failed        the store refused it (a declined payment, a store problem)
@@ -118,8 +125,11 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
  */
 export async function buy(deps, pkg) {
   let status = null;
-  try { status = await deps.serverStatus(); } catch { return { outcome: "failed", reason: "status_unavailable" }; }
-  if (status && status.paid) return { outcome: "already_paid", provider: status.provider || null };
+  try { status = await deps.serverStatus(); } catch { status = null; }
+  // No answer is not "not paid": nothing is sold until the server has said this household does not pay.
+  if (!status) return { outcome: "failed", reason: "status_unavailable" };
+  if (status.paid) return { outcome: "already_paid", provider: status.provider || null };
+  if (status.web_attention) return { outcome: "web_attention", provider: "stripe" };
   if (!pkg) return { outcome: "failed", reason: "no_package" };
   try {
     await deps.purchasePackage(pkg);
@@ -137,6 +147,32 @@ export async function restore(deps) {
   try { await deps.restorePurchases(); } catch { return { outcome: "failed", reason: "store_refused" }; }
   const r = await confirmWithServer(deps, { tries: 2 });
   return r.outcome === "unconfirmed" ? { outcome: "nothing_to_restore" } : r;
+}
+
+/**
+ * THE LAST DEFINITE PAYWALL ANSWER FOR THIS ACCOUNT, kept on the phone (version 1.1, review fix). Without it, a
+ * household that launched offline, or blocked the billing call, would never meet the paywall. With it: a known
+ * "not entitled" stays known; a known "entitled" is trusted only until its paid period ends (or 3 days when the
+ * period is not known). Anything else is unknown, which never puts the paywall up.
+ */
+export const STORE_GATE_KEY = "flourish_store_gate";
+/** The phone's storage, or null where even reading window.localStorage throws (storage blocked). */
+export function deviceStorage(win = typeof window === "undefined" ? undefined : window) {
+  try { return win ? win.localStorage : null; } catch { return null; }
+}
+const GATE_GRACE_MS = 3 * 86400000;
+export function rememberGate(storage, userId, entitled, periodEnd = null, now = Date.now()) {
+  if (!storage || !userId || typeof entitled !== "boolean") return;
+  const until = entitled ? (Date.parse(periodEnd || "") || now + GATE_GRACE_MS) : null;
+  try { storage.setItem(STORE_GATE_KEY, JSON.stringify({ uid: userId, entitled, until })); } catch { /* storage full or blocked */ }
+}
+export function recalledGate(storage, userId, now = Date.now()) {
+  if (!storage || !userId) return null;
+  let rec = null;
+  try { rec = JSON.parse(storage.getItem(STORE_GATE_KEY) || "null"); } catch { rec = null; }
+  if (!rec || rec.uid !== userId || typeof rec.entitled !== "boolean") return null;
+  if (rec.entitled === false) return false;
+  return Number.isFinite(rec.until) && now < rec.until ? true : null;
 }
 
 /**

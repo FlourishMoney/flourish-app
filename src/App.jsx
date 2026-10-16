@@ -83,7 +83,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision } from "./lib/storeBilling.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision, confirmWithServer, rememberGate, recalledGate, deviceStorage } from "./lib/storeBilling.js";
 import { offerCopy, introEligible, PAYWALL_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
@@ -13740,12 +13740,17 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
     setOutcome(r.outcome);
     // Version 1.1, item 4: no review ask soon after a payment the store declined, or one that did not finish.
     if(r.outcome==="failed" || r.outcome==="pending" || r.outcome==="cancelled" || r.outcome==="unconfirmed") noteReviewTrouble();
-    if(r.outcome==="paid" || r.outcome==="already_paid"){
+    if(r.outcome==="charged_twice" || r.outcome==="web_attention") noteReviewTrouble();
+    if(r.outcome==="paid" || r.outcome==="already_paid" || r.outcome==="charged_twice"){
       try{ const s = await askStore("store_status"); if(s) onResolved(s); }catch{ /* the next status call settles it */ }
     }
   };
   const doBuy = async (planKey, pkg)=>{ if(busy) return; setBusy(planKey); setOutcome(null); try{ await finish(await storeBuy(deps, pkg)); } finally { setBusy(null); } };
   const doRestore = async ()=>{ if(busy) return; setBusy("restore"); setOutcome(null); try{ await finish(await storeRestore(deps)); } finally { setBusy(null); } };
+  // A purchase the store has not finished (Ask to Buy, a slow payment) or the server has not confirmed yet: no
+  // more buying until it settles, so nothing is bought twice; "Check again" asks the server once more.
+  const waiting = outcome==="pending" || outcome==="unconfirmed";
+  const doCheck = async ()=>{ if(busy) return; setBusy("check"); try{ await finish(await confirmWithServer(deps, { tries: 2 })); } finally { setBusy(null); } };
 
   const cards = pkgs ? [["monthly",pkgs.monthly],["annual",pkgs.annual],["founding_annual",pkgs.founding]].filter(([,p])=>!!p).map(([plan,p])=>({
     plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, eligible: introEligible(p, platform, elig), platform }),
@@ -13769,7 +13774,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
               </div>
               {copy.trialLine&&<div style={{color:C.greenBright,fontSize:13,marginTop:SPACE.xs,fontWeight:700}}>{copy.trialLine}</div>}
-              <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>
+              <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
                 {busy===plan?PAYWALL_COPY.checking:copy.button}
               </button>
               {copy.terms.map((line,i)=><div key={i} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:i?SPACE.xs:SPACE.sm}}>{line}</div>)}
@@ -13777,6 +13782,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
           ))}
         </div>
         {said&&<div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{said}</div>}
+        {waiting&&<button onClick={doCheck} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>{busy==="check"?PAYWALL_COPY.checking:PAYWALL_COPY.checkAgain}</button>}
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
           <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>
@@ -16819,17 +16825,29 @@ export default function FlourishApp(){
     return res.json();
   },[]);
   useEffect(()=>{
-    let cancelled = false;
+    let cancelled = false, timer = null;
     if(!storeBilling || !user?.id){ setStoreStatus(null); return; }
-    (async ()=>{
-      try{ const s = await askStore("store_status"); if(!cancelled && s) setStoreStatus(s); }
-      catch{ /* offline: stays unknown, and unknown is not paid */ }
-      finally{ if(!cancelled) setStoreAskedFor(user.id); }
-    })();
-    return ()=>{ cancelled = true; };
+    // No answer yet (offline, the server not reached): asked again after 5, 20 and 60 seconds, and whenever the
+    // network comes back, so a household is never left on an unknown answer for the whole session.
+    const ask = async (attempt)=>{
+      let s = null;
+      try{ s = await askStore("store_status"); }catch{ s = null; }
+      if(cancelled) return;
+      setStoreAskedFor(user.id);
+      if(s){ setStoreStatus(s); return; }
+      const wait = [5000, 20000, 60000][attempt];
+      if(wait) timer = setTimeout(()=>ask(attempt + 1), wait);
+    };
+    ask(0);
+    const onOnline = ()=>{ if(timer) clearTimeout(timer); ask(2); };
+    window.addEventListener("online", onOnline);
+    return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
   },[storeBilling, user?.id, askStore]);
   useEffect(()=>{
     let cancelled = false;
+    // A new account, or none: nothing can be bought until RevenueCat is this account. Without this a second
+    // household signing in on the same phone, with logIn failing, would buy under the first one's account.
+    purchasesRef.current = null; setStorePurchases(null);
     if(!storeBilling || !user?.id) return;
     (async ()=>{
       const key = revenueCatKey(window.Capacitor?.getPlatform?.(), VITE_ENV);
@@ -16839,6 +16857,8 @@ export default function FlourishApp(){
         const { isConfigured } = await Purchases.isConfigured();
         if(!isConfigured) await Purchases.configure({ apiKey:key, appUserID:user.id });
         else await Purchases.logIn({ appUserID:user.id });
+        const { appUserID } = await Purchases.getAppUserID();
+        if(appUserID !== user.id) throw new Error("RevenueCat is signed in as another account");
         if(!cancelled){ purchasesRef.current = Purchases; setStorePurchases(()=>Purchases); }
       }catch(e){ console.warn("[store] RevenueCat unavailable:", e?.message||e); }
     })();
@@ -16899,8 +16919,17 @@ export default function FlourishApp(){
   const paywallOpenRef = useRef(true);
   const [paywallUp,setPaywallUp]=useState(false);
   const [paywallLegal,setPaywallLegal]=useState(null);     // "terms" | "privacy", shown inside the overlay
-  const storeEntitled = (!storeBilling || !user?.id || profilePlan===null || storeAskedFor!==user.id || !storeStatus)
+  const storeEntitledNow = (!storeBilling || !user?.id || profilePlan===null || storeAskedFor!==user.id || !storeStatus)
     ? null : storePlan(profilePlan, { paid: storeStatus.paid === true }) !== "free";
+  // The last definite answer for this account stands in while there is none (lib/storeBilling.js recalledGate):
+  // offline, or with the billing call blocked, a household that was not entitled still meets the paywall, and
+  // one that was entitled keeps access until its paid period ends.
+  const storeEntitled = storeEntitledNow !== null ? storeEntitledNow
+    : (storeBilling && user?.id ? recalledGate(deviceStorage(), user.id) : null);
+  useEffect(()=>{
+    if(storeEntitledNow===null || !user?.id) return;
+    rememberGate(deviceStorage(), user.id, storeEntitledNow, storeStatus?.period_end || null);
+  },[storeEntitledNow, user?.id, storeStatus]);
   useEffect(()=>{ paywallOpenRef.current = true; },[user?.id]);
   useEffect(()=>{
     if(!storeBilling){ setPaywallUp(false); return; }
@@ -17990,7 +18019,8 @@ export default function FlourishApp(){
 
   const deleteAllData = async ()=>{
     // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
-    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider) : null;
+    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
+      : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
     if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone."+(storeNote?` ${storeNote}`:""),confirmLabel:"Delete account",destructive:true}))) return;
 
     // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms

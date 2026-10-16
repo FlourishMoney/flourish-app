@@ -19,7 +19,7 @@ being on; the code assumes both are off.
   one-time products, so it never applies.
 - **Google Play, subscriptions:** Google announced "Multi-Quantity Subscription Purchase" (seats in one
   transaction) on 2026-09-29, through its Early Access Program; no Play Console setting for it is documented
-  yet. If one appears on `flourish_plus` or `flourish_founding`, leave it off. Our app always buys one, the
+  yet. If one appears on `flourish_plus`, leave it off. Our app always buys one, the
   server grants one household per purchase, so a household that bought several would pay for seats it cannot
   use.
 - **Stripe Checkout (the website):** `billing.js` sends `quantity: 1` and no `adjustable_quantity`, so
@@ -106,6 +106,13 @@ Founding annual (in the same group, **Create**):
 32. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
 33. Subscription group → Levels: put all three on the **same level** (they are one service at three prices; one at a time)
 
+**A limit to know (the review of this branch, M1).** Apple lists every subscription in a group to its members
+(iOS Settings → Subscriptions, and the app's Manage subscription sheet), so a subscriber can switch to the
+founding annual without the server ever offering it. The server still counts such a purchase (it was paid) and
+records it for support as "the founding price was bought by a household it was not offered to". The way to close
+it is to sell the founding price as a Promotional Offer on `app.flourishmoney.plus.annual`, signed by the server,
+instead of a product of its own: a later change, which needs an App Store Connect subscription key.
+
 Connecting Apple to RevenueCat:
 
 34. App Store Connect → Users and Access → Integrations → In-App Purchase → **Generate In-App Purchase Key** → download the .p8 → upload it in RevenueCat (step D4), nowhere else.
@@ -117,7 +124,9 @@ version. On the 1.1 version page → In-App Purchases and Subscriptions → add 
 the build. Until then they stay "Ready to Submit" and cannot be bought in the live app (sandbox and TestFlight
 work once the Paid Apps agreement is active).
 
-### C. Play Console (two subscriptions with base plans)
+### C. Play Console (one subscription, three base plans)
+
+One subscription, so Google never lets a household hold two at once (the review of this branch, H3).
 
 1. Play Console → Flourish → Monetize with Play → Products → Subscriptions → **Create subscription**
 2. Product ID: `flourish_plus`
@@ -138,12 +147,12 @@ work once the Paid Apps agreement is active).
 17. Phases → **Add phase** → `Free trial` → Duration: `1 month`
 18. **Activate** the offer
 19. `annual` → Offers → **Add offer** → `free-month` → the same eligibility and phase as steps 16 and 17 → **Activate**
-20. Subscriptions → **Create subscription** → Product ID: `flourish_founding`
-21. Name: `Flourish founding`
-22. Base plans → **Add base plan** → Base plan ID: `annual`
-23. Type: `Auto-renewing` → Billing period: `1 year` → Canada: `CAD 79.99`
+20. `flourish_plus` → Base plans → **Add base plan** → Base plan ID: `founding`
+21. Type: `Auto-renewing`
+22. Billing period: `1 year`
+23. Price → Canada: `CAD 79.99`
 24. **Activate**
-25. `annual` → Offers → **Add offer** → `free-month` → `Never had any subscription in this app` → `Free trial`, `1 month` → **Activate**
+25. `founding` → Offers → **Add offer** → `free-month` → `Never had any subscription in this app` → `Free trial`, `1 month` → **Activate**
 26. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
 
 **What Google will not do until a build is in:** create any subscription before a build with Billing is
@@ -159,13 +168,13 @@ approved; they are purchasable in production once the 1.1 build is live there.
 5. Play Store app → Service credentials: a Google Cloud service account JSON with Play Console access (Users and permissions → invite the service account → View financial data, Manage orders and subscriptions); copy RevenueCat's Pub/Sub topic into C26
 6. Entitlements → **+** → Identifier: `plus`
 7. Products → import `app.flourishmoney.plus.monthly`, `app.flourishmoney.plus.annual`, `app.flourishmoney.founding.annual`
-8. Products → import `flourish_plus:monthly`, `flourish_plus:annual`, `flourish_founding:annual`
+8. Products → import `flourish_plus:monthly`, `flourish_plus:annual`, `flourish_plus:founding`
 9. Entitlement `plus` → attach all six products
 10. Offerings → **+** → Identifier: `default` → make it Current
 11. `default` → Packages → `Monthly` → App Store: `app.flourishmoney.plus.monthly` → Play Store: `flourish_plus:monthly`
 12. `default` → Packages → `Annual` → App Store: `app.flourishmoney.plus.annual` → Play Store: `flourish_plus:annual`
 13. Offerings → **+** → Identifier: `founding` (not Current; the server decides who sees it)
-14. `founding` → Packages → `Annual` → App Store: `app.flourishmoney.founding.annual` → Play Store: `flourish_founding:annual`
+14. `founding` → Packages → `Annual` → App Store: `app.flourishmoney.founding.annual` → Play Store: `flourish_plus:founding`
 15. Project settings → Transfer behaviour: `Transfer to new App User ID` (the default; a purchase follows the Flourish account that restores it)
 16. Integrations → Webhooks → **+** → URL: `https://flourishmoney.app/.netlify/functions/revenuecat-webhook`
 17. Same webhook → Authorization header value: a long random value made with a one-shot Terminal script (never typed into chat); the same exact value goes into Netlify as `REVENUECAT_WEBHOOK_AUTH`

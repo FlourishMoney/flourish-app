@@ -170,7 +170,7 @@ exports.handler = async (event) => {
   const subscriptionRowFor = async (column, value) => {
     if (!value) return null;
     const { data } = await admin
-      .from("subscriptions").select("user_id, last_event_at").eq(column, value).maybeSingle();
+      .from("subscriptions").select("user_id, last_event_at, provider, status, current_period_end").eq(column, value).maybeSingle();
     return data || null;
   };
   // ONE PAID STATE AT A TIME (version 1.1). A household whose row is a PAID store purchase keeps it: a Stripe
@@ -230,8 +230,10 @@ exports.handler = async (event) => {
       // Staleness is judged against whichever row this event would write — including the row the
       // checkout wrote, which the subscription id does not find until the first update lands.
       if (staleAgainst(existing || await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
-      // Found by its Stripe subscription id, the row is this Stripe subscription's own. Found only by account,
-      // it may be a store purchase made since, which this event must not replace.
+      // A row is never written over while it holds a paid store purchase, however it was found: by account (a
+      // store purchase made since), or by this Stripe subscription's id (a store row that replaced it, should the
+      // id still be on it).
+      if (existing && isStoreRow(existing) && isPaidSubscription(existing)) return await acknowledgeConflict();
       if (!existing && await storePaidRow(user_id)) return await acknowledgeConflict();
       if (eventAtIso) patch.last_event_at = eventAtIso;
       const accountId = existing?.user_id || user_id;

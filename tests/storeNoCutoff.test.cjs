@@ -76,8 +76,9 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
       "3e the app opens a safe point at start or sign-in and on each return from the background, and nowhere else");
     t.eq((APP.match(/paywallOpenRef\.current = true/g) || []).length, 2, "3f …exactly those two places");
     t.ok(/const d = paywallDecision\(\{ open: paywallOpenRef\.current, entitled: storeEntitled \}\);/.test(APP), "3g the decision is lib/storeBilling.js paywallDecision");
-    t.ok(/const storeEntitled = \(!storeBilling \|\| !user\?\.id \|\| profilePlan===null \|\| storeAskedFor!==user\.id \|\| !storeStatus\)\s*\? null/.test(APP),
-      "3h entitlement is unknown (null) until this account's own server answer is in: offline never locks a household out");
+    t.ok(/const storeEntitledNow = \(!storeBilling \|\| !user\?\.id \|\| profilePlan===null \|\| storeAskedFor!==user\.id \|\| !storeStatus\)\s*\? null/.test(APP)
+      && /const storeEntitled = storeEntitledNow !== null \? storeEntitledNow\s*: \(storeBilling && user\?\.id \? recalledGate\(deviceStorage\(\), user\.id\) : null\);/.test(APP),
+      "3h until this account's own server answer is in, the last definite answer stands in (review fix M5); with none, it is unknown, and unknown never puts the paywall up");
   }
 
   // ── 4. How: over the app, never in place of it ───────────────────────────────────────────────
@@ -116,8 +117,8 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     t.eq([O.storeCancelNote("stripe"), O.storeCancelNote(null)], [null, null], "6b the delete note is only for a store subscription");
     t.eq(lines.filter((x) => BANNED.test(x) || /\$\d/.test(x)), [], "6c no dash, no banned word, no price");
     t.eq(lines.flatMap((x) => adviceProblems(x).map((w) => `${w}: ${x}`)), [], "6d no money instruction");
-    t.ok(/const storeNote = storeBilling && storeStatus\?\.paid \? storeCancelNote\(storeStatus\.provider\) : null;/.test(APP) && /This cannot be undone\."\+\(storeNote\?` \$\{storeNote\}`:""\)/.test(APP),
-      "6e the delete confirmation adds the store note for a store subscriber only; everyone else reads it exactly as before");
+    t.ok(/const storeNote = storeBilling && storeStatus\?\.paid \? storeCancelNote\(storeStatus\.provider\)\s*: \(!nativeApp && billingStatus\?\.paid \? storeCancelNote\(billingStatus\.provider\) : null\);/.test(APP) && /This cannot be undone\."\+\(storeNote\?` \$\{storeNote\}`:""\)/.test(APP),
+      "6e the delete confirmation adds the store note for a store subscriber (in the app, and on the website); everyone else reads it exactly as before");
     let A = null;
     try { A = loadApp(["Settings"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A) {

@@ -147,7 +147,7 @@ function fakeAdmin(db = {}, users = {}) {
       "3j …the review account is matched by its hash, and no address is written in the code");
     t.eq(row({ ownership: "FAMILY_SHARED" }).reason, "family_shared", "3k a Family Sharing purchase does not count (Family Sharing is off; item 5)");
     t.eq([row({ store: "promotional" }).reason, row({ store: "stripe" }).reason, row({ product: "app.flourishmoney.plus.weekly" }).reason, S.storeRowFromSubscriber({ entitlements: {} }, NOW).reason],
-      ["not_a_store_purchase", "not_a_store_purchase", "unknown_product", "no_entitlement"], "3l a promotional grant, RevenueCat's own Stripe, an unknown product and no entitlement: nothing");
+      ["not_a_store_purchase", "not_a_store_purchase", "unknown_product", "no_store_purchase"], "3l a promotional grant, RevenueCat's own Stripe, an unknown product and no store purchase at all: nothing");
     t.ok(!("provider_customer_id" in row({}).row) && !("provider_subscription_id" in row({}).row), "3m a store row never touches the Stripe customer or subscription ids");
   }
 
@@ -260,7 +260,7 @@ function fakeAdmin(db = {}, users = {}) {
     t.eq((await C.buy(d.deps, pkg)).outcome, "unconfirmed", "6d no yes from the server: not treated as paid (\"Check again\" / Restore), whatever the SDK says");
     t.eq([(await C.buy(mk({ throws: { code: "1" } }).deps, pkg)).outcome, (await C.buy(mk({ throws: { userCancelled: true } }).deps, pkg)).outcome, (await C.buy(mk({ throws: { code: "20" } }).deps, pkg)).outcome, (await C.buy(mk({ throws: { code: "2" } }).deps, pkg)).outcome],
       ["cancelled", "cancelled", "pending", "failed"], "6e cancelled, pending (Ask to Buy) and a declined payment are each told apart");
-    t.eq((await C.buy(mk({ syncs: [{ paid: true, provider: "stripe", conflict: true }] }).deps, pkg)).outcome, "already_paid", "6f a second payment that got through anyway: reported, never shown as a second plan");
+    t.eq((await C.buy(mk({ syncs: [{ paid: true, provider: "stripe", conflict: true }] }).deps, pkg)).outcome, "charged_twice", "6f a second payment that got through anyway: said honestly (charged twice), never shown as a second plan");
     t.eq([(await C.restore(mk().deps)).outcome, (await C.restore(mk({ syncs: [{ paid: false }] }).deps)).outcome, (await C.restore(mk({ restoreThrows: true }).deps)).outcome], ["paid", "nothing_to_restore", "failed"], "6g restore");
     const offerings = { all: { default: { availablePackages: [{ product: { identifier: "app.flourishmoney.plus.monthly" } }, { product: { identifier: "app.flourishmoney.plus.annual" } }] },
       founding: { availablePackages: [{ product: { identifier: "app.flourishmoney.founding.annual" } }] } } };
