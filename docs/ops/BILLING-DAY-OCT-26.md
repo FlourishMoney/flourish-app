@@ -309,7 +309,7 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
 **Only after section 4 passed and signup is open (section 5):**
 
 1. Add `FOUNDING_LINK_EMAIL` = `true`, Production only. Trigger deploy. This is **D3**.
-2. Who gets it: founding number 1 to 50, not a test row, not unsubscribed, billing's own lookup still
+2. Who gets it: a founding number (1 to 50; once 0017 has run, real households past 50 too, told "one of the first 50"), not a test row, not unsubscribed, billing's own lookup still
    honours the number, and a consent version whose words asked for updates. Every consent version ever
    recorded, and what its words said:
 

@@ -3,20 +3,22 @@
 // THE FOUNDING OFFER ON THE WAITLIST (Amanda's decision, 2026-10-06).
 //
 // The first 50 households on the waitlist, in created_at order, get the founding price. Test rows
-// (is_test, migration 0014) never count. Each new row's number, 1 to 50 or null after 50, is set by
-// the database at insert time (the 0014 trigger) and recorded in a ledger that is never freed, so this
-// module never assigns one: it only reads.
+// (is_test, or an address at getgrowsmart.com or flourishmoney.app) never count. Each new row's number
+// is set by the database at insert time and recorded in a ledger that is never freed (0014); a test
+// row's number is voided there and never reissued, and the database stops issuing numbers once 50 REAL
+// households hold one (0017). So numbers can run past 50. This module never assigns one: it only reads.
 //
-//   spotsLeftFromCount(n)  50 less the numbers issued, never below 0; null for anything not a count.
-//   foundingWelcomeLine(p) the welcome email's one offer line for position p, or null.
+//   spotsLeftFromCount(n)    50 less the real holders (numbers issued and not void), never below 0.
+//   welcomePositionFor(row)  the number a welcome email may name for this row: null for a test row.
+//   foundingWelcomeLine(p)   the welcome email's one offer line for number p, or null.
 //
 // Billing honours these positions: _lib/foundingCohort.js sells the founding price only to a confirmed
-// account whose email matches a non-test row holding position 1 to 50 (migration 0016's lookup).
+// account whose email matches a non-test row holding a number that is not void (migration 0017's lookup).
 // -----------------------------------------------------------------------------
 
 "use strict";
 
-const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort");
+const { FOUNDING_COHORT_LIMIT, TEST_EMAIL_DOMAINS, isTestEmail, isFoundingPosition } = require("./foundingCohort");
 
 // The same 50 as billing, from one place.
 const FOUNDING_WAITLIST_LIMIT = FOUNDING_COHORT_LIMIT;
@@ -33,9 +35,22 @@ function countFromContentRange(range) {
   return m ? Number(m[1]) : null;
 }
 
-function foundingWelcomeLine(position) {
-  if (!isFoundingPosition(position)) return null;
-  return `You're founding household #${position} of ${FOUNDING_WAITLIST_LIMIT}. We'll email your link to the founding price when payments open on October 26.`;
+// A test row (is_test, or a test address) never has a founding number named in its email, whatever
+// the row says: the database clears it, and this is the second guard.
+function welcomePositionFor(row) {
+  if (!row || row.is_test === true || isTestEmail(row.email)) return null;
+  return isFoundingPosition(row.founding_position) ? row.founding_position : null;
 }
 
-module.exports = { FOUNDING_WAITLIST_LIMIT, spotsLeftFromCount, countFromContentRange, isFoundingPosition, foundingWelcomeLine };
+// The welcome email never shows a founding number above 50 (Amanda, 2026-10-14). Within 50: "#n of 50",
+// the approved line. Past 50 (a number issued after test numbers were voided, 0017): the household is
+// still one of the first 50 real ones, so it is told that, with no number.
+function foundingWelcomeLine(position) {
+  if (!isFoundingPosition(position)) return null;
+  const first = position <= FOUNDING_WAITLIST_LIMIT
+    ? `You're founding household #${position} of ${FOUNDING_WAITLIST_LIMIT}.`
+    : `You're one of the first ${FOUNDING_WAITLIST_LIMIT} founding households.`;
+  return `${first} We'll email your link to the founding price when payments open on October 26.`;
+}
+
+module.exports = { FOUNDING_WAITLIST_LIMIT, TEST_EMAIL_DOMAINS, spotsLeftFromCount, countFromContentRange, isFoundingPosition, isTestEmail, welcomePositionFor, foundingWelcomeLine };

@@ -124,7 +124,7 @@ async function waitlistCount(supabaseUrl, secretKey, now = Date.now()) {
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
 const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor, FOUNDING_SPOT_CONSENT_VERSION } = require("./_lib/waitlistConsent");
-const { FOUNDING_WAITLIST_LIMIT, countFromContentRange, isFoundingPosition } = require("./_lib/foundingWaitlist");
+const { FOUNDING_WAITLIST_LIMIT, countFromContentRange, isFoundingPosition, isTestEmail, welcomePositionFor } = require("./_lib/foundingWaitlist");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -139,12 +139,13 @@ const CONFIRM_TIMEOUT_MS = 2000;
 // row is there is the worse error: they try again, hit the unique constraint, and are told they are
 // already on a list they were just told they were not on.
 // THE FOUNDING SPOTS ARE ALL TAKEN? (billing day, 2026-10-15) true, false, or null when the count cannot be
-// read. The same count /api/founding uses: the numbers issued in the ledger, never freed.
+// read. The same count /api/founding uses: the real holders, numbers issued in the ledger and not void
+// (migration 0017; a voided test number is never a household and never counts as a spot taken).
 async function foundingSpotsFull(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), 3000);
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position&void_at=is.null`, {
       method: "HEAD",
       headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
       signal: controller.signal,
@@ -406,6 +407,9 @@ async function handle(event) {
           metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
           consent_version: currentVersion,
           consented_at: new Date().toISOString(),
+          // Flourish's own test addresses are stored as test rows, never households (2026-10-14), so the
+          // database gives them no number. It enforces the same itself from migration 0017.
+          ...(isTestEmail(emailAddr) ? { is_test: true } : {}),
         }),
         signal: insertController.signal,
       });
@@ -468,7 +472,8 @@ async function handle(event) {
 
     // The row is saved. Only now: send the confirmation, and record it if Resend accepted it. The row as
     // returned carries founding_position (set by the database inside the insert, migration 0014): when it
-    // is 1 to 50 the email says so, and otherwise it carries no offer line. Both
+    // holds one the email says so, and otherwise it carries no offer line. A test row's email never names
+    // a number (welcomePositionFor). Both
     // steps are best effort. The signup has already succeeded, so neither failure changes this response.
     let insertedRow = null;
     try {
@@ -480,7 +485,7 @@ async function handle(event) {
     // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
     // one, takes precedence.
     const rowForGuard = { consent_version: currentVersion, unsubscribed_at: null, ...(insertedRow || {}) };
-    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
+    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, welcomePositionFor({ email: emailAddr, ...(insertedRow || {}) }))) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 
