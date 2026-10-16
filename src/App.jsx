@@ -13785,7 +13785,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
     <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
-        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:0,marginBottom:SPACE.sm}}>{PAYWALL_COPY.title}</h1>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
         <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
         {!pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
