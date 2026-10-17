@@ -93,34 +93,63 @@ Annual (in the same group, **Create**):
 22. Family Sharing: **leave off**
 23. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
 
-Founding annual (in the same group, **Create**):
+Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN (founder's rule, 2026-10-17: one ledger of 50, the price
+locked while continuously subscribed; why this setup, below):
 
-24. Reference Name: `Flourish founding annual`
-25. Product ID: `app.flourishmoney.founding.annual`
-26. Subscription Duration: `1 Year`
-27. Subscription Prices → Canada → `CAD 79.99`
-28. Localization → English (Canada) → Display Name: `Flourish founding annual`
-29. Localization → English (Canada) → Description: `The founding price, renewed every year while you stay subscribed.`
-30. Review Information → the same screenshot and notes
-31. Family Sharing: **leave off**
-32. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
-33. Subscription group → Levels: put all three on the **same level** (they are one service at three prices; one at a time)
+24. Subscriptions → Subscription Groups → **+** → Reference Name: `Flourish founding`
+25. Group localization → English (Canada) and English (U.S.) → Subscription Group Display Name: `Flourish founding`
+26. In the `Flourish founding` group, **Create** → Reference Name: `Flourish founding annual`
+27. Product ID: `app.flourishmoney.founding.annual`
+28. Subscription Duration: `1 Year`
+29. Subscription Prices → Canada → `CAD 79.99`
+30. Localization → English (Canada) → Display Name: `Flourish founding annual`
+31. Localization → English (Canada) → Description: `The founding price, renewed every year while you stay subscribed.`
+32. Review Information → the same screenshot and notes as steps 11 and 12
+33. Family Sharing: **leave off**
+34. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
+35. In the `Flourish` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
+36. NEVER use **Remove from Sale** on the founding annual, not even once all 50 are issued.
+37. When the server has issued the 50th founding position (the landing page shows 0 left): the founding annual →
+    Subscription Prices → change the price in every country or region to the regular annual price (Canada:
+    `CAD 99.99`) → when asked, choose to **keep existing subscribers at their current price**. Founding households
+    then renew at CAD 79.99 for as long as they stay subscribed; nobody new can buy it at that price.
 
-**A limit to know (the review of this branch, M1).** Apple lists every subscription in a group to its members
-(iOS Settings → Subscriptions, and the app's Manage subscription sheet), so a subscriber can switch to the
-founding annual without the server ever offering it. The server still counts such a purchase (it was paid) and
-records it for support as "the founding price was bought by a household it was not offered to". The way to close
-it is to sell the founding price as a Promotional Offer on `app.flourishmoney.plus.annual`, signed by the server,
-instead of a product of its own: a later change, which needs an App Store Connect subscription key.
+**Why a group of its own, never removed from sale, and not a Promotional Offer** (Apple's pages, read 2026-10-17):
+- In one group, Apple lists every subscription to its members as a plan to switch to ("People can manage their
+  subscriptions in their account settings on the App Store, where they see all renewal options and subscription
+  groups, and can choose to upgrade, crossgrade, or downgrade": [Auto-renewable Subscriptions](https://developer.apple.com/app-store/subscriptions/)),
+  so a regular subscriber could pick the founding annual without holding a position. In a group of its own it is
+  never offered as a switch to anyone who has not bought it; the app presents it only when the server says this
+  household holds a position, and the server still flags any founding purchase it did not offer
+  (`founding_not_eligible`).
+- Removing a subscription from sale is how Apple stops "additional sign-ups and renewals"
+  ([Set availability for an auto-renewable subscription](https://developer.apple.com/help/app-store-connect/manage-subscriptions/set-availability-for-an-auto-renewable-subscription/)):
+  it would end every founding household's subscription, so it is never used here.
+- Raising the price while keeping the current price for existing subscribers is Apple's own way to lock a price:
+  "You can keep an unlimited number of active subscribers at their existing price while increasing the price for
+  new subscribers" ([Auto-renewable Subscriptions](https://developer.apple.com/app-store/subscriptions/)).
+- A server-signed Promotional Offer on the annual cannot keep the price: Apple offers them "for existing and
+  previously subscribed customers" ([Set up promotional offers](https://developer.apple.com/help/app-store-connect/manage-subscriptions/set-up-promotional-offers-for-auto-renewable-subscriptions/)),
+  so a new founding household is not eligible, and an offer on a 1-year subscription runs at most one year
+  ([pricing and availability reference](https://developer.apple.com/help/app-store-connect/reference/pricing-and-availability/in-app-purchase-and-subscriptions-pricing-and-availability)),
+  after which the standard price applies.
+- Costs of a second group, known and accepted: Apple bills each group separately, so a household could hold both a
+  regular and a founding subscription (the app never sells a second one to a paying household, and the server
+  flags two live store subscriptions, `two_store_subscriptions`); and a household can redeem one introductory
+  offer per group, so a founding household that already had the free month on the regular plans could have a
+  second one on the founding annual.
+- A founding household that lets its subscription lapse can see the founding annual again in its own Apple
+  subscription settings. Until step 37 it could buy it back at CAD 79.99; the server records the founding price
+  as ended (`founding_ended_at`, final) and flags that purchase for support. After step 37 it costs the regular price.
 
 Connecting Apple to RevenueCat:
 
-34. App Store Connect → Users and Access → Integrations → In-App Purchase → **Generate In-App Purchase Key** → download the .p8 → upload it in RevenueCat (step D4), nowhere else.
-35. App Store Connect → Apps → Flourish → App Information → App Store Server Notifications → Production Server URL: the URL RevenueCat shows (step D4)
-36. Same place → Sandbox Server URL: the same RevenueCat URL
+38. App Store Connect → Users and Access → Integrations → In-App Purchase → **Generate In-App Purchase Key** → download the .p8 → upload it in RevenueCat (step D4), nowhere else.
+39. App Store Connect → Apps → Flourish → App Information → App Store Server Notifications → Production Server URL: the URL RevenueCat shows (step D4)
+40. Same place → Sandbox Server URL: the same RevenueCat URL
 
 **What Apple will not do until 1.1 is approved:** the first subscriptions must be submitted with an app
-version. On the 1.1 version page → In-App Purchases and Subscriptions → add all three, and submit them with
+version. On the 1.1 version page → In-App Purchases and Subscriptions → add all three (both groups), and submit them with
 the build. Until then they stay "Ready to Submit" and cannot be bought in the live app (sandbox and TestFlight
 work once the Paid Apps agreement is active).
 
@@ -153,7 +182,18 @@ One subscription, so Google never lets a household hold two at once (the review 
 23. Price → Canada: `CAD 79.99`
 24. **Activate**
 25. `founding` → Offers → **Add offer** → `free-month` → `Never had any subscription in this app` → `Free trial`, `1 month` → **Activate**
-26. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
+26. `founding` → base plan settings → **Resubscribe**: off (so a founding household that lets its subscription lapse cannot buy the founding price back from the Play Store; the price is locked only while continuously subscribed)
+27. When the server has issued the 50th founding position (the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
+28. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
+
+**Why the founding base plan is deactivated, not deleted, and why Resubscribe is off** (Google's pages, read
+2026-10-17): deactivating a base plan "does not affect existing subscriptions, and auto-renewals continue until they
+are cancelled" ([Create and manage subscriptions](https://support.google.com/googleplay/android-developer/answer/140504?hl=en));
+switching to another base plan of the same subscription is something the app offers ("you can allow users to switch
+tiers by purchasing a different subscription's base plan or offer": [About subscriptions](https://developer.android.com/google/play/billing/subscriptions)),
+and this app offers the founding base plan only to a household the server says holds a position; but with
+Resubscribe on, "users can repurchase an expired auto-renewing subscription in the Play Store" (the same Play Console
+page), which would bring the founding price back after a lapse.
 
 **What Google will not do until a build is in:** create any subscription before a build with Billing is
 uploaded (step A5). Subscriptions can be created and tested on the Internal testing track before 1.1 is
@@ -164,8 +204,8 @@ approved; they are purchasable in production once the 1.1 build is live there.
 1. RevenueCat → **Create project** → Name: `Flourish`
 2. Apps → **+** → App Store → Bundle ID: `app.flourishmoney`
 3. Apps → **+** → Play Store → Package name: `com.flourishmoney.app`
-4. App Store app → In-App Purchase Key: upload the .p8 from B34 (and paste RevenueCat's notification URL into B35 and B36)
-5. Play Store app → Service credentials: a Google Cloud service account JSON with Play Console access (Users and permissions → invite the service account → View financial data, Manage orders and subscriptions); copy RevenueCat's Pub/Sub topic into C26
+4. App Store app → In-App Purchase Key: upload the .p8 from B38 (and paste RevenueCat's notification URL into B39 and B40)
+5. Play Store app → Service credentials: a Google Cloud service account JSON with Play Console access (Users and permissions → invite the service account → View financial data, Manage orders and subscriptions); copy RevenueCat's Pub/Sub topic into C28
 6. Entitlements → **+** → Identifier: `plus`
 7. Products → import `app.flourishmoney.plus.monthly`, `app.flourishmoney.plus.annual`, `app.flourishmoney.founding.annual`
 8. Products → import `flourish_plus:monthly`, `flourish_plus:annual`, `flourish_plus:founding`
