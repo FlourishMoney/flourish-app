@@ -78,10 +78,14 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision, confirmWithServer, rememberGate, recalledGate, deviceStorage } from "./lib/storeBilling.js";
+import { offerCopy, introEligible, PAYWALL_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -105,6 +109,11 @@ const API_BASE = (() => {
   // this reuses it rather than keeping a second, narrower copy here.
   return isNativeApp() ? "https://flourishmoney.app" : "";
 })();
+
+// Version 1.1, in-app purchase (lib/storeBilling.js): on only in a store build whose VITE_IAP_ENABLED is
+// exactly "true". Every web build, and every store build until 1.1, answers false and nothing below changes.
+const VITE_ENV = (typeof import.meta !== "undefined" && import.meta.env) || {};
+function storeBillingBuild() { return storeBillingOn({ native: isNativeApp(), env: VITE_ENV }); }
 
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
 // — they no longer ship in the client bundle. Submit a code to the endpoint for a yes/no verdict.
@@ -675,7 +684,9 @@ async function callPlaid(action, params={}, options={}) {
   if (options.jwt) {
     headers["Authorization"] = `Bearer ${options.jwt}`;
   }
-  const body = JSON.stringify({ action, ...params });
+  // Version 1.1: a store build that sells marks the request, so the plan check counts a web subscription
+  // there (Apple 3.1.3(b), multiplatform; netlify/functions/_lib/cors.js). Nothing is added otherwise.
+  const body = JSON.stringify({ action, ...params, ...storeBillingFields(storeBillingBuild()) });
   // Quality Sprint item 6: retry transient failures (network drops + 502/503/504) with exponential
   // backoff. Client errors (4xx) and needs_reconnect surface immediately — retrying them is futile.
   // Quality Sprint review: only auto-retry idempotent/safe actions (reads, keyed upserts, idempotent
@@ -5447,7 +5458,7 @@ function IncomeReconcileCard({data, setAppData}){
 // ── FEEDBACK (tester suggestions, item 6) ──────────────────────────────────────────────────────
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
-// "1.0.0 (526902)" on iOS, "1.0.0 (16)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+// "1.0.0 (526902)" on iOS, "1.0.0 (17)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
 const appVersionLabel = (platform = currentPlatform()) => {
   const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
   return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
@@ -10401,9 +10412,10 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
         const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
         const markDone = () => {
           setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
-          // The store's own review sheet, once, after the FIRST meeting (reviewRules.js decides; never
-          // on the web or in demo mode, never within 24 hours of trouble, and nothing in front of it).
-          reviewOnMeetingDone({ demo: !!data.demo, firstMeeting: !last });
+          // The store's own review sheet after a completed meeting (reviewRules.js decides: once per meeting,
+          // at most three times in 365 days, never on the web or in demo mode, never within 24 hours of
+          // trouble, and nothing in front of it).
+          reviewOnMeetingDone({ demo: !!data.demo });
         };
         return heldToday
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
@@ -12106,7 +12118,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   const [showFeedback,setShowFeedback]=useState(false); // tester suggestions item 6
@@ -12420,6 +12432,17 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             : "Unlimited coaching and the full picture from your linked accounts."}
         </div>
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
+      </div>
+    )}
+    {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
+    {storeSubscription&&(
+      <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Subscription</div>
+        <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>{storeSubscription.line}</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+          {storeSubscription.onManage&&<Btn label="Manage subscription" onClick={storeSubscription.onManage} color={C.mutedHi} outline small/>}
+          <Btn label="Restore purchases" onClick={storeSubscription.onRestore} color={C.mutedHi} outline small/>
+        </div>
       </div>
     )}
     {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
@@ -12908,6 +12931,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               context: buildContext(text),
               messages: newMessages.map(m=>({role:m.role, content:m.content})),
             },
+            ...storeBillingFields(storeBillingBuild()),   // version 1.1 store builds only (lib/storeBilling.js)
           }),
         });
       };
@@ -13691,6 +13715,104 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         {error&&<div style={{color:C.redBright,fontSize:13,marginTop:14,lineHeight:1.6}}>{error}</div>}
         <div style={{color:C.muted,fontSize:13,marginTop:18,lineHeight:1.7}}>
           Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// VERSION 1.1, ITEM 2: THE STORE APPS' PAYWALL (lib/storeOffer.js has the offer and what may be claimed).
+// Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
+// The prices are the store's own strings, the free month is offered only when the store says this account may
+// have it, and access follows the server's answer after the store's sheet, never the SDK's. Restore, the Terms
+// of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is drawn
+// OVER the app (item 3), whose one ModalHost sits above it, so the delete confirmation shows on top.
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount}){
+  const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
+  const [elig,setElig]=useState({});              // iOS introductory-offer eligibility, by product id
+  const [loadFailed,setLoadFailed]=useState(false);
+  const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
+  const [outcome,setOutcome]=useState(null);
+  const foundingAvailable = !!status?.founding?.available;
+  useEffect(()=>{
+    let cancelled=false;
+    (async ()=>{
+      setLoadFailed(false);
+      try{
+        if(!purchases) throw new Error("store_unavailable");
+        const off = await purchases.getOfferings();
+        const chosen = choosePackages(off, { foundingAvailable });
+        if(!chosen.monthly && !chosen.annual && !chosen.founding) throw new Error("no_products");
+        let e = {};
+        if(platform==="ios"){
+          const ids=[chosen.monthly,chosen.annual,chosen.founding].filter(Boolean).map(p=>p.product.identifier);
+          try{ e = (await purchases.checkTrialOrIntroductoryPriceEligibility({productIdentifiers:ids})) || {}; }catch{ e = {}; }
+        }
+        if(!cancelled){ setPkgs(chosen); setElig(e); }
+      }catch{ if(!cancelled) setLoadFailed(true); }
+    })();
+    return ()=>{ cancelled=true; };
+  },[purchases, platform, foundingAvailable]);
+
+  const deps = {
+    serverStatus: ()=>askStore("store_status"),
+    serverSync: ()=>askStore("store_sync"),
+    purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
+    restorePurchases: ()=>purchases.restorePurchases(),
+  };
+  const finish = async (r)=>{
+    setOutcome(r.outcome);
+    // Version 1.1, item 4: no review ask soon after a payment the store declined, or one that did not finish.
+    if(r.outcome==="failed" || r.outcome==="pending" || r.outcome==="cancelled" || r.outcome==="unconfirmed") noteReviewTrouble();
+    if(r.outcome==="charged_twice" || r.outcome==="web_attention") noteReviewTrouble();
+    if(r.outcome==="paid" || r.outcome==="already_paid" || r.outcome==="charged_twice"){
+      try{ const s = await askStore("store_status"); if(s) onResolved(s); }catch{ /* the next status call settles it */ }
+    }
+  };
+  const doBuy = async (planKey, pkg)=>{ if(busy) return; setBusy(planKey); setOutcome(null); try{ await finish(await storeBuy(deps, pkg)); } finally { setBusy(null); } };
+  const doRestore = async ()=>{ if(busy) return; setBusy("restore"); setOutcome(null); try{ await finish(await storeRestore(deps)); } finally { setBusy(null); } };
+  // A purchase the store has not finished (Ask to Buy, a slow payment) or the server has not confirmed yet: no
+  // more buying until it settles, so nothing is bought twice; "Check again" asks the server once more.
+  const waiting = outcome==="pending" || outcome==="unconfirmed";
+  const doCheck = async ()=>{ if(busy) return; setBusy("check"); try{ await finish(await confirmWithServer(deps, { tries: 2 })); } finally { setBusy(null); } };
+
+  const cards = pkgs ? [["monthly",pkgs.monthly],["annual",pkgs.annual],["founding_annual",pkgs.founding]].filter(([,p])=>!!p).map(([plan,p])=>({
+    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, eligible: introEligible(p, platform, elig), platform }),
+  })).filter(c=>!!c.copy) : [];
+  const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
+  const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
+  return(
+    <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
+        <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
+        {!pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
+        {loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
+          {cards.map(({plan,pkg,copy})=>(
+            <div key={plan} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
+                <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
+              </div>
+              {copy.trialLine&&<div style={{color:C.greenBright,fontSize:13,marginTop:SPACE.xs,fontWeight:700}}>{copy.trialLine}</div>}
+              <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
+                {busy===plan?PAYWALL_COPY.checking:copy.button}
+              </button>
+              {copy.terms.map((line,i)=><div key={i} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:i?SPACE.xs:SPACE.sm}}>{line}</div>)}
+            </div>
+          ))}
+        </div>
+        {said&&<div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{said}</div>}
+        {waiting&&<button onClick={doCheck} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>{busy==="check"?PAYWALL_COPY.checking:PAYWALL_COPY.checkAgain}</button>}
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
+          <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
+          <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>
+          <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
+          <button onClick={onSignOut} style={link}>{PAYWALL_COPY.signOut}</button>
+          <button onClick={onDeleteAccount} style={link}>{PAYWALL_COPY.deleteAccount}</button>
         </div>
       </div>
     </div>
@@ -15634,6 +15756,11 @@ function ModalHost() {
     _modalListener = (cfg) => { setVal(cfg.defaultValue || ""); setM(prev => { if (prev && prev._resolve) prev._resolve(prev.kind === "confirm" ? false : prev.kind === "prompt" ? null : undefined); return cfg; }); };
     return () => { _modalListener = null; };
   }, []);
+  // Version 1.1, item 8c: an open dialog takes Android's back key first, exactly as Escape closes it.
+  useEffect(() => {
+    if (!m) return;
+    return pushBackHandler(() => { const r = m._resolve; setM(null); if (r) r(m.kind === "prompt" ? null : m.kind === "confirm" ? false : undefined); return true; });
+  }, [m]);
   useEffect(() => {
     if (!m) return;
     const onKey = (e) => { if (e.key === "Escape") { const r = m._resolve; setM(null); if (r) r(m.kind === "prompt" ? null : m.kind === "confirm" ? false : undefined); } };
@@ -16564,6 +16691,15 @@ export default function FlourishApp(){
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
+  // VERSION 1.1, IN-APP PURCHASE (lib/storeBilling.js). Only a store build with VITE_IAP_ENABLED "true" sells;
+  // everywhere else storeBilling is false and none of this runs. storeStatus is the server's store_status
+  // answer for this account ({ paid, provider, plan_key, founding }), storeAskedFor the account it finished for,
+  // and purchasesRef the RevenueCat plugin once it is configured for this account.
+  const storeBilling = storeBillingBuild();
+  const [storeStatus,setStoreStatus]=useState(null);
+  const [storeAskedFor,setStoreAskedFor]=useState(null);
+  const purchasesRef = useRef(null);
+  const [storePurchases,setStorePurchases]=useState(null);
   // The founding link (src/lib/foundingLink.js): ?checkout=founding, or one opened on this device while
   // signed out in the last 7 days. Never in a store app. The parameter comes off the address bar at once.
   const [foundingLink,setFoundingLink]=useState(()=>{
@@ -16621,8 +16757,15 @@ export default function FlourishApp(){
     // there and an expired trial surfaced upgrade dead-ends Apple rejects — but the answer to a
     // dead-end is to hide the upgrade, not to hand everyone premium. Native gets the same 14 days
     // and then the same free tier; what is hidden on native is the way to pay, not the truth.
+    // Version 1.1, item 2: a store build that sells starts no trial of its own, on install or on update. Its
+    // one trial is the store's free month, which begins when the household confirms the subscription
+    // (lib/storeOffer.js). Every other build runs the lifecycle exactly as before.
+    if(!storeBillingBuild()){
     startTrialIfEligible();
     expireTrialIfNeeded();
+    } else if(getPlan()==="trial"){
+      setPlan("free");   // a trial cached on this phone by 1.0 does not carry into 1.1: the store's month is the trial
+    }
     // isPremium is DERIVED from the plan, never remembered. This used to only ever raise it, so a
     // trial that ended while the device was offline left premium switched on for the whole session
     // — expireTrialIfNeeded() moves the plan to free but cannot touch React state, and the profile
@@ -16695,6 +16838,60 @@ export default function FlourishApp(){
   // Google require their own purchase systems for digital subscriptions, so the iOS and Android
   // builds must show no price, no link and no button. See docs/ops/BILLING-SETUP.md.
   const nativeApp = isNativeApp();
+  // Version 1.1: ask the server what this account may do in a store app that sells, and configure RevenueCat
+  // for this account (its app user id is the Supabase user id, so a store purchase belongs to the household,
+  // not to the phone). Nothing here runs in any other build.
+  const askStore = useCallback(async (action = "store_status")=>{
+    const jwt = await getJwt();
+    if(!jwt) return null;
+    const res = await fetch(`${API_BASE}/api/billing`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+      body: JSON.stringify({action}),
+    });
+    if(!res.ok) return null;                      // 404 while IAP_ENABLED is off on the server
+    return res.json();
+  },[]);
+  useEffect(()=>{
+    let cancelled = false, timer = null;
+    if(!storeBilling || !user?.id){ setStoreStatus(null); return; }
+    // No answer yet (offline, the server not reached): asked again after 5, 20 and 60 seconds, and whenever the
+    // network comes back, so a household is never left on an unknown answer for the whole session.
+    const ask = async (attempt)=>{
+      let s = null;
+      try{ s = await askStore("store_status"); }catch{ s = null; }
+      if(cancelled) return;
+      setStoreAskedFor(user.id);
+      if(s){ setStoreStatus(s); return; }
+      const wait = [5000, 20000, 60000][attempt];
+      if(wait) timer = setTimeout(()=>ask(attempt + 1), wait);
+    };
+    ask(0);
+    const onOnline = ()=>{ if(timer) clearTimeout(timer); ask(2); };
+    window.addEventListener("online", onOnline);
+    return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
+  },[storeBilling, user?.id, askStore]);
+  useEffect(()=>{
+    let cancelled = false;
+    // A new account, or none: nothing can be bought until RevenueCat is this account. Without this a second
+    // household signing in on the same phone, with logIn failing, would buy under the first one's account.
+    purchasesRef.current = null; setStorePurchases(null);
+    if(!storeBilling || !user?.id) return;
+    (async ()=>{
+      const key = revenueCatKey(window.Capacitor?.getPlatform?.(), VITE_ENV);
+      if(!key) return;                            // no key in this build: nothing is configured, nothing is sold
+      try{
+        const { Purchases } = await import("@revenuecat/purchases-capacitor");
+        const { isConfigured } = await Purchases.isConfigured();
+        if(!isConfigured) await Purchases.configure({ apiKey:key, appUserID:user.id });
+        else await Purchases.logIn({ appUserID:user.id });
+        const { appUserID } = await Purchases.getAppUserID();
+        if(appUserID !== user.id) throw new Error("RevenueCat is signed in as another account");
+        if(!cancelled){ purchasesRef.current = Purchases; setStorePurchases(()=>Purchases); }
+      }catch(e){ console.warn("[store] RevenueCat unavailable:", e?.message||e); }
+    })();
+    return ()=>{ cancelled = true; };
+  },[storeBilling, user?.id]);
   useEffect(()=>{
     let cancelled = false;
     if(nativeApp || !user?.id){ setBillingStatus(null); return; }
@@ -16732,6 +16929,80 @@ export default function FlourishApp(){
     setPlan(plan);
     setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
+  // Version 1.1: a store app that sells takes the server's store_status answer, whichever provider the
+  // household pays through (lib/planFromProfile.js storePlan). Declared after the effect above so that, when
+  // both run, this one has the last word; in every other build it returns at once. Only this account's own
+  // answer counts.
+  useEffect(()=>{
+    if(!storeBilling || profilePlan===null) return;
+    const sp = storePlan(profilePlan, { paid: !!user?.id && storeAskedFor===user.id && storeStatus?.paid === true });
+    setPlan(sp);
+    setIsPremium(sp === "premium" || sp === "beta_founder" || sp === "trial");
+  },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
+  // VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK. The store paywall is drawn OVER the app, never in place of
+  // it: whatever screen, sheet or half-typed form was open stays mounted underneath with its state, and once the
+  // household subscribes it is exactly where it was. It is decided only at a safe point (lib/storeBilling.js
+  // paywallDecision): this account's first answer after the app starts or the household signs in, and each
+  // return from the background. An answer that changes in between waits; an unknown answer never puts it up.
+  const paywallOpenRef = useRef(true);
+  const [paywallUp,setPaywallUp]=useState(false);
+  const [paywallLegal,setPaywallLegal]=useState(null);     // "terms" | "privacy", shown inside the overlay
+  const storeEntitledNow = (!storeBilling || !user?.id || profilePlan===null || storeAskedFor!==user.id || !storeStatus)
+    ? null : storePlan(profilePlan, { paid: storeStatus.paid === true }) !== "free";
+  // The last definite answer for this account stands in while there is none (lib/storeBilling.js recalledGate):
+  // offline, or with the billing call blocked, a household that was not entitled still meets the paywall, and
+  // one that was entitled keeps access until its paid period ends.
+  const storeEntitled = storeEntitledNow !== null ? storeEntitledNow
+    : (storeBilling && user?.id ? recalledGate(deviceStorage(), user.id) : null);
+  useEffect(()=>{
+    if(storeEntitledNow===null || !user?.id) return;
+    rememberGate(deviceStorage(), user.id, storeEntitledNow, storeStatus?.period_end || null);
+  },[storeEntitledNow, user?.id, storeStatus]);
+  useEffect(()=>{ paywallOpenRef.current = true; },[user?.id]);
+  useEffect(()=>{
+    if(!storeBilling){ setPaywallUp(false); return; }
+    const d = paywallDecision({ open: paywallOpenRef.current, entitled: storeEntitled });
+    paywallOpenRef.current = d.open;
+    if(d.up !== null) setPaywallUp(d.up);
+  },[storeBilling, storeEntitled, storeStatus]);
+  useEffect(()=>{
+    if(!storeBilling || !user?.id) return;
+    const onVisible = ()=>{
+      if(document.visibilityState!=="visible") return;
+      paywallOpenRef.current = true;               // back from the background: a safe point
+      askStore("store_status").then(s=>{ if(s) setStoreStatus(s); }).catch(()=>{});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return ()=>document.removeEventListener("visibilitychange", onVisible);
+  },[storeBilling, user?.id, askStore]);
+  // VERSION 1.1, ITEM 8c: ANDROID'S BACK KEY GOES BACK ONE SCREEN (lib/backButton.js). A dialog or sheet on top
+  // closes first; then the app's own screens, one at a time, down to Today; on Today with nothing open (or on the
+  // store paywall, which back never dismisses) the app goes to the background, keeping its state. Android only.
+  const backStateRef = useRef({});
+  backStateRef.current = { paywallUp: storeBilling && paywallUp, paywallLegal, pendingPlaid, showSettings, showNotifs, showWhatIf, showWrapped, showCheckIn, showUpgrade, showPaywall, screen };
+  useEffect(()=>{
+    if(window.Capacitor?.getPlatform?.()!=="android") return;
+    let handle=null, cancelled=false;
+    import("@capacitor/app").then(({ App: CapApp })=>CapApp.addListener("backButton", ()=>{
+      if(handleBackLayers()) return;
+      const act = backAction(backStateRef.current);
+      if(!act){ CapApp.minimizeApp(); return; }
+      const go = {
+        closePaywallLegal: ()=>setPaywallLegal(null),
+        closeBankConsent: ()=>setPendingPlaid(null),
+        closeSettings: ()=>{ setShowSettings(false); setPendingPlaid(null); },
+        closeNotifications: ()=>setShowNotifs(false),
+        closeWhatIf: ()=>{ setShowWhatIf(false); setWhatIfQuery(""); setWhatIfType(null); setWhatIfAutoRun(false); },
+        closeWrapped: ()=>setShowWrapped(false),
+        closeCheckIn: ()=>setShowCheckIn(false),
+        closeUpgrade: ()=>setShowUpgrade(false),
+        closePaywall: ()=>setShowPaywall(false),
+        home: ()=>{ try{ window.history.replaceState(null,"","/"); }catch{ /* no history */ } setScreen("home"); },
+      }[act];
+      if(go) go();
+    })).then(h=>{ if(cancelled) h.remove(); else handle=h; }).catch(()=>{ /* no plugin: Capacitor's default stays */ });
+    return ()=>{ cancelled=true; if(handle) handle.remove(); };
+  },[]); // eslint-disable-line
   // The founding link: the checkout screen once this account's status is in and billing is on; in a store
   // app, or with billing off, it is forgotten and nothing opens. The founding price itself is the server's
   // answer in that status, never this link's.
@@ -17405,6 +17676,13 @@ export default function FlourishApp(){
 
   // ── Apply theme palette BEFORE any render ───────────────────────
   C = theme==="light" ? LIGHT_C : DARK_C;
+  // Edge to edge on Android 15 and later (version 1.1, item 8a): the status bar is transparent over the page,
+  // so its icons follow the APP's theme, not the phone's (a dark app on a light phone would otherwise draw dark
+  // icons on a dark page). Capacitor's own SystemBars; Android only; nothing on the web or iOS.
+  useEffect(()=>{
+    if(window.Capacitor?.getPlatform?.()!=="android") return;
+    import("@capacitor/core").then(({ SystemBars })=>SystemBars?.setStyle?.({ style: theme==="dark" ? "DARK" : "LIGHT" })).catch(()=>{});
+  },[theme]);
   const toggleTheme=()=>{
     const next=theme==="dark"?"light":"dark";
     setTheme(next);
@@ -17768,7 +18046,10 @@ export default function FlourishApp(){
   };
 
   const deleteAllData = async ()=>{
-    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone.",confirmLabel:"Delete account",destructive:true}))) return;
+    // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
+    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
+      : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
+    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone."+(storeNote?` ${storeNote}`:""),confirmLabel:"Delete account",destructive:true}))) return;
 
     // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
     // the account was actually deleted. Any failure leaves the session + local data intact
@@ -17837,9 +18118,39 @@ export default function FlourishApp(){
     window.location.reload();
   };
 
+  // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
+  // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
+  // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
+  // Terms and Privacy open inside the overlay, so nothing behind it unmounts.
+  const storePaywallOverlay = (storeBilling && paywallUp) ? (
+    <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+      {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
+        : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
+        : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} onSignOut={signOut} onDeleteAccount={deleteAllData}/>}
+    </div>
+  ) : null;
+  // Version 1.1: Settings' Subscription card, in a selling build only.
+  const storeSubscription = storeBilling ? {
+    line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
+    onManage: storeStatus?.paid && (storeStatus.provider==="app_store" || storeStatus.provider==="play_store") ? manageStoreSubscription : null,
+    onRestore: async ()=>{
+      if(!storePurchases) return;
+      const r = await storeRestore({ restorePurchases: ()=>storePurchases.restorePurchases(), serverSync: ()=>askStore("store_sync") });
+      const st = await askStore("store_status").catch(()=>null);
+      if(st) setStoreStatus(st);
+      if(r.outcome!=="paid") alertModal({message: PAYWALL_COPY.outcomes[r.outcome] || PAYWALL_COPY.outcomes.failed});
+    },
+  } : null;
+  function manageStoreSubscription(){
+    try{
+      if(window.Capacitor?.getPlatform?.()==="ios" && storePurchases) { storePurchases.showManageSubscriptions(); return; }
+      window.location.href = "https://play.google.com/store/account/subscriptions?package=com.flourishmoney.app";
+    }catch{ /* the store's own page is the fallback the household can always reach */ }
+  }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
@@ -17969,7 +18280,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overflowX:"hidden",overscrollBehavior:"contain",flexShrink:0}}>
@@ -18072,7 +18383,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",...safeX(0)}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>

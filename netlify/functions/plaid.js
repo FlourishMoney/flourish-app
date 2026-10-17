@@ -25,7 +25,7 @@ const PLAID_BASE = {
   production:  "https://production.plaid.com",
 };
 
-const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
+const { corsHeadersFor, isNativeRequest, isStoreBillingRequest } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
@@ -166,7 +166,7 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
-      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event) }); // Apple 3.1.3(b)
+      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event), ...(isStoreBillingRequest(event) ? { storeBilling: true } : {}) }); // Apple 3.1.3(b)
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
@@ -567,7 +567,7 @@ exports.handler = async (event) => {
       const failures = [];
       // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
-      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event) }); // Apple 3.1.3(b)
+      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event), ...(isStoreBillingRequest(event) ? { storeBilling: true } : {}) }); // Apple 3.1.3(b)
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
@@ -662,13 +662,17 @@ exports.handler = async (event) => {
       const ENDED = ["canceled", "incomplete_expired"];
       const { data: subRows, error: subErr } = await admin
         .from("subscriptions")
-        .select("provider_subscription_id, status, plan_key")
+        .select("provider, provider_subscription_id, status, plan_key")
         .eq("user_id", user_id);
       if (subErr && !missingTable(subErr)) {
         console.error("[delete_account] subscriptions read:", subErr.message);
         return stop("billing_cancel"); // cannot tell whether a charge is live; nothing deleted yet
       }
-      const subs = (Array.isArray(subRows) ? subRows : []).filter(r => r && r.provider_subscription_id);
+      // Stripe subscriptions are cancelled here. A store subscription (version 1.1) can only be cancelled by the
+      // household in the App Store or Google Play; the delete confirmation says so, and its founding number is
+      // stamped below all the same.
+      const allSubs = Array.isArray(subRows) ? subRows : [];
+      const subs = allSubs.filter(r => r && r.provider_subscription_id && (r.provider || "stripe") === "stripe");
       for (const r of subs) {
         if (ENDED.includes(r.status)) continue;
         const id = encodeURIComponent(r.provider_subscription_id);
@@ -695,7 +699,7 @@ exports.handler = async (event) => {
       // email. Idempotent, so a retry after a failure here stamps again rather than skipping it. A checkout
       // that never completed (incomplete) was never a founding subscription. The number itself stays issued:
       // deleting an account never frees one (nothing here, or anywhere, deletes from the ledger).
-      if (subs.some(r => r.plan_key === "founding_annual" && !["incomplete", "incomplete_expired"].includes(r.status))) {
+      if (allSubs.some(r => r && r.plan_key === "founding_annual" && !["incomplete", "incomplete_expired"].includes(r.status))) {
         const { data: fu } = await admin.auth.admin.getUserById(user_id);
         const fEmail = fu && fu.user && fu.user.email;
         const { error: endErr } = fEmail ? await admin.rpc("waitlist_founding_mark_ended", { p_email: fEmail }) : { error: null };

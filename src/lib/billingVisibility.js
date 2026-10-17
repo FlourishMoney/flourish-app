@@ -136,6 +136,8 @@ export const FOUNDING_REFUSED_TEXT = "The founding price isn't available to this
 export function checkoutErrorText({ status, error } = {}) {
   if (status === 403 && (error === "founding_price_not_available" || error === "founding_cohort_full")) return FOUNDING_REFUSED_TEXT;
   if (error === "signed_out") return "Sign in again to continue.";
+  // Version 1.1: checkout refuses a household that already pays, on the web or in a store app (billing.js).
+  if (status === 409 && error === "already_subscribed") return "This account already has a subscription.";
   return "Couldn't reach checkout. Try again in a moment.";
 }
 

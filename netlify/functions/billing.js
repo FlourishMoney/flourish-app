@@ -2,9 +2,10 @@
 // -----------------------------------------------------------------------------
 // CHECKOUT AND THE BILLING PORTAL. Stripe TEST MODE until the founder switches the keys.
 //
-// Two actions, both requiring a signed-in user:
+// Actions, all requiring a signed-in user:
 //   create_checkout_session — start a subscription for a plan key
 //   create_portal_session   — a link to Stripe's portal to change card, plan or cancel
+//   store_status, store_sync — version 1.1, in-app purchase (below); behind IAP_ENABLED, not BILLING_ENABLED
 //
 // WHAT THE CLIENT MAY SAY: a plan key ("monthly" | "annual" | "founding_annual") and
 // nothing else. Not a price, not an amount, not a customer id, not a user id — the user
@@ -25,6 +26,7 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { stripePost } = require("./_lib/stripeApi");
 const { isPaidSubscription } = require("./_lib/planRules");
+const { syncStoreSubscription, isLiveRow } = require("./_lib/storeSubscriptions");
 
 const { corsHeadersFor } = require("./_lib/cors");
 
@@ -37,6 +39,17 @@ const { corsHeadersFor } = require("./_lib/cors");
 // The response is 404, deliberately: an endpoint that is not open yet should look absent rather
 // than advertise that billing exists and is merely switched off.
 const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+
+// IN-APP PURCHASE IS OFF UNTIL IT IS SWITCHED ON (version 1.1). The two store actions answer only while
+// IAP_ENABLED is exactly "true", and BILLING_ENABLED does not open them; while it is off they are as absent as
+// the rest of this function is while billing is off.
+//   store_status  what a store app needs before it shows the paywall: does this household already pay, and
+//                 through which provider; is the founding price available to it. The same answer the web's
+//                 status call gives, from the same row.
+//   store_sync    "I just bought (or restored) in the store; look now": the row is brought up to date from
+//                 RevenueCat's server (_lib/storeSubscriptions.js), never from anything the app says.
+const iapEnabled = () => process.env.IAP_ENABLED === "true";
+const STORE_ACTIONS = Object.freeze(["store_status", "store_sync"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -95,16 +108,20 @@ exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return json(405, CORS, { error: "Method not allowed" });
 
-  // The flag comes before auth, the body and the admin client: while billing is off this function
-  // reads nothing, writes nothing and asks Stripe for nothing.
-  if (!billingEnabled()) return json(404, CORS, { error: "not_found" });
+  // The flag comes before auth and the admin client: while billing is off this function reads nothing,
+  // writes nothing and asks Stripe for nothing. Which flag depends on the action, so the body is parsed
+  // first (parsing it reads nothing either); a body that is not JSON is answered after auth, as before.
+  let body = {};
+  let badJson = false;
+  try { body = JSON.parse(event.body || "{}"); } catch { body = {}; badJson = true; }
+  const storeAction = STORE_ACTIONS.includes(body && body.action);
+  if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
 
   // Auth first, every time. Nothing below runs for an anonymous caller.
   const { user_id, error: authError } = await getUserFromRequest(event);
   if (!user_id) return unauthorized(CORS, authError || "unauthorized");
 
-  let body = {};
-  try { body = JSON.parse(event.body || "{}"); } catch { return json(400, CORS, { error: "invalid_json" }); }
+  if (badJson) return json(400, CORS, { error: "invalid_json" });
   const action = body.action;
 
   let admin;
@@ -117,7 +134,7 @@ exports.handler = async (event) => {
     // come from src/lib/pricing.js), and no count of how many slots are gone.
     if (action === "status") {
       const { data: row } = await admin
-        .from("subscriptions").select("status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
+        .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
@@ -127,6 +144,9 @@ exports.handler = async (event) => {
       const confirmEmail = !foundingAvailable && await foundingConfirmNeeded(admin, user_id, user);
       return json(200, CORS, {
         enabled: true,
+        // Where the subscription is (version 1.1): "stripe", "app_store", "play_store", or null. The website uses it
+        // to say where a store subscription is cancelled when the household deletes its account.
+        provider: row ? row.provider || "stripe" : null,
         // The server's own rule (_lib/planRules.js isPaidSubscription): Stripe says active or trialing AND
         // the paid period has not ended. The web app's plan takes this answer (src/lib/planFromProfile.js
         // webPlan), so a subscription cancelled at period end stops counting when that period ends, even if
@@ -137,9 +157,56 @@ exports.handler = async (event) => {
       });
     }
 
+    // VERSION 1.1: THE STORE APPS. One row per household, read by the same rule as the web's status above.
+    if (action === "store_status" || action === "store_sync") {
+      const user = await authUser(admin, user_id);
+      // The row as it is, for both actions. A read that fails is a 503, never "not paid": a paying household
+      // must not be shown the paywall, or sold a second subscription, because the database blinked.
+      const { data: row, error: rowErr } = await admin
+        .from("subscriptions").select("provider, status, current_period_end, plan_key, cancel_at_period_end").eq("user_id", user_id).maybeSingle();
+      if (rowErr) { console.error("[billing] store status read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
+      let state;
+      if (action === "store_sync") {
+        state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
+      } else {
+        state = { paid: isPaidSubscription(row), provider: row ? row.provider || "stripe" : null, plan_key: row ? row.plan_key : null, conflict: false, conflictKind: null };
+      }
+      // A web subscription Stripe is still collecting (a renewal that failed): not paid, so no access, but still
+      // live, so the app must not sell a store subscription on top of it. The household fixes the card on the web.
+      const webAttention = !state.paid && isLiveRow(row) && (row.provider || "stripe") === "stripe";
+      const foundingAvailable = (state.paid || webAttention) ? false : await mayBuyFoundingPrice(admin, user_id, user);
+      return json(200, CORS, {
+        enabled: true,
+        paid: !!state.paid,
+        provider: state.provider || null,
+        plan_key: state.plan_key || null,
+        conflict: !!state.conflict,
+        conflict_kind: state.conflictKind || null,
+        web_attention: webAttention,
+        // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
+        period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
+        founding: { available: !!foundingAvailable },
+      });
+    }
+
     if (action === "create_checkout_session") {
       const planKey = body.plan_key;
       if (!isValidPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
+
+      // ONE PAID STATE AT A TIME. A household that already pays (on the web, or in a store from 1.1) is not
+      // sold a second subscription: Stripe would happily create one and charge both. Refused before anything
+      // is created, whatever the screen offered.
+      // A web subscription Stripe is still collecting (past_due) counts too: a second checkout would charge twice
+      // once the card works. A read that fails is logged and checkout goes on, as it always has (the web hides
+      // checkout from a household whose status says it pays; tests/foundingBilling.test.cjs 6f).
+      {
+        const { data: current, error: curErr } = await admin
+          .from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+        if (curErr) console.error("[billing] checkout guard read:", curErr.message);
+        if (!curErr && isLiveRow(current)) {
+          return json(409, CORS, { error: "already_subscribed", provider: current.provider || "stripe" });
+        }
+      }
 
       const user = await authUser(admin, user_id);
 

@@ -266,7 +266,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
     t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.0.0", "1.0.0", ["1.0.0"], "1.0.0"], "7a one version, 1.0.0, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526902, [526902], 16, 16], "7b the builds in whatsNew.json are the ones the projects build: iOS 526902, Android 16");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526902, [526902], 17, 17], "7b the builds in whatsNew.json are the ones the projects build: iOS 526902, Android 17");
     t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", W.notes.join(" "));
     noAdvice("7e release notes", W.notes);

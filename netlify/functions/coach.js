@@ -159,7 +159,7 @@ const EMERGENCY_IP_DAILY = 10;
 // Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
 const MAX_BODY_BYTES = 100000;
 
-const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
+const { corsHeadersFor, isNativeRequest, isStoreBillingRequest } = require("./_lib/cors");
 
 exports.handler = async (event) => {
   const corsHeaders = corsHeadersFor(event);
@@ -280,7 +280,7 @@ exports.handler = async (event) => {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
           // client-sent). Free → FREE_CHAT_WEEKLY a week; trial/plus/pro/founder → the abuse ceiling only.
           // A store app never gets a web subscription's entitlement (Apple 3.1.3(b)).
-          const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event) });
+          const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event), ...(isStoreBillingRequest(event) ? { storeBilling: true } : {}) });
           const admin = getAdminClient();
           // The abuse ceiling, unchanged: every account is counted per day by the existing
           // day-keyed counter, and CHAT_DAILY_CEILING still applies to all of them.
