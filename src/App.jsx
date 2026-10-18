@@ -9232,14 +9232,17 @@ function SpendScreen({data, setAppData, setScreen}){
         const effCat = getCat(txn);
         const { emoji: txnEmoji, color: txnDispColor } = getCatDisplay(effCat);
         return (
-        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,cursor:"default",transition:"all .15s"}}
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,rowGap:GAP.textToControl,flexWrap:"wrap",cursor:"default",transition:"all .15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
           <div style={{width:42,height:42,borderRadius:14,background:txnDispColor+"18",border:`1px solid ${txnDispColor}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
             {txn.logo&&<img src={txn.logo} alt="" style={{width:28,height:28,borderRadius:8,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>}
             {!txn.logo&&<span>{txnEmoji}</span>}
           </div>
-          <div style={{flex:1,minWidth:0}}>
+          {/* overlap-fix: the name and its category chip keep at least 9em; with minWidth:0 alone, 320px with the
+              text at 160% squeezed "Subscriptions ✎" below its own word and it ran into the amount. When they
+              cannot share the line, the amount moves to its own line, at the right. */}
+          <div style={{flex:"1 1 9em",minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,...wrapText()}}>{txn.name}</div>
             <div style={{display:"flex",columnGap:GAP.textToControl,rowGap:GAP.textToControl,marginTop:GAP.textToControl,alignItems:"center",flexWrap:"wrap"}}>
               <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",minHeight:LAYOUT.minTap,color:txn.amount<0?C.greenBright:readable(txnDispColor),fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",flexWrap:"wrap",gap:3,minWidth:0,maxWidth:"100%",textAlign:"left"}}>
@@ -9254,7 +9257,7 @@ function SpendScreen({data, setAppData, setScreen}){
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
             </div>
           </div>
-          <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{textAlign:"right",flexShrink:0,marginLeft:"auto"}}>
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"−"}${formatNumber(Math.abs(txn.amount),{cents:true})}
             </div>
