@@ -106,7 +106,7 @@ locked while continuously subscribed; why this setup, below):
 31. Localization → English (Canada) → Description: `The founding price, renewed every year while you stay subscribed.`
 32. Review Information → the same screenshot and notes as steps 11 and 12
 33. Family Sharing: **leave off**
-34. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
+34. Introductory Offers: **none**. Do not add one (why, below).
 35. In the `Flourish` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
 36. NEVER use **Remove from Sale** on the founding annual, not even once all 50 are issued.
 37. When the server has issued the 50th founding position (the landing page shows 0 left): the founding annual →
@@ -134,10 +134,17 @@ locked while continuously subscribed; why this setup, below):
   ([pricing and availability reference](https://developer.apple.com/help/app-store-connect/reference/pricing-and-availability/in-app-purchase-and-subscriptions-pricing-and-availability)),
   after which the standard price applies.
 - Costs of a second group, known and accepted: Apple bills each group separately, so a household could hold both a
-  regular and a founding subscription (the app never sells a second one to a paying household, and the server
-  flags two live store subscriptions, `two_store_subscriptions`); and a household can redeem one introductory
-  offer per group, so a founding household that already had the free month on the regular plans could have a
-  second one on the founding annual.
+  regular and a founding subscription. The app never sells that: a founding holder whose regular store
+  subscription is live (a free month included) is shown the store's own screen to cancel it, and offered the
+  founding price once it has ended (StorePaywall's founding switch). If both are ever live, the household keeps
+  its access, the row is flagged (`support_flag` `two_store_subscriptions`, migration 0022) and the support inbox
+  is emailed the same moment (`_lib/supportAlert.js`).
+- NO FREE MONTH ON THE FOUNDING ANNUAL (2026-10-18). Apple: "Customers can redeem one introductory offer per
+  subscription group", and "existing subscribers may be able to redeem more than one offer if the offers are in
+  different subscription groups" ([Auto-renewable Subscriptions](https://developer.apple.com/app-store/subscriptions/)).
+  In a group of its own, a free month on the founding annual would be a second free month for a household that
+  already had one on the regular plans. Nothing in Apple's rules requires an introductory offer, so it has none:
+  the founding annual is charged when the household confirms it (the paywall's copy says so, lib/storeOffer.js).
 - A founding household that lets its subscription lapse can see the founding annual again in its own Apple
   subscription settings. Until step 37 it could buy it back at CAD 79.99; the server records the founding price
   as ended (`founding_ended_at`, final) and flags that purchase for support. After step 37 it costs the regular price.
@@ -181,7 +188,7 @@ One subscription, so Google never lets a household hold two at once (the review 
 22. Billing period: `1 year`
 23. Price → Canada: `CAD 79.99`
 24. **Activate**
-25. `founding` → Offers → **Add offer** → `free-month` → `Never had any subscription in this app` → `Free trial`, `1 month` → **Activate**
+25. `founding`: **no offer**. Do not add `free-month` to it (why, below).
 26. `founding` → base plan settings → **Resubscribe**: off (so a founding household that lets its subscription lapse cannot buy the founding price back from the Play Store; the price is locked only while continuously subscribed)
 27. When the server has issued the 50th founding position (the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
 28. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
@@ -194,6 +201,12 @@ tiers by purchasing a different subscription's base plan or offer": [About subsc
 and this app offers the founding base plan only to a household the server says holds a position; but with
 Resubscribe on, "users can repurchase an expired auto-renewing subscription in the Play Store" (the same Play Console
 page), which would bring the founding price back after a lapse.
+
+**Why the founding base plan has no free month** (2026-10-18): on Google Play it could not have been a second one
+(an offer for "users who never had any subscription in your app" is checked across the whole app:
+[Create and manage subscriptions](https://support.google.com/googleplay/android-developer/answer/140504?hl=en)), but
+the App Store's founding annual cannot have one (section B, above), and the founding price is the same offer in both
+stores: charged when the household confirms it.
 
 **What Google will not do until a build is in:** create any subscription before a build with Billing is
 uploaded (step A5). Subscriptions can be created and tested on the Internal testing track before 1.1 is

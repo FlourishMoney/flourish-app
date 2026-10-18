@@ -83,8 +83,8 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision, confirmWithServer, rememberGate, recalledGate, deviceStorage } from "./lib/storeBilling.js";
-import { offerCopy, introEligible, PAYWALL_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
+import { offerCopy, introEligible, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -12446,6 +12446,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           {storeSubscription.onManage&&<Btn label="Manage subscription" onClick={storeSubscription.onManage} color={C.mutedHi} outline small/>}
           <Btn label="Restore purchases" onClick={storeSubscription.onRestore} color={C.mutedHi} outline small/>
         </div>
+        {storeSubscription.foundingSwitch&&<div data-founding-switch-entry="" style={{marginTop:GAP.textToControl}}>
+          <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>{storeSubscription.foundingSwitch.line}</div>
+          <Btn label={storeSubscription.foundingSwitch.button} onClick={storeSubscription.foundingSwitch.onOpen} color={C.goldBright} outline small/>
+        </div>}
       </div>
     )}
     {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
@@ -13730,15 +13734,21 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 // have it, and access follows the server's answer after the store's sheet, never the SDK's. Restore, the Terms
 // of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is drawn
 // OVER the app (item 3), whose one ModalHost sits above it, so the delete confirmation shows on top.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount}){
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount, onManage, onClose}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
   const [elig,setElig]=useState({});              // iOS introductory-offer eligibility, by product id
   const [loadFailed,setLoadFailed]=useState(false);
   const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
   const [outcome,setOutcome]=useState(null);
   const foundingAvailable = !!status?.founding?.available;
+  // A founding holder on a live regular store plan (lib/storeBilling.js foundingSwitch): nothing is sold here. The
+  // founding annual is an App Store group of its own and Apple bills each group separately, so buying it now would
+  // bill both; the household cancels the regular plan in the store's own screen, and the founding price is offered
+  // once that has ended.
+  const held = foundingSwitch(status);
   useEffect(()=>{
     let cancelled=false;
+    if(held) return ()=>{ cancelled=true; };
     (async ()=>{
       setLoadFailed(false);
       try{
@@ -13755,7 +13765,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
       }catch{ if(!cancelled) setLoadFailed(true); }
     })();
     return ()=>{ cancelled=true; };
-  },[purchases, platform, foundingAvailable]);
+  },[purchases, platform, foundingAvailable, !!held]);
 
   const deps = {
     serverStatus: ()=>askStore("store_status"),
@@ -13787,14 +13797,23 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   return(
     <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
+        {onClose&&<div style={{display:"flex",justifyContent:"flex-end"}}><button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.mutedHi,fontSize:20,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap}}>✕</button></div>}
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
         <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
         <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
-        {!pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
-        {loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
+        {held && (
+          <div data-founding-switch="" style={{background:C.card,border:`2px solid ${C.gold}77`,borderRadius:16,padding:"16px 18px",marginBottom:LAYOUT.cardGap}}>
+            {FOUNDING_SWITCH_COPY.title&&<div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:SPACE.xs}}>{FOUNDING_SWITCH_COPY.title}</div>}
+            {(held.renews ? FOUNDING_SWITCH_COPY.body : (FOUNDING_SWITCH_COPY.bodyCancelled || FOUNDING_SWITCH_COPY.body))&&
+              <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl}}>{held.renews ? FOUNDING_SWITCH_COPY.body : (FOUNDING_SWITCH_COPY.bodyCancelled || FOUNDING_SWITCH_COPY.body)}</div>}
+            {onManage&&<button onClick={onManage} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Manage subscription</button>}
+          </div>
+        )}
+        {!held && !pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
+        {!held && loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
-          {cards.map(({plan,pkg,copy})=>(
+          {!held && cards.map(({plan,pkg,copy})=>(
             <div key={plan} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
@@ -16949,6 +16968,8 @@ export default function FlourishApp(){
   // return from the background. An answer that changes in between waits; an unknown answer never puts it up.
   const paywallOpenRef = useRef(true);
   const [paywallUp,setPaywallUp]=useState(false);
+  // The paywall opened from Settings for a founding holder on a regular store plan (lib/storeBilling.js foundingSwitch).
+  const [foundingSwitchOpen,setFoundingSwitchOpen]=useState(false);
   const [paywallLegal,setPaywallLegal]=useState(null);     // "terms" | "privacy", shown inside the overlay
   const storeEntitledNow = (!storeBilling || !user?.id || profilePlan===null || storeAskedFor!==user.id || !storeStatus)
     ? null : storePlan(profilePlan, { paid: storeStatus.paid === true }) !== "free";
@@ -16982,7 +17003,7 @@ export default function FlourishApp(){
   // closes first; then the app's own screens, one at a time, down to Today; on Today with nothing open (or on the
   // store paywall, which back never dismisses) the app goes to the background, keeping its state. Android only.
   const backStateRef = useRef({});
-  backStateRef.current = { paywallUp: storeBilling && paywallUp, paywallLegal, pendingPlaid, showSettings, showNotifs, showWhatIf, showWrapped, showCheckIn, showUpgrade, showPaywall, screen };
+  backStateRef.current = { paywallUp: storeBilling && paywallUp, foundingSwitchOpen: storeBilling && foundingSwitchOpen, paywallLegal, pendingPlaid, showSettings, showNotifs, showWhatIf, showWrapped, showCheckIn, showUpgrade, showPaywall, screen };
   useEffect(()=>{
     if(window.Capacitor?.getPlatform?.()!=="android") return;
     let handle=null, cancelled=false;
@@ -16992,6 +17013,7 @@ export default function FlourishApp(){
       if(!act){ CapApp.minimizeApp(); return; }
       const go = {
         closePaywallLegal: ()=>setPaywallLegal(null),
+        closeFoundingSwitch: ()=>setFoundingSwitchOpen(false),
         closeBankConsent: ()=>setPendingPlaid(null),
         closeSettings: ()=>{ setShowSettings(false); setPendingPlaid(null); },
         closeNotifications: ()=>setShowNotifs(false),
@@ -18125,18 +18147,22 @@ export default function FlourishApp(){
   // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
   // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
   // Terms and Privacy open inside the overlay, so nothing behind it unmounts.
-  const storePaywallOverlay = (storeBilling && paywallUp) ? (
+  const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
     <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
-            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} onSignOut={signOut} onDeleteAccount={deleteAllData}/>}
+            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} onSignOut={signOut} onDeleteAccount={deleteAllData}
+            onManage={manageStoreSubscription} onClose={paywallUp ? null : ()=>setFoundingSwitchOpen(false)}/>}
     </div>
   ) : null;
   // Version 1.1: Settings' Subscription card, in a selling build only.
   const storeSubscription = storeBilling ? {
     line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
     onManage: storeStatus?.paid && (storeStatus.provider==="app_store" || storeStatus.provider==="play_store") ? manageStoreSubscription : null,
+    // A founding holder on a regular store plan: a way to the paywall's founding switch, once its words are written.
+    foundingSwitch: foundingSwitch(storeStatus) && FOUNDING_SWITCH_COPY.settingsLine && FOUNDING_SWITCH_COPY.settingsButton
+      ? { line: FOUNDING_SWITCH_COPY.settingsLine, button: FOUNDING_SWITCH_COPY.settingsButton, onOpen: ()=>setFoundingSwitchOpen(true) } : null,
     onRestore: async ()=>{
       if(!storePurchases) return;
       const r = await storeRestore({ restorePurchases: ()=>storePurchases.restorePurchases(), serverSync: ()=>askStore("store_sync") });

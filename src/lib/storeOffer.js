@@ -3,7 +3,9 @@
 // THE OFFER IN THE STORE APPS (version 1.1), EXACTLY AS DECIDED AND NO WIDER.
 //
 // One free month, as the store's own introductory offer, then the subscription; no free tier after it (a hard
-// paywall). The free month starts when the household confirms the subscription in the App Store or Google Play
+// paywall). The founding annual has no introductory offer (2026-10-18): it is an App Store group of its own, and a
+// free month there would be a second one (docs/ops/IAP-1.1.md item 6), so it is charged on confirmation, and the
+// copy below says so because the store reports no free month for it. The free month starts when the household confirms the subscription in the App Store or Google Play
 // sheet — never when the app is installed, never when it is updated — because it IS the store's introductory
 // offer: the store starts it at that confirmation and reports it to the server as a 'trialing' row
 // (netlify/functions/_lib/storeSubscriptions.js). Nothing in the app starts a trial in a store build that sells:
@@ -59,6 +61,16 @@ export function offerCopy({ plan, priceString, eligible = false, platform = "ios
     ],
   };
 }
+
+// THE FOUNDING SWITCH (2026-10-18): a household holding a founding position while a regular store subscription is
+// live (storeBilling.js foundingSwitch). The founder writes these words; none is written here. Until they are,
+// Settings shows no way in, and the paywall in this state shows only the store's own "Manage subscription" screen.
+//   settingsLine, settingsButton  the Subscription card in Settings: that this household holds a founding position,
+//                                 and the button that opens the paywall in this state
+//   title, body                   the paywall: why the founding price is not offered on top of the regular plan,
+//                                 and that cancelling it in the store's screen makes it available when it ends
+//   bodyCancelled                 the same, once the regular plan will not renew (it is already cancelled)
+export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settingsButton: null, title: null, body: null, bodyCancelled: null });
 
 export const PAYWALL_COPY = Object.freeze({
   title: "Flourish, with everything in it",

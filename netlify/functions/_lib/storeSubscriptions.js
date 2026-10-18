@@ -35,6 +35,7 @@
 // Nothing here logs a key, a token, an email address or a receipt.
 // -----------------------------------------------------------------------------
 "use strict";
+const { alertSupport } = require("./supportAlert");
 const crypto = require("crypto");
 const { isPaidSubscription, STORE_PROVIDERS } = require("./planRules");
 
@@ -171,9 +172,14 @@ async function fetchSubscriber(appUserId, { key = (process.env.REVENUECAT_SECRET
  *   { paid, provider, plan_key, conflict, conflictKind, flag }
  *   conflict      a second paid state was refused (the row kept the first); conflictKind says which
  *   flag          something for support, not for the household: "two_store_subscriptions" (paying twice in the
- *                 stores), "founding_not_eligible" (the founding price bought by a household it was not offered to)
+ *                 stores: a regular plan and the founding annual are separate App Store groups, so both can be
+ *                 live), "store_and_web_subscriptions" (a store purchase on top of a paid website subscription),
+ *                 "founding_not_eligible" (the founding price bought by a household it was not offered to).
+ *                 The household keeps its access. A flag is recorded on the row (support_flag, support_flag_at,
+ *                 migration 0022; a repeat keeps the first time) and, when it is new, the support inbox is told
+ *                 at once (_lib/supportAlert.js), so it is seen the same day.
  * deps: fetchSubscriber, user (Supabase Auth's record, for the sandbox rule and the founding end), now, env,
- *       mayBuyFounding(admin, userId, user) (the founding rule, _lib/foundingCohort.js).
+ *       mayBuyFounding(admin, userId, user) (the founding rule, _lib/foundingCohort.js), alertSupport (tests).
  */
 async function syncStoreSubscription(admin, userId, deps = {}) {
   const now = deps.now != null ? deps.now : Date.now();
@@ -185,9 +191,17 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
 
   const { data: existing, error: readErr } = await admin
     .from("subscriptions")
-    .select("provider, status, current_period_end, plan_key, founding_ended_at, cancel_at_period_end, provider_subscription_id")
+    .select("provider, status, current_period_end, plan_key, founding_ended_at, cancel_at_period_end, provider_subscription_id, support_flag, support_flag_at")
     .eq("user_id", userId).maybeSingle();
   if (readErr) throw new Error(`subscriptions read: ${readErr.message}`);
+  // A flag for support: on the row, and to the inbox the first time it is raised. Never blocks the sync.
+  const alert = deps.alertSupport || alertSupport;
+  const flagFields = (flag) => ({ support_flag: flag,
+    support_flag_at: existing && existing.support_flag === flag && existing.support_flag_at ? existing.support_flag_at : nowIso });
+  const tellSupport = async (flag, provider) => {
+    if (existing && existing.support_flag === flag) return;
+    try { await alert({ flag, userId, provider }, { env: deps.env || process.env }); } catch { /* logged inside; the row has it */ }
+  };
   const existingProvider = existing ? existing.provider || "stripe" : null;
   const answer = (o) => ({ paid: isPaidSubscription(existing, now), provider: existingProvider, plan_key: existing ? existing.plan_key : null, conflict: false, conflictKind: null, flag: null, reason, ...o });
 
@@ -204,7 +218,17 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   if (!next) return answer({});
   if (!mayReplace(existing, next, now)) {
     console.error("[store-sync] conflict: a store purchase for a household whose subscription is with", existingProvider);
-    return answer({ paid: isPaidSubscription(existing, now), conflict: true, conflictKind: isPaidSubscription(existing, now) ? "already_paid_elsewhere" : "web_needs_attention" });
+    const paidElsewhere = isPaidSubscription(existing, now);
+    // Paying on the website and in a store at once: recorded on the (website's) row for support, which stays as it is.
+    let flag = null;
+    if (paidElsewhere && isPaidSubscription(next, now)) {
+      flag = "store_and_web_subscriptions";
+      const { error: flagErr } = await admin.from("subscriptions").update(flagFields(flag)).eq("user_id", userId);
+      if (flagErr) console.error("[store-sync] flag write failed:", flagErr.message);
+      await tellSupport(flag, next.provider);
+      console.error("[store-sync] flag for support:", flag);
+    }
+    return answer({ paid: paidElsewhere, conflict: true, conflictKind: paidElsewhere ? "already_paid_elsewhere" : "web_needs_attention", flag });
   }
   // A store purchase replacing a web row: the old Stripe subscription id no longer names this row, so a late
   // Stripe event cannot find it by that id and write over the store purchase. The Stripe customer id stays, for
@@ -228,8 +252,10 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
     try { if (!(await deps.mayBuyFounding(admin, userId, user))) flag = "founding_not_eligible"; } catch { flag = "founding_not_eligible"; }
   }
 
+  if (flag) Object.assign(next, flagFields(flag));
   const { error: writeErr } = await admin.from("subscriptions").upsert({ user_id: userId, ...next }, { onConflict: "user_id" });
   if (writeErr) throw new Error(`subscriptions write: ${writeErr.message}`);
+  if (flag) await tellSupport(flag, next.provider);
   if (foundingEnded && user && user.email) {
     const { error: endErr } = await admin.rpc("waitlist_founding_mark_ended", { p_email: user.email });
     if (endErr) throw new Error(`founding end: ${endErr.message}`);

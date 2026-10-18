@@ -176,9 +176,15 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
       "_lib/foundingLinkEmail.js": "waitlist: the founding link and Canada launch emails (asks mayEmailWaitlistRow)",
       "_lib/waitlistWelcome.js": "waitlist: the welcome email (both callers ask mayEmailWaitlistRow, \"welcome\")",
       "_lib/foundingConfirm.js": "not a waitlist send: a confirmation the account holder asked for, to their own account address",
+      "_lib/supportAlert.js": "not a household send at all: an internal alert to our own support inbox when the server flags a store subscription (version 1.1, 2026-10-18)",
     };
     const extra = senders.filter(f => !KNOWN[f]);
     t.eq(extra, [], "5e every module that sends email is known and reviewed for the one-email rule");
+    // …and the internal alert can only ever reach our own inbox: a fixed default, or SUPPORT_ALERT_TO from the server's
+    // own settings; never an address from a waitlist row or an account.
+    const alertSrc = fs.readFileSync(path.join(fnDir, "_lib", "supportAlert.js"), "utf8").replace(/\/\/[^\n]*/g, "");
+    t.ok(/const DEFAULT_TO = "hello@flourishmoney\.app";/.test(alertSrc) && /to: \[String\(env\.SUPPORT_ALERT_TO \|\| DEFAULT_TO\)\.trim\(\)\]/.test(alertSrc)
+      && !/waitlist|\.email\b|p_email/.test(alertSrc), "5e2 the support alert goes only to our own inbox, never to a household or a waitlist row");
     const ask = (f, rx) => rx.test(fs.readFileSync(path.join(fnDir, f), "utf8"));
     t.ok(ask("_lib/foundingLinkEmail.js", /mayEmailWaitlistRow\(row, kind\)/) && ask("waitlist-sweep.js", /mayEmailWaitlistRow\(row, "welcome"\)/)
       && ask("beta.js", /mayEmailWaitlistRow\(rowForGuard, "welcome"\)/), "5f …and each waitlist sender asks the shared rule");

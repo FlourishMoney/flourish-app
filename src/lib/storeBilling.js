@@ -176,6 +176,19 @@ export function recalledGate(storage, userId, now = Date.now()) {
 }
 
 /**
+ * A household that holds a founding position while a regular store subscription is live (a free month included):
+ * store_status founding.held_on_regular_plan (netlify/functions/billing.js). The founding annual is an App Store
+ * group of its own and Apple bills each group separately, so it is never bought on top: the paywall says so and
+ * opens the store's own screen to cancel the regular one; the founding price is offered once that has ended.
+ * Returns { renews, periodEnd } or null.
+ */
+export function foundingSwitch(status) {
+  const h = status && status.founding && status.founding.held_on_regular_plan;
+  if (!h || typeof h !== "object") return null;
+  return { renews: h.renews !== false, periodEnd: typeof h.period_end === "string" ? h.period_end : null };
+}
+
+/**
  * VERSION 1.1, ITEM 3: WHEN THE PAYWALL MAY APPEAR. Nobody is cut off in the middle of something.
  *
  * The paywall is decided only at a safe point: the first answer for this account after the app starts or the

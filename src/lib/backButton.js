@@ -39,6 +39,8 @@ const FULL_PAGE = new Set(["privacy", "terms", "delete-account", "support", "wid
  */
 export function backAction(s = {}) {
   if (s.paywallUp) return s.paywallLegal ? "closePaywallLegal" : null;
+  // The paywall opened from Settings for a founding holder on a regular plan (version 1.1, 2026-10-18): back closes it.
+  if (s.foundingSwitchOpen) return s.paywallLegal ? "closePaywallLegal" : "closeFoundingSwitch";
   if (s.pendingPlaid) return "closeBankConsent";
   if (s.showSettings) return "closeSettings";
   if (s.showNotifs) return "closeNotifications";

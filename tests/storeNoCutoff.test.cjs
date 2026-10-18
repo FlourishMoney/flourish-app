@@ -38,7 +38,10 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
   // ── 1. Before 1.1 ────────────────────────────────────────────────────────────────────────────
   {
     t.eq([B.storeBillingOn({ native: true, env: {} }), B.storeBillingOn({ native: true, env: { VITE_IAP_ENABLED: "false" } })], [false, false], "1a a 1.0.x store build is not a selling build");
-    t.ok(/const storePaywallOverlay = \(storeBilling && paywallUp\) \?/.test(APP) && /if\(!storeBilling\)\{ setPaywallUp\(false\); return; \}/.test(APP), "1b …so no paywall can show in it");
+    // The overlay also opens from Settings for a founding holder on a regular plan (2026-10-18); that way in exists
+    // only in a selling build too (the Subscription card is null without storeBilling).
+    t.ok(/const storePaywallOverlay = \(storeBilling && \(paywallUp \|\| foundingSwitchOpen\)\) \?/.test(APP) && /if\(!storeBilling\)\{ setPaywallUp\(false\); return; \}/.test(APP)
+      && /const storeSubscription = storeBilling \? \{/.test(APP) && (APP.match(/setFoundingSwitchOpen\(true\)/g) || []).length === 1, "1b …so no paywall can show in it");
     const p = { plan: "free", trial_started_at: new Date(NOW - 60 * DAY).toISOString() };
     t.eq(R.deriveEntitlement(p, { provider: "stripe", status: "active", current_period_end: new Date(NOW + DAY).toISOString() }, NOW, { native: true }).plan, "free",
       "1c the server tells a 1.0.x build exactly what it told it before (the profile's answer), whatever is bought elsewhere");
@@ -52,7 +55,7 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
       t.eq(P.storePlan(profile, { paid: false }), "free", `2a ${who}: not entitled until it subscribes`);
     }
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
+    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount, onManage, onClose\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
       "2b one paywall: nothing on it depends on when the household installed or what it did before");
     t.ok(/introEligible\(p, platform, elig\)/.test(comp) && !/eligible\s*=\s*true/.test(comp), "2c the free month is the store's to give, the same rule for everyone; the household starts it itself by confirming");
     t.eq([P.storePlan("beta_founder", { paid: false }), P.storePlan("premium", { paid: false })], ["beta_founder", "premium"],

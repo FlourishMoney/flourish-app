@@ -26,7 +26,7 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { stripePost } = require("./_lib/stripeApi");
 const { isPaidSubscription } = require("./_lib/planRules");
-const { syncStoreSubscription, isLiveRow } = require("./_lib/storeSubscriptions");
+const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
 const { corsHeadersFor } = require("./_lib/cors");
 
@@ -175,6 +175,22 @@ exports.handler = async (event) => {
       // live, so the app must not sell a store subscription on top of it. The household fixes the card on the web.
       const webAttention = !state.paid && isLiveRow(row) && (row.provider || "stripe") === "stripe";
       const foundingAvailable = (state.paid || webAttention) ? false : await mayBuyFoundingPrice(admin, user_id, user);
+      // A FOUNDING HOLDER ON A REGULAR STORE PLAN (2026-10-18). The founding annual is an App Store group of its own,
+      // and Apple bills each group separately, so buying it on top of a live regular store subscription (a free
+      // month included) would bill both. Such a household is never offered the founding price on top (above: a
+      // paying household is offered nothing); it is told so, with the store's own screen to cancel the regular one,
+      // and is offered the founding price once that subscription has ended. renews: the regular one will renew.
+      let heldOnRegular = null;
+      if (state.paid && STORE_PROVIDERS.includes(state.provider) && (state.plan_key === "monthly" || state.plan_key === "annual")) {
+        let live = row;
+        if (action === "store_sync") {
+          const { data: after } = await admin.from("subscriptions").select("cancel_at_period_end, current_period_end").eq("user_id", user_id).maybeSingle();
+          live = after || row;
+        }
+        if (await mayBuyFoundingPrice(admin, user_id, user)) {
+          heldOnRegular = { renews: !(live && live.cancel_at_period_end), period_end: live && live.current_period_end ? live.current_period_end : null };
+        }
+      }
       return json(200, CORS, {
         enabled: true,
         paid: !!state.paid,
@@ -185,7 +201,7 @@ exports.handler = async (event) => {
         web_attention: webAttention,
         // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
         period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
-        founding: { available: !!foundingAvailable },
+        founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular },
       });
     }
 
