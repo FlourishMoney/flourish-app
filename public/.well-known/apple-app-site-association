@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["V8B8MR88SL.app.flourishmoney"],
+        "components": [
+          { "/": "/plaid/app", "comment": "Plaid's redirect_uri for the iOS app: a bank's own app hands the household back to Flourish" }
+        ]
+      }
+    ]
+  }
+}

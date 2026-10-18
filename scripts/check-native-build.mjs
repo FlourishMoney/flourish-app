@@ -32,6 +32,15 @@ const root = process.cwd();
 const env = loadEnv(process.env.NODE_ENV || "production", root, "");
 const die = (msg) => { console.error(`\n  ✗ ${msg}\n`); process.exit(1); };
 
+// A debug build for Plaid Sandbox testing may point the app at a local function server
+// (VITE_NATIVE_API_BASE, docs/ops/PLAID-HOSTED-LINK.md section 3). A store build must talk to
+// https://flourishmoney.app, so the variable being set at all refuses the build. Its value is not printed.
+if (String(env.VITE_NATIVE_API_BASE || "").trim()) {
+  console.log("  SET      VITE_NATIVE_API_BASE");
+  die("VITE_NATIVE_API_BASE is set. It is for a Sandbox test build only, and a store build would send every " +
+      "request to it\n    instead of https://flourishmoney.app. Unset it (and remove it from any .env file here), then build again.");
+}
+
 const missing = REQUIRED.filter((k) => !String(env[k] || "").trim());
 for (const k of REQUIRED) console.log(`  ${missing.includes(k) ? "MISSING" : "SET    "}  ${k}`);
 
