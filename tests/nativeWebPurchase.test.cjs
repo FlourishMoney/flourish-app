@@ -161,7 +161,8 @@ function load(db) {
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const refresh = app.slice(app.indexOf("const refreshPlanFromProfile"), app.indexOf("const refreshPlanFromProfile") + 900);
     t.ok(/\.from\("profiles"\)/.test(refresh) && !/subscriptions/.test(refresh), "5b the app reads its plan from the profiles row and never reads a subscription row itself");
-    t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app), "5c a store app never asks /api/billing for its status");
+    t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app) && /setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(app),
+      "5c a store app asks /api/billing for its status and keeps only enabled and paid");
     const hook = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "5d the Stripe webhook never writes the profiles row the app reads");
   }
@@ -207,8 +208,8 @@ function load(db) {
     }
     t.eq(P.webPlan("free", { paid: true }), "premium", "7b a payment lifts the free plan to full access");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/webPaidRef\.current = !nativeApp && /.test(app) && /webPlan\(profilePlan, \{ paid: webPaidRef\.current, native: nativeApp \}\)/.test(app),
-      "7c the App passes the store-app flag to webPlan and never counts a payment natively");
+    t.ok(/webPaidRef\.current = !!user\?\.id && /.test(app) && /webPlan\(profilePlan, \{ paid: webPaidRef\.current \}\)/.test(app) && !/native: nativeApp \}\)/.test(app.slice(app.indexOf("webPaidRef.current ="), app.indexOf("webPaidRef.current =") + 400)),
+      "7c the App counts a payment through webPlan with no store-app flag");
     t.eq((app.match(/=\s*webPlan\(/g) || []).length, 1, "7d …and that effect is the only call to webPlan: the only place a payment is counted");
   }
 

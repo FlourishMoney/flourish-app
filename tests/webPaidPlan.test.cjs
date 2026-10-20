@@ -178,8 +178,12 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     }
     const webStatus = await statusFor({ status: "active", current_period_end: iso(Date.now() + 30 * DAY) }, { origin: "https://flourishmoney.app" });
     t.ok("founding" in webStatus.body && "manageable" in webStatus.body, "4a4 (not vacuous: the web's answer still carries the founding offer and the portal)");
-    t.ok(/webPaidRef\.current = !nativeApp && /.test(APP), "4b the App never counts a payment in a store app");
-    t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "4c …and a store app never even asks for the billing status");
+    t.ok(/webPaidRef\.current = !!user\?\.id && billingAskedFor===user\.id && billingIsOn\(billingStatus\) && billingStatus\.paid === true;/.test(APP) && !/webPaidRef\.current = !nativeApp/.test(APP),
+      "4b the App counts a payment the same way in a store app as on the web");
+    t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "4c …and a store app asks for the billing status too");
+    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
+      "4c2 …keeping only enabled and paid in a store app, whatever the answer carries");
+    t.eq(vis.billingUiState({ status: { enabled: true, paid: false }, native: true, paid: false }).show, false, "4c3 …and no billing surface shows in a store app");
   }
 
   // ── 5. billing off = today's behaviour exactly ───────────────────────────────────────────────────
@@ -226,7 +230,7 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     t.ok(/\},\[billingStatus, billingAskedFor, user\?\.id, profilePlan, nativeApp\]\);/.test(APP),
       "7c2 the effect re-runs on a new profile plan and on a new status, so a refresh never leaves a paid household on free");
     t.ok(/billingAskedFor===user\.id && billingIsOn\(billingStatus\)/.test(APP), "7d only this account's own status counts (not a previous account's)");
-    t.ok(/const plan = webPlan\(profilePlan, \{ paid: webPaidRef\.current, native: nativeApp \}\);\s*setPlan\(plan\);\s*setIsPremium\(plan === "premium" \|\| plan === "beta_founder" \|\| plan === "trial"\);/.test(APP),
+    t.ok(/const plan = webPlan\(profilePlan, \{ paid: webPaidRef\.current \}\);\s*setPlan\(plan\);\s*setIsPremium\(plan === "premium" \|\| plan === "beta_founder" \|\| plan === "trial"\);/.test(APP),
       "7e when the status arrives, the plan and the paid features follow it");
     t.ok(/setIsPremium\(false\); setProfilePlan\(null\);/.test(APP), "7f signing out forgets the profile's plan");
     const hook = fs.readFileSync(HOOK_PATH, "utf8");

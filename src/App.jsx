@@ -2165,7 +2165,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!canRunSimulation({ native: isNativeApp() })) {
+    if (!canRunSimulation()) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
@@ -2188,7 +2188,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       });
       return;
     }
-    recordSimulationUse({ native: isNativeApp() });
+    recordSimulationUse();
 
     setQuery(qText);
     setLoading(true);
@@ -10219,9 +10219,8 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
       return quietWeekAgendaFor({});
     }
   }, [data]);
-  // Web: premium, beta_founder, or an active trial. A store app: every user (nothing to buy in 1.0.0,
-  // and nothing closes when a trial ends), lib/featureAccess.js.
-  const canFacilitate = facilitatorAvailable({ native: isNativeApp() });
+  // Premium, beta_founder, or an active trial, in every app (lib/featureAccess.js, 2026-10-20).
+  const canFacilitate = facilitatorAvailable();
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
@@ -16580,8 +16579,8 @@ export default function FlourishApp(){
       return foundingLinkPending(localStorage);
     }catch{ return false; }
   });
-  // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
-  // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
+  // The store apps (iOS, Android) sell nothing: no paywall, no upgrade button, no Plus pitch, no price
+  // (billingUiState, PremiumGate). Their plan follows the web's rules since 2026-10-20 (lib/featureAccess.js).
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
   // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
@@ -16604,12 +16603,11 @@ export default function FlourishApp(){
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
   // also run the grandfather check so existing users get beta_founder status.
-  // A store app counts every user's coach messages against the weekly limit, trial or not (only a paid
-  // or founder flag lifts it there); the web keeps trial, premium and founder unlimited.
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining({ native: isNativeApp() }); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
+  // Trial, premium and founder are unlimited and the free plan is counted, in every app (2026-10-20).
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining(); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
   const bumpCoachMsg=()=>{
-    if (coachUnlimited({ native: isNativeApp(), isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
-    recordCoachUse({ native: isNativeApp() });
+    if (coachUnlimited({ isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
+    recordCoachUse();
     setCoachMsgCount(c=>c+1);
   };
 
@@ -16694,13 +16692,15 @@ export default function FlourishApp(){
 
   // ── BILLING VISIBILITY ─────────────────────────────────────────────────────────────────────
   // One ask, one answer, and every failure means hidden: a 404 (the flag is off), an offline
-  // device, a shape we do not recognise. Not asked at all inside a native shell — Apple and
-  // Google require their own purchase systems for digital subscriptions, so the iOS and Android
-  // builds must show no price, no link and no button. See docs/ops/BILLING-SETUP.md.
+  // device, a shape we do not recognise. Inside a native shell the same call answers only whether
+  // the household pays on the web (billing.js), and only that is kept: Apple and Google require
+  // their own purchase systems for digital subscriptions, so the iOS and Android builds show no
+  // price, no link and no button (billingUiState hides every surface there). Since 2026-10-20 that
+  // `paid` gives a household paying on the web full access in the apps too. See docs/ops/BILLING-SETUP.md.
   const nativeApp = isNativeApp();
   useEffect(()=>{
     let cancelled = false;
-    if(nativeApp || !user?.id){ setBillingStatus(null); return; }
+    if(!user?.id){ setBillingStatus(null); return; }
     (async ()=>{
       try{
         const jwt = await getJwt();
@@ -16712,7 +16712,7 @@ export default function FlourishApp(){
         });
         if(!res.ok) return;                       // 404 while billing is off: stay hidden
         const body = await res.json();
-        if(!cancelled) setBillingStatus(body);
+        if(!cancelled) setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
       }catch{ /* offline or blocked: stay hidden */ }
       finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
@@ -16724,14 +16724,15 @@ export default function FlourishApp(){
   // exactly as it did before, so nothing about today's app changes.
   const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
   // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
-  // the paid period, planRules.isPaidSubscription): it lifts a free web household to premium, and it ends
-  // when the paid period does. A store app never asks and never counts it (Apple 3.1.3(b)). Billing off:
-  // there is no status, `paid` is false, and the plan is the profile's, exactly as before.
+  // the paid period, planRules.isPaidSubscription): it lifts a free household to premium, and it ends
+  // when the paid period does. The same in a store app (2026-10-20), which the server holds to the same
+  // plan (planRules.deriveEntitlement). Billing off: there is no status, `paid` is false, and the plan is
+  // the profile's, exactly as before.
   useEffect(()=>{
     // Only this account's own answer counts: billingAskedFor is the account the status call finished for.
-    webPaidRef.current = !nativeApp && !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
+    webPaidRef.current = !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
     if(profilePlan===null) return;
-    const plan = webPlan(profilePlan, { paid: webPaidRef.current, native: nativeApp });
+    const plan = webPlan(profilePlan, { paid: webPaidRef.current });
     setPlan(plan);
     setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
@@ -17863,7 +17864,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={openUpgrade} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
+            ? (creditAvailable({ isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -17872,11 +17873,11 @@ export default function FlourishApp(){
       // demo-clarity: the demo's coach is a scripted conversation (no /api/coach request), so no disclosure there.
       if(!aiDisclosureSeen && !appData?.demo) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
-      // A store app: the weekly limit applies to every user, so only a paid or founder flag lifts it;
-      // the trial does not (lib/featureAccess.js). The web is unchanged.
-      const freeCoachAllowed = canUseCoach({ native: nativeApp });
-      const coachIsOpenEnded = coachUnlimited({ native: nativeApp, isPremium: isPremium || isTrialActive() });
-      const showCoach = (nativeApp ? coachIsOpenEnded : isPremium) || freeCoachAllowed;
+      // The same in every app (lib/featureAccess.js, 2026-10-20): a trial, a paid plan or a founder flag
+      // lifts the weekly limit, and the free plan has it.
+      const freeCoachAllowed = canUseCoach();
+      const coachIsOpenEnded = coachUnlimited({ isPremium: isPremium || isTrialActive() });
+      const showCoach = isPremium || freeCoachAllowed;
       if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={coachIsOpenEnded} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is

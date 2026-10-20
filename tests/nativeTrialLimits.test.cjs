@@ -14,7 +14,7 @@
 //   founder       founder_flag                 everything open, nothing counted
 //   paid          trial over, paying on the web everything open, nothing counted
 //   web           the same four, from the web  the same answers (section 5)
-// Section 6 runs the app's own rules (src/lib) for the same households.
+// The app's own rules for the same households, on each platform, are tests/nativeAccess.test.cjs.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
