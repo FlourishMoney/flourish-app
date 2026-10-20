@@ -109,7 +109,7 @@ setImmediate(() => process.exit(0));`;
     let txt = "";
     try { txt = execFileSync(process.execPath, ["-e", script], { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); }
     catch (e) { t.ok(false, `App.jsx renders natively: ${describe(e)}`); }
-    t.ok(/isn't included in this version/.test(txt), "4a (the gate rendered as a store app)");
+    t.ok(txt.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda."), "4a (the gate rendered as a store app: the founder's locked-screen line)");
     t.ok(!/See plans|Flourish Plus|days free|Cancel any time/.test(txt), "4b in a store app the gate shows no way to pay, even told billing is on");
     t.ok(/!data\.isPremium&&!isNativeApp\(\)&&onUpgrade&&\(/.test(APP), "4c the Today card is still hidden in a store app");
   }

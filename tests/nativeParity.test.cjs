@@ -34,6 +34,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   const t = create();
   const vis = await import("../src/lib/billingVisibility.js");
   const limits = await import("../src/lib/usageLimits.js");
+  const freePlan = await import("../src/lib/freePlan.js");
 
   // ── 1. both stores are "native", the web is not ──────────────────────────────────────────────
   t.eq(vis.isNativeApp(IOS), true, "1a iOS is a store app");
@@ -121,16 +122,13 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   t.eq(limits.FREE_TIER_LIMITS.coachMessagesPerWeek, 2, "6a the free tier is 2 coach messages a week");
   t.eq(limits.FREE_TIER_LIMITS.simulationsPerDay, 1, "6b and 1 simulation a day");
   // The native limit strings, found by their NATIVE guard — the web branch of the same ternary
-  // keeps its upsell, so matching on the text alone would sweep that in too.
-  const coach = APP.match(/if\(isNativeApp\(\)\)\{ setLimitNote\(`([^`]*)`\)/);
-  const sim = APP.match(/isNativeApp\(\)\s*\n?\s*\? `(You've used[^`]*)`/);
-  t.ok(!!coach, "6c the coach limit message is reached only through isNativeApp()");
-  t.ok(!!sim, "6d the simulation limit message is too");
-  const nativeCopy = [coach && coach[1], sim && sim[1]].filter(Boolean);
-  t.ok(/^You've used this week's \$\{FREE_LIMIT\} coach messages\. They reset Monday\.$/.test(nativeCopy[0] || ""),
-    "6e the coach one states the limit and when it lifts, and nothing else");
-  t.ok(/simulation/.test(nativeCopy[1] || "") && /resets?" : "They reset"\} tomorrow\.$/.test(nativeCopy[1] || ""),
-    "6f the simulation one does the same");
+  // keeps its upsell, so matching on the text alone would sweep that in too. Since 2026-10-19 they are
+  // the founder's approved lines, from lib/freePlan.js.
+  t.ok(/if\(isNativeApp\(\)\)\{ setLimitNote\(coachLimitLine\(FREE_LIMIT\)\); return; \}/.test(APP), "6c the coach limit message is reached only through isNativeApp()");
+  t.ok(/cashDetail: isNativeApp\(\)\s*\n\s*\? WHAT_IF_LIMIT_LINE/.test(APP) && /verdictReason: isNativeApp\(\)\s*\n\s*\? WHAT_IF_LIMIT_LINE/.test(APP), "6d the simulation limit message is too");
+  const nativeCopy = [freePlan.coachLimitLine(), freePlan.WHAT_IF_LIMIT_LINE];
+  t.eq(nativeCopy[0], "You've used this week's 2 coach messages. You get 2 more on Monday.", "6e the coach one states the limit and when it lifts, word for word as approved");
+  t.eq(nativeCopy[1], "You've run today's What-If. You can run another tomorrow.", "6f the What-If one does the same");
   for (const [i, str] of nativeCopy.entries()) {
     t.ok(!/upgrade|plus|flourishmoney\.app|website|subscribe|\$\d/i.test(str),
       `6g native limit message ${i + 1} sells nothing — no upgrade, no Plus, no website, no price`);
@@ -157,8 +155,10 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     const native = gate.slice(gate.indexOf("{isNativeApp() ? ("), gate.indexOf(") : ("));
     t.ok(!/Flourish Plus|Get Flourish|Start 14 days free|Cancel any time|onClick=\{onUpgrade\}/.test(native),
       "8c the native branch has no Plus pitch, no trial offer and no upgrade button");
-    t.ok(/\{feature\} isn't included in this version\./.test(native), "8d it says plainly that the feature isn't included in this version");
-    t.ok(!/tier|trial|14 days|free/i.test(native.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")), "8d2 …and names no tier and no trial (round-3)");
+    // 2026-10-20: the founder's brief asks a store app to say what the free plan includes, so "the free
+    // plan" is the one plan it may name (lib/freePlan.js closedOnFreePlan). Still no trial, no paid tier.
+    t.ok(/\{nativeNote \|\| LOCKED_LINE\}/.test(native), "8d it says the founder's locked-screen line (LOCKED_LINE)");
+    t.ok(!/tier|trial|14 days|Flourish Plus|\bPlus\b(?! Jakarta)|premium/i.test(native.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")), "8d2 …and names no trial and no paid tier");
     const web = gate.slice(gate.indexOf(") : ("));
     t.ok(/Flourish Plus includes:/.test(web) && /onClick=\{onUpgrade\}/.test(web),
       "8e (control) the web branch keeps the pitch, so native is quiet by platform and not by deletion");

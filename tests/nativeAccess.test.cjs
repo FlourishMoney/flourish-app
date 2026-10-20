@@ -117,8 +117,9 @@ function weekKey(d = new Date()) {
   setUser({ plan: "free", coachUsed: 0 });
   const coach = render("ios", "AICoach", { data, isOnline: true, isPremium: false, coachMsgCount: 0, setScreen: noop, setAppData: noop });
   t.ok(/left this week/.test(coach) && !PURCHASE.test(coach), "3e in the iOS app the free coach shows its weekly count, selling nothing");
-  const note = (app.match(/nativeNote=\{`([^`]+)`\}/) || [])[1] || "";
-  t.eq(note, "You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.", "3f the coach gate's store-app line is the limit and when it lifts");
+  const FP = await import("../src/lib/freePlan.js");
+  t.ok(/feature="AI Coach"[^>]*nativeNote=\{coachLimitLine\(\)\}/.test(app) && FP.coachLimitLine() === "You've used this week's 2 coach messages. You get 2 more on Monday.",
+    "3f the coach gate's store-app line is the founder's: the limit and when it lifts");
 
   // ── 4. What-If: unlimited in the trial, 1 a day on the free plan ─────────────────────────────────────
   {
