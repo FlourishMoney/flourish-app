@@ -59,55 +59,60 @@ Spell them exactly. Keys and secrets go straight into the dashboards named, neve
 2. App Store Connect → Business → Paid Apps → Bank account → the GrowSmart Inc. CAD account.
 3. App Store Connect → Business → Paid Apps → Tax forms → W-8BEN-E (Canadian corporation) and the Canadian tax information.
 4. Play Console → Settings → Developer account → Payments profile → a merchant payments profile linked to this developer account.
-5. Play Console needs a build of the app that contains Google Play Billing before it lets you create a subscription: a 1.1 build from this branch (RevenueCat brings Billing and the BILLING permission), uploaded to the Internal testing track. That build is Amanda's upload, later; nothing here uploads it.
+5. Play Console needs a build of the app that contains Google Play Billing before it lets you create a subscription: version code 17 (2026-10-20, from this branch, in-app purchase off; RevenueCat brings Billing and the BILLING permission), uploaded to the Internal testing track by Amanda.
 
-### B. App Store Connect (one subscription group, three subscriptions)
+### B. App Store Connect (two subscription groups, three subscriptions)
+
+**No product has a free trial or an introductory offer (Amanda, 2026-10-20).** In-app purchases start paying
+right away. The 14-day account trial (#84) is the only trial, the same on the web and in the apps. Every
+display name and description below is marked *needs review*: ChatGPT and Grok approve it before it ships.
+Apple's limits: display name 30 characters, description 45.
 
 1. App Store Connect → Apps → Flourish: Money, Handled → Monetization → Subscriptions → Subscription Groups → **+**
-2. Reference Name: `Flourish`
-3. Group localization → English (Canada) → Subscription Group Display Name: `Flourish`
-4. Group localization → English (U.S.) → Subscription Group Display Name: `Flourish`
+2. Reference Name: `Flourish Plus`
+3. Group localization → English (Canada) → Subscription Group Display Name: `Flourish Plus` (*needs review*)
+4. Group localization → English (U.S.) → Subscription Group Display Name: `Flourish Plus` (*needs review*)
 
-Monthly (in the group, **Create**):
+Monthly (in the `Flourish Plus` group, **Create**):
 
-5. Reference Name: `Flourish monthly`
+5. Reference Name: `Flourish Plus monthly`
 6. Product ID: `app.flourishmoney.plus.monthly`
 7. Subscription Duration: `1 Month`
 8. Subscription Prices → **+** → Country or Region: `Canada` → Price: `CAD 11.99` (let Apple fill the other storefronts, then check the US price it chose)
-9. Localization → English (Canada) → Display Name: `Flourish monthly`
-10. Localization → English (Canada) → Description: `The whole app, renewed every month.`
-11. Review Information → Screenshot: the paywall from a 1.1 TestFlight build
-12. Review Information → Review Notes: `Sign in with the review account in App Review Information; the paywall opens after sign-in. Sandbox purchases are accepted for that account.`
+9. Localization → English (Canada) → Display Name: `Flourish Plus Monthly` (*needs review*)
+10. Localization → English (Canada) → Description: `Every Plus feature, renewed every month.` (*needs review*)
+11. Review Information → Screenshot: the paywall from the 1.1 TestFlight build, with its prices loaded
+12. Review Information → Review Notes: `Sign in with the review account in App Review Information. The plans open from Settings, Subscription, See plans, and from the locked Credit screen. Sandbox purchases are accepted for that account. Restore purchases is on the same screen.`
 13. Family Sharing: **leave off** (item 5: it can never be turned off)
-14. Subscription Prices → Introductory Offers → **+** → Countries or Regions: all → Start Date: today → End Date: none → Type: `Free` → Duration: `1 Month`
+14. Introductory Offers: **none**. Do not add one.
 
 Annual (in the same group, **Create**):
 
-15. Reference Name: `Flourish annual`
+15. Reference Name: `Flourish Plus annual`
 16. Product ID: `app.flourishmoney.plus.annual`
 17. Subscription Duration: `1 Year`
 18. Subscription Prices → Canada → `CAD 99.99`
-19. Localization → English (Canada) → Display Name: `Flourish annual`
-20. Localization → English (Canada) → Description: `The whole app, renewed every year.`
+19. Localization → English (Canada) → Display Name: `Flourish Plus Annual` (*needs review*)
+20. Localization → English (Canada) → Description: `Every Plus feature, renewed every year.` (*needs review*)
 21. Review Information → the same screenshot and notes as steps 11 and 12
 22. Family Sharing: **leave off**
-23. Introductory Offers → **+** → all countries → today → no end → `Free` → `1 Month`
+23. Introductory Offers: **none**.
 
-Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN (founder's rule, 2026-10-17: one ledger of 50, the price
-locked while continuously subscribed; why this setup, below):
+Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN (founder's rule, 2026-10-17, confirmed 2026-10-20: one
+ledger of 50 shared with the website (0025), the price locked while continuously subscribed; why this setup, below):
 
 24. Subscriptions → Subscription Groups → **+** → Reference Name: `Flourish founding`
-25. Group localization → English (Canada) and English (U.S.) → Subscription Group Display Name: `Flourish founding`
+25. Group localization → English (Canada) and English (U.S.) → Subscription Group Display Name: `Flourish Plus Founding` (*needs review*)
 26. In the `Flourish founding` group, **Create** → Reference Name: `Flourish founding annual`
 27. Product ID: `app.flourishmoney.founding.annual`
 28. Subscription Duration: `1 Year`
 29. Subscription Prices → Canada → `CAD 79.99`
-30. Localization → English (Canada) → Display Name: `Flourish founding annual`
-31. Localization → English (Canada) → Description: `The founding price, renewed every year while you stay subscribed.`
+30. Localization → English (Canada) → Display Name: `Flourish Plus Founding Annual` (*needs review*)
+31. Localization → English (Canada) → Description: `The founding price, renewed every year.` (*needs review*)
 32. Review Information → the same screenshot and notes as steps 11 and 12
 33. Family Sharing: **leave off**
 34. Introductory Offers: **none**. Do not add one (why, below).
-35. In the `Flourish` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
+35. In the `Flourish Plus` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
 36. NEVER use **Remove from Sale** on the founding annual, not even once all 50 are issued.
 37. When the server has issued the 50th founding position (the landing page shows 0 left): the founding annual →
     Subscription Prices → change the price in every country or region to the regular annual price (Canada:
@@ -135,16 +140,16 @@ locked while continuously subscribed; why this setup, below):
   after which the standard price applies.
 - Costs of a second group, known and accepted: Apple bills each group separately, so a household could hold both a
   regular and a founding subscription. The app never sells that: a founding holder whose regular store
-  subscription is live (a free month included) is shown the store's own screen to cancel it, and offered the
-  founding price once it has ended (StorePaywall's founding switch). If both are ever live, the household keeps
-  its access, the row is flagged (`support_flag` `two_store_subscriptions`, migration 0022) and the support inbox
-  is emailed the same moment (`_lib/supportAlert.js`).
-- NO FREE MONTH ON THE FOUNDING ANNUAL (2026-10-18). Apple: "Customers can redeem one introductory offer per
-  subscription group", and "existing subscribers may be able to redeem more than one offer if the offers are in
-  different subscription groups" ([Auto-renewable Subscriptions](https://developer.apple.com/app-store/subscriptions/)).
-  In a group of its own, a free month on the founding annual would be a second free month for a household that
-  already had one on the regular plans. Nothing in Apple's rules requires an introductory offer, so it has none:
-  the founding annual is charged when the household confirms it (the paywall's copy says so, lib/storeOffer.js).
+  subscription is live is shown the store's own screen to cancel it, and offered the founding price once it has
+  ended (StorePaywall's founding switch). If both are ever live, the household keeps its access, the row is
+  flagged (`support_flag` `two_store_subscriptions`, migration 0022) and the support inbox is emailed the same
+  moment (`_lib/supportAlert.js`).
+- NO INTRODUCTORY OFFER ANYWHERE (2026-10-20; the founding annual had none since 2026-10-18). Apple: "Customers can
+  redeem one introductory offer per subscription group", and "existing subscribers may be able to redeem more than
+  one offer if the offers are in different subscription groups" ([Auto-renewable Subscriptions](https://developer.apple.com/app-store/subscriptions/)),
+  so with two groups a free month would have been claimable twice. Nothing in Apple's rules requires an
+  introductory offer, and the account trial is the trial: every product is charged when the household confirms it
+  (the paywall's copy says so, lib/storeOffer.js).
 - A founding household that lets its subscription lapse can see the founding annual again in its own Apple
   subscription settings. Until step 37 it could buy it back at CAD 79.99; the server records the founding price
   as ended (`founding_ended_at`, final) and flags that purchase for support. After step 37 it costs the regular price.
@@ -154,6 +159,7 @@ Connecting Apple to RevenueCat:
 38. App Store Connect → Users and Access → Integrations → In-App Purchase → **Generate In-App Purchase Key** → download the .p8 → upload it in RevenueCat (step D4), nowhere else.
 39. App Store Connect → Apps → Flourish → App Information → App Store Server Notifications → Production Server URL: the URL RevenueCat shows (step D4)
 40. Same place → Sandbox Server URL: the same RevenueCat URL
+41. App Store Connect → Users and Access → Sandbox → Test Accounts → **+**: one sandbox Apple Account per tester (an address that is not anyone's real Apple Account). On the iPhone: Settings → App Store → Sandbox Account → sign in with it
 
 **What Apple will not do until 1.1 is approved:** the first subscriptions must be submitted with an app
 version. On the 1.1 version page → In-App Purchases and Subscriptions → add all three (both groups), and submit them with
@@ -162,11 +168,13 @@ work once the Paid Apps agreement is active).
 
 ### C. Play Console (one subscription, three base plans)
 
-One subscription, so Google never lets a household hold two at once (the review of this branch, H3).
+One subscription, so Google never lets a household hold two at once (the review of this branch, H3). No offers
+on any base plan: no free trial, no introductory price (2026-10-20). Names marked *needs review* are approved by
+ChatGPT and Grok before they ship.
 
 1. Play Console → Flourish → Monetize with Play → Products → Subscriptions → **Create subscription**
 2. Product ID: `flourish_plus`
-3. Name: `Flourish`
+3. Name: `Flourish Plus` (*needs review*)
 4. Base plans → **Add base plan** → Base plan ID: `monthly`
 5. Type: `Auto-renewing`
 6. Billing period: `1 month`
@@ -178,20 +186,16 @@ One subscription, so Google never lets a household hold two at once (the review 
 12. Billing period: `1 year`
 13. Price → Canada: `CAD 99.99`
 14. **Activate**
-15. `monthly` → Offers → **Add offer** → Offer ID: `free-month`
-16. Eligibility: `New customer acquisition` → `Never had any subscription in this app`
-17. Phases → **Add phase** → `Free trial` → Duration: `1 month`
-18. **Activate** the offer
-19. `annual` → Offers → **Add offer** → `free-month` → the same eligibility and phase as steps 16 and 17 → **Activate**
-20. `flourish_plus` → Base plans → **Add base plan** → Base plan ID: `founding`
-21. Type: `Auto-renewing`
-22. Billing period: `1 year`
-23. Price → Canada: `CAD 79.99`
-24. **Activate**
-25. `founding`: **no offer**. Do not add `free-month` to it (why, below).
-26. `founding` → base plan settings → **Resubscribe**: off (so a founding household that lets its subscription lapse cannot buy the founding price back from the Play Store; the price is locked only while continuously subscribed)
-27. When the server has issued the 50th founding position (the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
-28. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
+15. `flourish_plus` → Base plans → **Add base plan** → Base plan ID: `founding`
+16. Type: `Auto-renewing`
+17. Billing period: `1 year`
+18. Price → Canada: `CAD 79.99`
+19. `founding` → base plan settings → **Resubscribe**: off (so a founding household that lets its subscription lapse cannot buy the founding price back from the Play Store; the price is locked only while continuously subscribed)
+20. **Activate**
+21. `monthly`, `annual`, `founding`: **no offer** on any of them. Do not add one.
+22. When the server has issued the 50th founding position (the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
+23. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
+24. Play Console → Settings → License testing → add each tester's Google account → License response: `RESPOND_NORMALLY` (their purchases are test purchases, never charged)
 
 **Why the founding base plan is deactivated, not deleted, and why Resubscribe is off** (Google's pages, read
 2026-10-17): deactivating a base plan "does not affect existing subscriptions, and auto-renewals continue until they
@@ -202,14 +206,13 @@ and this app offers the founding base plan only to a household the server says h
 Resubscribe on, "users can repurchase an expired auto-renewing subscription in the Play Store" (the same Play Console
 page), which would bring the founding price back after a lapse.
 
-**Why the founding base plan has no free month** (2026-10-18): on Google Play it could not have been a second one
-(an offer for "users who never had any subscription in your app" is checked across the whole app:
-[Create and manage subscriptions](https://support.google.com/googleplay/android-developer/answer/140504?hl=en)), but
-the App Store's founding annual cannot have one (section B, above), and the founding price is the same offer in both
-stores: charged when the household confirms it.
+**Why no offer on any base plan** (2026-10-20): the account trial is the only trial, and the App Store can have no
+introductory offer either (section B), so the three prices are the same offer in both stores: charged when the
+household confirms.
 
 **What Google will not do until a build is in:** create any subscription before a build with Billing is
-uploaded (step A5). Subscriptions can be created and tested on the Internal testing track before 1.1 is
+uploaded (step A5; version code 17, built 2026-10-20 for exactly this, in-app purchase switched off, never to be
+promoted to Production). Subscriptions can be created and tested on the Internal testing track before 1.1 is
 approved; they are purchasable in production once the 1.1 build is live there.
 
 ### D. RevenueCat (where both stores meet)
@@ -218,7 +221,7 @@ approved; they are purchasable in production once the 1.1 build is live there.
 2. Apps → **+** → App Store → Bundle ID: `app.flourishmoney`
 3. Apps → **+** → Play Store → Package name: `com.flourishmoney.app`
 4. App Store app → In-App Purchase Key: upload the .p8 from B38 (and paste RevenueCat's notification URL into B39 and B40)
-5. Play Store app → Service credentials: a Google Cloud service account JSON with Play Console access (Users and permissions → invite the service account → View financial data, Manage orders and subscriptions); copy RevenueCat's Pub/Sub topic into C28
+5. Play Store app → Service credentials: a Google Cloud service account JSON with Play Console access (Users and permissions → invite the service account → View financial data, Manage orders and subscriptions); copy RevenueCat's Pub/Sub topic into C23
 6. Entitlements → **+** → Identifier: `plus`
 7. Products → import `app.flourishmoney.plus.monthly`, `app.flourishmoney.plus.annual`, `app.flourishmoney.founding.annual`
 8. Products → import `flourish_plus:monthly`, `flourish_plus:annual`, `flourish_plus:founding`
@@ -237,12 +240,14 @@ approved; they are purchasable in production once the 1.1 build is live there.
 
 ### E. Switching it on (only when everything above is done)
 
-1. Supabase SQL editor → run `supabase/migrations/0020_store_subscriptions.sql`
-2. Netlify → Site configuration → Environment variables → `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH` (Production)
-3. Netlify → `IAP_ENABLED` = `true` (Production), then trigger a deploy
-4. The 1.1 store builds: `VITE_IAP_ENABLED=true`, `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the build shell
-5. For TestFlight and internal testing only: Netlify `IAP_ACCEPT_SANDBOX` = `true` while testers buy with sandbox accounts; remove it before release (the App Review account is accepted without it)
-6. Before 1.1 ships: replace the Terms of Service sentence "The iOS and Android apps are free, and there is nothing to buy in them" (section 7; legal review). It is unchanged on this branch.
+1. Supabase SQL editor (Claude): run `supabase/migrations/0020_store_subscriptions.sql`, then its CHECK AFTERWARDS (exactly two rows, as written in its footer)
+2. Supabase SQL editor (Claude): run `supabase/migrations/0022_store_support_flags.sql`, then its CHECK AFTERWARDS (two nullable columns)
+3. Netlify → `REVENUECAT_SECRET_KEY` and `REVENUECAT_WEBHOOK_AUTH` (Production, secret), each with a one-shot hidden-prompt Terminal command; never typed into chat
+4. Netlify → `IAP_ENABLED` = `true` (Production), then trigger a deploy (functions keep the variables of the deploy they were built in)
+5. For TestFlight and internal testing only: Netlify `IAP_ACCEPT_SANDBOX` = `true` while testers buy with sandbox or license-tester accounts, then a deploy; remove it and deploy again before release (the App Review account is accepted without it)
+6. The 1.1 store builds: `VITE_IAP_ENABLED=true`, `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the build shell
+7. Terms of Service section 7: a selling build shows `STORE_TERMS_SECTION_7_IAP` (`src/lib/freePlan.js`, *needs review*) instead of the 1.0 line "There is nothing to buy in the iOS and Android apps"; 1.0.x builds and the website keep theirs. Its "Last updated" date is still October 14, 2026: set it when the text is approved.
+8. Real money only at the very end: one real purchase per store, then refund it (Apple: reportaproblem.apple.com; Google: Play Console → Order management → Refund)
 
 ---
 
@@ -271,6 +276,6 @@ the emulator (and in Play's pre-launch report) before it is uploaded.
 **(c) Android's back key.** It used to leave the app from Settings (Capacitor's default with no back handler).
 Now (`src/lib/backButton.js`, `@capacitor/app`): an open dialog or registered sheet closes first; then the app
 goes back one screen at a time (the paywall's Terms or Privacy page, the bank consent sheet, Settings, the
-notifications, What-If, the money summary, the check-in, the upgrade screen, a full page, any tab) down to Today;
-on Today with nothing open, or on the store paywall (which back never dismisses), the app goes to the background
-with its state. Not tried on a device (no emulator, item 8a).
+notifications, What-If, the money summary, the check-in, the upgrade screen, the store paywall (2026-10-20: the
+household opened it, so back closes it), a full page, any tab) down to Today; on Today with nothing open, the app
+goes to the background with its state. Not tried on a device (no emulator, item 8a).

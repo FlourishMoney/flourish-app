@@ -12,8 +12,9 @@
 //   2  if both are ever live, the household keeps its access, the row is flagged for support (support_flag,
 //      migration 0022) and the support inbox is emailed the same moment, once (_lib/supportAlert.js); a store
 //      purchase on top of a paid website subscription is flagged the same way;
-//   3  the founding annual and the founding base plan have no free month: on the App Store it would be a second one
-//      (one introductory offer per group), cited; the paywall then says the price is charged on confirmation.
+//   3  no product has an introductory offer (the founding annual since 2026-10-18, all three since 2026-10-20): with
+//      two App Store groups one would be claimable twice (one per group), cited; the paywall says each price is
+//      charged on confirmation.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -150,20 +151,22 @@ const sub = (key, o = {}) => ({ store: o.store || "app_store", period_type: o.pe
       "2h migration 0022 only adds the two nullable columns (rollback in its header)");
   }
 
-  // ── 3. No free month on the founding annual or the founding base plan. ──────────────────────────────────
+  // ── 3. No introductory offer on any product, the founding annual included (2026-10-18, all products 2026-10-20). ──
   {
     const D = read("docs", "ops", "IAP-1.1.md");
+    const appleAll = D.slice(D.indexOf("### B. App Store Connect"), D.indexOf("Connecting Apple to RevenueCat:"));
     const apple = D.slice(D.indexOf("Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN"), D.indexOf("Connecting Apple to RevenueCat:"));
     const play = D.slice(D.indexOf("### C. Play Console"), D.indexOf("### D. RevenueCat"));
-    t.ok(/34\. Introductory Offers: \*\*none\*\*/.test(apple) && !/Introductory Offers → \*\*\+\*\*/.test(apple), "3a App Store: the founding annual has no introductory offer");
-    t.ok(/Customers can redeem one introductory offer per\s+subscription group/.test(apple) && apple.includes("https://developer.apple.com/app-store/subscriptions/"),
-      "3b …because in a group of its own it would be a second free month (Apple's rule, cited)");
-    t.ok(/25\. `founding`: \*\*no offer\*\*/.test(play) && !/`founding` → Offers → \*\*Add offer\*\*/.test(play) && /Why the founding base plan has no free month/.test(play),
-      "3c Google Play: the founding base plan has no offer either, so the founding price is the same offer in both stores");
-    t.ok(/15\. `monthly` → Offers → \*\*Add offer\*\* → Offer ID: `free-month`/.test(play) && /23\. Introductory Offers → \*\*\+\*\*/.test(D), "3d (the regular plans keep their free month)");
-    const founding = O.offerCopy({ plan: "founding_annual", priceString: "CA$79.99", eligible: false, platform: "ios" });
-    t.eq([founding.trialLine, founding.button, founding.terms[0]], [null, "Subscribe for CA$79.99 a year", "CA$79.99 a year is charged to your Apple Account when you confirm."],
-      "3e with no free month the paywall promises none: the founding annual is charged on confirmation, in words already approved");
+    t.ok(/34\. Introductory Offers: \*\*none\*\*/.test(apple) && /14\. Introductory Offers: \*\*none\*\*/.test(appleAll) && /23\. Introductory Offers: \*\*none\*\*/.test(appleAll) && !/Introductory Offers → \*\*\+\*\*/.test(D),
+      "3a App Store: no product has an introductory offer, the founding annual included");
+    t.ok(/Customers can\s+redeem one introductory offer per subscription group/.test(apple) && apple.includes("https://developer.apple.com/app-store/subscriptions/"),
+      "3b …and with two groups one would have been claimable twice (Apple's rule, cited)");
+    t.ok(/21\. `monthly`, `annual`, `founding`: \*\*no offer\*\* on any of them/.test(play) && !/Offers → \*\*Add offer\*\*/.test(D) && !/free-month|Free trial/.test(D) && /Why no offer on any base plan/.test(play),
+      "3c Google Play: no offer on any base plan, so the prices are the same offer in both stores");
+    t.ok(!("introEligible" in O), "3d the app asks the store for no introductory eligibility (lib/storeOffer.js)");
+    const founding = O.offerCopy({ plan: "founding_annual", priceString: "CA$79.99", platform: "ios" });
+    t.eq([founding.button, founding.terms[0]], ["Subscribe for CA$79.99 a year", "CA$79.99 a year is charged to your Apple Account when you confirm."],
+      "3e the paywall promises no free month: the founding annual is charged on confirmation");
   }
 
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
