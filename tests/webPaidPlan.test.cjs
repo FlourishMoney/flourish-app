@@ -109,22 +109,25 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
       { status: "canceled", current_period_end: at(30) }, { status: "past_due", current_period_end: at(30) },
       { status: "unpaid", current_period_end: at(30) }, { status: "incomplete", current_period_end: null }];
     const disagree = [];
+    // One answer for every app (2026-10-20): a stray store-app flag from older code must change nothing on
+    // either side, so it is passed to both and the two must still agree with the flag-free answer.
     for (const p of profiles) for (const s of subs) for (const native of [false, true]) {
       const c = client.webPlan(client.derivePlan(p, NOW), { paid: server.isPaidSubscription(s, NOW), native });
       const v = server.deriveEntitlement(p, s, NOW, { native }).plan;
-      if (c !== v) disagree.push(`${JSON.stringify(p)} ${JSON.stringify(s)} native=${native}: client=${c} server=${v}`);
+      const plain = server.deriveEntitlement(p, s, NOW).plan;
+      if (c !== v || v !== plain) disagree.push(`${JSON.stringify(p)} ${JSON.stringify(s)} native=${native}: client=${c} server=${v} plain=${plain}`);
     }
     t.eq(disagree.slice(0, 2).join(" | ") || "(none)", "(none)",
-      `1a webPlan and deriveEntitlement answer alike for ${profiles.length} profiles x ${subs.length} subscriptions x 2 platforms`);
+      `1a webPlan and deriveEntitlement answer alike for ${profiles.length} profiles x ${subs.length} subscriptions, and a store-app flag changes neither`);
     t.eq([client.webPlan(undefined), client.webPlan("nonsense", { paid: true, native: true }), client.webPlan("beta_founder", { paid: false })],
-      ["free", "free", "beta_founder"], "1b an unknown plan is free; a founder stays a founder");
+      ["free", "premium", "beta_founder"], "1b an unknown plan is free (paid: premium, store app or not); a founder stays a founder");
   }
 
   // The server's status answer for one subscriptions row, through the real billing.js.
-  const statusFor = async (row) => {
+  const statusFor = async (row, headers = {}) => {
     process.env.BILLING_ENABLED = "true";
     const state = { rows: { subscriptions: row ? [{ user_id: "u1", provider_customer_id: "cus_1", ...row }] : [], profiles: [{ user_id: "u1", founder_flag: false }] }, writes: [] };
-    const res = await loadWithStubs(BILLING_PATH, { state }).handler(post({ action: "status" }));
+    const res = await loadWithStubs(BILLING_PATH, { state }).handler(post({ action: "status" }, headers));
     return { code: res.statusCode, body: JSON.parse(res.body) };
   };
   // What the web app does with it: the App's effect, as a function (section 7 pins the App to it).
@@ -159,11 +162,22 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     t.eq((await statusFor(null)).body.paid, false, "3e no subscription row: not paid");
   }
 
-  // ── 4. a store app = unchanged ───────────────────────────────────────────────────────────────────
+  // ── 4. a store app = the web's answer (2026-10-20) ───────────────────────────────────────────────
   {
-    for (const p of ["free", "trial", "beta_founder", "premium"]) {
-      t.eq(client.webPlan(p, { paid: true, native: true }), p, `4a a store app with a paid web subscription keeps the profile's plan (${p})`);
+    for (const [p, want] of [["free", "premium"], ["trial", "trial"], ["beta_founder", "beta_founder"], ["premium", "premium"]]) {
+      t.eq(client.webPlan(p, { paid: true, native: true }), want, `4a a store app with a paid web subscription gets the web's plan (${p} -> ${want})`);
     }
+    t.eq(client.webPlan("free", { paid: false, native: true }), "free", "4a2 …and a store app with no payment stays on the free plan");
+    // What a store app is TOLD: whether the household pays, and nothing a store app could sell with.
+    for (const origin of ["capacitor://localhost", "https://localhost"]) {
+      for (const [row, paid] of [[{ status: "active", current_period_end: iso(Date.now() + 30 * DAY) }, true], [null, false], [{ status: "canceled", current_period_end: iso(Date.now() - DAY) }, false]]) {
+        const r = await statusFor(row, { origin });
+        t.eq([r.code, Object.keys(r.body).sort().join(","), r.body.paid], [200, "enabled,paid", paid],
+          `4a3 ${origin}: the status answer is enabled and paid (${paid}) only: no founding offer, no portal, no confirmation link`);
+      }
+    }
+    const webStatus = await statusFor({ status: "active", current_period_end: iso(Date.now() + 30 * DAY) }, { origin: "https://flourishmoney.app" });
+    t.ok("founding" in webStatus.body && "manageable" in webStatus.body, "4a4 (not vacuous: the web's answer still carries the founding offer and the portal)");
     t.ok(/webPaidRef\.current = !nativeApp && /.test(APP), "4b the App never counts a payment in a store app");
     t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "4c …and a store app never even asks for the billing status");
   }

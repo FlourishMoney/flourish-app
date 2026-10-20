@@ -91,13 +91,14 @@ function isPaidSubscription(sub, now = Date.now()) {
 // a founder stays a founder, and an unexpired trial stays a trial even after the card is charged,
 // so nobody loses trial days by paying early.
 //
-// STORE APPS: THE SUBSCRIPTION IS IGNORED (Apple 3.1.3(b); the Play build follows the same rule).
-// Subscriptions are sold only on the web, through Stripe. Until in-app purchase exists, a web
-// subscription must not unlock anything in the iOS or Android app, so for a request from a store
-// app (native: true, _lib/cors.js isNativeRequest) the answer comes from the profile alone: the
-// 14-day trial, then the free tier. The founder flag is not a purchase and still applies.
-function deriveEntitlement(profile, subscription, now = Date.now(), { native = false } = {}) {
-  if (native) subscription = null;
+// STORE APPS GET THE SAME ANSWER AS THE WEB (founder's decision, 2026-10-20). There is no separate
+// rule for a request from the iOS or Android app: the 14-day trial, then the free plan's limits,
+// unless the household is a founder, a beta founder or pays on the web. This replaced a rule that
+// ignored a web subscription in a store app (Apple 3.1.3(b)); a paid web household now keeps full
+// access there too, which leans on Apple 3.1.3(f) and Play's rules for content bought elsewhere,
+// and both hold only while the store apps show no price, no upgrade button and no link to pay.
+// tests/nativeTrialLimits.test.cjs holds the two platforms to one answer.
+function deriveEntitlement(profile, subscription, now = Date.now()) {
   const fromProfile = derivePlan(profile, now);
   if (fromProfile !== "free") {
     return { plan: fromProfile, unlimited: true, paidSubscription: isPaidSubscription(subscription, now) };

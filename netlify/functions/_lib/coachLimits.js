@@ -99,4 +99,67 @@ function decideChatLimit({ enforce, unlimited, usedToday, dailyCeiling, usedWeek
   return { allowed: true, message: null, reason: null };
 }
 
-module.exports = { FREE_CHAT_WEEKLY, freeLimitMessage, countFreeWeek, decideChatLimit };
+// ── WHAT-IF AND THE MEET FACILITATOR (2026-10-20) ────────────────────────────────────────────────
+// Until this date only `chat` was checked here. `simulator` (the What-If explanation) and `facilitator`
+// (the coach-run meeting) went to Anthropic for any signed-in account, so a store app, which opened both
+// to everyone, cost the same for a free household as for a paid one, and an old install keeps doing so
+// whatever its own code says. The server now applies the free plan to both, the same for every app:
+//   simulator    the free plan has 1 a day (usageLimits.js FREE_TIER_LIMITS.simulationsPerDay), counted
+//                on the UTC day, the boundary the client's own counter uses
+//   facilitator  not on the free plan (src/lib/featureAccess.js facilitatorAvailable)
+// A trial, a paid plan or a founder flag lifts both, and nothing here applies while ENFORCE_PLAN_LIMITS
+// is off. The web never sends either call for a free household, so the web is unchanged.
+
+const FREE_SIMULATIONS_DAILY = 1;
+
+// Neither reaches a store app's screen: old installs show their own neutral line for any refusal, and the
+// current app words both itself (src/lib/freePlan.js). Neither names a price, a plan to buy or a website.
+const SIMULATOR_LIMIT_MESSAGE = "You've used today's What-If explanation. It resets tomorrow.";
+const FACILITATOR_FREE_MESSAGE = "The coach-run meeting isn't part of the free plan. Your agenda is unchanged.";
+
+/**
+ * Counts one What-If explanation on the caller's UTC day (migration 0024) and reports whether that worked.
+ * Never throws, for the reason countFreeWeek gives. A missing function (0024 not applied yet) is a failure
+ * like any other, so a free account fails closed: the What-If figures still show, with the app's own
+ * explanation in place of the coach's. Call it only for accounts the free limit can apply to.
+ * @returns {Promise<{usedToday: number|null, counterOk: boolean}>}
+ */
+async function countFreeDay(admin, userId, kind) {
+  try {
+    const { data, error } = await admin.rpc("increment_ai_usage_daily", { p_user: userId, p_kind: kind });
+    if (error) throw error;
+    if (typeof data !== "number") throw new Error(`daily counter returned ${data === null ? "null" : typeof data}`);
+    return { usedToday: data, counterOk: true };
+  } catch (e) {
+    console.error(`[coach] daily ${kind} counter unavailable, free accounts fail closed:`, (e && e.message) || e);
+    return { usedToday: null, counterOk: false };
+  }
+}
+
+/**
+ * @param {object} a
+ * @param {boolean} a.enforce        ENFORCE_PLAN_LIMITS
+ * @param {boolean} a.unlimited      from getUserPlan
+ * @param {number|null} a.usedToday  count AFTER this call, from countFreeDay; null when not counted
+ * @param {boolean} [a.counterOk]
+ * @returns {{allowed: boolean, status: number|null, error: string|null, message: string|null, reason: string|null}}
+ */
+function decideSimulatorLimit({ enforce, unlimited, usedToday, counterOk = true, freeDaily = FREE_SIMULATIONS_DAILY }) {
+  if (enforce && !unlimited) {
+    if (!counterOk) return { allowed: false, status: 429, error: "rate_limited", reason: "free_daily_unavailable", message: SIMULATOR_LIMIT_MESSAGE };
+    if (typeof usedToday === "number" && usedToday > freeDaily) {
+      return { allowed: false, status: 429, error: "rate_limited", reason: "free_daily", message: SIMULATOR_LIMIT_MESSAGE };
+    }
+  }
+  return { allowed: true, status: null, error: null, message: null, reason: null };
+}
+
+function decideFacilitator({ enforce, unlimited }) {
+  if (enforce && !unlimited) return { allowed: false, status: 402, error: "plan_limit", reason: "free_plan", message: FACILITATOR_FREE_MESSAGE };
+  return { allowed: true, status: null, error: null, message: null, reason: null };
+}
+
+module.exports = {
+  FREE_CHAT_WEEKLY, freeLimitMessage, countFreeWeek, decideChatLimit,
+  FREE_SIMULATIONS_DAILY, SIMULATOR_LIMIT_MESSAGE, FACILITATOR_FREE_MESSAGE, countFreeDay, decideSimulatorLimit, decideFacilitator,
+};

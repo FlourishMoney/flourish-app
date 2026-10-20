@@ -26,7 +26,7 @@ const { getStore } = require("@netlify/blobs");
 const { stripePost } = require("./_lib/stripeApi");
 const { isPaidSubscription } = require("./_lib/planRules");
 
-const { corsHeadersFor } = require("./_lib/cors");
+const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
 // calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any
@@ -118,6 +118,12 @@ exports.handler = async (event) => {
     if (action === "status") {
       const { data: row } = await admin
         .from("subscriptions").select("status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
+
+      // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
+      // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
+      // founding offer, no confirmation link and no portal, because a store app shows no price, no upgrade
+      // button and no link to pay (Apple 3.1.1, Google Play's payments policy).
+      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row) });
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
