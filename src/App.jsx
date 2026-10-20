@@ -17018,8 +17018,8 @@ export default function FlourishApp(){
     return ()=>document.removeEventListener("visibilitychange", onVisible);
   },[storeBilling, user?.id, askStore]);
   // VERSION 1.1, ITEM 8c: ANDROID'S BACK KEY GOES BACK ONE SCREEN (lib/backButton.js). A dialog or sheet on top
-  // closes first; then the app's own screens, one at a time, down to Today; on Today with nothing open (or on the
-  // store paywall, which back never dismisses) the app goes to the background, keeping its state. Android only.
+  // closes first; then the app's own screens (the store paywall included, 2026-10-20), one at a time, down to Today;
+  // on Today with nothing open the app goes to the background, keeping its state. Android only.
   const backStateRef = useRef({});
   backStateRef.current = { paywallUp: storeBilling && paywallUp, foundingSwitchOpen: storeBilling && foundingSwitchOpen, paywallLegal, pendingPlaid, showSettings, showNotifs, showWhatIf, showWrapped, showCheckIn, showUpgrade, showPaywall, screen };
   useEffect(()=>{
@@ -17031,7 +17031,7 @@ export default function FlourishApp(){
       if(!act){ CapApp.minimizeApp(); return; }
       const go = {
         closePaywallLegal: ()=>setPaywallLegal(null),
-        closePaywall: ()=>{ setPaywallUp(false); setPaywallLegal(null); },
+        closeStorePaywall: ()=>{ setPaywallUp(false); setPaywallLegal(null); },
         closeFoundingSwitch: ()=>setFoundingSwitchOpen(false),
         closeBankConsent: ()=>setPendingPlaid(null),
         closeSettings: ()=>{ setShowSettings(false); setPendingPlaid(null); },

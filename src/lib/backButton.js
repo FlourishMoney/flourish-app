@@ -38,7 +38,7 @@ const FULL_PAGE = new Set(["privacy", "terms", "delete-account", "support", "wid
  * paywall is one more screen (2026-10-20: the household opens it, and back closes it, as on the web).
  */
 export function backAction(s = {}) {
-  if (s.paywallUp) return s.paywallLegal ? "closePaywallLegal" : "closePaywall";
+  if (s.paywallUp) return s.paywallLegal ? "closePaywallLegal" : "closeStorePaywall";
   // The paywall opened from Settings for a founding holder on a regular plan (version 1.1, 2026-10-18): back closes it.
   if (s.foundingSwitchOpen) return s.paywallLegal ? "closePaywallLegal" : "closeFoundingSwitch";
   if (s.pendingPlaid) return "closeBankConsent";

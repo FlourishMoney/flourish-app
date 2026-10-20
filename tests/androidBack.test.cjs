@@ -26,7 +26,7 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.eq(["privacy", "terms", "support", "widget", "family", "coach", "watch", "do", "budget", "goals", "credit"].map((screen) => B.backAction({ screen })), Array(11).fill("home"),
     "c4 a page or a tab goes back to Today");
   t.eq([B.backAction({ screen: "home" }), B.backAction({})], [null, null], "c5 on Today with nothing open, nothing is left to go back from: the app goes to the background");
-  t.eq([B.backAction({ paywallUp: true, showSettings: true }), B.backAction({ paywallUp: true, paywallLegal: "terms" })], ["closePaywall", "closePaywallLegal"],
+  t.eq([B.backAction({ paywallUp: true, showSettings: true }), B.backAction({ paywallUp: true, paywallLegal: "terms" })], ["closeStorePaywall", "closePaywallLegal"],
     "c6 back closes the store paywall (2026-10-20: the household opened it), and the Terms page inside it first");
   t.eq(B.backAction({ showSettings: true, showNotifs: true }), "closeSettings", "c7 one step per press: the top layer only");
 
@@ -49,6 +49,18 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.ok(/if\(window\.Capacitor\?\.getPlatform\?\.\(\)!=="android"\) return;/.test(fx) && /CapApp\.addListener\("backButton"/.test(fx), "c12 Android only, through @capacitor/app's backButton");
   t.ok(/if\(handleBackLayers\(\)\) return;\s*const act = backAction\(backStateRef\.current\);\s*if\(!act\)\{ CapApp\.minimizeApp\(\); return; \}/.test(fx), "c13 layers first, then one screen back, and at the start the app goes to the background (not closed)");
   t.ok(/closeSettings: \(\)=>\{ setShowSettings\(false\); setPendingPlaid\(null\); \}/.test(fx) && /home: \(\)=>\{[\s\S]*?setScreen\("home"\); \},/.test(fx), "c14 closing Settings and going home are the app's own state changes");
+  {
+    // c16: the handlers are one object literal, so a repeated key silently replaces the earlier handler (the
+    // store paywall's "closePaywall" once shadowed the web Paywall's). Every action backAction can return has
+    // exactly one handler, and the store paywall's closes the store paywall.
+    const go = APP.slice(APP.indexOf("      const go = {"), APP.indexOf("      }[act];"));
+    const keys = [...go.matchAll(/^\s{8}(\w+): /gm)].map((m) => m[1]);
+    const returned = [...new Set([...read("src", "lib", "backButton.js").matchAll(/"(close\w+|home)"/g)].map((m) => m[1]))];
+    t.eq([keys.length > 0, keys.filter((k, i) => keys.indexOf(k) !== i), returned.filter((a) => !keys.includes(a))], [true, [], []],
+      "c16 one handler per back action, no key repeated, none missing");
+    t.ok(/closeStorePaywall: \(\)=>\{ setPaywallUp\(false\); setPaywallLegal\(null\); \},/.test(go) && /closePaywall: \(\)=>setShowPaywall\(false\),/.test(go),
+      "c17 the store paywall and the web Paywall each close themselves");
+  }
   t.ok(/return pushBackHandler\(\(\) => \{ const r = m\._resolve; setM\(null\);/.test(APP), "c15 an open dialog (ModalHost) closes on back, exactly as Escape closes it");
   const pkg = JSON.parse(read("package.json"));
   t.ok(/^\^8\./.test(pkg.dependencies["@capacitor/app"] || "") && /CapacitorApp"/.test(read("ios", "App", "CapApp-SPM", "Package.swift")) && /:capacitor-app'/.test(read("android", "capacitor.settings.gradle")),

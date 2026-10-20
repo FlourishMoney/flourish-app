@@ -110,7 +110,7 @@ const sub = (key, o = {}) => ({ store: o.store || "app_store", period_type: o.pe
       "1k Settings is the way in, and only once the founder's words exist (no wording is written by this change)");
     t.ok(Object.keys(O.FOUNDING_SWITCH_COPY).join(",") === "settingsLine,settingsButton,title,body,bodyCancelled" && Object.values(O.FOUNDING_SWITCH_COPY).every((v) => v === null || (typeof v === "string" && v.trim())),
       "1l the words the founder owes are named, and each is either still empty or written");
-    t.eq([B.backAction({ foundingSwitchOpen: true }), B.backAction({ foundingSwitchOpen: true, paywallLegal: "terms" }), B.backAction({ paywallUp: true })], ["closeFoundingSwitch", "closePaywallLegal", "closePaywall"],
+    t.eq([B.backAction({ foundingSwitchOpen: true }), B.backAction({ foundingSwitchOpen: true, paywallLegal: "terms" }), B.backAction({ paywallUp: true })], ["closeFoundingSwitch", "closePaywallLegal", "closeStorePaywall"],
       "1m the back key closes it, and the paywall too (2026-10-20: it is one more screen)");
   }
 
