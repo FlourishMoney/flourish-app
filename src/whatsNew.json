@@ -1,11 +1,12 @@
 {
-  "version": "1.0.0",
-  "builds": { "ios": 526902, "android": 17 },
+  "version": "1.1.0",
+  "builds": {
+    "ios": 526903,
+    "android": 18
+  },
   "notes": [
-    "A short tour of the five tabs, and a setup checklist on Today that ticks itself off as you go.",
-    "Share Flourish from Settings on iPhone and Android.",
-    "Questions and answers, and a way to send feedback, in Help & Support.",
-    "Meet has a button to mark this week's meeting done.",
-    "Watch → Activity shows your own statements and entries as yours when no bank is linked."
+    "Flourish Plus can now be bought in the app, through the App Store or Google Play.",
+    "A new account has every feature for its first 14 days. After that, the free plan keeps safe to spend, your bills and paydays, and your weekly agenda.",
+    "Settings shows your subscription, with See plans, Restore purchases and Manage subscription."
   ]
 }
