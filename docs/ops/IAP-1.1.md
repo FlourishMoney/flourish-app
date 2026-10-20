@@ -160,6 +160,7 @@ Connecting Apple to RevenueCat:
 39. App Store Connect → Apps → Flourish → App Information → App Store Server Notifications → Production Server URL: the URL RevenueCat shows (step D4)
 40. Same place → Sandbox Server URL: the same RevenueCat URL
 41. App Store Connect → Users and Access → Sandbox → Test Accounts → **+**: one sandbox Apple Account per tester (an address that is not anyone's real Apple Account). On the iPhone: Settings → App Store → Sandbox Account → sign in with it
+42. Apple's EULA (Guideline 3.1.2: a subscription app's metadata must link its Terms of Use and Privacy Policy): App Information → License Agreement: leave Apple's standard licence agreement. On the 1.1 version page → Description: end it with the two links, `Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/` and the Privacy Policy URL already in App Information (*needs review* if the description's wording changes). The paywall itself links both, and the EULA on iOS (`src/lib/storeOffer.js` APPLE_EULA_URL).
 
 **What Apple will not do until 1.1 is approved:** the first subscriptions must be submitted with an app
 version. On the 1.1 version page → In-App Purchases and Subscriptions → add all three (both groups), and submit them with
