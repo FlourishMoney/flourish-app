@@ -15,12 +15,25 @@
 --
 -- ADDITIVE AND IDEMPOTENT. Two nullable columns; no row changes.
 --
+-- WHO SEES THEM. Only the service role writes them (0026 leaves a signed-in household SELECT and nothing
+-- else on public.subscriptions). A household can read its own row through the select-own policy, flags
+-- included: a flag is a short code, never a detail of the conflict, and nothing in the app shows it.
+--
 -- TO APPLY (Supabase SQL editor), after 0020 and before IAP_ENABLED is set in Netlify.
--- ROLLBACK:
---   alter table public.subscriptions drop column if exists support_flag_at;
---   alter table public.subscriptions drop column if exists support_flag;
 -- -----------------------------------------------------------------------------
 -- grants: service_role only
 
 alter table public.subscriptions add column if not exists support_flag text;
 alter table public.subscriptions add column if not exists support_flag_at timestamptz;
+
+-- -----------------------------------------------------------------------------
+-- CHECK AFTERWARDS (read-only):
+--   select column_name, data_type, is_nullable from information_schema.columns
+--   where table_schema = 'public' and table_name = 'subscriptions' and column_name like 'support_flag%'
+--   order by 1;
+-- Expected: support_flag | text | YES, then support_flag_at | timestamp with time zone | YES.
+--
+-- ROLLBACK:
+--   alter table public.subscriptions drop column if exists support_flag_at;
+--   alter table public.subscriptions drop column if exists support_flag;
+-- -----------------------------------------------------------------------------
