@@ -42,7 +42,7 @@ async function withFetch(answer, fn) {
   finally { global.fetch = real; Object.assign(console, { error: quiet.e, log: quiet.l, warn: quiet.w }); }
 }
 
-async function join({ open, consentVersion, insert = { status: 201, body: [{ id: "row-1", founding_position: 31 }] }, ledger = null, exists = false }) {
+async function join({ open, consentVersion, insert = { status: 201, body: [{ id: "row-1", founding_position: 31 }] }, ledger = null, exists = false, preVoid = false }) {
   process.env.SUPABASE_URL = "https://example.supabase.co"; process.env.SUPABASE_SECRET_KEY = "test-service-role";
   process.env[KEY_NAME] = "re_TESTONLY_notarealkey"; delete process.env.WAITLIST_UNSUBSCRIBE_SECRET;
   if (open) process.env.OPEN_SIGNUP = "true"; else delete process.env.OPEN_SIGNUP;
@@ -50,6 +50,7 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
   const { result, calls } = await withFetch((u, o) => {
     if (u.includes("api.resend.com")) return { status: 200, body: { id: "x" } };
     if (u.endsWith("/rest/v1/waitlist") && o.method === "POST") return insert;
+    if (u.includes("/rest/v1/waitlist_founding_ledger") && preVoid && u.includes("void_at=")) return { status: 400, body: { code: "42703" } };   // before 0025: no void_at column
     if (u.includes("/rest/v1/waitlist_founding_ledger")) return ledger ? { status: 200, headers: { "content-range": ledger }, body: null } : { status: 500, body: {} };
     if (u.includes("/rest/v1/waitlist?email=eq.")) return { status: 200, body: exists ? [{ id: "row-0" }] : [] };
     if (u.includes("/rest/v1/waitlist")) return { status: 204, body: [] };
@@ -149,6 +150,12 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
     t.eq([raced.body, raced.sends.length], [{ joined: true, alreadyJoined: false, spotsFull: true }, 0], "5e the last spot went between the count and the insert: no number, no email, \"spots just filled up\"");
     const shut = await join({ open: false, consentVersion: "2026-10-06", ledger: "*/50" });
     t.eq([shut.body.joined, shut.body.spotsFull, shut.ledgerReads], [true, undefined, 0], "5f signup shut: today's signup, the count not even read");
+    // Before 0025 runs (the deploy comes first) there is no void_at column: the check counts every number issued,
+    // as it did before 0025, rather than going blind.
+    const preFull = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/50", preVoid: true });
+    t.eq([preFull.body, preFull.insert, preFull.ledgerReads], [{ joined: false, spotsFull: true }, null, 2], "5g before 0025: 50 issued is full (asked for the real holders, then every number)");
+    const preRoom = await join({ open: true, consentVersion: "2026-10-26", ledger: "*/33", preVoid: true });
+    t.eq([preRoom.body.joined, preRoom.body.spotsFull, !!preRoom.insert], [true, undefined, true], "5h before 0025: 33 issued leaves room, and the join goes ahead");
   }
 
   t.summary("foundingSpotConsent.test");

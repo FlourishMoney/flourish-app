@@ -141,15 +141,20 @@ const CONFIRM_TIMEOUT_MS = 2000;
 // THE FOUNDING SPOTS ARE ALL TAKEN? (billing day, 2026-10-15) true, false, or null when the count cannot be
 // read. The same count /api/founding uses: the real holders, numbers issued in the ledger and not void
 // (migration 0025; a voided test number is never a household and never counts as a spot taken).
+// Before 0025 (no void_at column, a 400) the count is every number issued, as it was before 0025.
 async function foundingSpotsFull(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), 3000);
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist_founding_ledger?select=position&void_at=is.null`, {
-      method: "HEAD",
-      headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
-      signal: controller.signal,
-    });
+    let res = null;
+    for (const q of ["/rest/v1/waitlist_founding_ledger?select=position&void_at=is.null", "/rest/v1/waitlist_founding_ledger?select=position"]) {
+      res = await fetch(`${supabaseUrl}${q}`, {
+        method: "HEAD",
+        headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
+        signal: controller.signal,
+      });
+      if (res.status !== 400) break;
+    }
     if (!res.ok) return null;
     const n = countFromContentRange(res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : null);
     return n === null ? null : n >= FOUNDING_WAITLIST_LIMIT;

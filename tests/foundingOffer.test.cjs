@@ -47,8 +47,9 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
   global.fetch = async (url, o = {}) => {
     calls.push({ url: String(url), method: o.method || "GET", headers: o.headers || {} });
     if (supabase.throws) throw Object.assign(new Error("boom"), { name: supabase.throws });
+    const status = supabase.noVoidColumn && /void_at=/.test(String(url)) ? 400 : supabase.status;
     return {
-      ok: !supabase.status || supabase.status < 300, status: supabase.status || 200,
+      ok: !status || status < 300, status: status || 200,
       headers: { get: (h) => (h.toLowerCase() === "content-range" ? (supabase.range === undefined ? null : supabase.range) : null) },
       json: async () => { throw new Error("the endpoint must not read a body"); },
     };
@@ -357,7 +358,12 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     const ok = await callEndpoint({ supabase: { range: "0-23/24" } });
     t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 real holders (28 issued, 4 void): 26 spots left (with main's openSignup flag)");
     t.ok(/void_at=is\.null/.test(ok.calls[0].url), "8r …counted from the numbers that are not void");
-    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s before 0025 (no void_at column): no number, never the old count");
+    // Before 0025 runs (the deploy comes first): no void_at column, and the count is every number issued, the
+    // figure the landing shows today, so it keeps its founding form (a 503 would put the pre-launch form back).
+    const pre = await callEndpoint({ supabase: { noVoidColumn: true, range: "0-32/33" } });
+    t.eq([pre.res.statusCode, JSON.stringify(pre.body)], [200, '{"spotsLeft":17,"openSignup":false}'], "8s before 0025 (no void_at column): today's count, every number issued (33 issued, 17 left)");
+    t.ok(/void_at=is\.null$/.test(pre.calls[0].url) && /select=position$/.test(pre.calls[1].url) && pre.calls.length === 2, "8s2 …asked for the real holders first, then once for every number");
+    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s3 a 400 to both questions is still no number, never a guess");
     // Step 11b (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
     const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
     const listed = (sql.match(/update public\.waitlist_founding_ledger l set void_at = now\(\), void_reason = 'test'\s+where l\.position in [\s\S]*?;/g) || []);

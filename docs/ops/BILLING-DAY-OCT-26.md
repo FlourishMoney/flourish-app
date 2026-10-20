@@ -485,9 +485,9 @@ before anything changes, what production will read after it.
 
 **Before 0025 (today):** the ledger counts every number ever issued, so the 12 numbers Amanda's deleted test
 sign-ups took (16 to 21, 23 to 28) still count as seats, and so does any number a test address or a beta
-founder took. Accounts that confirm their address never take a number. From the deploy of the founding-50 change until
-0025 runs, `/api/founding` answers 503 (it asks for the real holders, which need 0025's `void_at`) and the
-landing shows no number.
+founder took. Accounts that confirm their address never take a number. Until 0025 runs, `/api/founding` and
+the waitlist form's spots-full check count every number issued, as they always have (they ask for the real
+holders first, which need 0025's `void_at`); from 0025 on they count the real holders.
 
 **After 0025:**
 - Test rows and test addresses (getgrowsmart.com, flourishmoney.app, and their subdomains) never hold a
