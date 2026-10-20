@@ -57,16 +57,17 @@ export const STORE_TERMS_SECTION_7 =
   `${n(FREE_TIER_LIMITS.simulationsPerDay, "What-If", "What-Ifs")} a day and ${n(FREE_BANKS, "connected bank", "connected banks")}, ` +
   "and it does not include Credit or the coach-run meeting. Each limit is shown where it applies.";
 
-// ── NEEDS REVIEW (ChatGPT and Grok) before it ships: version 1.1, in-app purchase ───────────────────────
+// ── Approved 2026-10-20 (ChatGPT and Grok agreed): version 1.1, in-app purchase ─────────────────────────────
 // Terms of Service, section 7, in a store app that sells (lib/storeBilling.js storeBillingOn). A 1.0.x store
-// build keeps STORE_TERMS_SECTION_7 above, which would be untrue here. No price (the store shows it), no website.
+// build keeps STORE_TERMS_SECTION_7 above, which is true for it and untrue here. No price (the store shows it).
 export const STORE_TERMS_SECTION_7_IAP =
-  "In the iOS and Android apps, Flourish Plus is an auto-renewing subscription bought through the App Store or Google Play, " +
-  "at the price the store shows before you confirm. The store charges it, and it renews every month or every year until you cancel it " +
-  "in your App Store or Google Play account settings, at least 24 hours before the end of the period. " +
-  "Refunds for a store purchase are requested from that store. " +
-  "The founding annual price is for the first 50 households and stays the same for as long as that subscription renews without a break. " +
-  "A new account has every feature for its first 14 days. There is no other trial. After that, without a subscription, the free plan has usage limits: " +
+  "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: " +
   `${n(FREE_TIER_LIMITS.coachMessagesPerWeek, "coach message", "coach messages")} a week, ` +
   `${n(FREE_TIER_LIMITS.simulationsPerDay, "What-If", "What-Ifs")} a day and ${n(FREE_BANKS, "connected bank", "connected banks")}, ` +
-  "and it does not include Credit or the coach-run meeting. Each limit is shown where it applies.";
+  "and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. " +
+  "In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. " +
+  "Payment is charged to your Apple or Google account when you confirm. " +
+  "The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). " +
+  "Cancelling takes effect at the end of the current period. " +
+  "Refunds for purchases made in the apps are handled by Apple or Google under their own policies. " +
+  "The founding price is for the first 50 founding members and stays the same while that subscription stays active.";

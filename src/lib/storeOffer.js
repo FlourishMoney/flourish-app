@@ -10,32 +10,43 @@
 // Prices are the store's own formatted strings (priceString), never a number of ours, so the screen shows what the
 // store will charge. The website's prices and checkout are never mentioned, and nothing links out to pay. No saving
 // is claimed between plans, nothing is called the best, and nothing tells the household what to do with its money.
-// EVERY LINE HERE NEEDS REVIEW (ChatGPT and Grok) before it ships.
+//
+// APPROVED WORD FOR WORD 2026-10-20 (ChatGPT and Grok agreed; tests/iapApprovedCopy.test.cjs pins each): the two
+// disclosures, the three links and the founding line. Do not reword them here. Every other line in this file still
+// NEEDS REVIEW before it ships (the report lists them).
 // -----------------------------------------------------------------------------
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
 
-// Apple's standard licence agreement for apps (EULA), linked from the iOS paywall (Guideline 3.1.2).
+// Apple's standard licence agreement for apps (EULA). On iOS the paywall's "Terms of Use" opens it (Guideline 3.1.2).
 export const APPLE_EULA_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
+
+// Approved 2026-10-20. Under the plans, once per paywall, for the platform the app runs on.
+export const STORE_DISCLOSURE = Object.freeze({
+  ios: "Payment is charged to your Apple Account when you confirm. Your subscription renews automatically unless you cancel at least 24 hours before the current period ends. You can manage or cancel it in your Apple Account settings.",
+  android: "Payment is charged through Google Play when you confirm. Your subscription renews automatically unless you cancel before the renewal date. You can manage or cancel it in Google Play under Subscriptions.",
+});
+
+// Approved 2026-10-20. The founding plan's card.
+export const FOUNDING_LINE = "For the first 50 founding members. Your price stays the same while you stay subscribed.";
 
 /** The words for one plan. plan: "monthly" | "annual" | "founding_annual". */
 export function offerCopy({ plan, priceString, platform = "ios" }) {
   const per = PERIOD[plan];
   if (!per || typeof priceString !== "string" || !priceString.trim()) return null;
   const price = `${priceString.trim()} ${per}`;
-  const store = platform === "android" ? "Google Play account" : "Apple Account";
-  const where = platform === "android" ? "in Google Play, under Payments and subscriptions" : "in your Apple Account settings, under Subscriptions";
   const name = plan === "founding_annual" ? "Founding annual" : plan === "annual" ? "Annual" : "Monthly";
   return {
     name,
     price,
-    note: plan === "founding_annual" ? "Founding price for the first 50 households. Locked in while you stay subscribed." : null,
+    note: plan === "founding_annual" ? FOUNDING_LINE : null,
     button: `Subscribe for ${price}`,
-    terms: [
-      `${price} is charged to your ${store} when you confirm.`,
-      `The subscription renews automatically at ${price} unless you cancel at least 24 hours before the end of the period. You can manage or cancel it ${where}.`,
-    ],
   };
+}
+
+/** The approved disclosure under the plans, for this platform. */
+export function storeDisclosure(platform) {
+  return platform === "android" ? STORE_DISCLOSURE.android : STORE_DISCLOSURE.ios;
 }
 
 // THE FOUNDING SWITCH (2026-10-18): a household holding a founding position while a regular store subscription is
@@ -52,10 +63,9 @@ export const PAYWALL_COPY = Object.freeze({
   title: "Flourish Plus",
   lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
   dataSafe: "Your accounts, bills and history stay exactly as they are.",
-  restore: "Restore purchases",
-  terms: "Terms of Use",
-  privacy: "Privacy Policy",
-  eula: "Apple's licence agreement (EULA)",
+  terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
+  privacy: "Privacy Policy",      // approved 2026-10-20
+  restore: "Restore purchases",   // approved 2026-10-20
   close: "Close",
   checking: "Confirming with the store…",
   checkAgain: "Check again",

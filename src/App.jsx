@@ -85,7 +85,7 @@ import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, 
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
-import { offerCopy, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -13761,9 +13761,10 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 // VERSION 1.1, ITEM 2: THE STORE APPS' PAYWALL (lib/storeOffer.js has the offer and what may be claimed).
 // Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
 // The prices are the store's own strings, with no trial and no introductory offer, and access follows the
-// server's answer after the store's sheet, never the SDK's. Restore, the Terms of Use, the Privacy Policy (and on
-// iOS, Apple's standard EULA) are always on it, and it can always be closed: it opens only when the household
-// asks (item 3). It is drawn OVER the app, whose one ModalHost sits above it.
+// server's answer after the store's sheet, never the SDK's. The approved disclosure sits under the plans, and the
+// approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
+// purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
+// whose one ModalHost sits above it.
 function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
   const [loadFailed,setLoadFailed]=useState(false);
@@ -13847,17 +13848,20 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
               <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
                 {busy===plan?PAYWALL_COPY.checking:copy.button}
               </button>
-              {copy.terms.map((line,i)=><div key={i} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:i?SPACE.xs:SPACE.sm}}>{line}</div>)}
             </div>
           ))}
         </div>
+        {!held && cards.length>0 && <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform)}</div>}
         {said&&<div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{said}</div>}
         {waiting&&<button onClick={doCheck} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>{busy==="check"?PAYWALL_COPY.checking:PAYWALL_COPY.checkAgain}</button>}
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
-          <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
-          <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>
+          {/* The approved three, in order. On iOS "Terms of Use" opens Apple's standard EULA (Guideline 3.1.2); Capacitor
+              hands a target=_blank link to the system, so it opens in Safari. On Android it opens the app's own Terms. */}
+          {platform==="ios"
+            ? <a href={APPLE_EULA_URL} target="_blank" rel="noopener noreferrer" style={{...link,display:"inline-flex",alignItems:"center"}}>{PAYWALL_COPY.terms}</a>
+            : <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>}
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
-          {platform==="ios"&&<a href={APPLE_EULA_URL} target="_blank" rel="noopener noreferrer" style={{...link,display:"inline-flex",alignItems:"center"}}>{PAYWALL_COPY.eula}</a>}
+          <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
         </div>
       </div>
     </div>
@@ -17911,6 +17915,9 @@ export default function FlourishApp(){
         // screen, so they tapped Connect again — creating the duplicate plaid_items row while the
         // first orphan persisted server-side.
         console.error("Reconnect failed", err);
+        // The free plan's one-bank limit is not a failure to retry. A store app says so in the approved line
+        // (lib/freePlan.js FREE_BANK_LINE), never the server's plan code or an upgrade path; the web keeps its line.
+        if(isNativeApp() && /plan_limit/.test(String(err?.message||""))){ alertModal({ message: FREE_BANK_LINE }); return; }
         captureError(err, { area: "plaid" });
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });

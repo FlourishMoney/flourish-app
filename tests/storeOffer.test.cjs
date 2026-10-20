@@ -10,7 +10,8 @@
 //   4. The words for each plan: the store's own price string, word for word; no plan we don't sell.
 //   5. The words: no trial, no free month, no website price, no saving or "best" claim, no money instruction,
 //      no dash, no banned word, Canadian spelling, and the renewal terms the stores require.
-//   6. The screen: one render site; restore, terms, privacy and (iOS) Apple's EULA; it can always be closed.
+//   6. The screen: one render site; the approved disclosure and the approved three links (Terms of Use, on iOS
+//      Apple's standard EULA; Privacy Policy; Restore purchases); it can always be closed.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -77,7 +78,7 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     const m = O.offerCopy({ plan: "monthly", priceString: "$11.99", platform: "ios" });
     t.eq([m.name, m.price, m.button, m.note], ["Monthly", "$11.99 a month", "Subscribe for $11.99 a month", null], "4a monthly: the store's price, as the store will charge it");
     const f = O.offerCopy({ plan: "founding_annual", priceString: "$79.99", platform: "android" });
-    t.eq([f.name, f.price, f.note], ["Founding annual", "$79.99 a year", "Founding price for the first 50 households. Locked in while you stay subscribed."], "4b founding annual: its price and the founding note");
+    t.eq([f.name, f.price, f.note], ["Founding annual", "$79.99 a year", O.FOUNDING_LINE], "4b founding annual: its price and the approved founding line");
     t.eq([O.offerCopy({ plan: "annual", priceString: " CA$99.99 ", platform: "android" }).price, O.offerCopy({ plan: "weekly", priceString: "$1" }), O.offerCopy({ plan: "monthly", priceString: "" }), O.offerCopy({ plan: "monthly", priceString: 11.99 })],
       ["CA$99.99 a year", null, null, null], "4c prices are the store's own strings, word for word; no plan we don't sell, and no price we don't have");
     t.ok(!("introEligible" in O) && !/introPrice|freePhase|eligib|checkTrialOrIntroductoryPriceEligibility/.test(read("src", "lib", "storeOffer.js")), "4d nothing asks the store about a trial or an introductory price");
@@ -89,11 +90,11 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     const all = [];
     for (const plan of ["monthly", "annual", "founding_annual"]) for (const platform of ["ios", "android"]) {
       const c = O.offerCopy({ plan, priceString: "$11.99", platform });
-      all.push(c.name, c.price, c.button, ...(c.note ? [c.note] : []), ...c.terms);
+      all.push(c.name, c.price, c.button, ...(c.note ? [c.note] : []), O.storeDisclosure(platform));
     }
     all.push(...Object.values(O.PAYWALL_COPY).filter((v) => typeof v === "string"), ...Object.values(O.PAYWALL_COPY.outcomes).filter(Boolean));
     const texts = [...new Set(all)];
-    t.ok(texts.length >= 25, `5a (the scan sees the offer's words: ${texts.length} strings)`);
+    t.ok(texts.length >= 20, `5a (the scan sees the offer's words: ${texts.length} strings)`);
     t.eq(texts.filter((x) => BANNED.test(x)), [], "5b no em or en dash, none of the banned words, no GST/HST credit, no competitor");
     t.eq(texts.filter((x) => SAVING.test(x)), [], "5c no saving claimed between plans, nothing called the best, no discount");
     t.eq(texts.flatMap((x) => adviceProblems(x).map((w) => `${w}: ${x}`)), [], "5d no money instruction, no verdict");
@@ -104,14 +105,12 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     const T7 = F.STORE_TERMS_SECTION_7_IAP;
     t.eq([BANNED.test(T7), SAVING.test(T7), US.test(T7), adviceProblems(T7), /\$\s?\d|website|https?:|checkout/i.test(T7), /nothing to buy/i.test(T7)], [false, false, false, [], false, false],
       "5j Terms section 7 in a selling build: no banned word, saving, US spelling, money instruction, price or website, and never \"nothing to buy\"");
-    t.ok(/auto-renewing subscription bought through the App Store or Google Play/.test(T7) && /at least 24 hours before the end of the period/.test(T7) && /first 50 households/.test(T7)
-      && /first 14 days\. There is no other trial\./.test(T7) && T7.endsWith(F.STORE_TERMS_SECTION_7.slice(F.STORE_TERMS_SECTION_7.indexOf("the free plan has usage limits"))),
-      "5k …it says how the store sells and renews it, the founding price's rule, the account trial as the only trial, and the free plan's limits as approved");
-    const ios = O.offerCopy({ plan: "monthly", priceString: "$11.99", platform: "ios" }).terms.join(" ");
-    const and = O.offerCopy({ plan: "annual", priceString: "$99.99", platform: "android" }).terms.join(" ");
-    t.ok(/charged to your Apple Account when you confirm/.test(ios) && /at least 24 hours before the end of the period/.test(ios) && /renews automatically at \$11\.99 a month/.test(ios) && /manage or cancel it in your Apple Account settings, under Subscriptions/.test(ios),
-      "5h the App Store terms: who is charged, when, that it renews, the 24-hour rule, and where to cancel");
-    t.ok(/charged to your Google Play account/.test(and) && /Payments and subscriptions/.test(and) && /renews automatically at \$99\.99 a year/.test(and), "5i …and Google Play's");
+    t.ok(T7.includes(F.STORE_TERMS_SECTION_7.slice(F.STORE_TERMS_SECTION_7.indexOf("the free plan has usage limits"))),
+      "5k …and its free-plan limits are the 1.0 line's, read from the same figures (iapApprovedCopy.test pins it word for word)");
+    const ios = O.storeDisclosure("ios"), and = O.storeDisclosure("android");
+    t.ok(/charged to your Apple Account when you confirm/.test(ios) && /at least 24 hours before the current period ends/.test(ios) && /renews automatically/.test(ios) && /manage or cancel it in your Apple Account settings/.test(ios),
+      "5h the App Store disclosure: who is charged, when, that it renews, the 24-hour rule, and where to cancel");
+    t.ok(/charged through Google Play/.test(and) && /cancel before the renewal date/.test(and) && /Google Play under Subscriptions/.test(and), "5i …and Google Play's");
   }
 
   // ── 6. The screen ────────────────────────────────────────────────────────────────────────────
@@ -121,7 +120,9 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     for (const [what, rx] of [["restore", /onClick=\{doRestore\}/], ["terms", /onViewLegal\("terms"\)/], ["privacy", /onViewLegal\("privacy"\)/], ["a close button", /onClose&&<div[^\n]*aria-label="Close" onClick=\{onClose\}/]]) {
       t.ok(rx.test(comp), `6b the paywall always offers ${what}`);
     }
-    t.ok(/\{platform==="ios"&&<a href=\{APPLE_EULA_URL\} target="_blank" rel="noopener noreferrer"/.test(comp), "6c on iOS, a link to Apple's standard EULA");
+    t.ok(/\{platform==="ios"\s*\? <a href=\{APPLE_EULA_URL\} target="_blank" rel="noopener noreferrer"[^>]*>\{PAYWALL_COPY\.terms\}<\/a>\s*: <button onClick=\{\(\)=>onViewLegal\("terms"\)\} style=\{link\}>\{PAYWALL_COPY\.terms\}<\/button>\}/.test(comp)
+      && /\{!held && cards\.length>0 && <div[^>]*>\{storeDisclosure\(platform\)\}<\/div>\}/.test(comp),
+      "6c on iOS \"Terms of Use\" opens Apple's standard EULA, on Android the app's Terms; the disclosure sits under the plans once");
     t.ok(!/onSignOut|onDeleteAccount|<ModalHost\/>/.test(comp), "6d no sign out or delete of its own (it can always be closed; Settings has both) and no ModalHost of its own");
     t.ok(/offerCopy\(\{ plan, priceString: p\.product\.priceString, platform \}\)/.test(comp), "6e every card's words come from the store's price");
     t.ok(/storeBuy\(deps, pkg\)/.test(comp) && /serverStatus: \(\)=>askStore\("store_status"\)/.test(comp) && /serverSync: \(\)=>askStore\("store_sync"\)/.test(comp), "6f a purchase goes through lib/storeBilling.js buy: the server is asked first and last");
@@ -131,9 +132,10 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
       const props = (platform) => ({ purchases: null, platform, status: null, askStore: async () => null, onResolved() {}, onViewLegal() {}, onManage() {}, onClose() {} });
       const ios = textOf(A.render(A.h(A.StorePaywall, props("ios"))));
       const and = textOf(A.render(A.h(A.StorePaywall, props("android"))));
-      t.ok([O.PAYWALL_COPY.title, O.PAYWALL_COPY.lead, O.PAYWALL_COPY.dataSafe, "Restore purchases", "Terms of Use", "Privacy Policy", O.PAYWALL_COPY.eula].every((x) => ios.includes(x)),
-        "6g it renders on iOS: the title, what Plus adds, that the household's data is safe, restore, terms, privacy and the EULA");
-      t.ok(!and.includes(O.PAYWALL_COPY.eula) && and.includes("Restore purchases"), "6h on Android, the same without Apple's EULA");
+      const order = (html) => ["Terms of Use", "Privacy Policy", "Restore purchases"].map((x) => html.indexOf(x));
+      t.ok([O.PAYWALL_COPY.title, O.PAYWALL_COPY.lead, O.PAYWALL_COPY.dataSafe].every((x) => ios.includes(x)) && order(ios).every((i, k, a) => i >= 0 && (k === 0 || i > a[k - 1])),
+        "6g it renders on iOS: the title, what Plus adds, that the household's data is safe, then Terms of Use, Privacy Policy, Restore purchases in that order");
+      t.ok(order(and).every((i, k, a) => i >= 0 && (k === 0 || i > a[k - 1])) && !/EULA|licence agreement/i.test(ios + and), "6h …and on Android; no other link line");
       t.ok(!/\$\d/.test(ios) && !/\bfree\b(?! plan)|trial/i.test(ios), "6i before the store answers it states no price, and never a trial");
     }
   }

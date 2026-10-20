@@ -165,8 +165,8 @@ const sub = (key, o = {}) => ({ store: o.store || "app_store", period_type: o.pe
       "3c Google Play: no offer on any base plan, so the prices are the same offer in both stores");
     t.ok(!("introEligible" in O), "3d the app asks the store for no introductory eligibility (lib/storeOffer.js)");
     const founding = O.offerCopy({ plan: "founding_annual", priceString: "CA$79.99", platform: "ios" });
-    t.eq([founding.button, founding.terms[0]], ["Subscribe for CA$79.99 a year", "CA$79.99 a year is charged to your Apple Account when you confirm."],
-      "3e the paywall promises no free month: the founding annual is charged on confirmation");
+    t.eq([founding.button, founding.note, O.storeDisclosure("ios").startsWith("Payment is charged to your Apple Account when you confirm.")], ["Subscribe for CA$79.99 a year", O.FOUNDING_LINE, true],
+      "3e the paywall promises no free month: the founding annual is charged on confirmation (the approved disclosure)");
   }
 
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
