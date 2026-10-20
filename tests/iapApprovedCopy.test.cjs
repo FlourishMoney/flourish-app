@@ -10,6 +10,9 @@
 //   5  Settings' What's new for 1.1 (the approved paragraph, one sentence per note);
 //   6  the free plan's bank limit in a store app is FREE_BANK_LINE on both connect paths, and the server's two
 //      upgrade texts can never reach an app screen (the app builds its error from the code, never the message).
+//   8  the rest of the store paywall, its outcomes and the Settings and delete lines, approved as written with
+//      three changes (no "exactly"; "Try Restore purchases again shortly."; the website is never named in a store
+//      app, so a household that paid there reads "This account has full access.").
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -71,6 +74,48 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || APP.includes(x.split(". ")[1])), [], "6c neither upgrade text is anywhere in the app");
   t.ok(/: \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)[\s\S]{0,200}\? FREE_BANK_LINE/.test(APP), "6d onboarding's connect: a store app shows FREE_BANK_LINE");
   t.ok(/if\(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\?\.message\|\|""\)\)\)\{ alertModal\(\{ message: FREE_BANK_LINE \}\); return; \}/.test(APP), "6e Settings' add-bank: a store app shows FREE_BANK_LINE (it used to say \"Please try again\")");
+
+  // ── 8. The rest of the store copy, approved 2026-10-20 (three changes applied) ────────────────
+  {
+    const P = O.PAYWALL_COPY;
+    t.eq([P.title, P.lead, P.dataSafe, P.close, P.checking, P.checkAgain, P.storeUnavailable], [
+      "Flourish Plus",
+      "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+      "Your accounts, bills and history stay as they are.",
+      "Close",
+      "Confirming with the store…",
+      "Check again",
+      "The store couldn't be reached just now. Your data is safe. Restore purchases works once the store answers.",
+    ], "8a the paywall's own lines, word for word (\"stay as they are\", without \"exactly\")");
+    t.eq(P.outcomes, {
+      paid: null,
+      already_paid: "This account already has a subscription, so nothing was bought here.",
+      web_attention: "This account's subscription didn't renew: its last payment didn't go through. Nothing was bought here.",
+      charged_twice: "This account already had a subscription, and the store took this purchase as well. Your access stays as it is. You can ask the store that charged you for a refund of this purchase: Apple at reportaproblem.apple.com, or Google Play from your order history. For help, email hello@flourishmoney.app.",
+      cancelled: null,
+      pending: "The store is still waiting on this purchase. Full access starts as soon as the store confirms it.",
+      failed: "The store didn't complete the purchase. If you see a charge for it, tap Restore purchases.",
+      unconfirmed: "The store took the purchase, and Flourish is still waiting to hear it from the store. Try Restore purchases again shortly.",
+      nothing_to_restore: "No subscription was found for this store account.",
+    }, "8b every outcome, word for word (\"Try Restore purchases again shortly.\")");
+    t.eq(["monthly", "annual", "founding_annual"].map((plan) => { const c = O.offerCopy({ plan, priceString: "CA$11.99", platform: "ios" }); return [c.name, c.price, c.button]; }),
+      [["Monthly", "CA$11.99 a month", "Subscribe for CA$11.99 a month"], ["Annual", "CA$11.99 a year", "Subscribe for CA$11.99 a year"], ["Founding annual", "CA$11.99 a year", "Subscribe for CA$11.99 a year"]],
+      "8c the plan cards: name, the store's price with its period, and the button");
+    const settings = [O.subscriptionLine({ paid: true, provider: "app_store" }), O.subscriptionLine({ paid: true, provider: "play_store" }), O.subscriptionLine({ paid: true, provider: "stripe" }),
+      O.subscriptionLine(null, { entitled: true }), O.subscriptionLine(null)];
+    t.eq(settings, ["Your subscription is through the App Store.", "Your subscription is through Google Play.", "This account has full access.", "This account has full access.", "There's no subscription on this account yet."],
+      "8d Settings' card lines; a household that paid on the website reads \"This account has full access.\"");
+    t.eq([O.storeCancelNote("app_store"), O.storeCancelNote("play_store")], [
+      "The App Store subscription carries on until you cancel it in your Apple Account settings, under Subscriptions.",
+      "The Google Play subscription carries on until you cancel it in Google Play, under Payments and subscriptions.",
+    ], "8e the delete confirmation's store notes");
+    t.ok(/\{storeSubscription\.onSubscribe&&<Btn label="See plans"/.test(APP) && /<Btn label="Manage subscription" onClick=\{storeSubscription\.onManage\}/.test(APP) && /<Btn label="Restore purchases" onClick=\{storeSubscription\.onRestore\}/.test(APP)
+      && /\{storeOn&&onUpgrade&&<button onClick=\{onUpgrade\}[^>]*>See plans<\/button>\}/.test(APP), "8f the buttons: See plans (Settings, the locked screens), Manage subscription, Restore purchases");
+    const storeLines = [...Object.values(P).filter((v) => typeof v === "string"), ...Object.values(P.outcomes).filter(Boolean), ...settings, O.storeCancelNote("app_store"), O.storeCancelNote("play_store"),
+      O.STORE_DISCLOSURE.ios, O.STORE_DISCLOSURE.android, O.FOUNDING_LINE, F.STORE_TERMS_SECTION_7_IAP];
+    t.eq(storeLines.filter((x) => /website|on the web\b|https?:\/\/|www\./i.test(x)), [], "8g no store-app line names the website (the support email address is an address, not a link)");
+    t.ok(!/through the Flourish website/.test(fs.readFileSync(path.join(REPO, "src", "lib", "storeOffer.js"), "utf8")) && !/through the Flourish website/.test(APP), "8h …and the old website line is gone from the code");
+  }
 
   // The paywall renders the approved lines where they belong.
   let A = null;

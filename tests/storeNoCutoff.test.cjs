@@ -98,8 +98,9 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     const WRITES = /setAppData|clearState|clearAllUserLocal|localStorage\.(removeItem|clear|setItem)|setOnboarded|setHousehold/;
     t.ok(!WRITES.test(comp) && !WRITES.test(ov.replace(/onSignOut=\{signOut\}|onDeleteAccount=\{deleteAllData\}/g, "")) && !WRITES.test(lib),
       "5a the paywall, its overlay and the purchase flow never write, clear or replace the household's data (only the household's own sign out or delete can)");
-    const fx = APP.slice(APP.indexOf("const paywallOpenRef = useRef(true);"), APP.indexOf("const paywallOpenRef = useRef(true);") + 2600);
-    t.ok(!WRITES.test(fx) && !/AbortController|\.abort\(/.test(fx), "5b deciding the paywall writes nothing and cancels no request in flight");
+    const at = APP.indexOf("useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);");
+    const fx = at >= 0 ? APP.slice(at, at + 2600) : "";
+    t.ok(fx.length > 0 && !WRITES.test(fx) && !/AbortController|\.abort\(/.test(fx), "5b closing the paywall (and the status refresh after it) writes nothing and cancels no request in flight");
     t.ok(/if\(!storeBilling \|\| profilePlan===null\) return;/.test(APP), "5c the plan is never set from a store answer before the profile is in");
   }
 
@@ -107,8 +108,8 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
   {
     const lines = [O.subscriptionLine({ paid: true, provider: "app_store" }), O.subscriptionLine({ paid: true, provider: "play_store" }), O.subscriptionLine({ paid: true, provider: "stripe" }),
       O.subscriptionLine(null, { entitled: true }), O.subscriptionLine(null), O.storeCancelNote("app_store"), O.storeCancelNote("play_store")];
-    t.eq(lines.slice(0, 5), ["Your subscription is through the App Store.", "Your subscription is through Google Play.", "Your subscription is through the Flourish website.", "This account has full access.", "There's no subscription on this account yet."],
-      "6a Settings says where the subscription is, in words, with no price and no link off the app");
+    t.eq(lines.slice(0, 5), ["Your subscription is through the App Store.", "Your subscription is through Google Play.", "This account has full access.", "This account has full access.", "There's no subscription on this account yet."],
+      "6a Settings says where a store subscription is, in words, with no price and no link off the app; a website subscriber reads \"This account has full access.\" (the website is never named)");
     t.eq([O.storeCancelNote("stripe"), O.storeCancelNote(null)], [null, null], "6b the delete note is only for a store subscription");
     t.eq(lines.filter((x) => BANNED.test(x) || /\$\d/.test(x)), [], "6c no dash, no banned word, no price");
     t.eq(lines.flatMap((x) => adviceProblems(x).map((w) => `${w}: ${x}`)), [], "6d no money instruction");

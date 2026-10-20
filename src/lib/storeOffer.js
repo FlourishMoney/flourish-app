@@ -11,9 +11,10 @@
 // store will charge. The website's prices and checkout are never mentioned, and nothing links out to pay. No saving
 // is claimed between plans, nothing is called the best, and nothing tells the household what to do with its money.
 //
-// APPROVED WORD FOR WORD 2026-10-20 (ChatGPT and Grok agreed; tests/iapApprovedCopy.test.cjs pins each): the two
-// disclosures, the three links and the founding line. Do not reword them here. Every other line in this file still
-// NEEDS REVIEW before it ships (the report lists them).
+// EVERY LINE HERE IS APPROVED WORD FOR WORD, 2026-10-20 (ChatGPT and Grok agreed): the disclosures, the three links
+// and the founding line first, then the rest of the paywall, the outcomes and the Settings lines, with three changes
+// (no "exactly"; "Try Restore purchases again shortly."; the website never named). tests/iapApprovedCopy.test.cjs
+// pins each. Do not reword them here. FOUNDING_SWITCH_COPY below is still unwritten.
 // -----------------------------------------------------------------------------
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
@@ -62,7 +63,7 @@ export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settings
 export const PAYWALL_COPY = Object.freeze({
   title: "Flourish Plus",
   lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
-  dataSafe: "Your accounts, bills and history stay exactly as they are.",
+  dataSafe: "Your accounts, bills and history stay as they are.",
   terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
   privacy: "Privacy Policy",      // approved 2026-10-20
   restore: "Restore purchases",   // approved 2026-10-20
@@ -78,17 +79,18 @@ export const PAYWALL_COPY = Object.freeze({
     cancelled: null,
     pending: "The store is still waiting on this purchase. Full access starts as soon as the store confirms it.",
     failed: "The store didn't complete the purchase. If you see a charge for it, tap Restore purchases.",
-    unconfirmed: "The store took the purchase, and Flourish is still waiting to hear it from the store. Tap Restore purchases in a minute.",
+    unconfirmed: "The store took the purchase, and Flourish is still waiting to hear it from the store. Try Restore purchases again shortly.",
     nothing_to_restore: "No subscription was found for this store account.",
   }),
 });
 
-/** Settings' Subscription card: where this household's subscription is, in words. No price. */
+/** Settings' Subscription card: where this household's subscription is, in words. No price. A store app never
+ *  names the website (2026-10-20): a household that paid there reads "This account has full access." */
 export function subscriptionLine(status, { entitled = null } = {}) {
   if (status && status.paid) {
     if (status.provider === "app_store") return "Your subscription is through the App Store.";
     if (status.provider === "play_store") return "Your subscription is through Google Play.";
-    return "Your subscription is through the Flourish website.";
+    return "This account has full access.";
   }
   if (entitled === true) return "This account has full access.";
   return "There's no subscription on this account yet.";

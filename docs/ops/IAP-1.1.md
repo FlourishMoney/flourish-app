@@ -175,6 +175,9 @@ approval, before the manual release: CL turns Streamlined Purchasing off.
 
 ### C. Play Console (one subscription, three base plans)
 
+**DONE 2026-10-20 (CL):** `flourish_plus` ("Flourish Plus"), base plans `monthly` (CAD 11.99), `annual` (CAD 99.99)
+and `founding` (CAD 79.99, Resubscribe off), all Canada only and Active, after version code 17 went to internal testing.
+
 One subscription, so Google never lets a household hold two at once (the review of this branch, H3). No offers
 on any base plan: no free trial, no introductory price (2026-10-20). Names marked *needs review* are approved by
 ChatGPT and Grok before they ship.
@@ -223,6 +226,10 @@ promoted to Production). Subscriptions can be created and tested on the Internal
 approved; they are purchasable in production once the 1.1 build is live there.
 
 ### D. RevenueCat (where both stores meet)
+
+**DONE 2026-10-20:** project "Flourish"; entitlement `plus` with all six products; offering `default` (Current) and
+`founding`, each with its iOS and Play products; App Store Server Notifications point at RevenueCat. The public SDK
+keys are in the 1.1 builds; the secret key and webhook value are not set in Netlify yet (E3).
 
 1. RevenueCat → **Create project** → Name: `Flourish`
 2. Apps → **+** → App Store → Bundle ID: `app.flourishmoney`
