@@ -53,13 +53,16 @@ export function meetSetupState(data = {}) {
 
 // Assemble the snapshot from engine outputs. Sections with no data are omitted; buildMeetingAgenda
 // handles a partial snapshot gracefully.
-export function buildMeetSnapshot(data = {}) {
+// `now` is the one clock every figure below is worked out on. The Meet screen leaves it to default to
+// the real time; the demo coach (lib/demoCoach.js) passes the day its household was built for, so its
+// answers no longer mix that day with today's (the debt question lost its options three weeks on).
+export function buildMeetSnapshot(data = {}, now = new Date()) {
   const snap = {};
 
   // Upcoming risks — from ForecastEngine only (overdraft + low-balance events, next 14 days). Only
   // when there is a balance to project from: with no cash account, every day is an invented $0.
   if (meetSetupState(data).hasCashAccount) try {
-    const fc = ForecastEngine.generate(data, 14) || {};
+    const fc = ForecastEngine.generate(data, 14, null, now) || {};
     const forecast = fc.forecast || [];
     const byDay = new Map(forecast.map(f => [f.day, f]));
     const seen = new Set();
@@ -85,7 +88,6 @@ export function buildMeetSnapshot(data = {}) {
   // null / [] when the week or the history is too thin to describe, and nothing is added then —
   // which is what keeps a quiet week quiet, and keeps quietWeekAgendaFor reachable.
   try {
-    const now = new Date();
     const txns = data.transactions || [];
     const week = weekVersusUsual({ transactions: txns, now });
     if (week) snap.weekTotal = week;
@@ -123,12 +125,12 @@ export function buildMeetSnapshot(data = {}) {
     // The same debt list What-If models (a bank-linked card with its bank's APR and minimum).
     // demo-fixes C8a: a linked pair is one entry; an unanswered pair is marked "may be the same card".
     const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities, data));
-    const { spare: extra, safe } = spareUntilDeposit(data);
+    const { spare: extra, safe } = spareUntilDeposit(data, now);
     if (top && extra > 0) {
       const buf    = savingsBufferAfter(data.accounts, 0); // engine helper: the savings balance now
       let periodEnd = "";
       try {
-        const fc2 = ForecastEngine.generate(data, 31) || {};
+        const fc2 = ForecastEngine.generate(data, 31, null, now) || {};
         const pay = (fc2.forecast || []).find(f => f.day > 0 && f.isPayday);
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
       } catch { /* no payday found → generic period label */ }
@@ -201,8 +203,8 @@ export function buildReconcilePrompts(data = {}) {
 }
 
 // The one function the screen renders AND the facilitator receives — displayed === generated === sent.
-export function meetAgendaFor(data) {
-  const snap = buildMeetSnapshot(data);
+export function meetAgendaFor(data, now = new Date()) {
+  const snap = buildMeetSnapshot(data, now);
   snap.reconcilePrompts = buildReconcilePrompts(data);
   return buildMeetingAgenda(snap);
 }

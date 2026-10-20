@@ -122,6 +122,21 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     const all = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(T, "CA"),
       bills: D.buildDemoBills(T, "CA"), transactions: D.buildDemoTxns(T, "CA"), profile: D.demoProfileFor("CA") }, T).map((x) => x.a).join(" ");
     t.ok(!/worth attacking/.test(all) && /is up to you/.test(all), "5d the scripted demo coach compares the debt options and leaves the choice to the user");
+    // The answers depend on the day the demo is built for, never on the real clock: with the clock
+    // moved 90 days on, the same household on the same day reads exactly the same (5d failed from
+    // 2026-10-19 because the Meet agenda under the debt answer read today instead of that day).
+    const RealDate = Date;
+    const later = class extends RealDate {
+      constructor(...a) { if (a.length) super(...a); else super(RealDate.now() + 90 * 86400000); }
+      static now() { return RealDate.now() + 90 * 86400000; }
+    };
+    let moved = "";
+    globalThis.Date = later;
+    try {
+      moved = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(T, "CA"),
+        bills: D.buildDemoBills(T, "CA"), transactions: D.buildDemoTxns(T, "CA"), profile: D.demoProfileFor("CA") }, T).map((x) => x.a).join(" ");
+    } finally { globalThis.Date = RealDate; }
+    t.eq(moved, all, "5e the scripted demo coach answers the same with the real clock 90 days on: one day for every figure");
   }
 
   // 6. accessibility

@@ -93,7 +93,7 @@ const path = require("path");
   t.ok(/monthlyIncome:\s*cashFlowObj\.monthlyIncome,/.test(whatIf), "4d …and its monthly income is cashFlow's");
   t.ok(!/\.filter\(a => isCashAccount\(a\)\)\s*\.reduce\(\(s,a\) => s \+ parseFloat\(a\.balance\|\|0\), 0\)/.test(whatIf), "4e the parseFloat rebuild of cash is gone");
   t.ok(!/_toMoSim\(i\.amount,i\.freq\)/.test(whatIf), "4f …and so is the parseFloat rebuild of income");
-  t.ok(/spareUntilDeposit\(data\)/.test(meet) && /const \{ tight, safe \} = cashIsTight\(data, todayDate\);/.test(fs.readFileSync(path.join(__dirname, "..", "src", "lib", "decisionEngine.js"), "utf8")),
+  t.ok(/spareUntilDeposit\(data, now\)/.test(meet) && /export function meetAgendaFor\(data, now = new Date\(\)\)/.test(meet) && /const \{ tight, safe \} = cashIsTight\(data, todayDate\);/.test(fs.readFileSync(path.join(__dirname, "..", "src", "lib", "decisionEngine.js"), "utf8")),
     "4g Meet's spare amount is based on the displayed figure (spareUntilDeposit reads cashIsTight's safe, displayedSafeToSpend)");
   t.ok(/<DecisionEngine data=\{data\} safe=\{displayedSafe\}/.test(app), "4h Decisions gets the displayed figure too");
 
