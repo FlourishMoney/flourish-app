@@ -53,11 +53,26 @@ function subscriptionPatch(sub, extra = {}) {
     // paid period is stored whichever API version the endpoint uses; without it, access would follow
     // the status alone and a missed cancellation would never run out.
     current_period_end: isoOrNull(Number.isFinite(sub.current_period_end) ? sub.current_period_end : item.current_period_end),
-    cancel_at_period_end: !!sub.cancel_at_period_end,
+    // Renewal off. A dashboard "cancel at period end" now sets cancel_at (the period's end) and leaves
+    // cancel_at_period_end false (Stripe's current API), so either one means it will not renew.
+    cancel_at_period_end: !!sub.cancel_at_period_end || (Number.isFinite(sub.cancel_at) && sub.cancel_at > 0),
     automatic_tax: !!sub.automatic_tax?.enabled,
     updated_at: new Date().toISOString(),
     ...extra,
   };
+}
+
+// THE AMOUNTS (Stripe Tax on, 2026-10-20). The checkout session says what the first payment was, in cents:
+// before tax, the tax, and the total. A subscription event carries none of them, so they come from here only.
+// A value that is not a whole, non-negative number of cents is left out rather than guessed.
+function checkoutAmounts(session) {
+  const cents = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+  const out = {};
+  const subtotal = cents(session?.amount_subtotal), tax = cents(session?.total_details?.amount_tax), total = cents(session?.amount_total);
+  if (subtotal !== null) out.amount_subtotal_cents = subtotal;
+  if (tax !== null) out.amount_tax_cents = tax;
+  if (total !== null) out.amount_total_cents = total;
+  return out;
 }
 
 // A FOUNDING SUBSCRIPTION THAT HAS ENDED (rule of 2026-10-07). The founding price is "for as long as
@@ -197,15 +212,31 @@ exports.handler = async (event) => {
     if (evt.type === "checkout.session.completed") {
       const user_id = userIdFrom(object);
       if (!user_id) throw new Error("checkout session carried no user_id");
-      if (staleAgainst(await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
+      const amounts = checkoutAmounts(object);
+      const sessionSubId = typeof object.subscription === "string" ? object.subscription : object.subscription?.id;
+      if (staleAgainst(await subscriptionRowFor("user_id", user_id))) {
+        // Stale for the plan: a subscription event already wrote the row (they often arrive first). The amounts
+        // come from nowhere else, so they are filled in, once, onto the same subscription, and change nothing else.
+        if (Object.keys(amounts).length && sessionSubId) {
+          const { data: cur, error: curErr } = await admin
+            .from("subscriptions").select("provider_subscription_id, amount_total_cents").eq("user_id", user_id).maybeSingle();
+          if (curErr) throw new Error(curErr.message);
+          if (cur && cur.provider_subscription_id === sessionSubId && cur.amount_total_cents == null) {
+            const { error } = await admin.from("subscriptions").update(amounts).eq("user_id", user_id);
+            if (error) throw new Error(error.message);
+          }
+        }
+        return await acknowledgeStale();
+      }
       if (await storePaidRow(user_id)) return await acknowledgeConflict();
       const patch = {
         user_id,
         provider: "stripe",
         provider_customer_id: typeof object.customer === "string" ? object.customer : object.customer?.id,
-        provider_subscription_id: typeof object.subscription === "string" ? object.subscription : object.subscription?.id,
+        provider_subscription_id: sessionSubId,
         plan_key: object.metadata?.plan_key || null,
         status: "active",
+        ...amounts,
         updated_at: new Date().toISOString(),
       };
       // DECISIONS.md item 1: the founding price is locked WHILE CONTINUOUSLY SUBSCRIBED. The
