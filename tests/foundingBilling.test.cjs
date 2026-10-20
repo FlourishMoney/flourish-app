@@ -4,7 +4,9 @@
 //
 // The founding price ($79.99 a year plus tax, "for as long as you stay subscribed") is sold to:
 //   • a beta tester flagged as a founder (profiles.founder_flag), outside the 50; or
-//   • a confirmed account whose email holds waitlist number 1 to 50, on a row that is not a test row;
+//   • a confirmed account whose email holds a waitlist founding number that is not void, on a row that
+//     is not a test row and not at a test domain (since 0017 the database caps the REAL holders at 50;
+//     a test row's number is void and never reissued, so numbers can run past 50);
 // and never to an account, or a waitlist number, whose founding subscription has ended. Everyone else is
 // offered the regular prices ($11.99 a month, $99.99 a year). The server decides; the client sends a
 // plan key.
@@ -20,6 +22,8 @@
 //   8. cancel and return: an active founding subscription renews at $79.99; once one has ended the
 //      household is offered regular prices only; its number is never given to anyone else
 //   9. beta founders keep the founding price, take no waitlist spot and change nobody's number
+//  10. 0017: billing refuses a void number and a test-domain address; a real holder whose number is past
+//      50 (issued after test numbers were voided) gets it; the 51st real household does not
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -41,16 +45,18 @@ const norm = (e) => String(e == null ? "" : e).replace(/\s+/g, "").toLowerCase()
 // numbers, as start() and the trigger build it.
 function makeState({ waitlist = [], profiles = [], subscriptions = [], user, rpcError, endError } = {}) {
   const ledger = {};
-  for (const r of waitlist) if (Number.isInteger(r.founding_position)) ledger[norm(r.email)] = { position: r.founding_position, ended_at: r.ended_at || null };
+  for (const r of waitlist) if (Number.isInteger(r.founding_position)) ledger[norm(r.email)] = { position: r.founding_position, ended_at: r.ended_at || null, void_at: r.void_at || null };
   return { rows: { waitlist, profiles, subscriptions, billing_events: [] }, ledger, user, rpcError, endError, rpcCalls: [], writes: [] };
 }
 
-// waitlist_founding_position_for_email, as 0016 defines it.
+// waitlist_founding_number_for_email, as 0017 defines it (0016's lookup plus: not void, not a test
+// address, and any number from 1 up, because numbers run past 50 once test numbers are voided).
+const isTestDomain = (e) => /@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$/.test(norm(e));
 function lookup(state, email) {
   const k = norm(email);
-  if (!k) return null;
+  if (!k || isTestDomain(k)) return null;
   const l = state.ledger[k];
-  if (!l || l.ended_at || l.position < 1 || l.position > 50) return null;
+  if (!l || l.ended_at || l.void_at || l.position < 1) return null;
   const row = state.rows.waitlist.find(r => norm(r.email) === k && r.founding_position === l.position);
   return row && !row.is_test ? l.position : null;
 }
@@ -95,7 +101,7 @@ function fakeAdmin(state) {
   };
   const rpc = async (name, args) => {
     state.rpcCalls.push({ name, args });
-    if (name === "waitlist_founding_position_for_email") {
+    if (name === "waitlist_founding_number_for_email") {
       if (state.rpcError) return { data: null, error: { message: state.rpcError } };
       return { data: lookup(state, args.p_email), error: null };
     }
@@ -206,8 +212,11 @@ async function deliver(state, id, type, object, created = T) {
     founding(await asAccount({ waitlist: sixty(), user: acct("h1@example.test") }), "1c #1");
     notFounding(await asAccount({ waitlist: sixty(), user: acct("h51@example.test") }), "1d #51");
     notFounding(await asAccount({ waitlist: sixty(), user: acct("never-joined@example.test") }), "1e not on the waitlist");
-    t.eq([cohort.isFoundingPosition(51), cohort.isFoundingPosition(0), cohort.isFoundingPosition(50.5)], [false, false, false],
-      "1f 51, 0 and fractions are never founding numbers");
+    t.eq([cohort.isFoundingPosition(0), cohort.isFoundingPosition(-3), cohort.isFoundingPosition(50.5), cohort.isFoundingPosition("7")], [false, false, false, false],
+      "1f 0, negatives, fractions and strings are never founding numbers");
+    // 0017: a number past 50 exists only when test numbers were voided first, so it is one of the first 50
+    // real households. The cap on real holders is the database's (section 10 and the 0017 SQL checks).
+    t.eq(cohort.isFoundingPosition(53), true, "1g a number past 50 is a founding number when the database issued it");
   }
 
   // ── 2. a test row never takes a spot ─────────────────────────────────────────────────────────
@@ -230,7 +239,7 @@ async function deliver(state, id, type, object, created = T) {
     founding(a, "3a a mixed-case, padded waitlist row and a lower-case account");
     const j = await asAccount({ waitlist: rows, user: acct("  JORDAN@Example.CA\t") });
     founding(j, "3b a lower-case waitlist row and a mixed-case, padded account");
-    t.eq(j.state.rpcCalls.find(c => c.name === "waitlist_founding_position_for_email").args.p_email, "jordan@example.ca",
+    t.eq(j.state.rpcCalls.find(c => c.name === "waitlist_founding_number_for_email").args.p_email, "jordan@example.ca",
       "3c the address is normalised before it is sent");
     t.eq(cohort.normalizeEmail(" A b@C.d\n"), "ab@c.d", "3d whitespace anywhere and case are dropped");
     notFounding(await asAccount({ waitlist: rows, user: acct("alex.rivera@example.com") }), "3e a different address");
@@ -274,7 +283,7 @@ async function deliver(state, id, type, object, created = T) {
 
   // ── 7. the 0016 SQL ──────────────────────────────────────────────────────────────────────────
   {
-    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)/.test(SQL), "7a 0016 defines the lookup billing calls");
+    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)/.test(SQL), "7a 0016 defines its lookup (billing now calls 0017's, which adds the void and test-address checks: section 10)");
     const fn = SQL.slice(SQL.indexOf("create or replace function public.waitlist_founding_position_for_email"), SQL.indexOf("$$;", SQL.indexOf("waitlist_founding_position_for_email")));
     t.ok(/where l\.email_key = public\.waitlist_email_key\(p_email\)/.test(fn) && /public\.waitlist_email_key\(w\.email\) = l\.email_key/.test(fn),
       "7b it matches by the address key, which ignores case and whitespace on both sides");
@@ -385,6 +394,44 @@ async function deliver(state, id, type, object, created = T) {
     notFounding(await asAccount({ state: ended }), "9i a flagged tester whose founding subscription ended");
     const unflagged = makeState({ waitlist: sixty(), profiles: [{ user_id: "u1", founder_flag: false }], user: acct("tester@example.test") });
     notFounding(await asAccount({ state: unflagged }), "9j an unflagged tester not in the 50");
+  }
+
+  // ── 10. 0017: void numbers, test addresses, numbers past 50 ─────────────────────────────────
+  {
+    const SQL17 = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0017_waitlist_founding_test_rows.sql"), "utf8");
+    // After 0017: numbers 1..54 issued; 18, 19, 21 and 24 were test sign-ups, now void; 50 real holders.
+    const VOID = [18, 19, 21, 24];
+    const after = () => {
+      const rows = [];
+      for (let n = 1; n <= 54; n++) rows.push(VOID.includes(n)
+        ? { email: `test${n}@getgrowsmart.com`, is_test: true, founding_position: null }
+        : { email: `h${n}@example.test`, is_test: false, founding_position: n });
+      rows.push({ email: "h55@example.test", is_test: false, founding_position: null });   // the 51st real household
+      return rows;
+    };
+    t.eq(after().filter(r => r.founding_position !== null).length, 50, "10a (the fixture: exactly 50 real holders, numbers up to 54)");
+    founding(await asAccount({ waitlist: after(), user: acct("h54@example.test") }), "10b #54, a real holder past 50");
+    founding(await asAccount({ waitlist: after(), user: acct("h20@example.test") }), "10c #20, a real holder whose number did not change");
+    notFounding(await asAccount({ waitlist: after(), user: acct("h55@example.test") }), "10d the 51st real household");
+    notFounding(await asAccount({ waitlist: after(), user: acct("test19@getgrowsmart.com") }), "10e a voided test sign-up");
+    // A void number, even on a row that somehow still carries it: refused.
+    notFounding(await asAccount({ waitlist: [{ email: "real18@example.ca", is_test: false, founding_position: 18, void_at: "2026-10-14T00:00:00Z" }], user: acct("real18@example.ca") }),
+      "10f a void number");
+    // Before 0017 is applied a test-domain row may still hold a number and is_test = false: refused anyway.
+    const pre = await asAccount({ waitlist: [{ email: "amanda@getgrowsmart.com", is_test: false, founding_position: 19 }], user: acct(" Amanda@GetGrowSmart.com ") });
+    notFounding(pre, "10g a test-domain address holding a number, before 0017");
+    t.eq(pre.state.rpcCalls.filter(c => /founding_.*for_email/.test(c.name)).length, 0, "10h …refused before the database is even asked");
+    t.ok([cohort.isTestEmail("x@getgrowsmart.com"), cohort.isTestEmail("x@mail.flourishmoney.app"), cohort.isTestEmail("x@getgrowsmart.com.example.ca"), cohort.isTestEmail("x@notgetgrowsmart.com")].join() === "true,true,false,false",
+      "10i the two test domains and their subdomains, nothing that only contains them");
+    // The SQL billing calls.
+    const fn = SQL17.slice(SQL17.indexOf("create or replace function public.waitlist_founding_number_for_email"), SQL17.indexOf("$$;", SQL17.indexOf("function public.waitlist_founding_number_for_email")));
+    t.ok(fn.length > 200 && /and l\.void_at is null/.test(fn) && /and l\.ended_at is null/.test(fn) && /and not w\.is_test/.test(fn)
+      && /and not public\.waitlist_is_test_email\(p_email\)/.test(fn) && /w\.founding_position = l\.position/.test(fn) && !/between 1 and 50/.test(fn),
+      "10j 0017's lookup: not void, not ended, not a test row or a test address, still held by that row, any number from 1 up");
+    t.ok(/revoke all on function public\.waitlist_founding_number_for_email\(text\) from public, anon, authenticated;/.test(SQL17)
+      && /grant execute on function public\.waitlist_founding_number_for_email\(text\) to service_role;/.test(SQL17), "10k only the service role may call it");
+    const code = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingCohort.js"), "utf8");
+    t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(code) && !/rpc\("waitlist_founding_position_for_email"/.test(code), "10l billing calls 0017's lookup, not 0016's");
   }
 
   process.env = savedEnv;

@@ -39,7 +39,7 @@ function fakeAdmin(state) {
   return {
     from: (table) => { const q = { select() { return q; }, eq() { return q; }, async upsert() { return { error: null }; },
       async maybeSingle() { return { data: table === "profiles" ? { founder_flag: !!state.founder } : (table === "subscriptions" ? state.sub || null : null), error: null }; } }; return q; },
-    rpc: async (name, args) => ({ data: name === "waitlist_founding_position_for_email" && args.p_email === HOLDER ? 4 : null, error: null }),
+    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 4 : null, error: null }),
     auth: { admin: {
       getUserById: async () => ({ data: { user: state.user }, error: null }),
       updateUserById: async (id, attrs) => { state.updates.push({ id, attrs }); state.user = { ...state.user, ...attrs }; return { data: { user: state.user }, error: null }; },

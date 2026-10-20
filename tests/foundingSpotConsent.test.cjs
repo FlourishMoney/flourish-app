@@ -111,7 +111,7 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
     const r = row({ email: "household@example.test" });
     const { result, calls } = await withFetch((u, o) => {
       if (u.includes("api.resend.com")) return { status: 200, body: {} };
-      if (u.includes("/rpc/waitlist_founding_position_for_email")) return { status: 200, body: 31 };
+      if (u.includes("/rpc/waitlist_founding_number_for_email")) return { status: 200, body: 31 };
       if ((o.method || "GET") === "PATCH") return { status: 204, body: {} };
       if (u.includes("sent_at=gte.")) return { status: 200, headers: { "content-range": "*/0" }, body: [] };
       if (u.includes("/rest/v1/waitlist?select=id,email,")) return { status: 200, body: [r] };

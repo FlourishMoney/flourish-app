@@ -148,12 +148,16 @@ async function run({ count = 0, rows = pendingRows(3), resend = { ok: true }, wi
   // ── 3b. A founding household's welcome carries its line (2026-10-06, migration 0014) ──────────
   {
     const { foundingWelcomeLine } = require(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingWaitlist.js"));
-    const rows = pendingRows(3).map((x, i) => ({ ...x, founding_position: [3, null, 51][i] }));
+    const rows = pendingRows(3).map((x, i) => ({ ...x, founding_position: [3, null, -1][i] }));
     const r = await run({ rows });
-    t.ok(/select=id,email,created_at,unsubscribed_at,consent_version,founding_position&/.test(r.selects[0].url), "3i the select asks for founding_position too");
+    t.ok(/select=id,email,created_at,unsubscribed_at,consent_version,founding_position,is_test&/.test(r.selects[0].url), "3i the select asks for founding_position and is_test too");
     const texts = r.sends.map(s => JSON.parse(s.body).text);
     t.eq(texts[0].split("\n\n")[1], foundingWelcomeLine(3), "3j a row with position 3 gets the founding line as its second paragraph");
-    t.ok(!/founding/i.test(texts[1]) && !/founding/i.test(texts[2]), "3k a row with no position, or one outside 1 to 50, gets no offer line");
+    t.ok(!/founding/i.test(texts[1]) && !/founding/i.test(texts[2]), "3k a row with no position, or one that is not a founding number, gets no offer line");
+    // 2026-10-14: a test row (is_test, or a test address) never has a number named, whatever the row says.
+    const tr = await run({ rows: [{ ...pendingRows(1)[0], founding_position: 7, is_test: true }, { ...pendingRows(1, 2)[0], email: "hello@getgrowsmart.com", founding_position: 21, is_test: false }] });
+    t.eq(tr.sends.length, 2, "3n test rows still get their welcome email");
+    t.ok(tr.sends.every(s => !/founding|#\d/i.test(JSON.parse(s.body).text)), "3o …naming no founding number");
     // Before migration 0014 the column does not exist: PostgREST answers 400 to the select that names it.
     const pre = await run({ rows: (u) => (u.includes("founding_position") ? { fail: 400 } : pendingRows(2)) });
     t.eq([pre.selects.length, pre.sends.length, pre.result.skipped], [2, 2, null], "3l before 0014 is applied, the sweep asks again without the column and still sends");

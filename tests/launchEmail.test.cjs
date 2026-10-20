@@ -106,7 +106,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
       const u = String(url), call = { url: u, method: o.method || "GET", headers: o.headers || {}, body: o.body };
       calls.push(call);
       if (u.includes("api.resend.com")) return { ok: true, status: 200, json: async () => ({}) };
-      if (u.includes("/rpc/waitlist_founding_position_for_email")) {
+      if (u.includes("/rpc/waitlist_founding_number_for_email")) {
         const e = JSON.parse(o.body).p_email; return { ok: true, status: 200, json: async () => rows.find(r => r.email === e)?.founding_position ?? null };
       }
       if (call.method === "PATCH") return { ok: true, status: 204, json: async () => ({}) };
