@@ -66,6 +66,7 @@ import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFe
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7 } from "./lib/freePlan.js";
+import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -13585,7 +13586,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
         <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
           <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-            {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
+            {PLUS_INCLUDES.map((f,i)=>(
               <div key={i} style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
             ))}
           </div>
