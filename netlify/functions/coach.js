@@ -20,7 +20,7 @@
 // -----------------------------------------------------------------------------
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
-const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit } = require("./_lib/coachLimits");
+const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSimulatorLimit, decideFacilitator } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
 
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
@@ -159,7 +159,7 @@ const EMERGENCY_IP_DAILY = 10;
 // Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
 const MAX_BODY_BYTES = 100000;
 
-const { corsHeadersFor, isNativeRequest, isStoreBillingRequest } = require("./_lib/cors");
+const { corsHeadersFor } = require("./_lib/cors");
 
 exports.handler = async (event) => {
   const corsHeaders = corsHeadersFor(event);
@@ -279,8 +279,8 @@ exports.handler = async (event) => {
         try {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
           // client-sent). Free → FREE_CHAT_WEEKLY a week; trial/plus/pro/founder → the abuse ceiling only.
-          // A store app never gets a web subscription's entitlement (Apple 3.1.3(b)).
-          const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event), ...(isStoreBillingRequest(event) ? { storeBilling: true } : {}) });
+          // The same answer for the web and the store apps (_lib/planRules.js deriveEntitlement).
+          const { unlimited } = await getUserPlan(user_id);
           const admin = getAdminClient();
           // The abuse ceiling, unchanged: every account is counted per day by the existing
           // day-keyed counter, and CHAT_DAILY_CEILING still applies to all of them.
@@ -346,7 +346,22 @@ exports.handler = async (event) => {
       };
       break;
 
-    case "simulator":
+    case "simulator": {
+      // The free plan's What-If: 1 explanation a UTC day, counted here so an app whose own code lets it
+      // run more (a store install from before 2026-10-20) is held to it too (_lib/coachLimits.js). Only an
+      // account the limit can apply to is counted. A refusal costs nothing: the app shows its figures with
+      // its own explanation, which is what it does for any error from this call.
+      const { unlimited } = await getUserPlan(user_id);
+      let usedToday = null, counterOk = true;
+      if (ENFORCE_PLAN_LIMITS && !unlimited) {
+        let admin = null;
+        try { admin = getAdminClient(); } catch (e) { console.error("[coach] admin client:", e.message); }
+        ({ usedToday, counterOk } = await countFreeDay(admin, user_id, "simulator"));
+      }
+      const verdict = decideSimulatorLimit({ enforce: ENFORCE_PLAN_LIMITS, unlimited, usedToday, counterOk });
+      if (!verdict.allowed) {
+        return { statusCode: verdict.status, headers: corsHeaders, body: JSON.stringify({ error: verdict.error, message: verdict.message }) };
+      }
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
@@ -354,6 +369,7 @@ exports.handler = async (event) => {
         messages: [{ role: "user", content: payload.prompt || "Explain this financial scenario." }],
       };
       break;
+    }
 
     case "checkin":
       anthropicBody = {
@@ -364,9 +380,16 @@ exports.handler = async (event) => {
       };
       break;
 
-    case "facilitator":
+    case "facilitator": {
       // Step 9: the Meet money-meeting facilitator. Receives a pre-computed agenda whose every figure
       // is engine output; it facilitates and NEVER produces a number.
+      // Not on the free plan, for any app (_lib/coachLimits.js decideFacilitator). The web never offers it
+      // to a free household; a store install from before 2026-10-20 does, and this is what stops it.
+      const { unlimited } = await getUserPlan(user_id);
+      const verdict = decideFacilitator({ enforce: ENFORCE_PLAN_LIMITS, unlimited });
+      if (!verdict.allowed) {
+        return { statusCode: verdict.status, headers: corsHeaders, body: JSON.stringify({ error: verdict.error, message: verdict.message }) };
+      }
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 600,
@@ -374,6 +397,7 @@ exports.handler = async (event) => {
         messages: payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }],
       };
       break;
+    }
 
     case "document":
       anthropicBody = {

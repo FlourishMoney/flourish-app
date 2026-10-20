@@ -60,11 +60,11 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     A.store.clear();
     t.ok(gate({}).includes("Start 14 days free →") && gate({}).includes("14 days free. Cancel any time."), "2a billing off, no trial yet: today's words");
     A.store.set("flourish_trial_started_at", "2026-09-01T00:00:00Z");
-    t.ok(gate({}).includes("Get Flourish Plus →") && gate({ billingOn: false }).includes("Cancel any time."), "2b billing off, trial used: today's words");
+    t.ok(gate({}).includes("Get Flourish Plus →") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
     for (const trial of [null, "2026-09-01T00:00:00Z"]) {
       if (trial) A.store.set("flourish_trial_started_at", trial); else A.store.clear();
       const on = gate({ billingOn: true });
-      t.ok(on.includes("See plans →") && on.includes("Cancel any time."), `2c billing on (${trial ? "trial used" : "no trial yet"}): "See plans", and cancel any time`);
+      t.ok(on.includes("See plans →") && on.includes("You can cancel any time."), `2c billing on (${trial ? "trial used" : "no trial yet"}): "See plans", and cancel any time`);
       t.ok(!/days free|Try Free|free trial/i.test(on), "2d …and no free trial promised in front of a paid checkout");
       t.eq(on.match(MONEY), null, "2e …and no price on the gate");
     }
@@ -109,7 +109,7 @@ setImmediate(() => process.exit(0));`;
     let txt = "";
     try { txt = execFileSync(process.execPath, ["-e", script], { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); }
     catch (e) { t.ok(false, `App.jsx renders natively: ${describe(e)}`); }
-    t.ok(/isn't included in this version/.test(txt), "4a (the gate rendered as a store app)");
+    t.ok(txt.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda."), "4a (the gate rendered as a store app: the founder's locked-screen line)");
     t.ok(!/See plans|Flourish Plus|days free|Cancel any time/.test(txt), "4b in a store app the gate shows no way to pay, even told billing is on");
     t.ok(/!data\.isPremium&&!isNativeApp\(\)&&onUpgrade&&\(/.test(APP), "4c the Today card is still hidden in a store app");
   }

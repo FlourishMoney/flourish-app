@@ -146,16 +146,15 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       return { out, body, calls, logs };
     };
 
-    // Apple 3.1.3(b): the plan is asked with the request's platform, so a store app's request never
-    // gets a web subscription's entitlement (_lib/planRules.js; tests/nativeWebPurchase.test.cjs).
-    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false })).calls.planOpts), '[{"native":false}]',
-      "7a2 the coach asks getUserPlan with native: false for a web request");
-    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin: "capacitor://localhost" })).calls.planOpts), '[{"native":true}]',
-      "7a3 …and native: true for a request from the iOS app");
-    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin: "capacitor://localhost", query: { store_billing: "1" } })).calls.planOpts), '[{"native":true,"storeBilling":true}]',
-      "7a4 …and storeBilling: true for a version 1.1 store app that sells (in-app purchase), and only then");
-    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, query: { store_billing: "1" } })).calls.planOpts), '[{"native":false}]',
-      "7a5 …a web page that sends the same parameter is still a web page");
+    // One plan for every app (2026-10-20): the plan is asked the same way whatever the request's origin,
+    // so a store app is held to the web's rules and gets a web subscription's entitlement too
+    // (_lib/planRules.js deriveEntitlement; tests/nativeTrialLimits.test.cjs).
+    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false })).calls.planOpts), "[null]",
+      "7a2 the coach asks getUserPlan with no platform option for a web request");
+    for (const origin of ["capacitor://localhost", "https://localhost"]) {
+      t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin })).calls.planOpts), "[null]",
+        `7a3 …and exactly the same for a request from a store app (${origin})`);
+    }
 
     for (const mode of Object.keys(MODES)) {
       // A free account is refused, with the ordinary free-limit message.

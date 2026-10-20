@@ -12,8 +12,8 @@
 # then runs it as one transaction, so the first error undoes the whole file.
 #
 #   scripts/billing-day-proof/run.sh              the Monday order, every check in checks.sql
-#   scripts/billing-day-proof/run.sh --with-0017  then the HELD 0017, read from origin/founding-test-rows
-#                                                 with git show (never checked out), and checks-0017.sql
+#   scripts/billing-day-proof/run.sh --with-0025  then 0025 (the founding ledger, which replaced 0017 and
+#                                                 0021), and checks-0025.sql
 # Needs Docker. Exit status 0 only when every assertion passed.
 # -----------------------------------------------------------------------------
 set -euo pipefail
@@ -23,8 +23,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 MIG="$REPO/supabase/migrations"
 IMAGE="public.ecr.aws/supabase/postgres:17.6.1.167"
 NAME="flourish-billing-proof-$$"
-WITH_0017=0
-[ "${1:-}" = "--with-0017" ] && WITH_0017=1
+WITH_0025=0
+[ "${1:-}" = "--with-0025" ] && WITH_0025=1
 
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -82,8 +82,8 @@ echo "   all three re-ran cleanly"
 echo "4. checks.sql"
 run_checks "$HERE/checks.sql"
 
-if [ "$WITH_0017" = 1 ]; then
-  echo "5. the HELD 0017, read from origin/founding-test-rows (git show; the branch is not touched)"
+if [ "$WITH_0025" = 1 ]; then
+  echo "5. 0025, the founding ledger, after Monday's three"
   # A fresh shape, so the checks see production's state rather than what checks.sql did to it.
   cleanup
   docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway-local-only "$IMAGE" >/dev/null
@@ -98,10 +98,8 @@ if [ "$WITH_0017" = 1 ]; then
   done
   psql_file < "$HERE/seed.sql" >/dev/null
   for f in 0009_billing_subscriptions.sql 0010_billing_events.sql 0016_waitlist_founding_billing.sql; do as_one_query "$MIG/$f"; done
-  HELD="$(mktemp -d)/0017.sql"
-  git -C "$REPO" show origin/founding-test-rows:supabase/migrations/0017_waitlist_founding_test_rows.sql > "$HELD"
-  as_one_query "$HELD"; echo "   0017 ok (local only)"
-  run_checks "$HERE/checks-0017.sql"
-  rm -f "$HELD"; rmdir "$(dirname "$HELD")"
+  as_one_query "$MIG/0025_founding_ledger.sql"; echo "   0025 ok (local only)"
+  as_one_query "$MIG/0025_founding_ledger.sql"; echo "   0025 re-ran cleanly"
+  run_checks "$HERE/checks-0025.sql"
 fi
 echo "done: container removed on exit"

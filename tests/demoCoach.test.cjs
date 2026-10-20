@@ -84,7 +84,7 @@ const { create } = require("./_runner.cjs");
     const pace = suggestedDailyView(view.headline, snap.incomes, snap.transactions, d);
     const nd = nextFutureDeposit(snap.incomes, snap.transactions, d);
     const debt = selectHighestRateDebt(snap.debts);
-    const agenda = meetAgendaFor(snap);
+    const agenda = meetAgendaFor(snap, d);   // the same day the coach is asked about
 
     // Everything an engine produced for THIS snapshot, as displayed strings.
     const allowed = new Set([view.headlineText, view.balanceText, pace.dailyText,
@@ -112,12 +112,12 @@ const { create } = require("./_runner.cjs");
 
   // The facilitator line reads the agenda and nothing else.
   {
-    // Today's date, not a fixed one: meetAgendaFor reads the real clock (the spare amount), so a fixed
-    // Sep 16 week had no decision from Oct 6 on and this check read null.
-    const d = new Date();
+    // A fixed day again: meetAgendaFor now takes the day (it read the real clock, so a fixed Sep 16 week
+    // had no decision from Oct 6 on and this check had to follow today). Sep 29 has a spare amount.
+    const d = new Date("2026-09-29T12:00:00");
     const snap = snapFor(d);
     const line = demoFacilitatorLine(snap, d);
-    const decision = (meetAgendaFor(snap).decisions || [])[0];
+    const decision = (meetAgendaFor(snap, d).decisions || [])[0];
     t.ok(!!line, "Meet gets a scripted facilitator line");
     t.ok(line.includes(decision.text), "…and it quotes the agenda's decision verbatim");
     t.ok(line.includes(decision.options[0].outcome) && line.includes(decision.options[1].outcome),

@@ -101,12 +101,16 @@ global.Date = PinnedDate;
     // On a store app section 7 is headed "Cost and usage limits" (prelaunch-copy item 1); the web keeps
     // "Subscription & Billing". The section must exist under the native heading, or the slice is empty.
     const sec7 = nTerms.slice(nTerms.indexOf("7. Cost and usage limits"), nTerms.indexOf("8. Intellectual"));
-    t.ok(sec7.length > 20 && !TIER.test(sec7) && /usage limits/.test(sec7), `2a native Terms, section 7 names no plan or tier ("${sec7.slice(0, 90)}")`);
+    // The founder's section 7 (approved 2026-10-20) names the free plan, and only it: no paid plan, no trial,
+    // and never that a paid plan keeps every feature (Apple 3.1.3(b)).
+    t.ok(sec7.length > 20 && !TIER.test(sec7.replace(/the free plan/g, "")) && /usage limits/.test(sec7) && !/every feature,|keeps every feature|paid/i.test(sec7),
+      `2a native Terms, section 7 names no paid plan or tier, only the free plan ("${sec7.slice(0, 90)}")`);
     const nMeet = textOf(N.render(N.h(N.MeetAgenda, { data: household, isCouple: false, setScreen: () => {} })));
-    // prelaunch-copy (2026-10-01): on a store app the Meet facilitator is open to every user, so a free
-    // household now gets the meeting itself, with no lock line and no trial named.
-    t.ok(/Start the meeting|Start solo check-in/.test(nMeet) && !/isn't included in this version/.test(nMeet) && !/Start your trial/.test(nMeet),
-      "2b native Meet offers the coach meeting to a free household, with no lock line and no trial named");
+    // 2026-10-20: a store app follows the web's rules, so a free household's Meet shows the agenda and one
+    // neutral line (lib/freePlan.js MEET_FREE_LINE), still with no trial named and nothing to buy.
+    t.ok(!/Start the meeting|Start solo check-in/.test(nMeet) && nMeet.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda.")
+      && !/\btrial\b/i.test(nMeet) && !/Start your trial/.test(nMeet),
+      "2b native Meet, for a free household: the agenda and the founder's locked-screen line, no meeting, no trial named");
     const nativeProfile = APP.slice(APP.indexOf("appData.profile?.name||\"User\""), APP.indexOf("appData.profile?.name||\"User\"") + 700);
     t.ok(/\{isPremium&&!isNativeApp\(\)&&<div[^>]*>✦ Flourish Plus<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
     // Controls: the web is unchanged.

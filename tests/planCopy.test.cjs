@@ -111,7 +111,7 @@ const body = (name) => { const i = APP.indexOf(`\nfunction ${name}(`); return i 
   // ── 5. the rule is not blind ────────────────────────────────────────────────────────────────────
   t.eq(["Save 31%", "CAD plus tax · save 31% versus monthly", "Save ${annualSavingsPercent(country)}%", "Regular price: $99.99 a year", "31% savings", "Saving 20%"].map(s => bad(s).length > 0),
     [true, true, true, true, true, true], "5a it catches each saving claim and the regular price");
-  t.eq(["Save changes", "Billed yearly", "$99.99/yr", "CAD plus tax", "Subscription settings saved.", "Cancel any time."].map(s => bad(s).length > 0),
+  t.eq(["Save changes", "Billed yearly", "$99.99/yr", "CAD plus tax", "Back from Stripe's billing portal.", "You can cancel any time."].map(s => bad(s).length > 0),
     [false, false, false, false, false, false], "5b …and not ordinary words");
 
   t.summary("planCopy.test");

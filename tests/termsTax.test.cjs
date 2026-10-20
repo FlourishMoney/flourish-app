@@ -8,7 +8,8 @@
 //   1. the new sentence, word for word, rendered on the web Terms; the old one gone;
 //   2. the rest of the paragraph unchanged;
 //   3. the Terms' "Last updated" date moved (the Privacy Policy's is not touched);
-//   4. the store apps' Terms paragraph is unchanged (nothing to buy there).
+//   4. the store apps' Terms paragraph is src/lib/freePlan.js STORE_TERMS_SECTION_7 (nothing to buy there;
+//      since 2026-10-20 it says the apps follow the web's trial and free plan limits).
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -19,8 +20,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout.";
 
-(() => {
+(async () => {
   const t = create();
+  const { STORE_TERMS_SECTION_7 } = await import("../src/lib/freePlan.js");
   const terms = APP.slice(APP.indexOf("function TermsOfService({onBack}){"), APP.indexOf("function ", APP.indexOf("function TermsOfService({onBack}){") + 30));
 
   t.ok(terms.includes(NEW), "1a the approved sentence, word for word");
@@ -36,7 +38,8 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
   t.ok(/const last="October 14, 2026";/.test(terms), "3a the Terms' Last updated date is October 14, 2026");
   const privacy = APP.slice(APP.indexOf("function PrivacyPolicy("), APP.indexOf("function ", APP.indexOf("function PrivacyPolicy(") + 30));
   t.ok(privacy.length > 100 && !/October 14, 2026/.test(privacy), "3b the Privacy Policy's date is not touched");
-  t.ok(terms.includes("\"The iOS and Android apps are free, and there is nothing to buy in them."), "4 the store apps' Terms paragraph is unchanged");
+  t.ok(/\{isNativeApp\(\) \? STORE_TERMS_SECTION_7 : <>/.test(terms) && /^There is nothing to buy in the iOS and Android apps\. /.test(STORE_TERMS_SECTION_7),
+    "4 the store apps' Terms paragraph is STORE_TERMS_SECTION_7, which starts by saying there is nothing to buy in them");
 
   let A = {};
   try { A = loadApp(["TermsOfService"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
@@ -49,8 +52,7 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
   const packet = fs.readFileSync(path.join(REPO, "docs", "ops", "LEGAL-PACKET.md"), "utf8");
   const pTerms = packet.slice(packet.indexOf("## 3. Terms of Service"), packet.indexOf("\n## 4."));
   t.ok(pTerms.includes(NEW) && pTerms.includes("last updated October 14, 2026"), "6a the legal packet's Terms quote the sentence and the date in the app");
-  const nativeLine = (terms.match(/isNativeApp\(\) \? "(The iOS and Android apps[^"]+)"/) || [])[1];
-  t.ok(!!nativeLine && pTerms.includes(nativeLine), "6b …and the store apps' paragraph as the app has it");
+  t.ok(pTerms.includes(`"${STORE_TERMS_SECTION_7}"`), "6b …and the store apps' paragraph as the app has it");
   const before = fs.readFileSync(path.join(REPO, "docs", "ops", "BEFORE-MONDAY.md"), "utf8");
   const offerTerms = before.slice(before.indexOf("## 3. Founding offer terms"), before.indexOf("\n## 4."));
   t.ok(offerTerms.includes(NEW), "6c the founding terms summary quotes the Terms sentence in the app");

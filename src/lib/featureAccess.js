@@ -2,26 +2,27 @@
 // -----------------------------------------------------------------------------
 // WHICH FEATURES A HOUSEHOLD CAN OPEN, in one place the screens and the tests share.
 //
-// Store apps (iOS, Android) have nothing to buy in 1.0.0, so on a store build no feature closes when a
-// trial ends: Credit and the Meet facilitator are open to every native user with no end date, until
-// in-app purchase ships in 1.1. The coach keeps its weekly message limit and What-If its daily limit
-// there, as usage limits that apply to every native user from the first day (usageLimits.coachIsUnlimited,
-// usageLimits.simulationsAreUnlimited). The web is unchanged: a trial, a paid
-// plan or a founder flag opens these features, and the free plan does not.
+// ONE RULE FOR EVERY APP (founder's decision, 2026-10-20). The iOS and Android apps follow the web: a
+// trial, a paid plan (bought on the web) or a founder flag opens Credit, the Meet facilitator and the
+// coach without its weekly limit, and the free plan does not. Until that date a store app opened all
+// three to every user for good; nothing here takes a platform any more, so no caller can bring that back.
+// The server holds every app to the same plan (netlify/functions/_lib/planRules.js deriveEntitlement,
+// coach.js, plaid.js), including store installs whose bundled code still says otherwise.
+// What a store app SAYS when one of these is closed is in src/lib/freePlan.js: no price, no upgrade.
 // -----------------------------------------------------------------------------
-import { isUnlimited, coachIsUnlimited } from "./usageLimits.js";
+import { isUnlimited } from "./usageLimits.js";
 
 // Do → Credit. isPremium is the App's plan state (trial, paid or founder).
-export function creditAvailable({ native = false, isPremium = false } = {}) {
-  return !!native || !!isPremium;
+export function creditAvailable({ isPremium = false } = {}) {
+  return !!isPremium;
 }
 
 // Meet: the coach-run meeting (the agenda itself is always shown).
-export function facilitatorAvailable({ native = false } = {}) {
-  return !!native || isUnlimited();
+export function facilitatorAvailable() {
+  return isUnlimited();
 }
 
 // Coach: whether the weekly message limit is lifted for this household.
-export function coachUnlimited({ native = false, isPremium = false } = {}) {
-  return native ? coachIsUnlimited({ native: true }) : !!isPremium;
+export function coachUnlimited({ isPremium = false } = {}) {
+  return !!isPremium;
 }

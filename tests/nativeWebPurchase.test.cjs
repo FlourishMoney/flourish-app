@@ -1,19 +1,19 @@
 // tests/nativeWebPurchase.test.cjs
 // -----------------------------------------------------------------------------
-// A WEB SUBSCRIPTION NEVER UNLOCKS A STORE APP (Apple 3.1.3(b); the Play build follows the same rule).
+// A WEB SUBSCRIPTION COUNTS IN A STORE APP, AND A STORE APP IS TOLD NOTHING ELSE (founder's decision,
+// 2026-10-20; it replaced "a web subscription never unlocks a store app", Apple 3.1.3(b)).
 //
-// Subscriptions are sold only on the web, through Stripe. Until in-app purchase exists, a household
-// using the iOS or Android app gets the 14-day trial and then the free tier, whatever it bought on the
-// web. Where that is enforced:
-//   • a store app never sees a subscription: its plan comes from the profiles row alone, which the
-//     Stripe webhook never writes, and it does not even ask /api/billing for its status. (On the web, from
-//     billing day, the status's server-computed `paid` lifts a free household to premium: webPlan, in
-//     src/lib/planFromProfile.js, which returns the profile's plan whenever `native` is true; section 7.)
-//   • the server's limits (the one-bank cap in plaid.js, the weekly coach limit in coach.js) ask
-//     getUserPlan, which for a request from a store app (_lib/cors.js isNativeRequest) does not read the
-//     subscription at all (_lib/planRules.js deriveEntitlement, native: true).
-//   • billing day (2026-10-26) adds the founding price and the founding link email; neither unlocks or opens
-//     anything in a store app (section 6). In-app purchase ships in 1.1.
+// The store apps follow the web's rules: the 14-day trial, then the free plan, unless the household is a
+// founder, a beta founder or pays on the web. Where that is enforced:
+//   • the server's limits (the one-bank cap in plaid.js, the coach limits in coach.js) ask getUserPlan with
+//     no platform at all, so a request from a store app reads the subscription exactly as the web's does
+//     (_lib/planRules.js deriveEntitlement).
+//   • a store app learns `paid` from /api/billing's status, which answers a store app with { enabled, paid }
+//     and nothing else (tests/webPaidPlan.test.cjs section 4): no price, no founding offer, no portal.
+//   • billing day (2026-10-26) adds the founding price and the founding link email; the founding link still
+//     opens nothing in a store app (section 6), while a founding SUBSCRIPTION now counts there (6a).
+// The five households the founder named (trial, trial ended, founder, paid on the web, the web) are run end
+// to end in tests/nativeTrialLimits.test.cjs.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -76,21 +76,19 @@ function load(db) {
   const t = create();
   const saved = { ...process.env };
 
-  // ── 1. the rule ──────────────────────────────────────────────────────────────────────────────
+  // ── 1. the rule: one answer, whichever app asks ──────────────────────────────────────────────
   {
-    const native = deriveEntitlement(ENDED_TRIAL, ACTIVE, NOW, { native: true });
-    t.eq([native.plan, native.unlimited, native.paidSubscription], ["free", false, false],
-      "1a a store app, an active Stripe subscription and no trial: the free tier");
-    const web = deriveEntitlement(ENDED_TRIAL, ACTIVE, NOW);
-    t.eq([web.plan, web.unlimited], ["premium", true], "1b the same household on the web: the subscription counts there");
-    t.eq(deriveEntitlement({ plan: "trial", trial_ends_at: FUTURE }, ACTIVE, NOW, { native: true }).plan, "trial",
-      "1c a store app still gets the 14-day trial");
-    t.eq(deriveEntitlement({ plan: "trial", trial_ends_at: PAST }, null, NOW, { native: true }).plan, "free", "1d …and then the free tier");
-    t.eq(deriveEntitlement({ plan: "free", founder_flag: true }, ACTIVE, NOW, { native: true }).plan, "beta_founder",
-      "1e the beta founder flag is not a purchase, and still applies in a store app");
+    t.eq(deriveEntitlement.length, 2, "1a deriveEntitlement takes a profile and a subscription (and a clock): no platform argument");
+    const ended = deriveEntitlement(ENDED_TRIAL, ACTIVE, NOW);
+    t.eq([ended.plan, ended.unlimited, ended.paidSubscription], ["premium", true, true],
+      "1b an active Stripe subscription and no trial: full access, in a store app as on the web");
+    t.eq(deriveEntitlement(ENDED_TRIAL, null, NOW).plan, "free", "1c the same household with no subscription: the free plan");
+    t.eq(deriveEntitlement({ plan: "trial", trial_ends_at: FUTURE }, null, NOW).plan, "trial", "1d the 14-day trial");
+    t.eq(deriveEntitlement({ plan: "trial", trial_ends_at: PAST }, null, NOW).plan, "free", "1e …and then the free plan");
+    t.eq(deriveEntitlement({ plan: "free", founder_flag: true }, null, NOW).plan, "beta_founder", "1f a beta founder keeps full access");
     for (const status of ["active", "trialing"]) {
-      t.eq(deriveEntitlement({ plan: "free" }, { ...ACTIVE, status }, NOW, { native: true }).unlimited, false,
-        `1f a ${status} subscription unlocks nothing in a store app`);
+      t.eq(deriveEntitlement({ plan: "free" }, { ...ACTIVE, status }, NOW, { native: true }).unlimited, true,
+        `1g a ${status} subscription gives full access, and a stray store-app flag from older code changes nothing`);
     }
   }
 
@@ -104,18 +102,17 @@ function load(db) {
     t.eq([...NATIVE_ORIGINS].sort().join(","), "capacitor://localhost,https://localhost", "2c exactly the two shells");
   }
 
-  // ── 3. getUserPlan: a store app's request never reads the subscription ───────────────────────
+  // ── 3. getUserPlan reads the subscription for every request ──────────────────────────────────
   {
     const db = { profiles: [{ user_id: "u1", ...ENDED_TRIAL }], subscriptions: [{ user_id: "u1", ...ACTIVE, current_period_end: "2099-01-01T00:00:00Z" }] };
     const a = load(db);
     const nat = await a.auth.getUserPlan("u1", { native: true });
-    t.eq([nat.entitlement, nat.unlimited, nat.paid], ["free", false, false],
-      "3a a store app with an active Stripe entitlement and no trial gets the free tier from the server");
-    t.ok(!a.reads.includes("subscriptions"), "3b …and the subscription was not even read");
-    const b = load(db);
-    const web = await b.auth.getUserPlan("u1");
-    t.eq([web.entitlement, web.unlimited, web.paid], ["premium", true, true], "3c the web is unchanged: the same household is premium there");
-    t.ok(b.reads.includes("subscriptions"), "3d …read from its subscription");
+    t.eq([nat.entitlement, nat.unlimited, nat.paid], ["premium", true, true],
+      "3a a household paying on the web gets full access from the server, even asked the old store-app way");
+    t.ok(a.reads.includes("subscriptions"), "3b …read from its subscription");
+    const b = load({ profiles: db.profiles, subscriptions: [] });
+    const free = await b.auth.getUserPlan("u1");
+    t.eq([free.entitlement, free.unlimited, free.paid], ["free", false, false], "3c with no subscription, the trial over: the free plan");
   }
 
   // ── 4. the server's limits, end to end: the one-bank cap ─────────────────────────────────────
@@ -134,54 +131,58 @@ function load(db) {
         body: JSON.stringify({ action: "exchange_token", public_token: "public-sandbox-1" }) });
     };
     try {
-      for (const [origin, name] of [[IOS, "iOS"], [ANDROID, "Android"]]) {
+      for (const [origin, name] of [[IOS, "iOS"], [ANDROID, "Android"], [WEB, "the web"]]) {
         const before = plaidCalls.length;
         const res = await exchange(origin);
-        t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_limit"],
-          `4a ${name}: a Stripe subscriber with one bank cannot link a second (a Plus feature) in the store app`);
-        t.eq(plaidCalls.length, before, `4b ${name}: …refused before Plaid is asked`);
+        t.ok(res.statusCode !== 402, `4a ${name}: a Stripe subscriber with one bank passes the one-bank cap`);
+        t.ok(plaidCalls.slice(before).some(u => /\/item\/public_token\/exchange$/.test(u)), `4b ${name}: …and the exchange goes on to Plaid`);
       }
-      const before = plaidCalls.length;
-      const web = await exchange(WEB);
-      t.ok(web.statusCode !== 402, "4c on the web the same subscriber passes the cap");
-      t.ok(plaidCalls.slice(before).some(u => /\/item\/public_token\/exchange$/.test(u)), "4d …and the exchange goes on to Plaid");
+      db.subscriptions = [];
+      for (const [origin, name] of [[IOS, "iOS"], [ANDROID, "Android"], [WEB, "the web"]]) {
+        const before = plaidCalls.length;
+        const res = await exchange(origin);
+        t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_limit"], `4c ${name}: with no subscription and the trial over, a second bank is refused`);
+        t.eq(plaidCalls.length, before, `4d ${name}: …before Plaid is asked`);
+      }
     } finally {
       global.fetch = realFetch;
     }
   }
 
-  // ── 5. every server limit passes the store-app flag; the app never sees a subscription ───────
+  // ── 5. every server limit asks the same question; the app never reads a subscription row ──────
   {
     for (const f of ["coach.js", "plaid.js"]) {
       const src = fs.readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
       const calls = src.match(/getUserPlan\([^)]*\)/g) || [];
-      t.ok(calls.length > 0 && calls.every(c => /native: isNativeRequest\(event\)/.test(c)),
-        `5a ${f}: every getUserPlan call says whether the request is a store app (${calls.length})`);
+      t.ok(calls.length > 0 && calls.every(c => c === "getUserPlan(user_id)"),
+        `5a ${f}: every getUserPlan call is getUserPlan(user_id), with no platform option (${calls.length})`);
+      t.ok(!/isNativeRequest/.test(src), `5a2 ${f}: …and nothing in it asks whether the request is a store app`);
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const refresh = app.slice(app.indexOf("const refreshPlanFromProfile"), app.indexOf("const refreshPlanFromProfile") + 900);
     t.ok(/\.from\("profiles"\)/.test(refresh) && !/subscriptions/.test(refresh), "5b the app reads its plan from the profiles row and never reads a subscription row itself");
-    t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app), "5c a store app never asks /api/billing for its status");
+    t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app) && /setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(app),
+      "5c a store app asks /api/billing for its status and keeps only enabled and paid");
     const hook = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "5d the Stripe webhook never writes the profiles row the app reads");
   }
 
   // ── 6. billing day (2026-10-26): the founding plan and the founding link, in a store app ─────────
-  // Billing goes live on the web only. In-app purchase ships in 1.1; until then nothing bought through
-  // Stripe, the founding price included, unlocks anything in the iOS or Android app, and the founding link
-  // email opens nothing there.
+  // Billing goes live on the web only, and a store app still sells nothing. What was bought on the web, the
+  // founding price included, now gives full access in the iOS and Android apps; the founding link email
+  // still opens nothing there.
   {
     const FOUNDING = { status: "active", current_period_end: "2027-10-26T00:00:00Z", plan_key: "founding_annual" };
     for (const status of ["active", "trialing"]) {
-      const nat = deriveEntitlement(ENDED_TRIAL, { ...FOUNDING, status }, NOW, { native: true });
-      t.eq([nat.plan, nat.unlimited, nat.paidSubscription], ["free", false, false], `6a a ${status} Founding Annual subscription unlocks nothing in a store app`);
+      const any = deriveEntitlement(ENDED_TRIAL, { ...FOUNDING, status }, NOW, { native: true });
+      t.eq([any.plan, any.unlimited, any.paidSubscription], ["premium", true, true], `6a a ${status} Founding Annual subscription gives full access, in a store app too`);
     }
-    t.eq(deriveEntitlement(ENDED_TRIAL, FOUNDING, NOW).plan, "premium", "6b …and the same subscription counts on the web");
+    t.eq(deriveEntitlement(ENDED_TRIAL, null, NOW).plan, "free", "6b (not vacuous: without it, the same household is on the free plan)");
     const db = { profiles: [{ user_id: "u1", ...ENDED_TRIAL }], subscriptions: [{ user_id: "u1", ...FOUNDING }] };
     const a = load(db);
-    const nat = await a.auth.getUserPlan("u1", { native: true });
-    t.eq([nat.entitlement, nat.unlimited, nat.paid, a.reads.includes("subscriptions")], ["free", false, false, false],
-      "6c getUserPlan for a store app: a founding subscriber gets the free tier, and the subscription is not read");
+    const nat = await a.auth.getUserPlan("u1");
+    t.eq([nat.entitlement, nat.unlimited, nat.paid, a.reads.includes("subscriptions")], ["premium", true, true, true],
+      "6c getUserPlan: a founding subscriber gets full access, read from the subscription");
 
     const L = await import("../src/lib/foundingLink.js");
     const ON = { enabled: true, paid: false, founding: { available: true, cohortLimit: 50 } };
@@ -199,16 +200,16 @@ function load(db) {
   }
 
 
-  // ── 7. billing day: the web counts a payment, a store app still never does ─────────────────────
+  // ── 7. billing day: a payment counts the same in every app ────────────────────────────────────
   {
     const P = await import("../src/lib/planFromProfile.js");
     for (const plan of ["free", "trial", "beta_founder", "premium"]) for (const paid of [true, false]) {
-      t.eq(P.webPlan(plan, { paid, native: true }), plan, `7a a store app's plan is the profile's (${plan}), paid on the web or not (${paid})`);
+      t.eq(P.webPlan(plan, { paid, native: true }), P.webPlan(plan, { paid }), `7a a stray store-app flag changes nothing (${plan}, paid ${paid})`);
     }
-    t.eq(P.webPlan("free", { paid: true, native: false }), "premium", "7b (not vacuous: the same payment does count on the web)");
+    t.eq(P.webPlan("free", { paid: true }), "premium", "7b a payment lifts the free plan to full access");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/webPaidRef\.current = !nativeApp && /.test(app) && /webPlan\(profilePlan, \{ paid: webPaidRef\.current, native: nativeApp \}\)/.test(app),
-      "7c the App passes the store-app flag to webPlan and never counts a payment natively");
+    t.ok(/webPaidRef\.current = !!user\?\.id && /.test(app) && /webPlan\(profilePlan, \{ paid: webPaidRef\.current \}\)/.test(app) && !/native: nativeApp \}\)/.test(app.slice(app.indexOf("webPaidRef.current ="), app.indexOf("webPaidRef.current =") + 400)),
+      "7c the App counts a payment through webPlan with no store-app flag");
     t.eq((app.match(/=\s*webPlan\(/g) || []).length, 1, "7d …and that effect is the only call to webPlan: the only place a payment is counted");
   }
 

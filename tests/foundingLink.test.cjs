@@ -161,12 +161,21 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     for (const [why, to, row] of [
       ["no address", "", ROW], ["a blank address", "   ", ROW], ["no row", ADDRESS, null], ["no row id", ADDRESS, { ...ROW, id: null }],
       ["no founding number", ADDRESS, { ...ROW, founding_position: null }], ["number 0", ADDRESS, { ...ROW, founding_position: 0 }],
-      ["number 51", ADDRESS, { ...ROW, founding_position: 51 }], ['the string "7"', ADDRESS, { ...ROW, founding_position: "7" }],
+      ['the string "7"', ADDRESS, { ...ROW, founding_position: "7" }],
       ["number 7.5", ADDRESS, { ...ROW, founding_position: 7.5 }], ["a test row", ADDRESS, { ...ROW, is_test: true }],
       ["an unsubscribed row", ADDRESS, { ...ROW, unsubscribed_at: "2026-10-20T00:00:00Z" }],
       ["consent from before the consent line", ADDRESS, { ...ROW, consent_version: LEGACY_CONSENT_VERSION }],
       ["no consent version", ADDRESS, { ...ROW, consent_version: null }], ["an unknown consent version", ADDRESS, { ...ROW, consent_version: "2099-01-01" }],
     ]) t.eq(E.foundingLinkEmailPayload(to, row), null, `4a ${why}: no email`);
+    // 0017: a number past 50 is a real household (issued after test numbers were voided). It gets its
+    // founding link email, and the number itself is never shown (Amanda, 2026-10-14).
+    {
+      const p53 = E.foundingLinkEmailPayload(ADDRESS, { ...ROW, founding_position: 53 });
+      t.ok(p53 && p53.text.includes("You're one of the first 50 founding households, and your founding price is ready:") && !/#53|\b53\b/.test(p53.text) && !/#53/.test(p53.html),
+        "4a2 number 53 (past 50, after voided test numbers): the founding link email, saying \"one of the first 50\" and never the number");
+      const p50 = E.foundingLinkEmailPayload(ADDRESS, { ...ROW, founding_position: 50 });
+      t.ok(p50 && p50.text.includes("You're founding household #50 of 50, and your founding price is ready:"), "4a3 number 50 still reads \"#50 of 50\"");
+    }
     const sk = process.env.SUPABASE_SECRET_KEY;
     delete process.env.SUPABASE_SECRET_KEY;
     t.eq(E.foundingLinkEmailPayload(ADDRESS, ROW), null, "4b no signing secret, so no unsubscribe link: no email");
@@ -191,7 +200,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
         const call = { url: u, method: o.method || "GET", headers: o.headers || {}, body: o.body };
         calls.push(call);
         if (u.includes("api.resend.com")) return { ok: resendOk, status: resendOk ? 200 : 500, json: async () => ({}) };
-        if (u.includes("/rpc/waitlist_founding_position_for_email")) {
+        if (u.includes("/rpc/waitlist_founding_number_for_email")) {
           if (lookupStatus !== 200) return { ok: false, status: lookupStatus, json: async () => ({}) };
           return { ok: true, status: 200, json: async () => honour(JSON.parse(o.body).p_email) };
         }
@@ -242,7 +251,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
       t.eq([rec.placement, rec.founding_link.consent_version, rec.founding_link.position, typeof rec.founding_link.sent_at],
         ["hero", CONSENT_VERSION, 7, "string"], "5f the record: sent_at, the consent version it went out under, the number; the row's other metadata kept");
       t.ok(r.patches.every(p => p.url.includes("metadata->founding_link=is.null")), "5g the record is written only where none is there yet");
-      const lookups = r.calls.filter(c => c.url.includes("/rpc/waitlist_founding_position_for_email"));
+      const lookups = r.calls.filter(c => c.url.includes("/rpc/waitlist_founding_number_for_email"));
       t.eq(lookups.length, 2, "5h billing's own lookup is asked for each row before its email");
       t.ok(r.calls.indexOf(lookups[0]) < r.calls.indexOf(r.resend[0]), "5i …before the send");
     }
@@ -305,7 +314,12 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : null\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them");
     t.ok(/useState\(isNativeApp\(\) \|\| !!foundingNote\)/.test(APP), "6e …and opens straight to sign-in");
     t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, 1, "6f still one way to mount the checkout screen (behind billingUi.show)");
-    t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "6g a store app still never asks /api/billing");
+    // 2026-10-20: a store app asks /api/billing whether the household pays on the web, and keeps only that
+    // (billing.js answers it with { enabled, paid }), so the founding offer can never reach it.
+    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
+      "6g a store app keeps only enabled and paid from /api/billing: never the founding offer");
+    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\) \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
+      "6g2 …and the server tells a store app nothing about the founding price in the first place");
     const srcFiles = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
     t.ok(!/FOUNDING_LINK_EMAIL|VITE_FOUNDING/.test(srcFiles), "6h the send switch is a server variable: never in src/, never VITE_");
     const welcome = require(path.join(LIB, "foundingWaitlist.js")).foundingWelcomeLine(7);

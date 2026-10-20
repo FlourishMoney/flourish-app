@@ -62,19 +62,21 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     const native = (fn) => { setPlatform("ios"); try { return fn(); } finally { setPlatform("web"); } };
     const terms = native(() => textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} }))));
     const s7 = terms.slice(terms.indexOf("7. "), terms.indexOf("8. ")).trim();
-    t.eq(s7, "7. Cost and usage limits The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies.",
+    // Since 2026-10-20 a store app follows the web's rules: 14 days of everything, then the usage limits.
+    t.eq(s7, "7. Cost and usage limits There is nothing to buy in the iOS and Android apps. A new account has every feature for its first 14 days. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies.",
       "1a native Terms section 7 says what the store app does, word for word");
     const webTerms = textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} })));
     t.ok(/7\. Subscription & Billing/.test(webTerms), "1b (the web keeps its section 7)");
-    const coachGate = native(() => textOf(A.render(A.h(A.PremiumGate, { feature: "AI Coach", desc: "x", nativeNote: "You've used this week's 2 coach messages. They reset Monday." }))));
-    t.ok(/You've used this week's 2 coach messages\. They reset Monday\./.test(coachGate) && !/isn't included/.test(coachGate),
+    const coachGate = native(() => textOf(A.render(A.h(A.PremiumGate, { feature: "AI Coach", desc: "x", nativeNote: "You've used this week's 2 coach messages. You get 2 more on Monday." }))));
+    t.ok(/You've used this week's 2 coach messages\. You get 2 more on Monday\./.test(coachGate) && !/isn't included/.test(coachGate),
       "1c on a store app the coach gate says the week's messages are used and when they reset, not that the coach is missing");
-    t.ok(/nativeNote=\{`You've used this week's \$\{FREE_TIER_LIMITS\.coachMessagesPerWeek\} coach messages\. They reset Monday\.`\}/.test(APP), "1d …and that is what the coach tab passes");
+    t.ok(/nativeNote=\{coachLimitLine\(\)\}/.test(APP), "1d …and that is what the coach tab passes (lib/freePlan.js coachLimitLine, the founder's line)");
     const credit = native(() => textOf(A.render(A.h(A.PremiumGate, { feature: "Credit Coaching", desc: "x" }))));
-    t.ok(/Credit Coaching isn't included in this version\./.test(credit), "1e other gates keep the neutral line");
+    t.ok(credit.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda."),
+      "1e other gates say the founder's locked-screen line, word for word");
     t.ok(!/what to do next/.test(APP.slice(APP.indexOf('feature="AI Coach"'), APP.indexOf('feature="AI Coach"') + 200)), "1f the coach is described as explaining your options, not telling you what to do");
-    t.ok(/isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)/.test(APP) && /"Only one bank can be connected in this version\. You can import a statement for another account\."/.test(APP),
-      "1g a store app never shows the server's plan_limit code: it says what this version does");
+    t.ok(/isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)\s*\/\/[^\n]*\n\s*\? FREE_BANK_LINE/.test(APP),
+      "1g a store app never shows the server's plan_limit code: it says what the free plan connects (FREE_BANK_LINE)");
   }
 
   // ── 5. Watch heading ─────────────────────────────────────────────────────────────────────────

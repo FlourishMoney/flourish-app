@@ -11,7 +11,7 @@
  *                        (docs/ops/BILLING-DAY-OCT-26.md). Unset it and the next run sends nothing.
  * Either one unset: the run reads nothing, sends nothing and writes nothing.
  *
- * WHO. A waitlist row holding founding number 1 to 50, not a test row, not unsubscribed, not sent before,
+ * WHO. A waitlist row holding a founding number (from 1 up; 0025 can issue numbers past 50), not a test row, not unsubscribed, not sent before,
  * with a consent version that covers one of the two founding emails (foundingEmailKindFor,
  * _lib/waitlistConsent.js): the founding link email for versions that asked for updates (founding number 1
  * to 50); the CANADA LAUNCH email for pre-2026-10-01 rows (any number, or none: it names no number, price or
@@ -19,7 +19,7 @@
  * the launch those rows asked about). That launch email is the one email those rows ever get. Without
  * OPEN_SIGNUP they are not even asked for. Not sent before
  * (metadata.founding_link is empty). Then, per row, the same lookup billing uses
- * (waitlist_founding_position_for_email, migration 0016) must still return that row's own number: an
+ * (waitlist_founding_number_for_email, migration 0025: real holders only, the void and test numbers left out) must still return that row's own number: an
  * ended number, a test row or an unreadable lookup (0016 not applied) sends nothing. Lowest number first.
  *
  * RECORDED. After Resend accepts a message, the row's metadata gains founding_link: { sent_at,
@@ -85,7 +85,7 @@ const versionsFor = (launched) => [...FOUNDING_LINK_CONSENT_VERSIONS, ...(launch
 async function selectOwed(supabaseUrl, key, limit, launched = false) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
     + `?select=id,email,founding_position,is_test,unsubscribed_at,consent_version,metadata`
-    // A founding number 1 to 50, or (signup open) a pre-2026-10-01 row, number or not.
+    // A founding number (from 1 up, 0025), or (signup open) a pre-2026-10-01 row, number or not.
     + (launched
       ? `&or=(and(founding_position.gte.1,founding_position.lte.${FOUNDING_COHORT_LIMIT}),consent_version.in.(${LAUNCH_EMAIL_CONSENT_VERSIONS.map(encodeURIComponent).join(",")}))`
       : `&founding_position=gte.1&founding_position=lte.${FOUNDING_COHORT_LIMIT}`)
@@ -109,9 +109,9 @@ async function selectOwed(supabaseUrl, key, limit, launched = false) {
 }
 
 // Billing's own answer for this address: the founding number it holds, or null. undefined when the lookup
-// itself failed, which stops the run (0016 not applied, or Supabase unreachable).
+// itself failed, which stops the run (0025 not applied, or Supabase unreachable).
 async function honouredNumber(supabaseUrl, key, email) {
-  const res = await fetchWithDeadline(`${supabaseUrl}/rest/v1/rpc/waitlist_founding_position_for_email`, {
+  const res = await fetchWithDeadline(`${supabaseUrl}/rest/v1/rpc/waitlist_founding_number_for_email`, {
     method: "POST",
     headers: { ...authHeaders(key), "Content-Type": "application/json" },
     body: JSON.stringify({ p_email: normalizeEmail(email) }),

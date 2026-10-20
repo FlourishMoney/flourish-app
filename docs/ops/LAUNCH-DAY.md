@@ -79,7 +79,7 @@ pull request the day before you expect an approval, and do not post the store li
 3. **The waitlist form.** On `https://flourishmoney.app`, check the email field, **Join the waitlist** and
    the consent line are on the first screen and the founding card shows a count. Do not submit a real
    household's address. Submit your own address only at `getgrowsmart.com` or `flourishmoney.app`, and only
-   once PR #69 is merged and migration 0017 has run, so it is stored as a test row and takes no founding
+   once migration 0025 has run, so it is stored as a test row and takes no founding
    number. Before then, do not submit at all.
 4. **The App Store page.** Open the App Store link above on an iPhone with the Canadian store: the name,
    the icon, the screenshots and **Get** are there, and installing opens the app to its sign-in screen.

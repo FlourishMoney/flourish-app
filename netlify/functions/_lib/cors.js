@@ -42,11 +42,10 @@ function isAllowedOrigin(origin) {
 }
 
 // THE STORE APPS, by the Origin their WebViews send: capacitor://localhost (iOS) and https://localhost
-// (Android), as above. Used for one thing: Apple 3.1.3(b), which the Play build follows too. Until
-// in-app purchase exists, a subscription bought on the web must not unlock anything in a store app
-// (_lib/planRules.js deriveEntitlement). Safe in the only direction that matters: a web page can never
-// present either origin, so a web subscriber is never mistaken for a store app; and a caller that
-// claims to be one only gives up the subscription's entitlement, never gains anything.
+// (Android), as above. The plan does NOT depend on it: a store app gets the web's answer (_lib/planRules.js
+// deriveEntitlement). It decides only what the server TELLS a store app, which sells nothing: billing.js
+// answers a store app's status with `paid` alone, no prices, no founding offer and no portal. Safe in the
+// only direction that matters: a caller that claims to be a store app is told less, never given more.
 const NATIVE_ORIGINS = new Set(["capacitor://localhost", "https://localhost"]);
 
 function isNativeRequest(event) {

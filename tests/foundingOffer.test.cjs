@@ -6,6 +6,9 @@
 //      503, never a default; the page shows the endpoint's whole number 0 to 50 or no line at all.
 //   2. Positions are unique and stop at 50, assigned inside the insert under one lock (migration 0014).
 //   3. Test rows never count: not in the spots-left count, not in the trigger, not in the backfill.
+//      Since 0017 (2026-10-14): a test address (getgrowsmart.com, flourishmoney.app) is a test row from
+//      the moment it joins; a test row's number is void, never reissued, never counted; spots left is 50
+//      less the REAL holders, so numbers can run past 50 while exactly 50 households hold one (section 8).
 //   4. The copy matches the approved words exactly, on the page and in the welcome email, and the
 //      block sits directly under the hero's waitlist form.
 //   5. No price on a store app: the block renders nothing natively and asks nothing.
@@ -44,8 +47,9 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
   global.fetch = async (url, o = {}) => {
     calls.push({ url: String(url), method: o.method || "GET", headers: o.headers || {} });
     if (supabase.throws) throw Object.assign(new Error("boom"), { name: supabase.throws });
+    const status = supabase.noVoidColumn && /void_at=/.test(String(url)) ? 400 : supabase.status;
     return {
-      ok: !supabase.status || supabase.status < 300, status: supabase.status || 200,
+      ok: !status || status < 300, status: status || 200,
       headers: { get: (h) => (h.toLowerCase() === "content-range" ? (supabase.range === undefined ? null : supabase.range) : null) },
       json: async () => { throw new Error("the endpoint must not read a body"); },
     };
@@ -80,7 +84,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(/max-age=60/.test(ok.res.headers["Cache-Control"]) && /max-age=60/.test(ok.res.headers["Netlify-CDN-Cache-Control"]), "1b a good answer is cached for 60 s");
     t.eq(ok.calls.length, 1, "1c one read of Supabase");
     t.ok(ok.calls[0].method === "HEAD" && ok.calls[0].headers.Prefer === "count=exact", "1d …a HEAD with count=exact, so no row comes back at all");
-    t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position$/.test(ok.calls[0].url), "1e …of the founding numbers issued (the ledger, which is never freed)");
+    t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position&void_at=is\.null$/.test(ok.calls[0].url), "1e …of the real holders: numbers issued (the ledger, which is never freed) and not void (0017)");
     t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/64" } })).body), '{"spotsLeft":0,"openSignup":false}', "1f 64 eligible rows: 0 left, never below 0");
     const empty = await callEndpoint({ supabase: { range: "*/0" } });
     t.ok(empty.res.statusCode === 503 && JSON.stringify(empty.body) === '{"error":"unavailable","openSignup":false}' && empty.res.headers["Cache-Control"] === "no-store",
@@ -183,8 +187,10 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     // beta.js never sends a position, and passes on the one the database returned.
     const beta = fs.readFileSync(path.join(REPO, "netlify", "functions", "beta.js"), "utf8");
     const insertBody = beta.slice(beta.indexOf("body: JSON.stringify({\n          email: emailAddr"), beta.indexOf("signal: insertController.signal"));
-    t.ok(insertBody.length > 50 && !/founding|is_test|created_at/.test(insertBody), "2m the signup insert sends no position, no is_test and no created_at");
-    t.ok(/sendWelcomeEmail\(emailAddr, insertedRow && insertedRow\.id, insertedRow && insertedRow\.founding_position\)/.test(beta), "2n the welcome email gets the position the database returned for that row");
+    // 2026-10-14: is_test may be sent, and only as true for a test address (section 8 runs the handler).
+    t.ok(insertBody.length > 50 && !/founding|created_at/.test(insertBody) && /\.\.\.\(isTestEmail\(emailAddr\) \? \{ is_test: true \} : \{\}\)/.test(insertBody)
+      && !/is_test: false/.test(insertBody), "2m the signup insert sends no position and no created_at, and sends is_test only as true, for a test address");
+    t.ok(/sendWelcomeEmail\(emailAddr, insertedRow && insertedRow\.id, welcomePositionFor\(\{ email: emailAddr, \.\.\.\(insertedRow \|\| \{\}\) \}\)\)/.test(beta), "2n the welcome email gets the number the database returned for that row, unless it is a test row");
   }
 
   // ── 3. Test rows never count ──────────────────────────────────────────────────────────────────
@@ -209,7 +215,13 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     const pricing = fs.readFileSync(path.join(REPO, "src", "lib", "foundingOffer.js"), "utf8");
     t.ok(!/\d+\.\d{2}/.test(pricing), "4b …with every price read from pricing.js, none typed in the block");
     t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, word for word");
-    t.eq([0, 51, null, undefined, "7", 7.5].map(W.foundingWelcomeLine), [null, null, null, null, null, null], "4d …and no line for a row without a position from 1 to 50");
+    t.eq([0, -1, null, undefined, "7", 7.5].map(W.foundingWelcomeLine), [null, null, null, null, null, null], "4d …and no line for a row without a founding number");
+    // Amanda, 2026-10-14: never a number above 50. A number past 50 (issued after test numbers were
+    // voided, 0017) is still one of the first 50 real households, and is told exactly that.
+    const PAST_50 = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
+    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: \"one of the first 50 founding households\"");
+    t.ok([51, 53, 62].every((n) => !W.foundingWelcomeLine(n).includes(String(n))), "4d3 …and the number itself is never shown");
+    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50 still reads \"#50 of 50\"");
     let A = {};
     try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.AuthScreen) {
@@ -283,6 +295,98 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 3000);
     t.ok(/@media\(max-width:959px\)\{ \.fll-fo-desk\{ display:none; \} \}/.test(app) && /\.fll-fo-phone\{ display:none; \}/.test(desk),
       "7f under 960px the desktop words are hidden; from 960px the phone words are");
+  }
+
+  // ── 8. Test sign-ups never hold a founding number (0017, 2026-10-14; since 2026-10-20 in 0025) ─────
+  // 0025 replaces 0017 (PR #69) and 0021 (PR #83): one issuing rule, founding_issue_for_key, for the waitlist
+  // trigger and for confirmed accounts. tests/foundingLedger.sql.test.cjs runs it in a real Postgres.
+  {
+    const raw = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0025_founding_ledger.sql"), "utf8");
+    const sql = stripSql(raw);
+    const body = (name) => { const i = sql.indexOf(`function public.${name}(`); return i < 0 ? "" : sql.slice(i, sql.indexOf("$$;", sql.indexOf("$$", i) + 2)); };
+    const ins = body("waitlist_assign_founding_position"), upd = body("waitlist_void_founding_on_test"), issue = body("founding_issue_for_key");
+    t.ok(/add column if not exists void_at timestamptz/.test(sql) && /void_reason in \('test', 'beta_founder'\)/.test(sql), "8a the ledger can mark a number void, and says why (a test, a beta founder)");
+    // Rejoin of a test-domain email stays test; a test row never reaches the issuing rule.
+    const domAt = ins.indexOf("if public.waitlist_is_test_email(new.email) then\n    new.is_test := true;"), testAt = ins.indexOf("if new.is_test then\n    return new;"), issueAt = ins.indexOf("public.founding_issue_for_key(k, 'waitlist', null)");
+    t.ok(domAt > 0 && testAt > domAt && issueAt > testAt, "8b a join from a test address is stored as a test row before anything else, and gets no number (a rejoin too)");
+    t.ok(!/insert into public\.waitlist_founding_ledger/.test(ins) && /insert into public\.waitlist_founding_ledger \(position, email_key, source, user_id\)/.test(issue),
+      "8b2 the waitlist trigger issues through the one rule; only founding_issue_for_key writes the ledger");
+    // Void numbers never reissue: the next number is past the highest ever issued, and a voided household rejoining gets nothing back.
+    t.ok(/select coalesce\(max\(position\), 0\) \+ 1 into next_position from public\.waitlist_founding_ledger;/.test(issue),
+      "8c a new number is always past the highest ever issued, so a void number is never issued again");
+    t.ok(/if prior_void is not null then\s+return null;/.test(issue), "8d a household whose number was voided does not get it back, by rejoining or by an account");
+    // 50 real holders, not the highest number.
+    t.ok(/select count\(\*\) into holders from public\.waitlist_founding_ledger where void_at is null;\s+if holders >= 50 then\s+return null;/.test(issue),
+      "8e numbers stop when 50 REAL households hold one: the 51st real household gets none, from either side");
+    const lockAt = issue.indexOf("pg_advisory_xact_lock(hashtext('public.waitlist.founding_position'))");
+    t.ok(lockAt > 0 && lockAt < issue.indexOf("into holders") && /pg_advisory_xact_lock\(hashtext\('public\.waitlist\.founding_position'\)\)/.test(upd)
+      && ins.indexOf("pg_advisory_xact_lock") > testAt, "8f the count and the pick run under 0014's lock, and so does voiding, so simultaneous arrivals cannot pass 50");
+    t.ok(/if public\.founding_is_beta_founder_key\(p_key\) then\s+return null;/.test(issue), "8f2 a beta founder's address never takes a number: beta founders are outside the 50");
+    t.ok(/if new\.is_test and not old\.is_test then/.test(upd) && /set void_at = now\(\), void_reason = 'test'\s+where void_at is null\s+and \(position = old\.founding_position or email_key = public\.waitlist_email_key\(new\.email\)\);/.test(upd)
+      && /new\.founding_position := null;/.test(upd), "8g marking a row as a test row voids its number, and any number its address holds, and clears the row");
+    t.ok(/before update of is_test on public\.waitlist/.test(sql), "8h …whenever is_test is set, not only by this migration");
+    t.ok(/check \(position >= 1\)/.test(sql) && /check \(founding_position is null or founding_position >= 1\)/.test(sql), "8i numbers may run past 50 (the cap is the count of real holders)");
+    // The data change: the two domains, test rows still holding a number, beta founders. Nothing deleted, no address named.
+    const updates = sql.match(/update public\.waitlist\s[\s\S]*?;/g) || [];
+    t.eq(updates.length, 3, "8j three data changes in the waitlist");
+    t.ok(/set is_test = true\s+where public\.waitlist_is_test_email\(email\) and not is_test;/.test(updates[0] || "")
+      && /set founding_position = null where is_test and founding_position is not null;/.test(updates[1] || "")
+      && /set founding_position = null\s+where w\.founding_position is not null and public\.founding_is_beta_founder_key/.test(updates[2] || ""),
+      "8k …every row at a test domain becomes a test row; test rows and beta founders' rows give up their numbers");
+    t.ok(/insert into public\.founding_0025_cleared \(waitlist_id, founding_position, reason\)\s+select w\.id, w\.founding_position, 'test'/.test(sql)
+      && /insert into public\.founding_0025_cleared \(waitlist_id, founding_position, reason\)\s+select w\.id, w\.founding_position, 'beta_founder'/.test(sql),
+      "8k2 …and each cleared position is kept first, for the rollback");
+    t.ok(!/\bdelete\s+from\b|\btruncate\b|\bdrop\s+(table|column)\b/i.test(sql), "8l nothing is deleted: void numbers stay in the ledger");
+    t.ok(!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(raw), "8m no email address is written in the migration");
+    // One list of test domains, in SQL and in JS.
+    const C = require(path.join(REPO, "netlify", "functions", "_lib", "foundingCohort.js"));
+    const sqlDomains = (/\(getgrowsmart\\\.com\|flourishmoney\\\.app\)/.exec(sql) || [""])[0];
+    t.ok(sqlDomains && C.TEST_EMAIL_DOMAINS.join() === "getgrowsmart.com,flourishmoney.app", "8n the database and the functions hold the same two test domains");
+    const fullPattern = raw.split(`'@([a-z0-9-]+\\.)*(getgrowsmart\\.com|flourishmoney\\.app)$'`).length - 1;
+    const anyPattern = (raw.match(/\(getgrowsmart\\\.com\|flourishmoney\\\.app\)\$'/g) || []).length;
+    t.ok(fullPattern >= 3 && fullPattern === anyPattern, `8o the function and the dry run use the very same pattern, subdomains included, every time (${fullPattern})`);
+    for (const f of ["waitlist_is_test_email(text)", "waitlist_assign_founding_position()", "waitlist_void_founding_on_test()", "founding_issue_for_account(uuid, text)",
+      "waitlist_founding_number_for_email(text)", "waitlist_founding_position_for_email(text)"]) {
+      const e = f.replace(/[()]/g, "\\$&");
+      t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(sql) && new RegExp(`grant execute on function public\\.${e} to service_role;`).test(sql), `8p explicit grants: ${f}, service role only`);
+    }
+    for (const f of ["founding_is_beta_founder_key(text)", "founding_issue_for_key(text, text, uuid)", "founding_on_account_confirmed()", "founding_accounts_start()"]) {
+      const e = f.replace(/[()]/g, "\\$&");
+      t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(sql) && !new RegExp(`grant execute on function public\\.${e}`).test(sql), `8p2 ${f}: nobody calls it directly`);
+    }
+    // Spots left = 50 - real holders.
+    const ok = await callEndpoint({ supabase: { range: "0-23/24" } });
+    t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 real holders (28 issued, 4 void): 26 spots left (with main's openSignup flag)");
+    t.ok(/void_at=is\.null/.test(ok.calls[0].url), "8r …counted from the numbers that are not void");
+    // Before 0025 runs (the deploy comes first): no void_at column, and the count is every number issued, the
+    // figure the landing shows today, so it keeps its founding form (a 503 would put the pre-launch form back).
+    const pre = await callEndpoint({ supabase: { noVoidColumn: true, range: "0-32/33" } });
+    t.eq([pre.res.statusCode, JSON.stringify(pre.body)], [200, '{"spotsLeft":17,"openSignup":false}'], "8s before 0025 (no void_at column): today's count, every number issued (33 issued, 17 left)");
+    t.ok(/void_at=is\.null$/.test(pre.calls[0].url) && /select=position$/.test(pre.calls[1].url) && pre.calls.length === 2, "8s2 …asked for the real holders first, then once for every number");
+    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s3 a 400 to both questions is still no number, never a guess");
+    // Step 11b (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
+    const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
+    const listed = (sql.match(/update public\.waitlist_founding_ledger l set void_at = now\(\), void_reason = 'test'\s+where l\.position in [\s\S]*?;/g) || []);
+    t.eq(listed.length, 1, "8t one ledger update voids by number: the confirmed test numbers");
+    const s9 = listed[0] || "";
+    t.ok(s9.includes(`where l.position in (${PROD_TEST_NUMBERS})`), "8u …exactly 16 to 21 and 23 to 28, by number (22 is a real household)");
+    t.ok(/and not exists \(select 1 from public\.waitlist w where w\.founding_position = l\.position\)/.test(s9)
+      && /and not exists \(select 1 from public\.waitlist w where not w\.is_test and public\.waitlist_email_key\(w\.email\) = l\.email_key\)/.test(s9)
+      && /and l\.user_id is null/.test(s9) && /and l\.issued_at < timestamptz '2026-10-14 00:00:00\+00'/.test(s9),
+      "8v …only a number issued before 2026-10-14 that no waitlist row holds, no household's row has the address of and no account is recorded against");
+    t.ok(/and l\.void_at is null/.test(s9), "8w …and only numbers not already void, so a second run changes nothing");
+    t.ok(raw.includes("Amanda confirmed 2026-10-14: these twelve numbers went to her own test sign-ups"), "8x …commented as Amanda confirmed it");
+    const dry = raw.slice(raw.indexOf("READ-ONLY DRY RUN"), raw.indexOf("READ-ONLY CHECK AFTERWARDS"));
+    const after = raw.slice(raw.indexOf("READ-ONLY CHECK AFTERWARDS"), raw.indexOf("A TEST ACCOUNT FOUND LATER"));
+    t.ok(["issued_now", "spots_left_now", "void_test_rows", "void_confirmed_orphans", "void_beta_founders", "issued_since_oct_14", "real_holders_after_voids", "accounts_to_number", "accounts_numbered", "spots_left_after"]
+      .every((c) => dry.includes(` as ${c}`)) && dry.includes(`(${PROD_TEST_NUMBERS})`),
+      "8y the dry run shows what it will void and why, how many were issued since Oct 14, the accounts it will number, and spots_left_after");
+    t.ok(["issued", "real_holders", "spots_left", "void_test", "void_beta_founders", "from_accounts", "next_number", "accounts_take_seats"].every((c) => after.includes(` as ${c}`)), "8z …and the check afterwards");
+    t.ok(/spots_left must equal the dry run's spots_left_after/.test(after), "8z2 the check says its spots_left must equal the dry run's spots_left_after (tests/foundingLedger.sql.test.cjs proves it does)");
+    const dryOut = dry.slice(dry.indexOf("--   select (select count(*) from ledger)"));
+    const afterOut = after.slice(after.indexOf("--   select count(*)"), after.indexOf("from public.waitlist_founding_ledger;"));
+    t.ok(dryOut.length > 50 && afterOut.length > 50 && !/email/i.test(dryOut.replace(/email_key|email_confirmation|email_confirmed_at|u\.email/g, "")) && !/email/i.test(afterOut),
+      "8z3 neither query returns an address: their output columns are numbers and true/false");
   }
 
   t.summary("foundingOffer.test");
