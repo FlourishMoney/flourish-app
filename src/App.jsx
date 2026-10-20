@@ -12423,7 +12423,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {billingUi.mode==="manage"
-            ? "Change your card, switch plan or cancel."
+            ? "Change your card or cancel."
             : "Unlimited coaching and the full picture from your linked accounts."}
         </div>
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
@@ -13596,7 +13596,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "You can cancel any time." : "14 days free. Cancel any time."}</div>
         </>
       )}
     </div>
@@ -13683,7 +13683,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card, switch plan or cancel in Stripe's billing portal.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card or cancel in Stripe's billing portal.</div>
             <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {busy==="__portal__"?"Opening…":"Manage subscription"}
             </button>

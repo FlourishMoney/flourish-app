@@ -60,11 +60,11 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     A.store.clear();
     t.ok(gate({}).includes("Start 14 days free →") && gate({}).includes("14 days free. Cancel any time."), "2a billing off, no trial yet: today's words");
     A.store.set("flourish_trial_started_at", "2026-09-01T00:00:00Z");
-    t.ok(gate({}).includes("Get Flourish Plus →") && gate({ billingOn: false }).includes("Cancel any time."), "2b billing off, trial used: today's words");
+    t.ok(gate({}).includes("Get Flourish Plus →") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
     for (const trial of [null, "2026-09-01T00:00:00Z"]) {
       if (trial) A.store.set("flourish_trial_started_at", trial); else A.store.clear();
       const on = gate({ billingOn: true });
-      t.ok(on.includes("See plans →") && on.includes("Cancel any time."), `2c billing on (${trial ? "trial used" : "no trial yet"}): "See plans", and cancel any time`);
+      t.ok(on.includes("See plans →") && on.includes("You can cancel any time."), `2c billing on (${trial ? "trial used" : "no trial yet"}): "See plans", and cancel any time`);
       t.ok(!/days free|Try Free|free trial/i.test(on), "2d …and no free trial promised in front of a paid checkout");
       t.eq(on.match(MONEY), null, "2e …and no price on the gate");
     }
