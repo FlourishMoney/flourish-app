@@ -152,7 +152,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
   {
     const success = vis.billingReturnNotice("?billing=success&session_id=cs_test_123");
     t.eq(success.kind, "success", "3a the success return is recognised");
-    t.ok(/updates as soon as Stripe confirms/.test(success.text), "3b …and says the plan follows the confirmation");
+    t.ok(/will update when Stripe confirms/.test(success.text), "3b …and says the plan follows the confirmation");
     t.eq(Object.keys(success).sort().join(","), "kind,text",
       "3c the return carries a MESSAGE and nothing else — there is no plan in it to apply");
     t.eq(vis.billingReturnNotice("?billing=cancelled").kind, "cancelled", "3d a cancelled checkout is its own message");
@@ -248,6 +248,11 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     const APP_SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     t.ok(/\? "Change your card or cancel\."/.test(APP_SRC), "5c the Settings card says the same, shorter");
     t.ok(!/switch plan/i.test(APP_SRC), "5d no screen promises a plan switch");
+    // The approved return lines (2026-10-20, ChatGPT and Grok), word for word.
+    t.eq([vis.billingReturnNotice("?billing=success&session_id=cs_test_1").text, vis.billingReturnNotice("?billing=portal_return").text],
+      ["Payment received. Your plan will update when Stripe confirms it, usually within a few seconds.", "Back from Stripe's billing portal."],
+      "5e coming back from checkout and from the portal: the approved lines");
+    t.ok(/\? "You can cancel any time\." : "14 days free\. Cancel any time\."/.test(APP_SRC), "5f the web locked screen: \"You can cancel any time.\"");
   }
 
   if (savedFlag === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = savedFlag;

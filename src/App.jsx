@@ -13596,7 +13596,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{billingOn || getTrialStartedAt() ? "You can cancel any time." : "14 days free. Cancel any time."}</div>
         </>
       )}
     </div>
