@@ -233,6 +233,23 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
       "6f …and the currency is stated");
   }
 
+  // ── The subscriber's line (Amanda, 2026-10-20) ───────────────────────────────────────────────────
+  // Plan switching is off in Stripe's portal (it could sell the founding price to anyone, runbook section 3),
+  // so no screen may promise it.
+  {
+    const { loadApp, textOf, describe } = require("./_renderApp.cjs");
+    let A = null;
+    try { A = loadApp(["UpgradeScreen"]); } catch (e) { t.ok(false, `5a App.jsx bundles: ${describe(e)}`); }
+    if (A) {
+      const txt = textOf(A.render(A.h(A.UpgradeScreen, { status: { enabled: true, paid: true, manageable: true }, mode: "manage", notice: null, onClose: () => {} })));
+      t.ok(txt.includes("Change your card or cancel in Stripe's billing portal."), "5a the checkout screen tells a subscriber: change your card or cancel, in Stripe's billing portal");
+      t.ok(/Manage subscription/.test(txt), "5b …with its Manage subscription button");
+    }
+    const APP_SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    t.ok(/\? "Change your card or cancel\."/.test(APP_SRC), "5c the Settings card says the same, shorter");
+    t.ok(!/switch plan/i.test(APP_SRC), "5d no screen promises a plan switch");
+  }
+
   if (savedFlag === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = savedFlag;
   t.summary("billingUpgradeScreen.test");
 })();
