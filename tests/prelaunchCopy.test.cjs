@@ -63,7 +63,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     const terms = native(() => textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} }))));
     const s7 = terms.slice(terms.indexOf("7. "), terms.indexOf("8. ")).trim();
     // Since 2026-10-20 a store app follows the web's rules: 14 days of everything, then the usage limits.
-    t.eq(s7, "7. Cost and usage limits There is nothing to buy in the iOS and Android apps. A new account has every feature for its first 14 days. After that, unless the account keeps every feature, there are usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and Credit and the coach-run meeting are not included. Each limit is shown where it applies.",
+    t.eq(s7, "7. Cost and usage limits There is nothing to buy in the iOS and Android apps. A new account has every feature for its first 14 days. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies.",
       "1a native Terms section 7 says what the store app does, word for word");
     const webTerms = textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} })));
     t.ok(/7\. Subscription & Billing/.test(webTerms), "1b (the web keeps its section 7)");

@@ -5,7 +5,8 @@
 //
 // The iOS and Android apps follow the web's rules but show no price, no upgrade button and no link to pay
 // on the web (Apple 3.1.1 and 3.1.3(f), Google Play's payments policy). So:
-//   1  the five approved lines in src/lib/freePlan.js are word for word what the founder approved;
+//   1  the seven lines in src/lib/freePlan.js are word for word what the founder approved (five on
+//      2026-10-19, the second bank and Terms section 7 on 2026-10-20);
 //   2  every store-app line, and the server's two refusals, sells nothing and follows the copy rules, and
 //      the word "trial" appears only inside the two approved trial lines;
 //   3  their figures are the limits the app and the server enforce, read, never retyped;
@@ -27,6 +28,8 @@ const APPROVED = {
   coachLimitLine: "You've used this week's 2 coach messages. You get 2 more on Monday.",
   WHAT_IF_LIMIT_LINE: "You've run today's What-If. You can run another tomorrow.",
   trialChip: "12 days left in your trial",
+  FREE_BANK_LINE: "The free plan connects 1 bank. You can import a statement for another account.",
+  STORE_TERMS_SECTION_7: "There is nothing to buy in the iOS and Android apps. A new account has every feature for its first 14 days. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies.",
 };
 const SELLS = [
   ["a price", /\$\s?\d[\d,]*(\.\d{2})?\s*(\/|per |a )\s*(mo|month|yr|year)\b|\bCAD\b|\bUSD\b/i],
@@ -54,6 +57,8 @@ const offences = (s) => [...SELLS, ...COPY].filter(([, rx]) => rx.test(s)).map((
   t.eq(F.WHAT_IF_LIMIT_LINE, APPROVED.WHAT_IF_LIMIT_LINE, "1d the What-If limit");
   t.eq(F.trialChip(12), APPROVED.trialChip, "1e the trial chip, 12 days left");
   t.eq([F.trialChip(2), F.trialChip(1)], ["2 days left in your trial", "1 day left in your trial"], "1f …and as its number changes");
+  t.eq(F.FREE_BANK_LINE, APPROVED.FREE_BANK_LINE, "1g the second-bank refusal");
+  t.eq(F.STORE_TERMS_SECTION_7, APPROVED.STORE_TERMS_SECTION_7, "1h Terms section 7 in a store app");
 
   // ── 2. every line sells nothing; "trial" only where the founder put it ────────────────────────────
   const lines = {
@@ -66,7 +71,11 @@ const offences = (s) => [...SELLS, ...COPY].filter(([, rx]) => rx.test(s)).map((
     t.eq(offences(s), [], `2a ${name} sells nothing and follows the copy rules`);
     t.eq(TRIAL.test(s), name === "TRIAL_ENDED_BANNER" || name === "trialChip", `2b ${name} ${TRIAL.test(s) ? "names" : "does not name"} the trial`);
   }
-  t.ok(!/free plan/i.test(F.STORE_TERMS_SECTION_7), "2c the Terms name no plan at all (tests/sidebarDueSoonTier.test.cjs)");
+  // Apple 3.1.3(b): a web purchase may unlock in-app only if it is also sold in-app, so no store-app line may
+  // say a paid plan keeps every feature. The lines describe the trial and the free plan only.
+  for (const [name, s] of Object.entries(lines)) {
+    t.ok(!/keeps? every feature|unless the account|paid|subscri|purchased|bought/i.test(s), `2c ${name} never says a paid plan keeps every feature`);
+  }
   t.eq(offences("Upgrade to Flourish Plus for $11.99/month at flourishmoney.app — today"),
     ["a price (\"$11.99/month\")", "an upgrade call (\"Upgrade\")", "a paid plan by name (\"Flourish Plus\")", "a website (\"flourishmoney.app\")", "an em or en dash (\"—\")"],
     "2d (not vacuous: a sales line trips every rule)");
