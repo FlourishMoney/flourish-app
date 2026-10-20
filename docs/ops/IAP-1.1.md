@@ -12,7 +12,7 @@ being on; the code assumes both are off.
 
 **Quantity (more than one of a subscription in one purchase): off on every product shape we would create.**
 
-- **App Store, auto-renewable subscriptions:** a subscription is bought one at a time. StoreKit's quantity
+- **App Store, auto-renewable subscriptions:** a subscription is bought one at a time, and multiseat is off on all three (CL, 2026-10-20). StoreKit's quantity
   option is for consumables (and non-renewing subscriptions), and there is no quantity setting on an
   auto-renewable subscription in App Store Connect. Nothing to turn off.
 - **Google Play, one-time products:** Play Console has a per-product "multi-quantity" option. We create no
@@ -61,58 +61,63 @@ Spell them exactly. Keys and secrets go straight into the dashboards named, neve
 4. Play Console → Settings → Developer account → Payments profile → a merchant payments profile linked to this developer account.
 5. Play Console needs a build of the app that contains Google Play Billing before it lets you create a subscription: version code 17 (2026-10-20, from this branch, in-app purchase off; RevenueCat brings Billing and the BILLING permission), uploaded to the Internal testing track by Amanda.
 
-### B. App Store Connect (two subscription groups, three subscriptions)
+### B. App Store Connect (two subscription groups, three subscriptions): DONE by Claude (CL), 2026-10-20
+
+**Where it stands (CL, 2026-10-20):**
+- 1.0.0 is approved and live (Ready for Distribution).
+- Version **1.1.0** exists: Prepare for Submission, manual release.
+- All three subscriptions exist and are priced. They are Canada only, with no offers, Family Sharing off and multiseat off.
+- **Streamlined Purchasing is still on.** Apple only lets it be turned off once a StoreKit build has been approved, so CL turns it off after 1.1 is approved and before release.
 
 **No product has a free trial or an introductory offer (Amanda, 2026-10-20).** In-app purchases start paying
-right away. The 14-day account trial (#84) is the only trial, the same on the web and in the apps. Every
-display name and description below is marked *needs review*: ChatGPT and Grok approve it before it ships.
-Apple's limits: display name 30 characters, description 45.
+right away. The 14-day account trial (#84) is the only trial, the same on the web and in the apps. The steps
+below record what was set; display names and descriptions are CL's, entered from the approved copy.
 
 1. App Store Connect → Apps → Flourish: Money, Handled → Monetization → Subscriptions → Subscription Groups → **+**
-2. Reference Name: `Flourish Plus`
-3. Group localization → English (Canada) → Subscription Group Display Name: `Flourish Plus` (*needs review*)
-4. Group localization → English (U.S.) → Subscription Group Display Name: `Flourish Plus` (*needs review*)
+2. Reference Name: `Flourish`
+3. Group localization: the display name as CL set it
+4. Availability: Canada only
 
-Monthly (in the `Flourish Plus` group, **Create**):
+Monthly (in the `Flourish` group, **Create**):
 
-5. Reference Name: `Flourish Plus monthly`
+5. Reference Name: as CL set it
 6. Product ID: `app.flourishmoney.plus.monthly`
 7. Subscription Duration: `1 Month`
-8. Subscription Prices → **+** → Country or Region: `Canada` → Price: `CAD 11.99` (let Apple fill the other storefronts, then check the US price it chose)
-9. Localization → English (Canada) → Display Name: `Flourish Plus Monthly` (*needs review*)
-10. Localization → English (Canada) → Description: `Every Plus feature, renewed every month.` (*needs review*)
+8. Subscription Prices → Canada: `CAD 11.99`
+9. Localization: display name as CL set it
+10. Localization: description as CL set it
 11. Review Information → Screenshot: the paywall from the 1.1 TestFlight build, with its prices loaded
-12. Review Information → Review Notes: `Sign in with the review account in App Review Information. The plans open from Settings, Subscription, See plans, and from the locked Credit screen. Sandbox purchases are accepted for that account. Restore purchases is on the same screen.`
-13. Family Sharing: **leave off** (item 5: it can never be turned off)
+12. Review Information → Review Notes: CL enters the 1.1 App Review notes (the draft is in the 1.1 report, not here)
+13. Family Sharing: **off** (item 5: it can never be turned off once on)
 14. Introductory Offers: **none**. Do not add one.
 
 Annual (in the same group, **Create**):
 
-15. Reference Name: `Flourish Plus annual`
+15. Reference Name: as CL set it
 16. Product ID: `app.flourishmoney.plus.annual`
-17. Subscription Duration: `1 Year`
+17. Subscription Duration: `1 Year` (paid upfront)
 18. Subscription Prices → Canada → `CAD 99.99`
-19. Localization → English (Canada) → Display Name: `Flourish Plus Annual` (*needs review*)
-20. Localization → English (Canada) → Description: `Every Plus feature, renewed every year.` (*needs review*)
+19. Localization: display name as CL set it
+20. Localization: description as CL set it
 21. Review Information → the same screenshot and notes as steps 11 and 12
-22. Family Sharing: **leave off**
+22. Family Sharing: **off**
 23. Introductory Offers: **none**.
 
 Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN (founder's rule, 2026-10-17, confirmed 2026-10-20: one
 ledger of 50 shared with the website (0025), the price locked while continuously subscribed; why this setup, below):
 
-24. Subscriptions → Subscription Groups → **+** → Reference Name: `Flourish founding`
-25. Group localization → English (Canada) and English (U.S.) → Subscription Group Display Name: `Flourish Plus Founding` (*needs review*)
-26. In the `Flourish founding` group, **Create** → Reference Name: `Flourish founding annual`
+24. Subscriptions → Subscription Groups → **+** → Reference Name: `Flourish Founding`
+25. Group localization: the display name as CL set it
+26. In the `Flourish Founding` group, **Create** → Reference Name: as CL set it
 27. Product ID: `app.flourishmoney.founding.annual`
 28. Subscription Duration: `1 Year`
 29. Subscription Prices → Canada → `CAD 79.99`
-30. Localization → English (Canada) → Display Name: `Flourish Plus Founding Annual` (*needs review*)
-31. Localization → English (Canada) → Description: `The founding price, renewed every year.` (*needs review*)
+30. Localization: display name as CL set it
+31. Localization: description as CL set it
 32. Review Information → the same screenshot and notes as steps 11 and 12
-33. Family Sharing: **leave off**
+33. Family Sharing: **off**
 34. Introductory Offers: **none**. Do not add one (why, below).
-35. In the `Flourish Plus` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
+35. In the `Flourish` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
 36. NEVER use **Remove from Sale** on the founding annual, not even once all 50 are issued.
 37. When the server has issued the 50th founding position (the landing page shows 0 left): the founding annual →
     Subscription Prices → change the price in every country or region to the regular annual price (Canada:
@@ -160,12 +165,13 @@ Connecting Apple to RevenueCat:
 39. App Store Connect → Apps → Flourish → App Information → App Store Server Notifications → Production Server URL: the URL RevenueCat shows (step D4)
 40. Same place → Sandbox Server URL: the same RevenueCat URL
 41. App Store Connect → Users and Access → Sandbox → Test Accounts → **+**: one sandbox Apple Account per tester (an address that is not anyone's real Apple Account). On the iPhone: Settings → App Store → Sandbox Account → sign in with it
-42. Apple's EULA (Guideline 3.1.2: a subscription app's metadata must link its Terms of Use and Privacy Policy): App Information → License Agreement: leave Apple's standard licence agreement. On the 1.1 version page → Description: end it with the two links, `Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/` and the Privacy Policy URL already in App Information (*needs review* if the description's wording changes). The paywall itself links both, and the EULA on iOS (`src/lib/storeOffer.js` APPLE_EULA_URL).
+42. Apple's EULA (Guideline 3.1.2: a subscription app's metadata must link its Terms of Use and Privacy Policy): App Information → License Agreement: leave Apple's standard licence agreement. On the 1.1 version page → Description: end it with the two links, `Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/` and the Privacy Policy URL already in App Information (*needs review* if the description's wording changes). In the app, the paywall's "Terms of Use" opens Apple's standard EULA on iOS (`src/lib/storeOffer.js` APPLE_EULA_URL), beside "Privacy Policy" and "Restore purchases".
 
 **What Apple will not do until 1.1 is approved:** the first subscriptions must be submitted with an app
-version. On the 1.1 version page → In-App Purchases and Subscriptions → add all three (both groups), and submit them with
-the build. Until then they stay "Ready to Submit" and cannot be bought in the live app (sandbox and TestFlight
-work once the Paid Apps agreement is active).
+version. On the 1.1.0 version page (it exists) → Build: 526903 once it has processed → In-App Purchases and
+Subscriptions → add all three (both groups) → submit them with the build. Until then they stay "Ready to Submit"
+and cannot be bought in the live app (sandbox and TestFlight work once the Paid Apps agreement is active). After
+approval, before the manual release: CL turns Streamlined Purchasing off.
 
 ### C. Play Console (one subscription, three base plans)
 
@@ -247,7 +253,7 @@ approved; they are purchasable in production once the 1.1 build is live there.
 4. Netlify → `IAP_ENABLED` = `true` (Production), then trigger a deploy (functions keep the variables of the deploy they were built in)
 5. For TestFlight and internal testing only: Netlify `IAP_ACCEPT_SANDBOX` = `true` while testers buy with sandbox or license-tester accounts, then a deploy; remove it and deploy again before release (the App Review account is accepted without it)
 6. The 1.1 store builds: `VITE_IAP_ENABLED=true`, `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the build shell
-7. Terms of Service section 7: a selling build shows `STORE_TERMS_SECTION_7_IAP` (`src/lib/freePlan.js`, *needs review*) instead of the 1.0 line "There is nothing to buy in the iOS and Android apps"; 1.0.x builds and the website keep theirs. Its "Last updated" date is still October 14, 2026: set it when the text is approved.
+7. Terms of Service section 7: a selling build shows `STORE_TERMS_SECTION_7_IAP` (`src/lib/freePlan.js`, approved 2026-10-20) instead of the 1.0 line "There is nothing to buy in the iOS and Android apps"; 1.0.x builds and the website keep theirs. Its "Last updated" date is still October 14, 2026 (Amanda's call whether 1.1 changes it).
 8. Real money only at the very end: one real purchase per store, then refund it (Apple: reportaproblem.apple.com; Google: Play Console → Order management → Refund)
 
 ---

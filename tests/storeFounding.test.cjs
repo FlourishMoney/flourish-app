@@ -118,7 +118,7 @@ const post = (body) => ({ httpMethod: "POST", headers: { origin: "capacitor://lo
   {
     const D = read("docs", "ops", "IAP-1.1.md");
     const apple = D.slice(D.indexOf("Founding annual, in a SUBSCRIPTION GROUP OF ITS OWN"), D.indexOf("Connecting Apple to RevenueCat:"));
-    t.ok(/Subscription Groups → \*\*\+\*\* → Reference Name: `Flourish founding`/.test(apple) && /In the `Flourish founding` group, \*\*Create\*\*/.test(apple),
+    t.ok(/Subscription Groups → \*\*\+\*\* → Reference Name: `Flourish Founding`/.test(apple) && /In the `Flourish Founding` group, \*\*Create\*\*/.test(apple),
       "4a Apple: the founding annual is in a subscription group of its own, so it is never offered as a plan to switch to");
     t.ok(/NEVER use \*\*Remove from Sale\*\* on the founding annual/.test(apple), "4b Apple: never removed from sale (removal stops renewals)");
     t.ok(/keep existing subscribers at their current price/.test(apple) && /50th founding position/.test(apple), "4c Apple: once 50 are issued its price rises for new subscribers only; founding households keep CAD 79.99");
