@@ -96,19 +96,12 @@ export function webPlan(profilePlan, { paid = false } = {}) {
 }
 
 /**
- * A STORE APP THAT SELLS (version 1.1, in-app purchase, lib/storeBilling.js): the profile's plan, plus a paid
- * subscription from ANY provider as the server answers it (billing.js store_status `paid`, from the same row
- * and the same period-aware rule as the web's). A web subscription counts here because the same subscription
- * can be bought in this build (Apple 3.1.3(b), multiplatform). Mirrors planRules.deriveEntitlement with
- * { native: true, storeBilling: true }; tests/storeBilling.test.cjs holds the two together.
+ * A STORE APP THAT SELLS (version 1.1, in-app purchase, lib/storeBilling.js): the same rule as the web's
+ * (founder's decisions, 2026-10-20). The profile's plan, plus a paid subscription from ANY provider as the server
+ * answers it (billing.js store_status `paid`, from the same row and the same period-aware rule as the web's). The
+ * 14-day account trial counts here exactly as on the web: it is the only trial, and no store product has a free
+ * trial or an introductory offer. Mirrors planRules.deriveEntitlement; tests/storeBilling.test.cjs holds them together.
  */
-//
-// THE ONLY TRIAL IN SUCH A BUILD IS THE STORE'S FREE MONTH (version 1.1, item 2), which starts when the household
-// confirms the subscription and reaches here as `paid` (a 'trialing' row). The profile's 14-day signup trial is
-// "free" here, so nothing starts on install or on update.
 export function storePlan(profilePlan, { paid = false } = {}) {
-  let p = PLANS.includes(profilePlan) ? profilePlan : "free";
-  if (p === "trial") p = "free";
-  if (p !== "free") return p;
-  return paid === true ? "premium" : "free";
+  return webPlan(profilePlan, { paid });
 }

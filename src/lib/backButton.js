@@ -34,11 +34,11 @@ const FULL_PAGE = new Set(["privacy", "terms", "delete-account", "support", "wid
 
 /**
  * The app's own "back one screen", from its state. Returns the action to take, or null when there is nothing
- * left to go back from (Today with nothing open, or the store paywall), in which case the app goes to the
- * background.
+ * left to go back from (Today with nothing open), in which case the app goes to the background. The store
+ * paywall is one more screen (2026-10-20: the household opens it, and back closes it, as on the web).
  */
 export function backAction(s = {}) {
-  if (s.paywallUp) return s.paywallLegal ? "closePaywallLegal" : null;
+  if (s.paywallUp) return s.paywallLegal ? "closePaywallLegal" : "closePaywall";
   // The paywall opened from Settings for a founding holder on a regular plan (version 1.1, 2026-10-18): back closes it.
   if (s.foundingSwitchOpen) return s.paywallLegal ? "closePaywallLegal" : "closeFoundingSwitch";
   if (s.pendingPlaid) return "closeBankConsent";

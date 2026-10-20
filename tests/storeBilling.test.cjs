@@ -214,12 +214,14 @@ function fakeAdmin(db = {}, users = {}) {
     const store = { provider: "play_store", status: "trialing", current_period_end: LATER };
     const E = (sub, o) => R.deriveEntitlement(free, sub, NOW, o).plan;
     t.eq([E(web, {}), E(store, {})], ["premium", "premium"], "5a the web counts a web purchase and a store purchase alike");
-    t.eq([E(web, { native: true }), E(store, { native: true })], ["free", "free"], "5b a 1.0.x store build counts neither, exactly as before (nothing closes in it)");
+    t.eq([E(web, { native: true }), E(store, { native: true })], ["premium", "premium"], "5b a 1.0.x store build counts both too: one rule for every app since 2026-10-20 (#84)");
     t.eq([E(web, { native: true, storeBilling: true }), E(store, { native: true, storeBilling: true })], ["premium", "premium"], "5c a 1.1 store build that sells counts both: a web subscriber is not asked to pay again");
     t.eq(E({ ...web, current_period_end: EARLIER }, { native: true, storeBilling: true }), "free", "5d period-aware everywhere: a subscription whose period is over counts nowhere");
+    // The account trial counts in a selling build too (2026-10-20): it is the only trial, and no store product has one.
     for (const profile of ["free", "premium", "beta_founder", "trial"]) for (const paid of [false, true]) {
-      const server = R.deriveEntitlement({ plan: profile === "premium" ? "plus" : profile === "trial" ? "free" : profile, founder_flag: profile === "beta_founder" }, paid ? web : null, NOW, { native: true, storeBilling: true }).plan;
-      const client = P.storePlan(profile === "trial" ? "free" : profile, { paid });
+      const row = profile === "trial" ? { plan: "trial", trial_ends_at: LATER } : { plan: profile === "premium" ? "plus" : profile, founder_flag: profile === "beta_founder" };
+      const server = R.deriveEntitlement(row, paid ? web : null, NOW, { native: true, storeBilling: true }).plan;
+      const client = P.storePlan(P.derivePlan(row, NOW), { paid });
       t.eq(client, server, `5e the app's storePlan and the server agree (${profile}, ${paid ? "paid" : "not paid"})`);
     }
     // getUserPlan reads the row for a store build that sells, and only then.
@@ -238,7 +240,7 @@ function fakeAdmin(db = {}, users = {}) {
     const r1 = reads.splice(0);
     const g2 = await A2.getUserPlan("u1", { native: true, storeBilling: true });
     const r2 = reads.splice(0);
-    t.eq([g1.unlimited, r1, g2.unlimited, r2], [false, ["profiles"], true, ["profiles", "subscriptions"]], "5f getUserPlan: a 1.0.x store build never reads the subscription; a 1.1 store build that sells reads and counts it");
+    t.eq([g1.unlimited, r1, g2.unlimited, r2], [true, ["profiles", "subscriptions"], true, ["profiles", "subscriptions"]], "5f getUserPlan reads and counts the subscription for every request, whatever app asks (2026-10-20)");
     delete require.cache[supa]; delete require.cache[AUTH_PATH]; void A; void authMod;
     restoreEnv();
   }

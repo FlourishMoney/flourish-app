@@ -84,8 +84,8 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, paywallDecision, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
-import { offerCopy, introEligible, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
+import { offerCopy, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -12447,6 +12447,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Subscription</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>{storeSubscription.line}</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+          {storeSubscription.onSubscribe&&<Btn label="See plans" onClick={storeSubscription.onSubscribe} color={C.purpleBright} outline small/>}
           {storeSubscription.onManage&&<Btn label="Manage subscription" onClick={storeSubscription.onManage} color={C.mutedHi} outline small/>}
           <Btn label="Restore purchases" onClick={storeSubscription.onRestore} color={C.mutedHi} outline small/>
         </div>
@@ -13590,7 +13591,7 @@ function NativeTrialChip({daysLeft}){
   );
 }
 
-function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
+function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=false}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
       <div style={{width:72,height:72,borderRadius:24,background:`linear-gradient(135deg,${C.purple}30,${C.purple}08)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="sparkles" size={32} color={C.purpleBright} strokeWidth={1.35}/></div>
@@ -13603,11 +13604,15 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
           Google both forbid it. One neutral line: what the free plan includes (lib/freePlan.js), with
           no price, no button and no link. */}
       {isNativeApp() ? (
+        <>
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
             {nativeNote || LOCKED_LINE}
           </div>
         </div>
+        {/* A store build that sells (version 1.1): the way in to its own paywall, with the store's prices. */}
+        {storeOn&&onUpgrade&&<button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer"}}>See plans</button>}
+        </>
       ) : (
         <>
         <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
@@ -13755,13 +13760,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 
 // VERSION 1.1, ITEM 2: THE STORE APPS' PAYWALL (lib/storeOffer.js has the offer and what may be claimed).
 // Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
-// The prices are the store's own strings, the free month is offered only when the store says this account may
-// have it, and access follows the server's answer after the store's sheet, never the SDK's. Restore, the Terms
-// of Use, the Privacy Policy, sign out and account deletion are always on it: nobody is trapped here. It is drawn
-// OVER the app (item 3), whose one ModalHost sits above it, so the delete confirmation shows on top.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount, onManage, onClose}){
+// The prices are the store's own strings, with no trial and no introductory offer, and access follows the
+// server's answer after the store's sheet, never the SDK's. Restore, the Terms of Use, the Privacy Policy (and on
+// iOS, Apple's standard EULA) are always on it, and it can always be closed: it opens only when the household
+// asks (item 3). It is drawn OVER the app, whose one ModalHost sits above it.
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
-  const [elig,setElig]=useState({});              // iOS introductory-offer eligibility, by product id
   const [loadFailed,setLoadFailed]=useState(false);
   const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
   const [outcome,setOutcome]=useState(null);
@@ -13781,12 +13785,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         const off = await purchases.getOfferings();
         const chosen = choosePackages(off, { foundingAvailable });
         if(!chosen.monthly && !chosen.annual && !chosen.founding) throw new Error("no_products");
-        let e = {};
-        if(platform==="ios"){
-          const ids=[chosen.monthly,chosen.annual,chosen.founding].filter(Boolean).map(p=>p.product.identifier);
-          try{ e = (await purchases.checkTrialOrIntroductoryPriceEligibility({productIdentifiers:ids})) || {}; }catch{ e = {}; }
-        }
-        if(!cancelled){ setPkgs(chosen); setElig(e); }
+        if(!cancelled) setPkgs(chosen);
       }catch{ if(!cancelled) setLoadFailed(true); }
     })();
     return ()=>{ cancelled=true; };
@@ -13815,7 +13814,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   const doCheck = async ()=>{ if(busy) return; setBusy("check"); try{ await finish(await confirmWithServer(deps, { tries: 2 })); } finally { setBusy(null); } };
 
   const cards = pkgs ? [["monthly",pkgs.monthly],["annual",pkgs.annual],["founding_annual",pkgs.founding]].filter(([,p])=>!!p).map(([plan,p])=>({
-    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, eligible: introEligible(p, platform, elig), platform }),
+    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, platform }),
   })).filter(c=>!!c.copy) : [];
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
@@ -13844,7 +13843,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
               </div>
-              {copy.trialLine&&<div style={{color:C.greenBright,fontSize:13,marginTop:SPACE.xs,fontWeight:700}}>{copy.trialLine}</div>}
+              {copy.note&&<div style={{color:C.gold,fontSize:13,marginTop:SPACE.xs,lineHeight:1.5}}>{copy.note}</div>}
               <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
                 {busy===plan?PAYWALL_COPY.checking:copy.button}
               </button>
@@ -13858,8 +13857,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
           <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
-          <button onClick={onSignOut} style={link}>{PAYWALL_COPY.signOut}</button>
-          <button onClick={onDeleteAccount} style={link}>{PAYWALL_COPY.deleteAccount}</button>
+          {platform==="ios"&&<a href={APPLE_EULA_URL} target="_blank" rel="noopener noreferrer" style={{...link,display:"inline-flex",alignItems:"center"}}>{PAYWALL_COPY.eula}</a>}
         </div>
       </div>
     </div>
@@ -16806,15 +16804,10 @@ export default function FlourishApp(){
     // there and an expired trial surfaced upgrade dead-ends Apple rejects — but the answer to a
     // dead-end is to hide the upgrade, not to hand everyone premium. Native gets the same 14 days
     // and then the same free tier; what is hidden on native is the way to pay, not the truth.
-    // Version 1.1, item 2: a store build that sells starts no trial of its own, on install or on update. Its
-    // one trial is the store's free month, which begins when the household confirms the subscription
-    // (lib/storeOffer.js). Every other build runs the lifecycle exactly as before.
-    if(!storeBillingBuild()){
+    // Version 1.1 (2026-10-20): a store build that sells runs the same lifecycle. The 14-day account trial is the
+    // only trial; no store product has a free month or an introductory offer (lib/storeOffer.js).
     startTrialIfEligible();
     expireTrialIfNeeded();
-    } else if(getPlan()==="trial"){
-      setPlan("free");   // a trial cached on this phone by 1.0 does not carry into 1.1: the store's month is the trial
-    }
     // isPremium is DERIVED from the plan, never remembered. This used to only ever raise it, so a
     // trial that ended while the device was offline left premium switched on for the whole session
     // — expireTrialIfNeeded() moves the plan to free but cannot touch React state, and the profile
@@ -16967,7 +16960,8 @@ export default function FlourishApp(){
   const billingUi = billingUiState({status:billingStatus, native:nativeApp, paid:!!billingStatus?.paid});
   // The two entry points call this. While billing is off it opens the existing feature paywall,
   // exactly as it did before, so nothing about today's app changes.
-  const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+  // A store build that sells (version 1.1) opens its own paywall: prices from the store, nothing to pay on the web.
+  const openUpgrade = ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
   // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
   // the paid period, planRules.isPaidSubscription): it lifts a free household to premium, and it ends
   // when the paid period does. The same in a store app (2026-10-20), which the server holds to the same
@@ -16993,10 +16987,8 @@ export default function FlourishApp(){
   },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
   // VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK. The store paywall is drawn OVER the app, never in place of
   // it: whatever screen, sheet or half-typed form was open stays mounted underneath with its state, and once the
-  // household subscribes it is exactly where it was. It is decided only at a safe point (lib/storeBilling.js
-  // paywallDecision): this account's first answer after the app starts or the household signs in, and each
-  // return from the background. An answer that changes in between waits; an unknown answer never puts it up.
-  const paywallOpenRef = useRef(true);
+  // household subscribes it is exactly where it was. Since 2026-10-20 it opens only when the household asks (the
+  // effect below), and it can always be closed.
   const [paywallUp,setPaywallUp]=useState(false);
   // The paywall opened from Settings for a founding holder on a regular store plan (lib/storeBilling.js foundingSwitch).
   const [foundingSwitchOpen,setFoundingSwitchOpen]=useState(false);
@@ -17012,18 +17004,14 @@ export default function FlourishApp(){
     if(storeEntitledNow===null || !user?.id) return;
     rememberGate(deviceStorage(), user.id, storeEntitledNow, storeStatus?.period_end || null);
   },[storeEntitledNow, user?.id, storeStatus]);
-  useEffect(()=>{ paywallOpenRef.current = true; },[user?.id]);
-  useEffect(()=>{
-    if(!storeBilling){ setPaywallUp(false); return; }
-    const d = paywallDecision({ open: paywallOpenRef.current, entitled: storeEntitled });
-    paywallOpenRef.current = d.open;
-    if(d.up !== null) setPaywallUp(d.up);
-  },[storeBilling, storeEntitled, storeStatus]);
+  // THE PAYWALL OPENS ONLY WHEN THE HOUSEHOLD ASKS (2026-10-20): a locked screen's "See plans", Settings. The store
+  // apps follow the web's rules, the 14-day account trial and then the free plan, so nothing is ever shut behind it.
+  // A confirmed subscription closes it.
+  useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
       if(document.visibilityState!=="visible") return;
-      paywallOpenRef.current = true;               // back from the background: a safe point
       askStore("store_status").then(s=>{ if(s) setStoreStatus(s); }).catch(()=>{});
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -17043,6 +17031,7 @@ export default function FlourishApp(){
       if(!act){ CapApp.minimizeApp(); return; }
       const go = {
         closePaywallLegal: ()=>setPaywallLegal(null),
+        closePaywall: ()=>{ setPaywallUp(false); setPaywallLegal(null); },
         closeFoundingSwitch: ()=>setFoundingSwitchOpen(false),
         closeBankConsent: ()=>setPendingPlaid(null),
         closeSettings: ()=>{ setShowSettings(false); setPendingPlaid(null); },
@@ -18182,14 +18171,16 @@ export default function FlourishApp(){
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
-            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} onSignOut={signOut} onDeleteAccount={deleteAllData}
-            onManage={manageStoreSubscription} onClose={paywallUp ? null : ()=>setFoundingSwitchOpen(false)}/>}
+            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
+            onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
     </div>
   ) : null;
   // Version 1.1: Settings' Subscription card, in a selling build only.
   const storeSubscription = storeBilling ? {
     line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
     onManage: storeStatus?.paid && (storeStatus.provider==="app_store" || storeStatus.provider==="play_store") ? manageStoreSubscription : null,
+    // Not paying yet: the way in to the plans, as the web's Settings card has.
+    onSubscribe: storeStatus?.paid ? null : ()=>setPaywallUp(true),
     // A founding holder on a regular store plan: a way to the paywall's founding switch, once its words are written.
     foundingSwitch: foundingSwitch(storeStatus) && FOUNDING_SWITCH_COPY.settingsLine && FOUNDING_SWITCH_COPY.settingsButton
       ? { line: FOUNDING_SWITCH_COPY.settingsLine, button: FOUNDING_SWITCH_COPY.settingsButton, onOpen: ()=>setFoundingSwitchOpen(true) } : null,
@@ -18230,7 +18221,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={openUpgrade} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (creditAvailable({ isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
+            ? (creditAvailable({ isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -18248,7 +18239,7 @@ export default function FlourishApp(){
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is
       // included, so say what actually happened and when it lifts, not that the feature is missing.
-      return <PremiumGate billingOn={billingUi.show} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
+      return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.

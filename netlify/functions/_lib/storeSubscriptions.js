@@ -6,7 +6,8 @@
 // read from public.subscriptions, one row per household. A web purchase reaches that row from Stripe
 // (stripe-webhook.js). A store purchase reaches it from RevenueCat, here, in the same shape:
 //   provider              'app_store' | 'play_store'
-//   status                'trialing' while the store's free month runs, 'active' while paid, 'canceled' once over
+//   status                'active' while paid, 'canceled' once over ('trialing' only if a store ever reported a
+//                         trial period; no product has one, 2026-10-20)
 //   plan_key              'monthly' | 'annual' | 'founding_annual' (from the product, below)
 //   current_period_end    when access ends unless the store renews it (the store's expiry, grace included)
 //   cancel_at_period_end  the household turned renewal off in the store
@@ -24,7 +25,10 @@
 // needs attention), so it never offers a second purchase; checkout refuses one (billing.js); and if a second
 // payment happens anyway, the row keeps the first, and the conflict is logged and recorded for support.
 // One household, one store subscription too: on Android all three prices are base plans of ONE subscription
-// (flourish_plus), so Google never holds two at once; on the App Store all three are one subscription group.
+// (flourish_plus), so Google never holds two at once. On the App Store, monthly and annual are one group and the
+// founding annual is a group of its own (so its price can be raised for new subscribers only at #50); Apple
+// bills each group separately, so the founding annual is never sold on top of a live regular plan
+// (src/lib/storeBilling.js foundingSwitch).
 //
 // NOT COUNTED, deliberately (fail closed):
 //   a sandbox purchase, unless IAP_ACCEPT_SANDBOX is "true" or the account is the App Review account (whose

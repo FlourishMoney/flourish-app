@@ -26,8 +26,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.eq(["privacy", "terms", "support", "widget", "family", "coach", "watch", "do", "budget", "goals", "credit"].map((screen) => B.backAction({ screen })), Array(11).fill("home"),
     "c4 a page or a tab goes back to Today");
   t.eq([B.backAction({ screen: "home" }), B.backAction({})], [null, null], "c5 on Today with nothing open, nothing is left to go back from: the app goes to the background");
-  t.eq([B.backAction({ paywallUp: true, showSettings: true }), B.backAction({ paywallUp: true, paywallLegal: "terms" })], [null, "closePaywallLegal"],
-    "c6 the store paywall is never dismissed by back (the Terms page inside it is)");
+  t.eq([B.backAction({ paywallUp: true, showSettings: true }), B.backAction({ paywallUp: true, paywallLegal: "terms" })], ["closePaywall", "closePaywallLegal"],
+    "c6 back closes the store paywall (2026-10-20: the household opened it), and the Terms page inside it first");
   t.eq(B.backAction({ showSettings: true, showNotifs: true }), "closeSettings", "c7 one step per press: the top layer only");
 
   // ── Layers on top ──────────────────────────────────────────────────────────────────────────

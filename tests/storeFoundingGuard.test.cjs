@@ -51,7 +51,7 @@ function fakeAdmin({ email = HOLDER, position = 12, subscriptions = [] } = {}) {
   };
   return {
     from, db, calls,
-    rpc: async (fn, args) => fn === "waitlist_founding_position_for_email" ? { data: args.p_email === email && position ? position : null, error: null } : { data: null, error: null },
+    rpc: async (fn, args) => fn === "waitlist_founding_number_for_email" ? { data: args.p_email === email && position ? position : null, error: null } : { data: null, error: null },
     auth: { admin: { getUserById: async () => ({ data: { user: { id: U1, email, email_confirmed_at: "2026-10-17T00:00:00Z", app_metadata: { email_confirmation: "link" } } }, error: null }) } },
   };
 }
@@ -105,13 +105,13 @@ const sub = (key, o = {}) => ({ store: o.store || "app_store", period_type: o.pe
     const manage = APP.slice(APP.indexOf("function manageStoreSubscription(){"), APP.indexOf("function manageStoreSubscription(){") + 500);
     t.ok(/storePurchases\.showManageSubscriptions\(\)/.test(manage) && /play\.google\.com\/store\/account\/subscriptions\?package=com\.flourishmoney\.app/.test(manage) && !/fetch\(|askStore\(|cancel/i.test(manage.replace(/\/\*[\s\S]*?\*\//g, "")),
       "1i …which is Apple's manage-subscriptions sheet or Google Play's subscriptions page, never a cancel flow of ours");
-    t.ok(/onManage=\{manageStoreSubscription\} onClose=\{paywallUp \? null : \(\)=>setFoundingSwitchOpen\(false\)\}/.test(APP), "1j the overlay wires it, closable only when it was opened from Settings (the hard paywall is not)");
+    t.ok(/onManage=\{manageStoreSubscription\} onClose=\{\(\)=>\{ setPaywallUp\(false\); setFoundingSwitchOpen\(false\); setPaywallLegal\(null\); \}\}/.test(APP), "1j the overlay wires it, and it can always be closed (2026-10-20: no hard paywall)");
     t.ok(/foundingSwitch: foundingSwitch\(storeStatus\) && FOUNDING_SWITCH_COPY\.settingsLine && FOUNDING_SWITCH_COPY\.settingsButton/.test(APP) && /onOpen: \(\)=>setFoundingSwitchOpen\(true\)/.test(APP),
       "1k Settings is the way in, and only once the founder's words exist (no wording is written by this change)");
     t.ok(Object.keys(O.FOUNDING_SWITCH_COPY).join(",") === "settingsLine,settingsButton,title,body,bodyCancelled" && Object.values(O.FOUNDING_SWITCH_COPY).every((v) => v === null || (typeof v === "string" && v.trim())),
       "1l the words the founder owes are named, and each is either still empty or written");
-    t.eq([B.backAction({ foundingSwitchOpen: true }), B.backAction({ foundingSwitchOpen: true, paywallLegal: "terms" }), B.backAction({ paywallUp: true })], ["closeFoundingSwitch", "closePaywallLegal", null],
-      "1m the back key closes it (the hard paywall it never closes)");
+    t.eq([B.backAction({ foundingSwitchOpen: true }), B.backAction({ foundingSwitchOpen: true, paywallLegal: "terms" }), B.backAction({ paywallUp: true })], ["closeFoundingSwitch", "closePaywallLegal", "closePaywall"],
+      "1m the back key closes it, and the paywall too (2026-10-20: it is one more screen)");
   }
 
   // ── 2. If both are ever live: access kept, flagged on the row, the inbox told once. ──────────────────────

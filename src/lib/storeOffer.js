@@ -1,47 +1,25 @@
 // src/lib/storeOffer.js
 // -----------------------------------------------------------------------------
-// THE OFFER IN THE STORE APPS (version 1.1), EXACTLY AS DECIDED AND NO WIDER.
+// THE OFFER IN THE STORE APPS (version 1.1), EXACTLY AS DECIDED AND NO WIDER (founder's decisions, 2026-10-20).
 //
-// One free month, as the store's own introductory offer, then the subscription; no free tier after it (a hard
-// paywall). The founding annual has no introductory offer (2026-10-18): it is an App Store group of its own, and a
-// free month there would be a second one (docs/ops/IAP-1.1.md item 6), so it is charged on confirmation, and the
-// copy below says so because the store reports no free month for it. The free month starts when the household confirms the subscription in the App Store or Google Play
-// sheet — never when the app is installed, never when it is updated — because it IS the store's introductory
-// offer: the store starts it at that confirmation and reports it to the server as a 'trialing' row
-// (netlify/functions/_lib/storeSubscriptions.js). Nothing in the app starts a trial in a store build that sells:
-// the 14-day signup trial is not counted there (planRules.deriveEntitlement, planFromProfile.storePlan), and the
-// boot-time trial start does not run (App.jsx).
+// No store trial and no introductory offer on any product: a store subscription is charged when the household
+// confirms it in the App Store or Google Play sheet. The only trial is the 14-day account trial (#84), the same on
+// the web and in the apps, and after it the free plan, not a wall: the paywall opens only when the household asks
+// (a locked screen's "See plans", Settings) and can always be closed.
 //
-// WHAT MAY BE CLAIMED. The free month is mentioned only when the store says this account can have it: on
-// Google Play, a free phase on the offer Google returns (Google only returns offers the account is eligible for);
-// on the App Store, an introductory offer on the product AND RevenueCat's eligibility answer "eligible". Unknown
-// is not eligible: the screen never promises a free month the store may not give. Prices are the store's own
-// formatted strings (priceString), never a number of ours, so the screen shows what the store will charge.
-// No saving is claimed between plans, nothing is called the best, and nothing tells the household what to do
-// with its money.
+// Prices are the store's own formatted strings (priceString), never a number of ours, so the screen shows what the
+// store will charge. The website's prices and checkout are never mentioned, and nothing links out to pay. No saving
+// is claimed between plans, nothing is called the best, and nothing tells the household what to do with its money.
+// EVERY LINE HERE NEEDS REVIEW (ChatGPT and Grok) before it ships.
 // -----------------------------------------------------------------------------
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
-const ELIGIBLE = 2;          // RevenueCat INTRO_ELIGIBILITY_STATUS_ELIGIBLE
 
-/** May this account have the store's free month on this package? */
-export function introEligible(pkg, platform, iosEligibility = {}) {
-  const product = pkg && pkg.product;
-  if (!product) return false;
-  if (platform === "android") {
-    const free = product.defaultOption && product.defaultOption.freePhase;
-    return !!free && /^P1M$/.test(String(free.billingPeriod && free.billingPeriod.iso8601 || free.billingPeriod || ""));
-  }
-  if (platform === "ios") {
-    const e = iosEligibility[product.identifier];
-    const intro = product.introPrice;
-    return !!intro && intro.price === 0 && intro.periodUnit === "MONTH" && intro.periodNumberOfUnits === 1 && !!e && e.status === ELIGIBLE;
-  }
-  return false;
-}
+// Apple's standard licence agreement for apps (EULA), linked from the iOS paywall (Guideline 3.1.2).
+export const APPLE_EULA_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
-/** The words for one plan's offer. plan: "monthly" | "annual" | "founding_annual". */
-export function offerCopy({ plan, priceString, eligible = false, platform = "ios" }) {
+/** The words for one plan. plan: "monthly" | "annual" | "founding_annual". */
+export function offerCopy({ plan, priceString, platform = "ios" }) {
   const per = PERIOD[plan];
   if (!per || typeof priceString !== "string" || !priceString.trim()) return null;
   const price = `${priceString.trim()} ${per}`;
@@ -51,13 +29,11 @@ export function offerCopy({ plan, priceString, eligible = false, platform = "ios
   return {
     name,
     price,
-    trialLine: eligible ? `The first month is free. Then ${price}.` : null,
-    button: eligible ? "Try the first month free" : `Subscribe for ${price}`,
+    note: plan === "founding_annual" ? "Founding price for the first 50 households. Locked in while you stay subscribed." : null,
+    button: `Subscribe for ${price}`,
     terms: [
-      eligible
-        ? `Nothing is charged today. When the free month ends, ${price} is charged to your ${store}, unless you cancel at least 24 hours before it ends.`
-        : `${price} is charged to your ${store} when you confirm.`,
-      `The subscription renews at ${price} unless you cancel at least 24 hours before the end of the period. You can manage or cancel it ${where}.`,
+      `${price} is charged to your ${store} when you confirm.`,
+      `The subscription renews automatically at ${price} unless you cancel at least 24 hours before the end of the period. You can manage or cancel it ${where}.`,
     ],
   };
 }
@@ -73,24 +49,24 @@ export function offerCopy({ plan, priceString, eligible = false, platform = "ios
 export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settingsButton: null, title: null, body: null, bodyCancelled: null });
 
 export const PAYWALL_COPY = Object.freeze({
-  title: "Flourish, with everything in it",
-  lead: "A subscription opens the whole app: Today, Watch, Meet, the coach and Credit.",
+  title: "Flourish Plus",
+  lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
   dataSafe: "Your accounts, bills and history stay exactly as they are.",
   restore: "Restore purchases",
   terms: "Terms of Use",
   privacy: "Privacy Policy",
-  signOut: "Sign out",
-  deleteAccount: "Delete my account",
+  eula: "Apple's licence agreement (EULA)",
+  close: "Close",
   checking: "Confirming with the store…",
   checkAgain: "Check again",
   storeUnavailable: "The store couldn't be reached just now. Your data is safe. Restore purchases works once the store answers.",
   outcomes: Object.freeze({
     paid: null,
     already_paid: "This account already has a subscription, so nothing was bought here.",
-    web_attention: "This account's subscription on the Flourish website didn't renew: its last payment didn't go through. Nothing was bought here. Once the payment goes through on the website, this screen opens the app.",
+    web_attention: "This account's subscription didn't renew: its last payment didn't go through. Nothing was bought here.",
     charged_twice: "This account already had a subscription, and the store took this purchase as well. Your access stays as it is. You can ask the store that charged you for a refund of this purchase: Apple at reportaproblem.apple.com, or Google Play from your order history. For help, email hello@flourishmoney.app.",
     cancelled: null,
-    pending: "The store is still waiting on this purchase. It opens as soon as the store confirms it.",
+    pending: "The store is still waiting on this purchase. Full access starts as soon as the store confirms it.",
     failed: "The store didn't complete the purchase. If you see a charge for it, tap Restore purchases.",
     unconfirmed: "The store took the purchase, and Flourish is still waiting to hear it from the store. Tap Restore purchases in a minute.",
     nothing_to_restore: "No subscription was found for this store account.",

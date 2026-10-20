@@ -57,10 +57,10 @@ function isNativeRequest(event) {
 // every request whose answer depends on the household's plan: "store_billing": true in the JSON body (the
 // coach's chat and every Plaid call, src/lib/storeBilling.js storeBillingFields), or ?store_billing=1. Not a
 // header, so the CORS allow-list above stays exactly as it is.
-// It changes one thing: a subscription bought on the web counts in that build, because the same subscription
-// can be bought there too (Apple 3.1.3(b), multiplatform). A 1.0.x store build never sends it and keeps the
-// rule above. Only ever read together with isNativeRequest: a web page that sends it is still a web page, and
-// a caller that fakes it gains nothing it has not paid for.
+// Since #84 it changes no answer: the plan rule is the same for the web and every app, and a paid plan from any
+// provider counts everywhere (Apple 3.1.3(b), multiplatform, once 1.1 sells the same plans). It stays a marker
+// of which build asked. Only ever read together with isNativeRequest: a web page that sends it is still a web
+// page, and a caller that fakes it gains nothing it has not paid for.
 function isStoreBillingRequest(event) {
   if (!isNativeRequest(event)) return false;
   if (String(event?.queryStringParameters?.store_billing || "").trim() === "1") return true;

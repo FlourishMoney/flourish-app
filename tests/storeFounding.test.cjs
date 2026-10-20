@@ -33,7 +33,7 @@ const LATER = new Date(NOW + 200 * 86400000).toISOString();
 const U1 = "11111111-1111-4111-8111-111111111111";
 const HOLDER = "holder@example.ca", NOBODY = "nobody@example.ca";
 
-// A service-role client with a founding ledger behind waitlist_founding_position_for_email.
+// A service-role client with a founding ledger behind waitlist_founding_number_for_email (0025).
 function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptions = [], profile = null } = {}) {
   const db = { subscriptions: subscriptions.map((r) => ({ ...r })), profiles: profile ? [{ user_id: U1, ...profile }] : [] };
   const from = (name) => {
@@ -46,7 +46,7 @@ function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptio
   };
   return {
     from,
-    rpc: async (fn, args) => fn === "waitlist_founding_position_for_email"
+    rpc: async (fn, args) => fn === "waitlist_founding_number_for_email"
       ? { data: args.p_email === email && position ? position : null, error: null } : { data: null, error: null },
     auth: { admin: { getUserById: async () => ({ data: { user: { id: U1, email, email_confirmed_at: confirmedByLink ? "2026-10-17T00:00:00Z" : null,
       app_metadata: { email_confirmation: "link" } } }, error: null }) } },
@@ -103,7 +103,7 @@ const post = (body) => ({ httpMethod: "POST", headers: { origin: "capacitor://lo
     const row = { provider: "stripe", status: "active", plan_key: "founding_annual", current_period_end: LATER };
     t.eq([R.deriveEntitlement({}, row, NOW, { native: true, storeBilling: true }).plan, R.deriveEntitlement({}, row, NOW, {}).plan], ["premium", "premium"],
       "2c the shared entitlements unlock it in a 1.1 store app exactly as on the website (Apple 3.1.3(b): the same plan is sold in-app)");
-    t.eq(R.deriveEntitlement({}, row, NOW, { native: true, storeBilling: false }).plan, "free", "2d (a 1.0 build, which cannot sell, still answers from the profile alone)");
+    t.eq(R.deriveEntitlement({}, row, NOW, { native: true, storeBilling: false }).plan, "premium", "2d (a 1.0 build gets the same answer since 2026-10-20: one rule for every app, #84)");
   }
 
   // ── 3. A founding store purchase the server did not offer: counted, flagged. ────────────────────────

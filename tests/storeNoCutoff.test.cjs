@@ -1,13 +1,13 @@
 // tests/storeNoCutoff.test.cjs
 // -----------------------------------------------------------------------------
-// VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK.
+// VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK (rules of 2026-10-20: one plan rule for every app, no store trial).
 //
-// 1. Before 1.1: a household on a 1.0.x store build keeps full access. Nothing in this branch changes what such
-//    a build shows or what the server tells it, and no paywall exists in it.
-// 2. In 1.1: the same paywall with the same free month for a household that installed before 1.1 and one that
-//    installs after, which each start themselves; no permanent grandfathering by install date or history.
-// 3. When: only at a safe point (the first answer after start or sign-in, each return from the background);
-//    an answer that changes in between waits, and an unknown answer never puts the paywall up.
+// 1. A 1.0.x store build sells nothing: no paywall can show in it, and the server gives it the same answer as every
+//    app (the 14-day account trial, then the free plan, or full access for a paid plan from any provider).
+// 2. In 1.1: the same rule. A household in its 14-day account trial is entitled; after it, the free plan, until it
+//    subscribes. No store product has a free month or an introductory offer, and nothing depends on install history.
+// 3. When: only when the household asks (a locked screen's "See plans", Settings). Nothing raises it on its own, and
+//    a confirmed subscription closes it.
 // 4. How: drawn OVER the app, never in place of it. Every screen, sheet and half-typed form stays mounted with its
 //    state; open sheets and dialogs stay above it and can be finished; Terms and Privacy open inside it.
 // 5. Nothing is lost: the paywall and its purchase flow never write, clear or replace the household's data.
@@ -35,53 +35,44 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
   const P = await import("../src/lib/planFromProfile.js");
   const APP = read("src", "App.jsx");
 
-  // ── 1. Before 1.1 ────────────────────────────────────────────────────────────────────────────
+  // ── 1. A 1.0.x store build sells nothing ─────────────────────────────────────────────────────
   {
     t.eq([B.storeBillingOn({ native: true, env: {} }), B.storeBillingOn({ native: true, env: { VITE_IAP_ENABLED: "false" } })], [false, false], "1a a 1.0.x store build is not a selling build");
-    // The overlay also opens from Settings for a founding holder on a regular plan (2026-10-18); that way in exists
-    // only in a selling build too (the Subscription card is null without storeBilling).
-    t.ok(/const storePaywallOverlay = \(storeBilling && \(paywallUp \|\| foundingSwitchOpen\)\) \?/.test(APP) && /if\(!storeBilling\)\{ setPaywallUp\(false\); return; \}/.test(APP)
-      && /const storeSubscription = storeBilling \? \{/.test(APP) && (APP.match(/setFoundingSwitchOpen\(true\)/g) || []).length === 1, "1b …so no paywall can show in it");
+    t.ok(/const storePaywallOverlay = \(storeBilling && \(paywallUp \|\| foundingSwitchOpen\)\) \?/.test(APP) && /useEffect\(\(\)=>\{ if\(!storeBilling \|\| storeEntitled===true\) setPaywallUp\(false\); \},\[storeBilling, storeEntitled\]\);/.test(APP)
+      && /const storeSubscription = storeBilling \? \{/.test(APP) && /if\(storeBilling\)\{ setPaywallUp\(true\); return; \}/.test(APP) && (APP.match(/setFoundingSwitchOpen\(true\)/g) || []).length === 1,
+      "1b …so no paywall can show in it: every way in sits behind storeBilling");
     const p = { plan: "free", trial_started_at: new Date(NOW - 60 * DAY).toISOString() };
-    t.eq(R.deriveEntitlement(p, { provider: "stripe", status: "active", current_period_end: new Date(NOW + DAY).toISOString() }, NOW, { native: true }).plan, "free",
-      "1c the server tells a 1.0.x build exactly what it told it before (the profile's answer), whatever is bought elsewhere");
-    t.ok(/return !!native \|\| !!isPremium;/.test(read("src", "lib", "featureAccess.js")) && /return !!native \|\| isUnlimited\(\);/.test(read("src", "lib", "featureAccess.js")),
-      "1d and on a store build nothing closes when a trial ends (Credit and the meeting stay open): full access until 1.1");
+    const paidWeb = { provider: "stripe", status: "active", current_period_end: new Date(NOW + DAY).toISOString() };
+    t.eq([R.deriveEntitlement(p, paidWeb, NOW, { native: true }).plan, R.deriveEntitlement(p, paidWeb, NOW).plan, R.deriveEntitlement(p, null, NOW, { native: true }).plan], ["premium", "premium", "free"],
+      "1c the server gives a 1.0.x build the same answer as every app: a paid plan counts, and after the trial the free plan");
+    t.ok(!/native/.test(read("src", "lib", "featureAccess.js").replace(/\/\/[^\n]*/g, "")), "1d no feature opens or closes by platform (lib/featureAccess.js takes none)");
   }
 
-  // ── 2. In 1.1: the same paywall and the same free month for everyone ─────────────────────────
+  // ── 2. In 1.1: one rule, no store trial ────────────────────────────────────────────────────────
   {
-    for (const [who, profile] of [["installed before 1.1, months of history", "free"], ["installed before 1.1, a 1.0 trial cached", "trial"], ["new in 1.1", "free"]]) {
-      t.eq(P.storePlan(profile, { paid: false }), "free", `2a ${who}: not entitled until it subscribes`);
-    }
+    t.eq([P.storePlan("trial", { paid: false }), P.storePlan("free", { paid: false }), P.storePlan("free", { paid: true })], ["trial", "free", "premium"],
+      "2a the 14-day account trial counts in a selling build; after it the free plan, until the household subscribes");
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onSignOut, onDeleteAccount, onManage, onClose\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
+    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
       "2b one paywall: nothing on it depends on when the household installed or what it did before");
-    t.ok(/introEligible\(p, platform, elig\)/.test(comp) && !/eligible\s*=\s*true/.test(comp), "2c the free month is the store's to give, the same rule for everyone; the household starts it itself by confirming");
+    t.ok(!/checkTrialOrIntroductoryPriceEligibility|introEligible|trialLine|free month/i.test(comp) && !("introEligible" in O)
+      && ["monthly", "annual", "founding_annual"].every((plan) => { const c = O.offerCopy({ plan, priceString: "$X", platform: "ios" }); return c && !/free|trial|intro/i.test(JSON.stringify(c)); }),
+      "2c no store trial and no introductory offer: the paywall never asks the store for one, and no plan's words promise one");
     t.eq([P.storePlan("beta_founder", { paid: false }), P.storePlan("premium", { paid: false })], ["beta_founder", "premium"],
-      "2d no grandfathering by install date or history; the only standing access is the repo's own founder flag and a granted paid plan (reported as a contradiction with the brief)");
+      "2d no grandfathering by install date or history; the only standing access is the repo's own founder flag and a granted paid plan");
   }
 
-  // ── 3. When: safe points only ────────────────────────────────────────────────────────────────
+  // ── 3. When: only when the household asks ─────────────────────────────────────────────────────
   {
-    const D = B.paywallDecision;
-    t.eq([D({ open: true, entitled: false }), D({ open: false, entitled: false }), D({ open: true, entitled: null }), D({ open: false, entitled: null }), D({ open: true, entitled: true }), D({ open: false, entitled: true })],
-      [{ up: true, open: false }, { up: null, open: false }, { up: null, open: true }, { up: null, open: false }, { up: false, open: false }, { up: false, open: false }],
-      "3a up only at a pending safe point with a definite \"not entitled\"; never on an unknown answer; a confirmed subscription always takes it down");
-    // A session: start (safe point), entitled; mid-session the answer flips to not entitled; it waits for the next safe point.
-    let open = true, up = false;
-    const step = (entitled) => { const d = D({ open, entitled }); open = d.open; if (d.up !== null) up = d.up; return up; };
-    t.eq([step(null), step(true), step(false), step(false)], [false, false, false, false], "3b mid-session, a changed answer never puts the paywall in front of the household");
-    open = true;                                          // back from the background
-    t.eq(step(false), true, "3c …it waits for the next safe point (back from the background), then shows");
-    t.eq(step(true), false, "3d subscribing takes it down at once");
-    t.ok(/useEffect\(\(\)=>\{ paywallOpenRef\.current = true; \},\[user\?\.id\]\);/.test(APP) && /if\(document\.visibilityState!=="visible"\) return;\s*paywallOpenRef\.current = true;/.test(APP),
-      "3e the app opens a safe point at start or sign-in and on each return from the background, and nowhere else");
-    t.eq((APP.match(/paywallOpenRef\.current = true/g) || []).length, 2, "3f …exactly those two places");
-    t.ok(/const d = paywallDecision\(\{ open: paywallOpenRef\.current, entitled: storeEntitled \}\);/.test(APP), "3g the decision is lib/storeBilling.js paywallDecision");
+    t.eq((APP.match(/setPaywallUp\(true\)/g) || []).length, 2, "3a two ways in, both the household's own tap: openUpgrade (a locked screen's See plans) and Settings' See plans");
+    t.ok(/onSubscribe: storeStatus\?\.paid \? null : \(\)=>setPaywallUp\(true\),/.test(APP) && /\{storeSubscription\.onSubscribe&&<Btn label="See plans" onClick=\{storeSubscription\.onSubscribe\}/.test(APP),
+      "3b Settings offers See plans only to a household not paying yet");
+    t.eq((APP.match(/storeOn=\{storeBilling\}/g) || []).length, 2, "3c the locked screens (Credit, the coach) get their See plans only in a selling build");
+    t.ok(!/paywallDecision|paywallOpenRef/.test(APP) && !("paywallDecision" in B), "3d nothing raises it on its own: no safe-point decision, no automatic paywall");
+    t.ok(/if\(!storeBilling \|\| storeEntitled===true\) setPaywallUp\(false\);/.test(APP), "3e a confirmed subscription closes it at once");
     t.ok(/const storeEntitledNow = \(!storeBilling \|\| !user\?\.id \|\| profilePlan===null \|\| storeAskedFor!==user\.id \|\| !storeStatus\)\s*\? null/.test(APP)
       && /const storeEntitled = storeEntitledNow !== null \? storeEntitledNow\s*: \(storeBilling && user\?\.id \? recalledGate\(deviceStorage\(\), user\.id\) : null\);/.test(APP),
-      "3h until this account's own server answer is in, the last definite answer stands in (review fix M5); with none, it is unknown, and unknown never puts the paywall up");
+      "3h until this account's own server answer is in, the last definite answer stands in (review fix M5); with none, it is unknown");
   }
 
   // ── 4. How: over the app, never in place of it ───────────────────────────────────────────────
@@ -95,7 +86,8 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     t.ok(z.filter((n) => n > 9998).length >= 6 && Math.max(...z) === 10000, "4e sheets and dialogs (9999) and the ModalHost (10000) stay above it: an open sheet can still be finished and saved, and the delete confirmation shows on top");
     t.ok(/paywallLegal==="terms" \? [\s\S]*?<TermsOfService onBack=\{\(\)=>setPaywallLegal\(null\)\}\/>/.test(ov) && /onViewLegal=\{\(which\)=>setPaywallLegal\(which\)\}/.test(ov) && !/setScreen/.test(ov),
       "4f Terms and Privacy open inside the overlay, so nothing behind it unmounts");
-    t.ok(/onSignOut=\{signOut\}/.test(ov) && /onDeleteAccount=\{deleteAllData\}/.test(ov), "4g sign out and delete are the app's own, unchanged flows");
+    t.ok(/onClose=\{\(\)=>\{ setPaywallUp\(false\); setFoundingSwitchOpen\(false\); setPaywallLegal\(null\); \}\}/.test(ov) && !/onSignOut|onDeleteAccount/.test(ov),
+      "4g it can always be closed, so it carries no sign out or delete of its own: Settings has both, unchanged");
   }
 
   // ── 5. Nothing is lost ───────────────────────────────────────────────────────────────────────

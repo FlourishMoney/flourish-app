@@ -176,7 +176,7 @@ export function recalledGate(storage, userId, now = Date.now()) {
 }
 
 /**
- * A household that holds a founding position while a regular store subscription is live (a free month included):
+ * A household that holds a founding position while a regular store subscription is live:
  * store_status founding.held_on_regular_plan (netlify/functions/billing.js). The founding annual is an App Store
  * group of its own and Apple bills each group separately, so it is never bought on top: the paywall says so and
  * opens the store's own screen to cancel the regular one; the founding price is offered once that has ended.
@@ -188,21 +188,3 @@ export function foundingSwitch(status) {
   return { renews: h.renews !== false, periodEnd: typeof h.period_end === "string" ? h.period_end : null };
 }
 
-/**
- * VERSION 1.1, ITEM 3: WHEN THE PAYWALL MAY APPEAR. Nobody is cut off in the middle of something.
- *
- * The paywall is decided only at a safe point: the first answer for this account after the app starts or the
- * household signs in, and each return from the background. Between those, an answer that changes (a refresh,
- * a profile reload) never puts the paywall in front of someone; it waits for the next safe point. An answer the
- * app does not have (offline, the server not reached) never puts it up either: unknown is not "not paid".
- * Taking it down is always safe, so a confirmed subscription removes it at once.
- *
- * open:     a safe point is pending (set at start, at sign-in, on return from the background)
- * entitled: true, false, or null (not known yet)
- * Returns { up: true | false | null (leave as it is), open: whether a safe point is still pending }.
- */
-export function paywallDecision({ open = false, entitled = null } = {}) {
-  if (entitled === true) return { up: false, open: false };
-  if (entitled === false && open) return { up: true, open: false };
-  return { up: null, open };
-}
