@@ -109,14 +109,14 @@ begin
 end $$;
 update public.waitlist set is_test = false where email = 'household02@example.test';
 
--- Deleted then rejoined: its own number back. Without 0017 this includes Amanda's test address.
+-- Deleted then rejoined: its own number back. Without 0025 this includes Amanda's test address.
 delete from public.waitlist where email = 'household05@example.test';
 insert into public.waitlist (email, country, consent_version) values ('household05@example.test', 'CA', '2026-10-06');
 insert into public.waitlist (email, country, consent_version) values ('tester3@getgrowsmart.com', 'CA', '2026-10-06');
 do $$
 begin
   assert (select founding_position from public.waitlist where email = 'household05@example.test') = 5, '5j a household that rejoins gets its own number back';
-  assert (select founding_position from public.waitlist where email = 'tester3@getgrowsmart.com') = 18, '5k WITHOUT 0017 a test address that rejoins reclaims its old number (#18)';
+  assert (select founding_position from public.waitlist where email = 'tester3@getgrowsmart.com') = 18, '5k WITHOUT 0025 a test address that rejoins reclaims its old number (#18)';
   assert public.waitlist_founding_position_for_email('tester3@getgrowsmart.com') = 18, '5l …and is honoured for the founding price';
   assert (select count(*) from public.waitlist_founding_ledger) = 28, '5m rejoining issues no new number';
 end $$;
@@ -137,7 +137,7 @@ begin
   assert public.waitlist_founding_position_for_email('household03@example.test') is null, '5r …but the founding price never comes back';
 end $$;
 
--- The cap without 0017: 22 numbers left, then nobody. 16 + 22 = 38 real households at most.
+-- The cap without 0025: 22 numbers left, then nobody. 16 + 22 = 38 real households at most.
 insert into public.waitlist (email, country, consent_version)
 select format('new%s@example.test', lpad(g::text, 2, '0')), 'CA', '2026-10-06' from generate_series(1, 23) g;
 do $$
@@ -146,7 +146,7 @@ begin
   assert (select founding_position from public.waitlist where email = 'new23@example.test') is null, '5t the 23rd does not';
   assert (select count(*) from public.waitlist_founding_ledger) = 50, '5u the ledger stops at 50';
   assert (select count(*) from public.waitlist where founding_position is not null and (email like 'household%' or email like 'new%')) = 38,
-         '5v WITHOUT 0017 at most 38 real households hold a founding number';
+         '5v WITHOUT 0025 at most 38 real households hold a founding number';
 end $$;
 reset role;
 

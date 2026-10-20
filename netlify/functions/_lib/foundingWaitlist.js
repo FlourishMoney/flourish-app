@@ -6,14 +6,14 @@
 // (is_test, or an address at getgrowsmart.com or flourishmoney.app) never count. Each new row's number
 // is set by the database at insert time and recorded in a ledger that is never freed (0014); a test
 // row's number is voided there and never reissued, and the database stops issuing numbers once 50 REAL
-// households hold one (0017). So numbers can run past 50. This module never assigns one: it only reads.
+// households hold one (0025). So numbers can run past 50. This module never assigns one: it only reads.
 //
 //   spotsLeftFromCount(n)    50 less the real holders (numbers issued and not void), never below 0.
 //   welcomePositionFor(row)  the number a welcome email may name for this row: null for a test row.
 //   foundingWelcomeLine(p)   the welcome email's one offer line for number p, or null.
 //
 // Billing honours these positions: _lib/foundingCohort.js sells the founding price only to a confirmed
-// account whose email matches a non-test row holding a number that is not void (migration 0017's lookup).
+// account whose email matches a non-test row holding a number that is not void (migration 0025's lookup).
 // -----------------------------------------------------------------------------
 
 "use strict";
@@ -43,7 +43,7 @@ function welcomePositionFor(row) {
 }
 
 // The welcome email never shows a founding number above 50 (Amanda, 2026-10-14). Within 50: "#n of 50",
-// the approved line. Past 50 (a number issued after test numbers were voided, 0017): the household is
+// the approved line. Past 50 (a number issued after test numbers were voided, 0025): the household is
 // still one of the first 50 real ones, so it is told that, with no number.
 function foundingWelcomeLine(position) {
   if (!isFoundingPosition(position)) return null;

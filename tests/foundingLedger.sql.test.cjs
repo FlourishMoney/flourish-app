@@ -1,23 +1,27 @@
 // tests/foundingLedger.sql.test.cjs
 // -----------------------------------------------------------------------------
-// ONE LEDGER OF 50 FOUNDING POSITIONS, IN A REAL POSTGRES (migration 0021, founder's decision 2026-10-17).
+// THE FOUNDING 50, IN A REAL POSTGRES (migration 0025, Amanda's decision 2026-10-20; it replaces 0017 and 0021).
 //
-// Every migration in supabase/migrations runs, in order, in a throwaway Postgres cluster started for this
-// test and removed when it ends, on top of a small stand-in for what Supabase provides (the anon,
-// authenticated and service_role roles, an auth.users table, the extensions schema). Then:
-//   1  positions issued to waitlist rows (0014) and to accounts confirmed by link (0021) share one ledger,
-//      in arrival order; #50 is issued, #51 never is, from either side;
-//   2  concurrent confirmations and waitlist joins never share a number;
-//   3  a waitlist address that later signs up in an app keeps its original number, even when its waitlist
-//      row was deleted first, and no second number is issued;
-//   4  who never takes a position: an unconfirmed account, an account confirmed on creation ("auto"), the
-//      founder's own domains, an address on a waitlist test row;
-//   5  founding_accounts_start() numbers already-confirmed accounts after the waitlist, then runs never again;
-//   6  the lookup checkout uses (waitlist_founding_position_for_email) answers from the same ledger, and
-//      checkout's own rule (_lib/foundingCohort.js mayBuyFoundingPrice, run here against this database)
-//      offers the founding price to #50 and never to #51;
-//   7  nothing is callable from the browser roles;
-//   8  the rollback in 0021's header returns the database to what 0016 left.
+// Every migration in supabase/migrations up to 0024 runs, in order, in a throwaway Postgres cluster started for
+// this test and removed when it ends, on a small stand-in for what Supabase provides (the API roles with
+// Supabase's default grants, auth.users, auth.sessions, auth.jwt(), the extensions schema). A ledger shaped like
+// production's on 2026-10-20 is seeded: 33 numbers issued, 1 to 15 and 22 held by waitlist households, the
+// twelve Amanda confirmed were her test sign-ups (16 to 21, 23 to 28, issued 2026-10-08 to 10-10, rows deleted),
+// and 29 to 33 since, one at a test domain and one a beta founder's. Then:
+//   0  the dry run in 0025's footer predicts, from that database, exactly what 0025 then does;
+//   1  0025 voids the test numbers and the beta founder's, keeps every real household's number, and numbers the
+//      accounts already confirmed by link after the highest number, in confirmation order;
+//   2  waitlist joins and confirmed accounts then take numbers from one sequence, past 50 when numbers were
+//      voided, until exactly 50 real households hold one; the 51st never does, from either side;
+//   3  who never holds a seat: test rows and test addresses (also when marked later, which frees the seat),
+//      beta founders, accounts confirmed on creation, accounts never confirmed;
+//   4  checkout's own rule (_lib/foundingCohort.js mayBuyFoundingPrice) against this database: the founding
+//      price for every real holder, from the website or an app; never a void, test or 51st number; a beta
+//      founder still through the flag;
+//   5  a second run of 0025 changes nothing, and founding_accounts_start() runs once;
+//   6  concurrent confirmations and joins never share a number, and the cap holds under the race;
+//   7  nothing is callable or readable from the browser roles;
+//   8  the rollback in 0025's footer returns the database to what 0016 left (one inert trigger aside).
 // Postgres comes from FOUNDING_PG_BIN, Homebrew (postgresql@17) or the copy GitHub's Ubuntu runner ships
 // (/usr/lib/postgresql/*/bin). Without one the suite fails rather than passing on nothing.
 // -----------------------------------------------------------------------------
@@ -31,8 +35,9 @@ const { execFileSync, spawn } = require("child_process");
 
 const ROOT = path.join(__dirname, "..");
 const MIGRATIONS = path.join(ROOT, "supabase", "migrations");
+const M25 = path.join(MIGRATIONS, "0025_founding_ledger.sql");
+const SRC25 = fs.readFileSync(M25, "utf8");
 
-// What Supabase has before the first migration: the three API roles, the auth schema, the extensions schema.
 const SUPABASE_STUB = `
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -48,12 +53,27 @@ create table if not exists auth.users (
   raw_user_meta_data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+create table if not exists auth.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  user_agent text
+);
 create or replace function auth.uid() returns uuid language sql stable as $f$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $f$;
 create or replace function auth.role() returns text language sql stable as $f$ select coalesce(current_setting('request.jwt.claim.role', true), 'anon') $f$;
 create or replace function auth.jwt() returns jsonb language sql stable as $f$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $f$;
 create schema if not exists extensions;
 create extension if not exists pgcrypto schema extensions;
+-- Supabase's grant to the API roles on a new public table (until 2026-10-30): a browser role is refused only
+-- where a migration revokes.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 `;
+
+// A block from 0025's footer, uncommented.
+function footerBlock(from, to) {
+  const s = SRC25.slice(SRC25.indexOf(from), to ? SRC25.indexOf(to) : undefined);
+  return s.split("\n").filter((l) => l.startsWith("--   ")).map((l) => l.slice(5)).join("\n");
+}
 
 function pgBin() {
   const cands = [process.env.FOUNDING_PG_BIN, "/opt/homebrew/opt/postgresql@17/bin", "/usr/local/opt/postgresql@17/bin"];
@@ -69,150 +89,199 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
   const env = { ...process.env, LC_ALL: "C", LANG: "C" };
   const dir = tempDir("pg");
   const port = await freePort();
-  const sql = (q, db = "t") => execFileSync(path.join(bin, "psql"), ["-h", dir, "-p", String(port), "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1", "-qAtX", "-c", q], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  const file = (f, db = "t") => execFileSync(path.join(bin, "psql"), ["-h", dir, "-p", String(port), "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1", "-qAtX", "-f", f], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  const fails = (q) => { try { sql(q); return null; } catch (e) { return String(e.stderr || e.message); } };
+  const psql = (args, db) => execFileSync(path.join(bin, "psql"), ["-h", dir, "-p", String(port), "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1", "-qAtX", ...args], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const sql = (q, db = "t") => psql(["-c", q], db);
+  const file = (f, db = "t") => psql(["-f", f], db);
+  const fails = (q, db = "t") => { try { sql(q, db); return null; } catch (e) { return String(e.stderr || e.message); } };
+  const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
   // An account as beta.js creates it with signup open: unconfirmed, email_confirmation "link".
-  const account = (email, how = "link") => sql(`insert into auth.users (email, raw_app_meta_data) values ('${email}', '{"email_confirmation":"${how}"}') returning id`);
-  const confirm = (id) => sql(`update auth.users set email_confirmed_at = clock_timestamp() where id = '${id}'`);
-  const join = (email, test = false) => sql(`insert into public.waitlist (email, is_test) values ('${email}', ${test}) returning coalesce(founding_position::text, '')`);
-  const lookup = (email) => sql(`select coalesce(public.waitlist_founding_position_for_email('${email}')::text, '')`);
-  const issued = () => Number(sql("select count(*) from public.waitlist_founding_ledger"));
-  const positionOf = (email) => sql(`select coalesce((select position::text from public.waitlist_founding_ledger where email_key = public.waitlist_email_key('${email}')), '')`);
+  const account = (email, how = "link", db = "t") => sql(`insert into auth.users (email, raw_app_meta_data) values (${lit(email)}, '{"email_confirmation":"${how}"}') returning id`, db);
+  const confirm = (id, db = "t") => sql(`update auth.users set email_confirmed_at = clock_timestamp() where id = '${id}'`, db);
+  const svc = (q, db = "t") => sql(`begin; select set_config('request.jwt.claims', '{"role":"service_role"}', true); ${q}; commit;`, db);
+  const founder = (id, db = "t") => svc(`update public.profiles set founder_flag = true where user_id = '${id}'`, db);
+  const join = (email, db = "t") => sql(`insert into public.waitlist (email) values (${lit(email)}) returning coalesce(founding_position::text, '')`, db);
+  const numberOf = (email, db = "t") => sql(`select coalesce((select position::text from public.waitlist_founding_ledger where email_key = public.waitlist_email_key(${lit(email)})), '')`, db);
+  const lookup = (email, db = "t") => sql(`select coalesce(public.waitlist_founding_number_for_email(${lit(email)})::text, '')`, db);
+  const holders = (db = "t") => Number(sql("select count(*) from public.waitlist_founding_ledger where void_at is null", db));
+  const ledgerSnapshot = (db = "t") => sql("select string_agg(position || ':' || coalesce(void_reason, '-') || ':' || source || ':' || (user_id is not null), ',' order by position) from public.waitlist_founding_ledger", db);
+  const files = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
+  const before25 = files.filter((f) => f < "0025");
   let started = false;
   try {
     execFileSync(path.join(bin, "initdb"), ["-D", path.join(dir, "data"), "-U", "postgres", "-A", "trust"], { env, stdio: "ignore" });
     execFileSync(path.join(bin, "pg_ctl"), ["-D", path.join(dir, "data"), "-o", `-p ${port} -k ${dir} -c listen_addresses=''`, "-l", path.join(dir, "log"), "-w", "start"], { env, stdio: "ignore" });
     started = true;
-    sql("create database t", "postgres");
     fs.writeFileSync(path.join(dir, "stub.sql"), SUPABASE_STUB);
-    file(path.join(dir, "stub.sql"));
-    const files = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
-    const failed = [];
-    for (const f of files) { try { file(path.join(MIGRATIONS, f)); } catch (e) { failed.push(`${f}: ${String(e.stderr || e.message).split("\n")[0]}`); } }
-    t.eq(failed, [], `0 every migration applies in order (${files.length}, 0021 among them: ${files.includes("0021_founding_ledger_accounts.sql")})`);
-
-    // The waitlist as production has it: households joined before 0014, one marked test, numbered once.
-    for (let i = 1; i <= 6; i++) join(`early${i}@example.ca`);
-    join("tester@example.ca", true);
-    t.eq(sql("select public.waitlist_founding_start()"), "6", "1a (setup) the waitlist is numbered once: 6 households, the test row not counted");
-    // An account confirmed before 0021's start(): it waits, and start() numbers it after the waitlist.
-    const before = account("came-early@example.ca"); confirm(before);
-    t.eq(positionOf("came-early@example.ca"), "", "5a until founding_accounts_start() runs, a confirmed account takes no number (the trigger is created disabled)");
-    t.eq(sql("select public.founding_accounts_start()"), "1", "5b start() numbers the accounts already confirmed by link (1 here)…");
-    t.eq(positionOf("came-early@example.ca"), "7", "5c …after every number the waitlist already holds (#7)");
-    t.ok(/already run/.test(fails("select public.founding_accounts_start()") || ""), "5d a second start() raises an error and changes nothing");
-    t.eq(issued(), 7, "5e (and the ledger still holds 7)");
-
-    // 3. A waitlist address that later signs up in an app keeps its number.
-    const w3 = account("early3@example.ca"); confirm(w3);
-    t.eq([positionOf("early3@example.ca"), lookup("early3@example.ca"), String(issued())], ["3", "3", "7"],
-      "3a a waitlist household (#3) that signs up in an app keeps #3; no second number is issued");
-    sql("delete from public.waitlist where email = 'early3@example.ca'");
-    t.eq(lookup("early3@example.ca"), "3", "3b …and keeps it when its waitlist row is deleted (the account is recorded against the number)");
-    sql("delete from public.waitlist where email = 'early5@example.ca'");
-    t.eq(lookup("early5@example.ca"), "", "3c (a waitlist household whose row was deleted and who has no account: no founding price, as 0016 had it)");
-    const w5 = account("early5@example.ca"); confirm(w5);
-    t.eq([positionOf("early5@example.ca"), lookup("early5@example.ca"), String(issued())], ["5", "5", "7"],
-      "3d …until it signs up in an app: it gets its original #5 back, and still nothing new is issued");
-    t.eq(join("early5@example.ca"), "5", "3e …and rejoining the waitlist gives the same #5 (0014's rule, unchanged)");
-
-    // 4. Who never takes a position.
-    const unconf = account("never-confirmed@example.ca");
-    t.eq(positionOf("never-confirmed@example.ca"), "", "4a an account that never confirms its address takes no number");
-    const auto = sql(`insert into auth.users (email, raw_app_meta_data, email_confirmed_at) values ('invited@example.ca', '{"email_confirmation":"auto"}', now()) returning id`);
-    sql(`update auth.users set email_confirmed_at = now() + interval '1 second' where id = '${auto}'`);
-    t.eq(positionOf("invited@example.ca"), "", "4b an account confirmed on creation (an invite code while signup was shut) takes no number");
-    const own = account("amanda+test9@getgrowsmart.com"); confirm(own);
-    const own2 = account("Test@FlourishMoney.app"); confirm(own2);
-    t.eq([positionOf("amanda+test9@getgrowsmart.com"), positionOf("Test@FlourishMoney.app")], ["", ""], "4c the founder's own domains never take a number");
-    const tst = account("tester@example.ca"); confirm(tst);
-    t.eq(positionOf("tester@example.ca"), "", "4d an address on a waitlist test row never takes one through an account either");
-    t.eq(issued(), 7, "4e (the ledger still holds 7)");
-    void unconf;
-
-    // 1. One ledger, arrival order, #50 and #51. Alternate a waitlist join and a confirmed account.
-    let next = issued();
-    const order = [];
-    while (next < 49) {
-      if (next % 2 === 0) { const e = `join${next}@example.ca`; join(e); order.push([e, positionOf(e)]); }
-      else { const e = `acct${next}@example.ca`; confirm(account(e)); order.push([e, positionOf(e)]); }
-      next = issued();
-    }
-    t.eq(order.map(([, p]) => p), order.map((_, i) => String(8 + i)), "1a waitlist joins and confirmed accounts take numbers from one sequence, in the order they arrive (#8 to #49)");
-    const fifty = "fiftieth@example.ca"; confirm(account(fifty));
-    t.eq([positionOf(fifty), lookup(fifty)], ["50", "50"], "1b the 50th household (an app signup) gets #50, and checkout's lookup finds it");
-    const fiftyOne = "fiftyfirst@example.ca"; confirm(account(fiftyOne));
-    t.eq([positionOf(fiftyOne), lookup(fiftyOne), String(issued())], ["", "", "50"], "1c the 51st (an app signup) never gets a number, and the ledger stops at 50");
-    t.eq(join("fiftyfirst-web@example.ca"), "", "1d …nor does a 51st on the website's form");
-    t.eq(sql("select count(distinct position) from public.waitlist_founding_ledger where position between 1 and 50"), "50", "1e 50 distinct numbers, 1 to 50");
-
-    // 6. Checkout's rule, against this database: the real mayBuyFoundingPrice, its lookup answered here.
-    const { mayBuyFoundingPrice } = require("../netlify/functions/_lib/foundingCohort.js");
-    const admin = {
-      rpc: async (name, args) => name === "waitlist_founding_position_for_email"
-        ? { data: (() => { const v = sql(`select coalesce(public.waitlist_founding_position_for_email('${String(args.p_email).replace(/'/g, "''")}')::text, '')`); return v === "" ? null : Number(v); })(), error: null }
-        : { data: null, error: { message: "not in this test" } },
-      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+    const build = (db, list) => {
+      psql(["-c", `create database ${db}`], "postgres");
+      file(path.join(dir, "stub.sql"), db);
+      const failed = [];
+      for (const f of list) { try { file(path.join(MIGRATIONS, f), db); } catch (e) { failed.push(`${f}: ${String(e.stderr || e.message).split("\n").find((l) => /ERROR/.test(l)) || ""}`); } }
+      return failed;
     };
-    const confirmedUser = (email) => ({ email, email_confirmed_at: "2026-10-17T00:00:00Z", app_metadata: { email_confirmation: "link" } });
-    const idOf = (email) => sql(`select id from auth.users where email = '${email}'`);
-    t.eq([await mayBuyFoundingPrice(admin, idOf(fifty), confirmedUser(fifty)), await mayBuyFoundingPrice(admin, idOf(fiftyOne), confirmedUser(fiftyOne))], [true, false],
-      "6b checkout offers the founding price to #50 (an app signup) and refuses #51");
-    t.eq(await mayBuyFoundingPrice(admin, idOf("early3@example.ca"), confirmedUser("early3@example.ca")), true,
-      "6c …and to the waitlist household that signed up in an app later, after its waitlist row was deleted");
-    t.eq(await mayBuyFoundingPrice(admin, idOf(fifty), { email: fifty, email_confirmed_at: null, app_metadata: { email_confirmation: "link" } }), false,
-      "6d …never to an address the household has not confirmed");
-    t.eq(await mayBuyFoundingPrice(admin, idOf("amanda+test9@getgrowsmart.com"), confirmedUser("amanda+test9@getgrowsmart.com")), false, "6e …nor to a test address");
+    t.eq(files.filter((f) => /^00(17|21)_/.test(f)), [], "0a 0017 and 0021 are gone: 0025 replaces both");
+    t.eq(build("t", before25), [], `0b every migration before 0025 applies in order (${before25.length}, the last ${before25[before25.length - 1]})`);
 
-    // 6. The landing count reads this ledger (founding.js counts its rows): 50 issued, 0 left.
-    t.eq(sql("select greatest(0, 50 - count(*)) from public.waitlist_founding_ledger"), "0", "6f the count /api/founding takes (50 less the ledger's rows) includes the app signups: 0 left");
+    // ── Production on 2026-10-20 ──────────────────────────────────────────────────────────────────────
+    const at = (n, iso) => sql(`update public.waitlist_founding_ledger set issued_at = '${iso}' where position = ${n}`);
+    for (let i = 1; i <= 15; i++) sql(`insert into public.waitlist (email, created_at) values ('real${i}@example.ca', timestamptz '2026-10-01 12:00:00+00' + interval '${i} minutes')`);
+    sql("insert into public.waitlist (email, is_test) values ('tester@example.ca', true)");
+    t.eq(sql("select public.waitlist_founding_start()"), "15", "(setup) 0014's start() numbers the first 15 households");
+    for (let n = 1; n <= 15; n++) at(n, "2026-10-07 06:00:00+00");
+    const orphan = (n, day) => { const e = `amanda.test${n}@example.ca`; t.eq(join(e), String(n), `(setup) Amanda's test sign-up takes #${n}`); at(n, `2026-10-${day} 02:00:00+00`); sql(`delete from public.waitlist where email = ${lit(e)}`); };
+    for (const n of [16, 17, 18, 19, 20, 21]) orphan(n, "09");
+    t.eq(join("real22@example.ca"), "22", "(setup) a real household takes #22"); at(22, "2026-10-09 12:00:00+00");
+    for (const n of [23, 24, 25, 26, 27, 28]) orphan(n, "10");
+    t.eq(join("real29@example.ca"), "29", "(setup) #29 after 2026-10-14");
+    t.eq(join("real30@example.ca"), "30", "(setup) #30");
+    t.eq(join("amanda@getgrowsmart.com"), "31", "(setup) #31, a test-domain address 0014 numbered like anyone");
+    t.eq(join("beta.founder@example.ca"), "32", "(setup) #32, a beta founder's address on the waitlist");
+    t.eq(join("real33@example.ca"), "33", "(setup) #33");
+    const bf = account("beta.founder@example.ca", "auto"); confirm(bf); founder(bf);
+    // Accounts already confirmed by link, before 0025, in this confirmation order.
+    const a1 = account("app.first@example.ca"); confirm(a1);
+    const a3 = account("real3@example.ca"); confirm(a3);                  // a waitlist household's address: keeps #3
+    const a2 = account("app.second@example.ca"); confirm(a2);
+    const aT = account("qa@flourishmoney.app"); confirm(aT);              // test domain
+    const aF = account("founder.in.app@example.ca"); founder(aF); confirm(aF);   // a beta founder confirmed by link
+    const aA = account("invited@example.ca", "auto"); confirm(aA);        // confirmed on creation
+    account("never.confirmed@example.ca");                                // never confirmed
+    const a4 = account("app.third@example.ca"); confirm(a4);
+    t.eq([Number(sql("select count(*) from public.waitlist_founding_ledger")), 50 - Number(sql("select count(*) from public.waitlist_founding_ledger"))], [33, 17],
+      "(setup) 33 issued: /api/founding reads 17 spots left today");
 
-    // 2. Concurrency, in a second database so the first stays as it is.
-    sql("create database c", "postgres");
-    file(path.join(dir, "stub.sql"), "c");
-    for (const f of files) file(path.join(MIGRATIONS, f), "c");
-    const sqlc = (q) => sql(q, "c");
-    for (let i = 1; i <= 10; i++) sqlc(`insert into public.waitlist (email) values ('w${i}@example.ca')`);
-    sqlc("select public.waitlist_founding_start()"); sqlc("select public.founding_accounts_start()");
+    // ── 0. The dry run, before 0025 ───────────────────────────────────────────────────────────────────
+    fs.writeFileSync(path.join(dir, "dry.sql"), footerBlock("-- READ-ONLY DRY RUN", "-- READ-ONLY CHECK AFTERWARDS"));
+    const dry = file(path.join(dir, "dry.sql")).split("|");
+    t.eq(dry, ["33", "17", "{31}", "{16,17,18,19,20,21,23,24,25,26,27,28}", "{32}", "5", "19", "3", "3", "28"],
+      "0c the dry run: 33 issued, 17 left now; void #31 (test domain), the twelve confirmed orphans and #32 (a beta founder); 5 issued since Oct 14; 19 real holders; 3 accounts to number; 28 left after");
+    t.eq(sql("select count(*) from information_schema.columns where table_name = 'waitlist_founding_ledger' and column_name = 'void_at'"), "0", "0d (the dry run ran on the schema before 0025)");
+
+    // ── 1. 0025 ──────────────────────────────────────────────────────────────────────────────────────────
+    file(M25);
+    fs.writeFileSync(path.join(dir, "check.sql"), footerBlock("-- READ-ONLY CHECK AFTERWARDS", "-- A TEST ACCOUNT"));
+    const check = file(path.join(dir, "check.sql")).split("|");
+    t.eq(check, ["36", "22", "28", "13", "1", "3", "37", "t"],
+      "1a the check after: 36 issued, 22 real holders, 28 left (the dry run's figure), 13 test voids, 1 beta founder void, 3 from accounts, next #37, accounts take seats");
+    t.eq([numberOf("app.first@example.ca"), numberOf("app.second@example.ca"), numberOf("app.third@example.ca")], ["34", "35", "36"],
+      "1b the accounts already confirmed by link are numbered after #33, in the order they confirmed");
+    t.eq([numberOf("real3@example.ca"), sql(`select user_id = '${a3}' from public.waitlist_founding_ledger where position = 3`)], ["3", "t"],
+      "1c a waitlist household that confirmed an account keeps #3, recorded against the account; nothing new issued");
+    t.eq(sql("select string_agg(founding_position::text, ',' order by founding_position) from public.waitlist where founding_position is not null and not is_test").split(",").map(Number),
+      [...Array.from({ length: 15 }, (_, i) => i + 1), 22, 29, 30, 33], "1d every real waitlist household keeps its own number");
+    t.eq([sql("select is_test::text || coalesce(founding_position::text, '-') from public.waitlist where email = 'amanda@getgrowsmart.com'"),
+          sql("select coalesce(founding_position::text, '-') from public.waitlist where email = 'beta.founder@example.ca'")], ["true-", "-"],
+      "1e the test-domain row is a test row now, without its number; the beta founder's row keeps no number");
+    t.eq(sql("select string_agg(waitlist_id is not null || ':' || founding_position || ':' || reason, ',' order by founding_position) from public.founding_0025_cleared"), "true:31:test,true:32:beta_founder",
+      "1f both cleared positions are kept for the rollback");
+    t.eq([numberOf("qa@flourishmoney.app"), numberOf("founder.in.app@example.ca"), numberOf("invited@example.ca"), numberOf("never.confirmed@example.ca")], ["", "", "", ""],
+      "1g no number for a test-domain account, a beta founder's account, an account confirmed on creation or one never confirmed");
+
+    // ── 2. One sequence, past 50, exactly 50 real households ─────────────────────────────────────────
+    const arrivals = [];
+    let i = 0;
+    while (holders() < 49 && i < 40) {   // bounded: a broken cap must fail here, never loop
+      const e = i % 2 === 0 ? `join${i}@example.ca` : `acct${i}@example.ca`;
+      if (i % 2 === 0) join(e); else confirm(account(e));
+      arrivals.push(numberOf(e)); i++;
+    }
+    t.eq(arrivals.map(Number), Array.from({ length: arrivals.length }, (_, k) => 37 + k),
+      `2a waitlist joins and confirmed accounts take numbers from one sequence, in arrival order (#37 to #${36 + arrivals.length})`);
+    const fiftieth = "fiftieth@example.ca"; confirm(account(fiftieth));
+    t.eq([numberOf(fiftieth), lookup(fiftieth), String(holders())], ["64", "64", "50"], "2b the 50th real household (an app signup) gets #64, past 50 because 14 numbers were voided, and checkout finds it");
+    const fiftyFirst = "fiftyfirst@example.ca"; confirm(account(fiftyFirst));
+    t.eq([numberOf(fiftyFirst), join("fiftyfirst-web@example.ca"), String(holders())], ["", "", "50"], "2c the 51st never gets one, from an app or the website's form");
+    t.eq(sql("select greatest(0, 50 - count(*)) from public.waitlist_founding_ledger where void_at is null"), "0", "2d /api/founding's count (real holders, void_at is null): 0 left");
+
+    // ── 3. Marking a test row later frees its seat ─────────────────────────────────────────────────────
+    const freed = sql("select founding_position from public.waitlist where email = 'join0@example.ca'");
+    sql("update public.waitlist set is_test = true where email = 'join0@example.ca'");
+    t.eq([sql(`select void_reason from public.waitlist_founding_ledger where position = ${freed}`), sql("select coalesce(founding_position::text, '-') from public.waitlist where email = 'join0@example.ca'"), lookup("join0@example.ca"), String(holders())],
+      ["test", "-", "", "49"], "3a a row marked is_test later: its number is voided, the row cleared, checkout refuses it, and a seat is free");
+    t.eq(join("next.household@example.ca"), "65", "3b …which the next real household takes, as #65");
+    sql("update public.waitlist set is_test = false where email = 'join0@example.ca'");
+    t.eq([lookup("join0@example.ca"), sql(`select void_reason from public.waitlist_founding_ledger where position = ${freed}`)], ["", "test"], "3c unmarking it does not bring the number back (void is final)");
+    t.eq(join("someone@sub.getgrowsmart.com"), "", "3d a subdomain of a test domain is a test address too");
+
+    // ── 4. Checkout's rule, against this database ───────────────────────────────────────────────────────
+    const { mayBuyFoundingPrice } = require("../netlify/functions/_lib/foundingCohort.js");
+    const idOf = (email) => sql(`select id from auth.users where email = ${lit(email)}`);
+    const admin = {
+      rpc: async (name, args) => name === "waitlist_founding_number_for_email"
+        ? { data: (() => { const v = lookup(args.p_email); return v === "" ? null : Number(v); })(), error: null }
+        : { data: null, error: { message: `not in this test: ${name}` } },
+      from: (table) => ({ select: () => ({ eq: (_c, uid) => ({ maybeSingle: async () => ({
+        data: table === "profiles" ? { founder_flag: sql(`select coalesce((select founder_flag::text from public.profiles where user_id = '${uid}'), 'false')`) === "true" } : null,
+        error: null }) }) }) }),
+    };
+    const linkUser = (email) => ({ email, email_confirmed_at: "2026-10-20T00:00:00Z", app_metadata: { email_confirmation: "link" } });
+    const buy = (email) => mayBuyFoundingPrice(admin, idOf(email), linkUser(email));
+    t.eq([await buy(fiftieth), await buy(fiftyFirst)], [true, false], "4a checkout offers the founding price to the 50th real household (#64) and refuses the 51st");
+    t.eq(await buy("app.first@example.ca"), true, "4b …to an account numbered by 0025 (#34)");
+    t.eq(await buy("real3@example.ca"), true, "4c …to a waitlist household that signed up in an app later");
+    t.eq([await buy("amanda@getgrowsmart.com"), await buy("qa@flourishmoney.app")], [false, false], "4d …never to a test address");
+    t.eq(await buy("join0@example.ca"), false, "4e …nor to a number voided when its row was marked a test");
+    t.eq(await mayBuyFoundingPrice(admin, bf, { email: "beta.founder@example.ca", email_confirmed_at: "2026-10-01T00:00:00Z", app_metadata: {} }), true,
+      "4f a beta founder keeps the founding price through the flag, outside the 50, with no number");
+    t.eq(await mayBuyFoundingPrice(admin, idOf(fiftieth), { email: fiftieth, email_confirmed_at: null, app_metadata: { email_confirmation: "link" } }), false,
+      "4g never to an address the household has not confirmed");
+    t.eq(lookup("amanda.test16@example.ca"), "", "4h a confirmed orphan's number is void: no founding price if the address comes back");
+    t.eq(sql("select public.waitlist_founding_position_for_email('app.first@example.ca')"), "34", "4i 0016's lookup name gives the same answer");
+
+    // ── 5. A second run changes nothing; start() runs once ──────────────────────────────────────────────
+    const snap = ledgerSnapshot();
+    file(M25);
+    t.eq(ledgerSnapshot(), snap, "5a a second run of 0025 changes nothing");
+    t.ok(/already run/.test(fails("select public.founding_accounts_start()") || ""), "5b a second founding_accounts_start() raises and changes nothing");
+    t.eq(ledgerSnapshot(), snap, "5c (the ledger is unchanged)");
+
+    // ── 6. Concurrency, in a second database ────────────────────────────────────────────────────────────
+    t.eq(build("c", files), [], "6a (a second database, every migration applied, 0025 included)");
+    for (let k = 1; k <= 10; k++) sql(`insert into public.waitlist (email) values ('w${k}@example.ca')`, "c");
+    sql("select public.waitlist_founding_start()", "c");
+    sql("update public.waitlist set is_test = true where email in ('w1@example.ca', 'w2@example.ca')", "c");   // 2 voids: 8 real holders
     const ids = [];
-    for (let i = 1; i <= 30; i++) ids.push(sqlc(`insert into auth.users (email, raw_app_meta_data) values ('c${i}@example.ca', '{"email_confirmation":"link"}') returning id`));
+    for (let k = 1; k <= 30; k++) ids.push(account(`c${k}@example.ca`, "link", "c"));
     const run = (q) => new Promise((ok) => {
       const p = spawn(path.join(bin, "psql"), ["-h", dir, "-p", String(port), "-U", "postgres", "-d", "c", "-v", "ON_ERROR_STOP=1", "-qAtX", "-c", q], { env });
       p.on("close", (code) => ok(code));
     });
-    // Exactly as many households as numbers left: 30 confirmations and 10 website joins at once, each after a
-    // random pause, for the 40 numbers 11 to 50. Every one must get a number; a race lost to the primary key
-    // (two reading the same count) would leave one without.
+    // 30 confirmations and 14 website joins at once for the 42 seats left: two must be refused, none may share.
     const jobs = ids.map((id) => run(`select pg_sleep(random() * 0.2); update auth.users set email_confirmed_at = clock_timestamp() where id = '${id}'`));
-    for (let i = 1; i <= 10; i++) jobs.push(run(`select pg_sleep(random() * 0.2); insert into public.waitlist (email) values ('cw${i}@example.ca')`));
+    for (let k = 1; k <= 14; k++) jobs.push(run(`select pg_sleep(random() * 0.2); insert into public.waitlist (email) values ('cw${k}@example.ca')`));
     const codes = await Promise.all(jobs);
-    t.eq(codes.filter((c) => c !== 0).length, 0, "2a 40 concurrent confirmations and joins all commit (nobody's confirmation fails because of the ledger)");
-    t.eq(sqlc("select count(*) from auth.users u where u.email like 'c%@example.ca' and exists (select 1 from public.waitlist_founding_ledger l where l.email_key = public.waitlist_email_key(u.email))") + " " +
-      sqlc("select count(founding_position) from public.waitlist where email like 'cw%'"), "30 10",
-      "2d every one of the 40 got a number: all 30 confirmed accounts and all 10 website joins");
-    t.eq(sqlc("select count(*) || ' ' || count(distinct position) || ' ' || max(position) from public.waitlist_founding_ledger"), "50 50 50",
-      "2b they never share a number: 50 issued, 50 distinct, none past 50");
-    t.eq(sqlc("select count(*) from public.waitlist w join public.waitlist_founding_ledger l on l.position = w.founding_position and l.email_key <> public.waitlist_email_key(w.email)"), "0",
-      "2c every waitlist row's number is its own in the ledger");
+    t.eq(codes.filter((c) => c !== 0).length, 0, "6b 44 concurrent confirmations and joins all commit (nobody's confirmation or join fails because of the ledger)");
+    t.eq(sql("select count(*) filter (where void_at is null) || ' ' || count(distinct position) || ' ' || count(*) from public.waitlist_founding_ledger", "c"), "50 52 52",
+      "6c exactly 50 real holders, every number distinct: the cap holds under the race");
+    t.eq(sql("select count(*) from public.waitlist w join public.waitlist_founding_ledger l on l.position = w.founding_position and l.email_key <> public.waitlist_email_key(w.email)", "c"), "0",
+      "6d every waitlist row's number is its own in the ledger");
 
-    // 7. Nothing here can be called from the browser.
-    const fns = ["founding_issue_for_key(text,text,uuid)", "founding_issue_for_account(uuid,text)", "founding_accounts_start()", "founding_on_account_confirmed()", "founding_test_address(text)", "waitlist_founding_position_for_email(text)"];
+    // ── 7. Nothing for the browser ───────────────────────────────────────────────────────────────────────
+    const fns = ["waitlist_is_test_email(text)", "founding_is_beta_founder_key(text)", "founding_issue_for_key(text,text,uuid)", "founding_issue_for_account(uuid,text)",
+      "founding_accounts_start()", "founding_on_account_confirmed()", "waitlist_assign_founding_position()", "waitlist_void_founding_on_test()",
+      "waitlist_founding_number_for_email(text)", "waitlist_founding_position_for_email(text)"];
     t.eq(fns.filter((f) => sql(`select has_function_privilege('anon', 'public.${f}', 'execute') or has_function_privilege('authenticated', 'public.${f}', 'execute')`) === "t"), [],
       "7a no founding function is executable by anon or authenticated");
-    t.eq(sql("select has_function_privilege('service_role', 'public.waitlist_founding_position_for_email(text)', 'execute')"), "t", "7b the service role (checkout) still calls the lookup");
+    t.eq(["waitlist_founding_ledger", "founding_settings", "founding_0025_cleared"].filter((tb) => sql(`select has_table_privilege('anon', 'public.${tb}', 'select') or has_table_privilege('authenticated', 'public.${tb}', 'select')`) === "t"), [],
+      "7b no founding table is readable by anon or authenticated");
+    t.eq(sql("select has_function_privilege('service_role', 'public.waitlist_founding_number_for_email(text)', 'execute')"), "t", "7c the service role (checkout) calls the lookup");
 
-    // 8. The rollback in 0021's header.
-    const header = fs.readFileSync(path.join(MIGRATIONS, "0021_founding_ledger_accounts.sql"), "utf8");
-    const rb = header.slice(header.indexOf("-- ROLLBACK"), header.indexOf("-- (tests/foundingLedger.sql.test.cjs"))
-      .split("\n").filter((l) => l.startsWith("--   ")).map((l) => l.slice(5)).join("\n");
-    fs.writeFileSync(path.join(dir, "rollback.sql"), rb);
-    file(path.join(dir, "rollback.sql"), "c");
-    t.eq(sqlc("select count(*) from information_schema.columns where table_schema='public' and table_name='waitlist_founding_ledger' and column_name in ('source','user_id')"), "0", "8a the rollback removes the two ledger columns…");
-    t.eq(sqlc("select count(*) from pg_trigger where tgname='founding_account_confirmed'") + sqlc("select count(*) from pg_proc where proname like 'founding_%'"), "00", "8b …the trigger and every new function…");
-    t.eq([sqlc("select coalesce(public.waitlist_founding_position_for_email('w4@example.ca')::text,'')"), sqlc("select coalesce(public.waitlist_founding_position_for_email('c1@example.ca')::text,'')")], ["4", ""],
-      "8c …and the lookup is 0016's again: a waitlist row's number counts, an account-only number does not (it stays spent)");
-    t.eq(sqlc("select count(*) from public.waitlist_founding_ledger"), "50", "8d (no issued number is freed by the rollback)");
+    // ── 8. The rollback ─────────────────────────────────────────────────────────────────────────────────
+    const rb = footerBlock("-- ROLLBACK");
+    t.ok(/^begin;[\s\S]*commit;$/.test(rb) && !/alter table auth\.users|drop trigger[^;]*auth\.users/.test(rb), "8a (the rollback is one block, and it never alters auth.users, which Supabase's auth admin owns)");
+    fs.writeFileSync(path.join(dir, "rb.sql"), rb);
+    const issuedBefore = sql("select count(*) from public.waitlist_founding_ledger");
+    file(path.join(dir, "rb.sql"));
+    t.eq(sql("select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'waitlist_founding_ledger' and column_name in ('source', 'user_id', 'void_at', 'void_reason')"), "0", "8b the rollback removes the four ledger columns…");
+    t.eq(sql("select count(*) from pg_proc where proname in ('founding_issue_for_key', 'founding_issue_for_account', 'founding_accounts_start', 'founding_is_beta_founder_key', 'waitlist_founding_number_for_email', 'waitlist_is_test_email', 'waitlist_void_founding_on_test')")
+      + sql("select count(*) from pg_class where relname in ('founding_settings', 'founding_0025_cleared')"), "00", "8c …every new function and table…");
+    t.eq(sql("select coalesce(founding_position::text, '-') from public.waitlist where email = 'beta.founder@example.ca'"), "32", "8d …puts back the waitlist position 0025 cleared…");
+    t.eq([sql("select coalesce(public.waitlist_founding_position_for_email('real22@example.ca')::text, '')"), sql("select coalesce(public.waitlist_founding_position_for_email('app.first@example.ca')::text, '')")], ["22", ""],
+      "8e …and the lookup is 0016's again: a waitlist row's number counts, an account-only number does not (it stays spent)");
+    t.eq([sql("select count(*) from public.waitlist_founding_ledger"), sql("select count(*) from pg_constraint where conname = 'waitlist_founding_ledger_position_check'")], [issuedBefore, "0"],
+      "8f no issued number is freed, and the 1 to 50 check stays off because numbers past 50 were issued");
+    const after = account("after.rollback@example.ca"); confirm(after);
+    t.eq(numberOf("after.rollback@example.ca"), "", "8g the trigger left on auth.users does nothing: a confirmation after the rollback takes no number");
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));
   } finally {

@@ -140,7 +140,7 @@ const CONFIRM_TIMEOUT_MS = 2000;
 // already on a list they were just told they were not on.
 // THE FOUNDING SPOTS ARE ALL TAKEN? (billing day, 2026-10-15) true, false, or null when the count cannot be
 // read. The same count /api/founding uses: the real holders, numbers issued in the ledger and not void
-// (migration 0017; a voided test number is never a household and never counts as a spot taken).
+// (migration 0025; a voided test number is never a household and never counts as a spot taken).
 async function foundingSpotsFull(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), 3000);
@@ -408,7 +408,7 @@ async function handle(event) {
           consent_version: currentVersion,
           consented_at: new Date().toISOString(),
           // Flourish's own test addresses are stored as test rows, never households (2026-10-14), so the
-          // database gives them no number. It enforces the same itself from migration 0017.
+          // database gives them no number. It enforces the same itself from migration 0025.
           ...(isTestEmail(emailAddr) ? { is_test: true } : {}),
         }),
         signal: insertController.signal,

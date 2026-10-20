@@ -28,7 +28,7 @@
 // words were approved by ChatGPT and Grok. Same CASL footer. It is the one email those rows ever get
 // (mayEmailWaitlistRow), and the sweep passes `launched` only while OPEN_SIGNUP is on.
 //
-// FAILS CLOSED. No row id, no founding number (a whole number from 1 up, migration 0017), a test row, no consent that covers the kind, no
+// FAILS CLOSED. No row id, no founding number (a whole number from 1 up, migration 0025), a test row, no consent that covers the kind, no
 // signed unsubscribe link: no email (the payload is null).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -57,7 +57,7 @@ function foundingLinkParagraphs(position) {
   return [
     "Payments for flourish are open.",
     // Never a number above 50 (Amanda, 2026-10-14, the welcome email's rule): a number past 50 was issued
-    // after test numbers were voided (migration 0017) and is still one of the first 50 real households.
+    // after test numbers were voided (migration 0025) and is still one of the first 50 real households.
     position <= FOUNDING_COHORT_LIMIT
       ? `You're founding household #${position} of ${FOUNDING_COHORT_LIMIT}, and your founding price is ready:`
       : `You're one of the first ${FOUNDING_COHORT_LIMIT} founding households, and your founding price is ready:`,
@@ -111,7 +111,7 @@ function foundingLinkHtml(position, url, version, kind = FOUNDING_LINK_KIND) {
 // The whole message for one waitlist row, or null. row: { id, founding_position, is_test, unsubscribed_at,
 // consent_version, metadata } exactly as the database returned them. opts.launched: signup is open (billing
 // day), which is what lets a pre-2026-10-01 row have its Canada launch email; without it that row gets nothing.
-// The founding link email needs a founding number (from 1 up; 0017 can issue numbers past 50 to real
+// The founding link email needs a founding number (from 1 up; 0025 can issue numbers past 50 to real
 // households); the launch email needs none (it names none).
 function foundingLinkEmailPayload(to, row, opts = {}) {
   if (typeof to !== "string" || !to.trim()) return null;

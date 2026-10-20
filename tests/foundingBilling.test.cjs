@@ -283,7 +283,7 @@ async function deliver(state, id, type, object, created = T) {
 
   // ── 7. the 0016 SQL ──────────────────────────────────────────────────────────────────────────
   {
-    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)/.test(SQL), "7a 0016 defines its lookup (billing now calls 0017's, which adds the void and test-address checks: section 10)");
+    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)/.test(SQL), "7a 0016 defines its lookup (billing now calls 0025's, which adds the void, test-address and account checks: section 10)");
     const fn = SQL.slice(SQL.indexOf("create or replace function public.waitlist_founding_position_for_email"), SQL.indexOf("$$;", SQL.indexOf("waitlist_founding_position_for_email")));
     t.ok(/where l\.email_key = public\.waitlist_email_key\(p_email\)/.test(fn) && /public\.waitlist_email_key\(w\.email\) = l\.email_key/.test(fn),
       "7b it matches by the address key, which ignores case and whitespace on both sides");
@@ -396,10 +396,10 @@ async function deliver(state, id, type, object, created = T) {
     notFounding(await asAccount({ state: unflagged }), "9j an unflagged tester not in the 50");
   }
 
-  // ── 10. 0017: void numbers, test addresses, numbers past 50 ─────────────────────────────────
+  // ── 10. 0025 (0017's rules, since 2026-10-20 in 0025): void numbers, test addresses, numbers past 50 ──
   {
-    const SQL17 = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0017_waitlist_founding_test_rows.sql"), "utf8");
-    // After 0017: numbers 1..54 issued; 18, 19, 21 and 24 were test sign-ups, now void; 50 real holders.
+    const SQL17 = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0025_founding_ledger.sql"), "utf8");
+    // After 0025: numbers 1..54 issued; 18, 19, 21 and 24 were test sign-ups, now void; 50 real holders.
     const VOID = [18, 19, 21, 24];
     const after = () => {
       const rows = [];
@@ -417,21 +417,23 @@ async function deliver(state, id, type, object, created = T) {
     // A void number, even on a row that somehow still carries it: refused.
     notFounding(await asAccount({ waitlist: [{ email: "real18@example.ca", is_test: false, founding_position: 18, void_at: "2026-10-14T00:00:00Z" }], user: acct("real18@example.ca") }),
       "10f a void number");
-    // Before 0017 is applied a test-domain row may still hold a number and is_test = false: refused anyway.
+    // Before 0025 is applied a test-domain row may still hold a number and is_test = false: refused anyway.
     const pre = await asAccount({ waitlist: [{ email: "amanda@getgrowsmart.com", is_test: false, founding_position: 19 }], user: acct(" Amanda@GetGrowSmart.com ") });
-    notFounding(pre, "10g a test-domain address holding a number, before 0017");
+    notFounding(pre, "10g a test-domain address holding a number, before 0025");
     t.eq(pre.state.rpcCalls.filter(c => /founding_.*for_email/.test(c.name)).length, 0, "10h …refused before the database is even asked");
     t.ok([cohort.isTestEmail("x@getgrowsmart.com"), cohort.isTestEmail("x@mail.flourishmoney.app"), cohort.isTestEmail("x@getgrowsmart.com.example.ca"), cohort.isTestEmail("x@notgetgrowsmart.com")].join() === "true,true,false,false",
       "10i the two test domains and their subdomains, nothing that only contains them");
     // The SQL billing calls.
     const fn = SQL17.slice(SQL17.indexOf("create or replace function public.waitlist_founding_number_for_email"), SQL17.indexOf("$$;", SQL17.indexOf("function public.waitlist_founding_number_for_email")));
-    t.ok(fn.length > 200 && /and l\.void_at is null/.test(fn) && /and l\.ended_at is null/.test(fn) && /and not w\.is_test/.test(fn)
-      && /and not public\.waitlist_is_test_email\(p_email\)/.test(fn) && /w\.founding_position = l\.position/.test(fn) && !/between 1 and 50/.test(fn),
-      "10j 0017's lookup: not void, not ended, not a test row or a test address, still held by that row, any number from 1 up");
+    t.ok(fn.length > 200 && /and l\.void_at is null/.test(fn) && /and l\.ended_at is null/.test(fn) && /where public\.waitlist_email_key\(t\.email\) = l\.email_key and t\.is_test/.test(fn)
+      && /and not public\.waitlist_is_test_email\(p_email\)/.test(fn) && /w\.founding_position = l\.position/.test(fn) && /or l\.user_id is not null/.test(fn) && !/between 1 and 50/.test(fn),
+      "10j 0025's lookup: not void, not ended, not a test row or a test address, held by that row or recorded against an account, any number from 1 up");
+    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)[\s\S]{0,200}select public\.waitlist_founding_number_for_email\(p_email\);/.test(SQL17),
+      "10j2 0016's lookup name gives the same answer, so no caller can read the old rule");
     t.ok(/revoke all on function public\.waitlist_founding_number_for_email\(text\) from public, anon, authenticated;/.test(SQL17)
       && /grant execute on function public\.waitlist_founding_number_for_email\(text\) to service_role;/.test(SQL17), "10k only the service role may call it");
     const code = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingCohort.js"), "utf8");
-    t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(code) && !/rpc\("waitlist_founding_position_for_email"/.test(code), "10l billing calls 0017's lookup, not 0016's");
+    t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(code) && !/rpc\("waitlist_founding_position_for_email"/.test(code), "10l billing calls 0025's lookup by its own name");
   }
 
   process.env = savedEnv;

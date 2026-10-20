@@ -9,7 +9,7 @@
 //      they were promised. They are outside the 50: this never reads or touches the waitlist.
 //   3. THE FIRST 50 ON THE WAITLIST. Otherwise the account's confirmed email must hold a waitlist
 //      founding number, on a row that is not a test row, that is not void and whose founding
-//      subscription has never ended. Since 0017 numbers can run past 50: a test row's number is voided
+//      subscription has never ended. Since 0025 numbers can run past 50: a test row's number is voided
 //      and never reissued, and the database caps the REAL holders at 50, not the highest number.
 // Everyone else is offered the regular prices.
 //
@@ -22,7 +22,7 @@
 // THE SERVER DECIDES. The client sends a plan key and nothing else; it is told whether the founding
 // price is available to this account, never a position or a count.
 //
-// The match runs in Postgres (waitlist_founding_number_for_email, migration 0017), which ignores case
+// The match runs in Postgres (waitlist_founding_number_for_email, migration 0025), which ignores case
 // and whitespace on both sides and skips test rows, test addresses and void numbers. The address is normalised here as well, so
 // the question asked is the same either way.
 //
@@ -41,11 +41,11 @@
 "use strict";
 
 // The size of the founding cohort: how many REAL households may hold a founding number. One place. See
-// docs/ops/BILLING-SETUP.md. The insert trigger in 0017 carries the same 50.
+// docs/ops/BILLING-SETUP.md. The issuing rule in 0025 (founding_issue_for_key) carries the same 50.
 const FOUNDING_COHORT_LIMIT = 50;
 
 // Sign-ups from these domains are Flourish's own tests, never households (Amanda, 2026-10-14). A
-// subdomain counts too. Migration 0017's waitlist_is_test_email() holds the same two.
+// subdomain counts too. Migration 0025's waitlist_is_test_email() holds the same two.
 const TEST_EMAIL_DOMAINS = ["getgrowsmart.com", "flourishmoney.app"];
 
 // Case and whitespace never matter. An email address cannot contain whitespace, so all of it goes.
@@ -62,7 +62,7 @@ function isTestEmail(email) {
 }
 
 // A founding number as the database issues it: a whole number from 1 up. Numbers past 50 exist once a
-// test row's number has been voided (0017); the database, not this check, keeps the holders to 50.
+// test row's number has been voided (0025); the database, not this check, keeps the holders to 50.
 function isFoundingPosition(p) {
   return Number.isInteger(p) && p >= 1;
 }

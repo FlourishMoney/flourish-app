@@ -164,7 +164,7 @@ does not arrive by webhook.
   2. **Beta founders** (`profiles.founder_flag`) keep the founding price. They are outside the 50:
      the waitlist is never read or written for them.
   3. **The first 50 on the waitlist.** Otherwise the account's confirmed email must hold a waitlist
-     founding number (`waitlist_founding_number_for_email`, migration 0017), on a row that is not
+     founding number (`waitlist_founding_number_for_email`, migration 0025), on a row that is not
      a test row and not at a test domain (getgrowsmart.com, flourishmoney.app), whose number is not
      void and whose founding subscription never ended. A test row's number is void: never reissued
      and never counted. The database stops issuing numbers once 50 REAL households hold one, so

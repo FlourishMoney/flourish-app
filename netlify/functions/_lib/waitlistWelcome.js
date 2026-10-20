@@ -33,7 +33,7 @@ const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 
 // The copy. Do not add claims, launch dates, prices, trials, plans or offers: the one promise is the
 // launch-day email. THE ONE EXCEPTION is the founding line (Amanda's decision, 2026-10-06): a row the
-// database gave a founding number (migrations 0014, 0017), and that is not a test row, gets foundingWelcomeLine() as its second
+// database gave a founding number (migrations 0014, 0025), and that is not a test row, gets foundingWelcomeLine() as its second
 // paragraph, and no other row gets any offer line. The words are in _lib/foundingWaitlist.js. The person consented (CASL, consent version in _lib/waitlistConsent.js) to that email
 // "plus a few updates before then", so this message says so, carries the sender's identity and a working
 // one-click unsubscribe link, and goes out with List-Unsubscribe headers. That replaces the 2026-09-19

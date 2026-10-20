@@ -3,17 +3,17 @@
  * netlify/functions/founding.js   (GET /api/founding)
  *
  * Answers {"spotsLeft": N, "openSignup": true|false}: 50 less the real holders (founding numbers issued
- * and not void, migration 0017), never below 0, and whether signup is open (the same public answer as
+ * and not void, migration 0025), never below 0, and whether signup is open (the same public answer as
  * beta.js signup_status, from OPEN_SIGNUP). The landing reads both from this one call to pick its
  * waitlist form (src/lib/signupUi.js). No address, no id, no row leaves through this function, and it
  * takes no input.
  *
  * Real holders are the numbers in public.waitlist_founding_ledger (migration 0014) that are not void
- * (migration 0017). Every number ever issued is recorded and none is ever freed: a household that never
+ * (migration 0025). Every number ever issued is recorded and none is ever freed: a household that never
  * pays, whose founding subscription ended, or whose waitlist row was deleted still holds its number. A
  * test row's number is void: it never counts as a household and is never issued again.
  *
- * Until 0017 is applied there is no void_at column, PostgREST answers 400, and the page shows no number.
+ * Until 0025 is applied there is no void_at column, PostgREST answers 400, and the page shows no number.
  *
  * If the count cannot be read (no env, Supabase down or slow, migration 0014 not applied yet, a reply
  * without a count) it answers 503 {"error":"unavailable"} and the landing page shows no number. An EMPTY

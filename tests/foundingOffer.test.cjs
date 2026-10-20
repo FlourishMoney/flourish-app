@@ -296,72 +296,91 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       "7f under 960px the desktop words are hidden; from 960px the phone words are");
   }
 
-  // ── 8. Test sign-ups never hold a founding number (0017, 2026-10-14) ─────────────────────────
+  // ── 8. Test sign-ups never hold a founding number (0017, 2026-10-14; since 2026-10-20 in 0025) ─────
+  // 0025 replaces 0017 (PR #69) and 0021 (PR #83): one issuing rule, founding_issue_for_key, for the waitlist
+  // trigger and for confirmed accounts. tests/foundingLedger.sql.test.cjs runs it in a real Postgres.
   {
-    const raw = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0017_waitlist_founding_test_rows.sql"), "utf8");
+    const raw = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0025_founding_ledger.sql"), "utf8");
     const sql = stripSql(raw);
     const body = (name) => { const i = sql.indexOf(`function public.${name}(`); return i < 0 ? "" : sql.slice(i, sql.indexOf("$$;", sql.indexOf("$$", i) + 2)); };
-    const ins = body("waitlist_assign_founding_position"), upd = body("waitlist_void_founding_on_test");
-    t.ok(/add column if not exists void_at timestamptz/.test(sql), "8a the ledger can mark a number void");
-    // Rejoin of a test-domain email stays test; a test row never enters the ledger.
-    const domAt = ins.indexOf("if public.waitlist_is_test_email(new.email) then\n    new.is_test := true;"), testAt = ins.indexOf("if new.is_test then\n    return new;"), ledgerAt = ins.indexOf("insert into public.waitlist_founding_ledger");
-    t.ok(domAt > 0 && testAt > domAt && ledgerAt > testAt, "8b a join from a test address is stored as a test row before anything else, and gets no number (a rejoin too)");
+    const ins = body("waitlist_assign_founding_position"), upd = body("waitlist_void_founding_on_test"), issue = body("founding_issue_for_key");
+    t.ok(/add column if not exists void_at timestamptz/.test(sql) && /void_reason in \('test', 'beta_founder'\)/.test(sql), "8a the ledger can mark a number void, and says why (a test, a beta founder)");
+    // Rejoin of a test-domain email stays test; a test row never reaches the issuing rule.
+    const domAt = ins.indexOf("if public.waitlist_is_test_email(new.email) then\n    new.is_test := true;"), testAt = ins.indexOf("if new.is_test then\n    return new;"), issueAt = ins.indexOf("public.founding_issue_for_key(k, 'waitlist', null)");
+    t.ok(domAt > 0 && testAt > domAt && issueAt > testAt, "8b a join from a test address is stored as a test row before anything else, and gets no number (a rejoin too)");
+    t.ok(!/insert into public\.waitlist_founding_ledger/.test(ins) && /insert into public\.waitlist_founding_ledger \(position, email_key, source, user_id\)/.test(issue),
+      "8b2 the waitlist trigger issues through the one rule; only founding_issue_for_key writes the ledger");
     // Void numbers never reissue: the next number is past the highest ever issued, and a voided household rejoining gets nothing back.
-    t.ok(/select coalesce\(max\(position\), 0\) \+ 1 into next_position from public\.waitlist_founding_ledger;/.test(ins) && !/void_at is not null/.test(ins),
+    t.ok(/select coalesce\(max\(position\), 0\) \+ 1 into next_position from public\.waitlist_founding_ledger;/.test(issue),
       "8c a new number is always past the highest ever issued, so a void number is never issued again");
-    t.ok(/if prior_void is null and not exists/.test(ins), "8d a household whose number was voided does not get it back by rejoining");
+    t.ok(/if prior_void is not null then\s+return null;/.test(issue), "8d a household whose number was voided does not get it back, by rejoining or by an account");
     // 50 real holders, not the highest number.
-    t.ok(/select count\(\*\) into holders from public\.waitlist_founding_ledger where void_at is null;\s+if holders >= 50 then\s+return new;/.test(ins),
-      "8e numbers stop when 50 REAL households hold one: the 51st real household gets none");
-    const lockAt = ins.indexOf("pg_advisory_xact_lock(hashtext('public.waitlist.founding_position'))");
-    t.ok(lockAt > testAt && lockAt < ins.indexOf("into holders") && /pg_advisory_xact_lock\(hashtext\('public\.waitlist\.founding_position'\)\)/.test(upd),
-      "8f the count and the pick run under 0014's lock, and so does voiding, so simultaneous sign-ups cannot pass 50");
-    t.ok(/if new\.is_test and old\.founding_position is not null then/.test(upd) && /set void_at = now\(\)\s+where position = old\.founding_position and void_at is null;/.test(upd)
-      && /new\.founding_position := null;/.test(upd), "8g marking a row as a test row voids its number and clears the row");
+    t.ok(/select count\(\*\) into holders from public\.waitlist_founding_ledger where void_at is null;\s+if holders >= 50 then\s+return null;/.test(issue),
+      "8e numbers stop when 50 REAL households hold one: the 51st real household gets none, from either side");
+    const lockAt = issue.indexOf("pg_advisory_xact_lock(hashtext('public.waitlist.founding_position'))");
+    t.ok(lockAt > 0 && lockAt < issue.indexOf("into holders") && /pg_advisory_xact_lock\(hashtext\('public\.waitlist\.founding_position'\)\)/.test(upd)
+      && ins.indexOf("pg_advisory_xact_lock") > testAt, "8f the count and the pick run under 0014's lock, and so does voiding, so simultaneous arrivals cannot pass 50");
+    t.ok(/if public\.founding_is_beta_founder_key\(p_key\) then\s+return null;/.test(issue), "8f2 a beta founder's address never takes a number: beta founders are outside the 50");
+    t.ok(/if new\.is_test and not old\.is_test then/.test(upd) && /set void_at = now\(\), void_reason = 'test'\s+where void_at is null\s+and \(position = old\.founding_position or email_key = public\.waitlist_email_key\(new\.email\)\);/.test(upd)
+      && /new\.founding_position := null;/.test(upd), "8g marking a row as a test row voids its number, and any number its address holds, and clears the row");
     t.ok(/before update of is_test on public\.waitlist/.test(sql), "8h …whenever is_test is set, not only by this migration");
     t.ok(/check \(position >= 1\)/.test(sql) && /check \(founding_position is null or founding_position >= 1\)/.test(sql), "8i numbers may run past 50 (the cap is the count of real holders)");
-    // The data change: the two domains, and test rows still holding a number. Nothing deleted, no address named.
+    // The data change: the two domains, test rows still holding a number, beta founders. Nothing deleted, no address named.
     const updates = sql.match(/update public\.waitlist\s[\s\S]*?;/g) || [];
-    t.eq(updates.length, 1, "8j one data change in the waitlist");
-    t.ok(/set is_test = true\s+where \(public\.waitlist_is_test_email\(email\) and not is_test\)\s+or \(is_test and founding_position is not null\);/.test(updates[0] || ""),
-      "8k …every row at a test domain, and every test row that still holds a number");
+    t.eq(updates.length, 3, "8j three data changes in the waitlist");
+    t.ok(/set is_test = true\s+where public\.waitlist_is_test_email\(email\) and not is_test;/.test(updates[0] || "")
+      && /set founding_position = null where is_test and founding_position is not null;/.test(updates[1] || "")
+      && /set founding_position = null\s+where w\.founding_position is not null and public\.founding_is_beta_founder_key/.test(updates[2] || ""),
+      "8k …every row at a test domain becomes a test row; test rows and beta founders' rows give up their numbers");
+    t.ok(/insert into public\.founding_0025_cleared \(waitlist_id, founding_position, reason\)\s+select w\.id, w\.founding_position, 'test'/.test(sql)
+      && /insert into public\.founding_0025_cleared \(waitlist_id, founding_position, reason\)\s+select w\.id, w\.founding_position, 'beta_founder'/.test(sql),
+      "8k2 …and each cleared position is kept first, for the rollback");
     t.ok(!/\bdelete\s+from\b|\btruncate\b|\bdrop\s+(table|column)\b/i.test(sql), "8l nothing is deleted: void numbers stay in the ledger");
     t.ok(!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(raw), "8m no email address is written in the migration");
     // One list of test domains, in SQL and in JS.
     const C = require(path.join(REPO, "netlify", "functions", "_lib", "foundingCohort.js"));
     const sqlDomains = (/\(getgrowsmart\\\.com\|flourishmoney\\\.app\)/.exec(sql) || [""])[0];
     t.ok(sqlDomains && C.TEST_EMAIL_DOMAINS.join() === "getgrowsmart.com,flourishmoney.app", "8n the database and the functions hold the same two test domains");
-    t.ok(raw.includes(`'@([a-z0-9-]+\\.)*(getgrowsmart\\.com|flourishmoney\\.app)$'`) && (raw.match(/\(getgrowsmart\\\.com\|flourishmoney\\\.app\)\$'/g) || []).length === 2,
-      "8o the dry run uses the very same pattern as the function");
-    for (const f of ["waitlist_is_test_email(text)", "waitlist_assign_founding_position()", "waitlist_void_founding_on_test()", "waitlist_founding_number_for_email(text)"]) {
+    const fullPattern = raw.split(`'@([a-z0-9-]+\\.)*(getgrowsmart\\.com|flourishmoney\\.app)$'`).length - 1;
+    const anyPattern = (raw.match(/\(getgrowsmart\\\.com\|flourishmoney\\\.app\)\$'/g) || []).length;
+    t.ok(fullPattern >= 3 && fullPattern === anyPattern, `8o the function and the dry run use the very same pattern, subdomains included, every time (${fullPattern})`);
+    for (const f of ["waitlist_is_test_email(text)", "waitlist_assign_founding_position()", "waitlist_void_founding_on_test()", "founding_issue_for_account(uuid, text)",
+      "waitlist_founding_number_for_email(text)", "waitlist_founding_position_for_email(text)"]) {
       const e = f.replace(/[()]/g, "\\$&");
       t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(sql) && new RegExp(`grant execute on function public\\.${e} to service_role;`).test(sql), `8p explicit grants: ${f}, service role only`);
+    }
+    for (const f of ["founding_is_beta_founder_key(text)", "founding_issue_for_key(text, text, uuid)", "founding_on_account_confirmed()", "founding_accounts_start()"]) {
+      const e = f.replace(/[()]/g, "\\$&");
+      t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(sql) && !new RegExp(`grant execute on function public\\.${e}`).test(sql), `8p2 ${f}: nobody calls it directly`);
     }
     // Spots left = 50 - real holders.
     const ok = await callEndpoint({ supabase: { range: "0-23/24" } });
     t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 real holders (28 issued, 4 void): 26 spots left (with main's openSignup flag)");
     t.ok(/void_at=is\.null/.test(ok.calls[0].url), "8r …counted from the numbers that are not void");
-    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s before 0017 (no void_at column): no number, never the old count");
-    // Step 9 (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
+    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s before 0025 (no void_at column): no number, never the old count");
+    // Step 11b (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
     const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
-    const step9 = (sql.match(/update public\.waitlist_founding_ledger l\s[\s\S]*?;/g) || []);
-    t.eq(step9.length, 1, "8t one ledger update in the data step: the confirmed test numbers");
-    const s9 = step9[0] || "";
-    t.ok(s9.includes(`where l.position in (${PROD_TEST_NUMBERS})`) && /set void_at = now\(\)/.test(s9), "8u …voids exactly 16 to 21 and 23 to 28, by number (22 is a real household)");
+    const listed = (sql.match(/update public\.waitlist_founding_ledger l set void_at = now\(\), void_reason = 'test'\s+where l\.position in [\s\S]*?;/g) || []);
+    t.eq(listed.length, 1, "8t one ledger update voids by number: the confirmed test numbers");
+    const s9 = listed[0] || "";
+    t.ok(s9.includes(`where l.position in (${PROD_TEST_NUMBERS})`), "8u …exactly 16 to 21 and 23 to 28, by number (22 is a real household)");
     t.ok(/and not exists \(select 1 from public\.waitlist w where w\.founding_position = l\.position\)/.test(s9)
-      && /and not exists \(select 1 from public\.waitlist w where not w\.is_test and public\.waitlist_email_key\(w\.email\) = l\.email_key\)/.test(s9),
-      "8v …only where no waitlist row holds the number, and no household's row has its address: a real row is never voided by the list");
+      && /and not exists \(select 1 from public\.waitlist w where not w\.is_test and public\.waitlist_email_key\(w\.email\) = l\.email_key\)/.test(s9)
+      && /and l\.user_id is null/.test(s9) && /and l\.issued_at < timestamptz '2026-10-14 00:00:00\+00'/.test(s9),
+      "8v …only a number issued before 2026-10-14 that no waitlist row holds, no household's row has the address of and no account is recorded against");
     t.ok(/and l\.void_at is null/.test(s9), "8w …and only numbers not already void, so a second run changes nothing");
-    t.ok(raw.includes("Amanda confirmed 2026-10-14: test sign-ups, rows deleted by her"), "8x …commented as Amanda confirmed it");
+    t.ok(raw.includes("Amanda confirmed 2026-10-14: these twelve numbers went to her own test sign-ups"), "8x …commented as Amanda confirmed it");
     const dry = raw.slice(raw.indexOf("READ-ONLY DRY RUN"), raw.indexOf("READ-ONLY CHECK AFTERWARDS"));
-    const after = raw.slice(raw.indexOf("READ-ONLY CHECK AFTERWARDS"));
-    t.ok(["positions_to_void", "issued_at_et", "issued_now", "real_holders_after", "spots_left_after"].every((c) => dry.includes(` as ${c}`)) && dry.includes(`(${PROD_TEST_NUMBERS})`),
-      "8y the dry run shows the positions it will void, when they were issued, issued_now, real_holders_after and spots_left_after");
-    t.ok(["voided_positions", "issued_now", "real_holders_after", "spots_left_after", "next_number"].every((c) => after.includes(` as ${c}`)), "8z …and the check afterwards the same, plus the next number");
-    t.ok(/real_holders_after 16, spots_left_after 34/.test(dry) && /real_holders_after 16, spots_left_after 34, next_number 29/.test(after), "8z2 both state the expected production result: 16 real holders, 34 spots left, next number 29");
-    const dryOut = dry.slice(dry.lastIndexOf("select (select array_agg"), dry.indexOf("Expected in production"));
-    const afterOut = after.slice(after.indexOf("select array_agg"), after.indexOf("from public.waitlist_founding_ledger;"));
-    t.ok(dryOut.length > 50 && afterOut.length > 50 && !/email/i.test(dryOut.replace(/email_key/g, "")) && !/email/i.test(afterOut), "8z3 neither query returns an address: their output columns are numbers and dates");
+    const after = raw.slice(raw.indexOf("READ-ONLY CHECK AFTERWARDS"), raw.indexOf("A TEST ACCOUNT FOUND LATER"));
+    t.ok(["issued_now", "spots_left_now", "void_test_rows", "void_confirmed_orphans", "void_beta_founders", "issued_since_oct_14", "real_holders_after_voids", "accounts_to_number", "accounts_numbered", "spots_left_after"]
+      .every((c) => dry.includes(` as ${c}`)) && dry.includes(`(${PROD_TEST_NUMBERS})`),
+      "8y the dry run shows what it will void and why, how many were issued since Oct 14, the accounts it will number, and spots_left_after");
+    t.ok(["issued", "real_holders", "spots_left", "void_test", "void_beta_founders", "from_accounts", "next_number", "accounts_take_seats"].every((c) => after.includes(` as ${c}`)), "8z …and the check afterwards");
+    t.ok(/spots_left must equal the dry run's spots_left_after/.test(after), "8z2 the check says its spots_left must equal the dry run's spots_left_after (tests/foundingLedger.sql.test.cjs proves it does)");
+    const dryOut = dry.slice(dry.indexOf("--   select (select count(*) from ledger)"));
+    const afterOut = after.slice(after.indexOf("--   select count(*)"), after.indexOf("from public.waitlist_founding_ledger;"));
+    t.ok(dryOut.length > 50 && afterOut.length > 50 && !/email/i.test(dryOut.replace(/email_key|email_confirmation|email_confirmed_at|u\.email/g, "")) && !/email/i.test(afterOut),
+      "8z3 neither query returns an address: their output columns are numbers and true/false");
   }
 
   t.summary("foundingOffer.test");

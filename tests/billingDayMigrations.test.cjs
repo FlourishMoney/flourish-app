@@ -3,7 +3,8 @@
 // MONDAY'S THREE MIGRATIONS (2026-10-26): 0009, then 0010, then 0016, against production as it is.
 //
 // Production has 0014 and 0015 applied and waitlist_founding_start() already run once; it does not
-// have public.subscriptions (0009 and 0010 were never applied) and does not have 0017 (PR #69, held).
+// have public.subscriptions (0009 and 0010 were never applied). 0025 (the founding ledger, which replaced
+// 0017 and 0021 on 2026-10-20) runs after the three; tests/foundingLedger.sql.test.cjs proves it.
 // scripts/billing-day-proof/run.sh proves the order on a throwaway Postgres seeded to that shape. This
 // file pins the same facts offline, in the gate, so an edit to any of the three that would change
 // Monday's answer fails here first:
@@ -18,9 +19,8 @@
 //      get null.
 //   6. Grants: every new table has RLS and a service_role grant in its own file; every new function
 //      is revoked from PUBLIC, anon and authenticated and granted to the service role only.
-//   7. The proof script stays local. 0017 lives on PR #69's branch (this one, once merged from main) and is
-//      not part of Monday's runbook.
-//   8. The runbook (docs/ops/BILLING-DAY-OCT-26.md) runs the same three, in the same order, and every
+//   7. The proof script stays local, and runs 0025 from the tree with --with-0025.
+//   8. The runbook (docs/ops/BILLING-DAY-OCT-26.md) runs the same three, then 0025, in that order, and every
 //      SQL block it gives is read-only.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -100,24 +100,22 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     t.ok(new RegExp(`grant execute on function public\\.${esc} to service_role`).test(sql[M0016]), `6g ${fn}: the service role may call it`);
   }
 
-  // ── 7. the proof stays local; 0017 is not here ───────────────────────────────────────────────────
+  // ── 7. the proof stays local; 0025 replaced 0017 and 0021 ────────────────────────────────────────
   const proofDir = path.join(REPO, "scripts", "billing-day-proof");
-  const proof = ["run.sh", "seed.sql", "checks.sql", "checks-0017.sql", "local-shims.sql"].map(f => {
+  const proof = ["run.sh", "seed.sql", "checks.sql", "checks-0025.sql", "local-shims.sql"].map(f => {
     const p = path.join(proofDir, f);
     return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
   });
-  t.ok(proof.every(Boolean), "7a scripts/billing-day-proof has run.sh, seed.sql, checks.sql, checks-0017.sql and local-shims.sql");
+  t.ok(proof.every(Boolean), "7a scripts/billing-day-proof has run.sh, seed.sql, checks.sql, checks-0025.sql and local-shims.sql");
   t.ok(/-U supabase_admin -d postgres/.test(proof[0]) && !/-h localhost[^\n]*supabase_admin|supabase_admin[^\n]*-h localhost/.test(proof[0]),
     "7a2 the local shims run as the container's own supabase_admin, over its socket");
   t.ok(!proof.some(s => /supabase\.co|pooler|SUPABASE_URL|SUPABASE_SECRET|DATABASE_URL/i.test(s)), "7b the proof names no production host, URL or key");
   t.ok(!/docker run[^\n]*\s-p\s/.test(proof[0]) && /trap cleanup EXIT/.test(proof[0]), "7c its container publishes no port and is removed on exit");
-  t.ok(/git -C "\$REPO" show origin\/founding-test-rows:/.test(proof[0]) && !/git (checkout|switch|merge|rebase|push)/.test(proof[0]),
-    "7d it reads the held 0017 with git show and never checks out, merges or pushes");
+  t.ok(/as_one_query "\$MIG\/0025_founding_ledger\.sql"/.test(proof[0]) && !/\bgit\b/.test(proof[0]),
+    "7d it runs 0025 from this tree, as one query, and never runs git");
   t.ok(!proof.slice(1).some(s => /@(?!example\.test|getgrowsmart\.com)[a-z0-9-]+\.[a-z]/i.test(s)), "7e its addresses are made up (example.test, and the test domain)");
-  // On main while PR #69 is held, 0017 was absent. This IS PR #69's branch: 0017 is here, once, and the
-  // runbook still says Monday does not run it (8d). It reaches main only when Amanda merges #69 after her
-  // dry run.
-  t.eq(fs.readdirSync(MIG).filter(f => /^0017/.test(f)), ["0017_waitlist_founding_test_rows.sql"], "7f PR #69's branch: 0017 is here, exactly once (held from Monday's runbook, 8d)");
+  // 0025 replaced 0017 (PR #69) and 0021 (PR #83) on 2026-10-20: one founding migration, run after 0016 (8b).
+  t.eq(fs.readdirSync(MIG).filter(f => /^00(17|21|25)_/.test(f)), ["0025_founding_ledger.sql"], "7f 0025 is here, exactly once; 0017 and 0021 are gone");
 
   // ── 8. the runbook (docs/ops/BILLING-DAY-OCT-26.md) says the same thing ───────────────────────────
   {
@@ -125,9 +123,9 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     const doc = fs.existsSync(docPath) ? fs.readFileSync(docPath, "utf8") : "";
     t.ok(doc.length > 0, "8a docs/ops/BILLING-DAY-OCT-26.md exists");
     const runs = [...doc.matchAll(/^### 2\.\d Run `supabase\/migrations\/([0-9]{4})_[a-z_]+\.sql`/gm)].map(m => m[1]);
-    t.eq(runs, ["0009", "0010", "0016"], "8b it runs 0009, then 0010, then 0016, and nothing else");
-    for (const f of [M0009, M0010, M0016]) t.ok(fs.existsSync(path.join(MIG, f)) && doc.includes(`supabase/migrations/${f}`), `8c the file it names exists: ${f}`);
-    t.ok(/\*\*Not\*\* 0017, \*\*not\*\* `waitlist_founding_start\(\)`/.test(doc), "8d it says not to run 0017 or waitlist_founding_start()");
+    t.eq(runs, ["0009", "0010", "0016", "0025"], "8b it runs 0009, then 0010, then 0016, then 0025, and nothing else");
+    for (const f of [M0009, M0010, M0016, "0025_founding_ledger.sql"]) t.ok(fs.existsSync(path.join(MIG, f)) && doc.includes(`supabase/migrations/${f}`), `8c the file it names exists: ${f}`);
+    t.ok(/\*\*Not\*\* `waitlist_founding_start\(\)`, \*\*not\*\* `founding_accounts_start\(\)` by hand/.test(doc), "8d it says not to run waitlist_founding_start(), nor founding_accounts_start() by hand");
     const blocks = [...doc.matchAll(/```sql\n([\s\S]*?)```/g)].map(m => m[1]);
     t.ok(blocks.length >= 4, `8e it has a check for each migration (${blocks.length} SQL blocks)`);
     const WRITES = /\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|comment on|call|do)\b|waitlist_founding_start|waitlist_founding_mark_ended/i;
@@ -139,7 +137,7 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     t.ok(/curl -s -o \/dev\/null -w '%\{http_code\}\\n' -X POST https:\/\/flourishmoney\.app\/api\/billing/.test(doc), "8i it gives the no-secret on/off check (401 on, 404 off)");
     for (const h of ["## Monday, in order", "## 3. Turn billing on", "## 4. The first smoke purchase, and its refund", "## 5. Open signup",
       "## 6. The founding link email", "## 7. The first hour",
-      "## 8. The stop condition, and turning billing off", "## 9. What cannot be undone once a real charge clears", "## 10. Holding 0017 (PR #69): what it means on Monday",
+      "## 8. The stop condition, and turning billing off", "## 9. What cannot be undone once a real charge clears", "## 10. The founding ledger (0025): what it means on Monday",
       "## 11. Reported, not fixed: what could stop a household paying, or getting what it paid for"]) {
       t.ok(doc.includes(h), `8j it has the section "${h.replace(/^## /, "")}"`);
     }
@@ -149,9 +147,9 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     const glance = (doc.match(/## Monday, in order\n([\s\S]*?)\n---/) || ["", ""])[1];
     const steps = [...glance.matchAll(/^(\d+)\. (.*)$/gm)].map(m => m[2]);
     const at = (rx) => steps.findIndex(x => rx.test(x));
-    const order = [/^Run 0009/, /^Run 0010/, /^Run 0016/, /^Stripe pre-checks:/, /^`BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`/, /^Smoke purchase/, /^`OPEN_SIGNUP=true`/, /^`FOUNDING_LINK_EMAIL=true`/].map(at);
+    const order = [/^Run 0009/, /^Run 0010/, /^Run 0016/, /^Run 0025/, /^Stripe pre-checks:/, /^`BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`/, /^Smoke purchase/, /^`OPEN_SIGNUP=true`/, /^`FOUNDING_LINK_EMAIL=true`/].map(at);
     t.ok(order.every(i => i >= 0) && order.every((i, k) => k === 0 || i > order[k - 1]),
-      "8m Monday, in order: 0009, 0010, 0016, the Stripe pre-checks (portal and tax), billing and tax on together, the smoke purchase, OPEN_SIGNUP, the founding link email");
+      "8m Monday, in order: 0009, 0010, 0016, 0025, the Stripe pre-checks (portal and tax), billing and tax on together, the smoke purchase, OPEN_SIGNUP, the founding link email");
     t.ok(/`OPEN_SIGNUP=true`, Production, Trigger deploy \(\*\*D2\*\*\)/.test(glance), "8n OPEN_SIGNUP comes with its own deploy (D2)");
     const signupSec = doc.slice(doc.indexOf("## 5. Open signup"), doc.indexOf("## 6. The founding link email"));
     t.ok(/add `OPEN_SIGNUP`, value exactly `true`/.test(signupSec) && /Trigger deploy → Deploy site/.test(signupSec) && /\{"action":"signup_status"\}/.test(signupSec),

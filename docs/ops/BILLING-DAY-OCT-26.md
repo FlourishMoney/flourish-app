@@ -21,14 +21,15 @@ Before Monday: section 1 (including Stripe Tax: the GST/HST registration, settin
 2. Run 0009, then its read-only check (2.2).
 3. Run 0010, then its read-only check (2.3).
 4. Run 0016, then its read-only check (2.4).
-5. Stripe pre-checks: `node scripts/stripe-portal-check.cjs` and `node scripts/stripe-tax-check.cjs` both say `OK` (section 3, step 1): the portal cannot sell the founding price, the GST/HST registration is active in Stripe Tax, and every price is tax-exclusive. Not OK: stop.
-6. `BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`, both Production, one Trigger deploy (**D1**); the curl answers 401 (section 3).
-7. Smoke purchase: Monthly on Amanda's own card; the receipt shows tax; the read-only checks, refund, cancel (section 4).
-8. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
-9. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**): the founding link emails, and the launch email for the `pre-2026-10-01` rows (section 6).
-10. Watch the first hour (section 7). Stop if section 8 says so.
+5. Run 0025 (the founding ledger): its dry run first, then the file, then its read-only check (2.5).
+6. Stripe pre-checks: `node scripts/stripe-portal-check.cjs` and `node scripts/stripe-tax-check.cjs` both say `OK` (section 3, step 1): the portal cannot sell the founding price, the GST/HST registration is active in Stripe Tax, and every price is tax-exclusive. Not OK: stop.
+7. `BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`, both Production, one Trigger deploy (**D1**); the curl answers 401 (section 3).
+8. Smoke purchase: Monthly on Amanda's own card; the receipt shows tax; the read-only checks, refund, cancel (section 4).
+9. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
+10. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**): the founding link emails, and the launch email for the `pre-2026-10-01` rows (section 6).
+11. Watch the first hour (section 7). Stop if section 8 says so.
 
-Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
+Not `waitlist_founding_start()`, and not `founding_accounts_start()` by hand (0025 runs it once itself). No merges to `main` on Monday.
 
 
 ---
@@ -70,7 +71,8 @@ Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
    and with signup shut a full 30-seat beta cap refuses even a valid invite code (section 11, item 1).
    So `OPEN_SIGNUP=true` goes in on Monday, after the smoke purchase and before the founding link email
    (section 6), which tells them to sign in or create an account.
-7. **PR #69 (0017) stays held** unless Amanda decides otherwise. Section 10 says what that means Monday.
+7. **0025 replaced 0017 (PR #69) and 0021 (PR #83)**, on Amanda's word of 2026-10-20: one founding migration,
+   run on Monday after 0016 (2.5). Section 10 says what it changes.
 8. **No merges to `main` on Monday.** "Deploy site" builds the latest `main`; Monday's deploys should all
    be the same code.
 
@@ -79,10 +81,11 @@ Not 0017. Not `waitlist_founding_start()`. No merges to `main` on Monday.
 ## 2. Migrations, in this order
 
 Production today: 0014 and 0015 applied, `waitlist_founding_start()` already run once (do **not** run it
-again; a second call raises an error and changes nothing). `public.subscriptions` does not exist. 0017 is
+again; a second call raises an error and changes nothing). `public.subscriptions` does not exist. 0025 is
 not applied.
 
-**The order is 0009, then 0010, then 0016.** 0016 adds a column to `public.subscriptions`, which 0009
+**The order is 0009, then 0010, then 0016, then 0025.** 0025 needs 0014 and 0015 only, but its lookup and
+the founding columns are written to sit on top of 0016's, so it runs last. 0016 adds a column to `public.subscriptions`, which 0009
 creates: run 0016 first and it fails with "relation public.subscriptions does not exist". Postgres runs
 a file sent as one query as one transaction, so that failure undoes the whole file and nothing is left
 behind (proved locally, sending each file the way the editor sends a paste). Do not rely on it: run them
@@ -96,7 +99,7 @@ select to_regclass('public.subscriptions')  is null as no_subscriptions_yet,
        to_regclass('public.billing_events') is null as no_billing_events_yet,
        exists (select 1 from information_schema.columns
                 where table_schema = 'public' and table_name = 'waitlist_founding_ledger'
-                  and column_name = 'void_at') as has_0017,
+                  and column_name = 'void_at') as has_0025,
        (select count(*) from public.waitlist_founding_ledger) as issued,
        (select count(*) from public.waitlist where founding_position is not null) as positioned,
        (select count(*) from public.waitlist
@@ -169,7 +172,22 @@ Expect `true`, `true`, `true`, `false`, `false`; `issued` and `positioned` exact
 and founding households are offered only the regular prices: they could buy $99.99 annual instead of
 $79.99.
 
-Nothing else runs in the SQL editor on Monday. **Not** 0017, **not** `waitlist_founding_start()`.
+### 2.5 Run `supabase/migrations/0025_founding_ledger.sql`
+
+The founding 50: test sign-ups and the twelve numbers Amanda confirmed were hers are voided, beta founders
+sit outside the 50, and accounts confirmed by our link, on the website or in either app, take numbers in
+the order they confirmed, after every number already issued (section 10).
+
+1. Its **dry run** first: the block headed `READ-ONLY DRY RUN` at the end of the file, uncommented. One row,
+   numbers only. **Write down `spots_left_after`**, and look at `void_test_rows`, `void_confirmed_orphans`,
+   `void_beta_founders` and `issued_since_oct_14`: if any number issued since 2026-10-14 was a test sign-up
+   at another domain, stop and tell Amanda (the file's footer shows how to void one by number later).
+2. The **whole file**, as one query (it is one transaction: an error undoes all of it).
+3. Its **check**: the block headed `READ-ONLY CHECK AFTERWARDS`. `spots_left` must equal the dry run's
+   `spots_left_after`, and `accounts_take_seats` must be `true`. Then `curl -s https://flourishmoney.app/api/founding`
+   answers the same `spotsLeft`.
+
+Nothing else runs in the SQL editor on Monday. **Not** `waitlist_founding_start()`, **not** `founding_accounts_start()` by hand.
 
 ---
 
@@ -309,7 +327,7 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
 **Only after section 4 passed and signup is open (section 5):**
 
 1. Add `FOUNDING_LINK_EMAIL` = `true`, Production only. Trigger deploy. This is **D3**.
-2. Who gets it: a founding number (1 to 50; once 0017 has run, real households past 50 too, told "one of the first 50"), not a test row, not unsubscribed, billing's own lookup still
+2. Who gets it: a real holder's founding number (past 50 too once 0025 has voided the test numbers, told "one of the first 50"), not a test row, not unsubscribed, billing's own lookup still
    honours the number, and a consent version whose words asked for updates. Every consent version ever
    recorded, and what its words said:
 
@@ -459,24 +477,31 @@ cancel for them in Stripe if they ask (hello@flourishmoney.app).
 
 ---
 
-## 10. Holding 0017 (PR #69): what it means on Monday
+## 10. The founding ledger (0025): what it means on Monday
 
-Proved on the local copy of production's shape (`scripts/billing-day-proof/run.sh --with-0017`).
+0025 replaced 0017 (PR #69) and 0021 (PR #83), which were never applied. It is proved in a real Postgres by
+`tests/foundingLedger.sql.test.cjs` (a ledger shaped like production's on 2026-10-20), and its dry run says,
+before anything changes, what production will read after it.
 
-**Without 0017 (Monday as planned):**
-- The 16 real households holding 1 to 15 and 22 can buy the founding price. Nothing about that changes.
-- The ledger still counts the 12 numbers Amanda's deleted test sign-ups took (16 to 21, 23 to 28). The
-  landing page shows 22 spots left, not 34. Only 22 more households can get a number: at most **38**
-  real founding households, not 50.
-- One of those test addresses that joins again gets its old number back and is offered the founding
-  price.
-- A new sign-up from getgrowsmart.com or flourishmoney.app takes a real number. Do not test the waitlist
-  form on Monday.
+**Before 0025 (today):** the ledger counts every number ever issued, so the 12 numbers Amanda's deleted test
+sign-ups took (16 to 21, 23 to 28) still count as seats, and so does any number a test address or a beta
+founder took. Accounts that confirm their address never take a number. From the deploy of the founding-50 change until
+0025 runs, `/api/founding` answers 503 (it asks for the real holders, which need 0025's `void_at`) and the
+landing shows no number.
 
-**With 0017 (later, after Amanda's dry run, then merging #69):** the 12 are voided, 34 spots, test
-addresses never take a number, and the next real household gets #29. It runs after 0016 or before it
-(both orders end the same, proved locally). Applied without merging #69, main's lookup still honours real
-holders, but the landing page keeps saying 22 until #69 merges.
+**After 0025:**
+- Test rows and test addresses (getgrowsmart.com, flourishmoney.app, and their subdomains) never hold a
+  number; a row marked `is_test` later gives its number up, and the seat goes to the next real household.
+- The twelve confirmed numbers are voided, but only those issued before 2026-10-14 that no household holds.
+- Beta founders (`founder_flag`) keep the founding price through the flag, and never take one of the 50.
+- Accounts already confirmed by link are numbered after the highest number, in confirmation order; from then
+  on each confirmation takes the next number as it happens, on any platform.
+- Exactly 50 real households can hold a number. Numbers run past 50 when numbers were voided, and a number
+  is never issued twice. The founding link email tells a number past 50 "one of the first 50".
+- Rollback: the block headed `ROLLBACK` at the end of the file.
+
+`scripts/billing-day-proof/run.sh --with-0025` runs it on the local copy of production's 2026-10-14 shape
+(needs Docker).
 
 ---
 

@@ -36,7 +36,7 @@ function priceIdFor(planKey, env = process.env) {
 
 // WHO MAY BUY founding_annual is not decided here: _lib/foundingCohort.js matches the buyer's
 // confirmed email to a waitlist founding number held by one of the first 50 real households (Amanda's
-// decisions of 2026-10-06 and 2026-10-14; migration 0017). A client
+// decisions of 2026-10-06 and 2026-10-14; migration 0025). A client
 // asking for founding_annual without one is refused rather than quietly sold the standard price,
 // because silently charging someone $99.99 when they clicked $79.99 is worse than an error.
 
