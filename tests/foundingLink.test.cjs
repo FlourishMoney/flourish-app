@@ -305,7 +305,12 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : null\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them");
     t.ok(/useState\(isNativeApp\(\) \|\| !!foundingNote\)/.test(APP), "6e …and opens straight to sign-in");
     t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, 1, "6f still one way to mount the checkout screen (behind billingUi.show)");
-    t.ok(/if\(nativeApp \|\| !user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "6g a store app still never asks /api/billing");
+    // 2026-10-20: a store app asks /api/billing whether the household pays on the web, and keeps only that
+    // (billing.js answers it with { enabled, paid }), so the founding offer can never reach it.
+    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
+      "6g a store app keeps only enabled and paid from /api/billing: never the founding offer");
+    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\) \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
+      "6g2 …and the server tells a store app nothing about the founding price in the first place");
     const srcFiles = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
     t.ok(!/FOUNDING_LINK_EMAIL|VITE_FOUNDING/.test(srcFiles), "6h the send switch is a server variable: never in src/, never VITE_");
     const welcome = require(path.join(LIB, "foundingWaitlist.js")).foundingWelcomeLine(7);

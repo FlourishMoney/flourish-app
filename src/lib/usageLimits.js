@@ -117,27 +117,25 @@ export function getCoachMessagesUsedThisWeek() {
   return _readCounter(COACH_USAGE_KEY, _weekKey());
 }
 
-// Whether the coach's weekly limit is lifted. On the web, a trial, a paid plan or a founder flag lifts
-// it. On a store app (iOS, Android) there is nothing to buy in 1.0.0 and no feature may close when a
-// trial ends, so the coach's weekly limit does not depend on a trial there: it applies to every native
-// user from the first day, trial or not, and only a paid or founder flag lifts it. What-If's daily
-// limit follows the same rule (simulationsAreUnlimited). Pass { native: true } from a store build; the
-// default is the web rule, unchanged.
-export function coachIsUnlimited({ native = false } = {}) {
-  return native ? isPremiumOrFounder() : isUnlimited();
+// Whether the coach's weekly limit is lifted: a trial, a paid plan or a founder flag lifts it, in every
+// app (founder's decision, 2026-10-20). Until then a store app held every user to the limit from the
+// first day, trial or not; it now follows the web. What-If's daily limit is the same rule
+// (simulationsAreUnlimited). No platform argument, so no caller can give a store app its own rule.
+export function coachIsUnlimited() {
+  return isUnlimited();
 }
 
-export function getCoachMessagesRemaining(opts) {
-  if (coachIsUnlimited(opts)) return Infinity;
+export function getCoachMessagesRemaining() {
+  if (coachIsUnlimited()) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.coachMessagesPerWeek - getCoachMessagesUsedThisWeek());
 }
 
-export function canUseCoach(opts) {
-  return getCoachMessagesRemaining(opts) > 0;
+export function canUseCoach() {
+  return getCoachMessagesRemaining() > 0;
 }
 
-export function recordCoachUse(opts) {
-  if (coachIsUnlimited(opts)) return; // don't bother counting for unlimited tiers
+export function recordCoachUse() {
+  if (coachIsUnlimited()) return; // don't bother counting for unlimited tiers
   _writeCounter(COACH_USAGE_KEY, _weekKey(), getCoachMessagesUsedThisWeek() + 1);
 }
 
@@ -146,24 +144,24 @@ export function getSimulationsUsedToday() {
   return _readCounter(SIM_USAGE_KEY, _todayStr());
 }
 
-// Whether What-If's daily limit is lifted. The same rule as the coach: on the web a trial, a paid plan
-// or a founder flag lifts it; on a store app the limit is the same from the first day for every native
-// user, trial included, so nothing narrows after signup, and only a paid or founder flag lifts it.
-export function simulationsAreUnlimited({ native = false } = {}) {
-  return native ? isPremiumOrFounder() : isUnlimited();
+// Whether What-If's daily limit is lifted. The same rule as the coach, in every app: a trial, a paid plan
+// or a founder flag lifts it, and the free plan has FREE_TIER_LIMITS.simulationsPerDay. The server
+// counts the same day (netlify/functions/_lib/coachLimits.js, migration 0024).
+export function simulationsAreUnlimited() {
+  return isUnlimited();
 }
 
-export function getSimulationsRemaining(opts) {
-  if (simulationsAreUnlimited(opts)) return Infinity;
+export function getSimulationsRemaining() {
+  if (simulationsAreUnlimited()) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.simulationsPerDay - getSimulationsUsedToday());
 }
 
-export function canRunSimulation(opts) {
-  return getSimulationsRemaining(opts) > 0;
+export function canRunSimulation() {
+  return getSimulationsRemaining() > 0;
 }
 
-export function recordSimulationUse(opts) {
-  if (simulationsAreUnlimited(opts)) return;
+export function recordSimulationUse() {
+  if (simulationsAreUnlimited()) return;
   _writeCounter(SIM_USAGE_KEY, _todayStr(), getSimulationsUsedToday() + 1);
 }
 

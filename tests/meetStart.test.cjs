@@ -125,11 +125,13 @@ const MEET = APP.slice(MEET_AT, APP.indexOf("\nfunction Family({data,", MEET_AT)
     "4e4 Try again does not append the same turn twice into what the coach receives");
   t.ok(/isNativeApp\(\)/.test(limitBlock), "4f a weekly limit branches on the platform");
   const nativeLimit = limitBlock.slice(limitBlock.indexOf("isNativeApp()"), limitBlock.indexOf(": (j.message"));
-  t.ok(/They reset Monday\./.test(nativeLimit), "4f2 the native wording is the coach chat's wording");
+  // The founder's coach line (2026-10-19), the same call the coach chat makes (lib/freePlan.js coachLimitLine).
+  t.ok(/\? coachLimitLine\(\)/.test(nativeLimit) && /const limitMsg = isNativeApp\(\)\s*\n\s*\? coachLimitLine\(\)/.test(APP),
+    "4f2 the native wording is the coach chat's wording (coachLimitLine)");
   t.ok(!/[Uu]pgrade|Plus|flourishmoney\.app|subscribe|\$\d/.test(nativeLimit),
     "4g …and names no price, no Plus, no website — there is nothing to buy in a store app");
   const limitStrings = (limitBlock.match(/You've used this week's[^`]*/g) || []);
-  t.eq(limitStrings.length, 2, "4h both the native and web limit strings are present");
+  t.eq([limitStrings.length, (nativeLimit.match(/coachLimitLine\(\)/g) || []).length], [1, 1], "4h both the native line (coachLimitLine) and the web's fallback string are present");
   for (const [i, str] of limitStrings.entries()) {
     t.ok(/They reset Monday\./.test(str), `4i limit string ${i + 1} says when the limit lifts`);
   }

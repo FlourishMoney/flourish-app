@@ -65,6 +65,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
+import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7 } from "./lib/freePlan.js";
 import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -2165,14 +2166,14 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!canRunSimulation({ native: isNativeApp() })) {
+    if (!canRunSimulation()) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
         // On a store app there is nothing to buy, so an upsell would be both useless and against
-        // Apple's and Google's rules. State the limit and when it lifts, and stop there.
+        // Apple's and Google's rules. State the limit and when it lifts, and stop there (founder's wording).
         cashDetail: isNativeApp()
-          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          ? WHAT_IF_LIMIT_LINE
           : `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
         debtImpact: "none",
         debtDetail: "",
@@ -2182,13 +2183,13 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         verdict: isNativeApp() ? "Daily limit reached" : "Upgrade to continue",
         // The card shows this line; on a store app it is the limit and when it resets (it was empty).
         verdictReason: isNativeApp()
-          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          ? WHAT_IF_LIMIT_LINE
           : "Daily simulation limit reached on the free plan.",
         tip: "",
       });
       return;
     }
-    recordSimulationUse({ native: isNativeApp() });
+    recordSimulationUse();
 
     setQuery(qText);
     setLoading(true);
@@ -4246,7 +4247,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         ? "Your bank session expired. Please reconnect your bank."
         : (isNativeApp() && /plan_limit/.test(String(err.message||"")))
           // A store app has nothing to buy, so never show the server's plan code or an upgrade path.
-          ? "Only one bank can be connected in this version. You can import a statement for another account."
+          ? FREE_BANK_LINE
           : "Connection failed: "+err.message;
       setBankError(msg);
       setBankStage("select");
@@ -10219,9 +10220,8 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
       return quietWeekAgendaFor({});
     }
   }, [data]);
-  // Web: premium, beta_founder, or an active trial. A store app: every user (nothing to buy in 1.0.0,
-  // and nothing closes when a trial ends), lib/featureAccess.js.
-  const canFacilitate = facilitatorAvailable({ native: isNativeApp() });
+  // Premium, beta_founder, or an active trial, in every app (lib/featureAccess.js, 2026-10-20).
+  const canFacilitate = facilitatorAvailable();
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
@@ -10278,9 +10278,13 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
         // a founder they had used two free messages was a reason the server never gave, with a
         // figure that does not apply to them, and it withheld the one button that would have
         // helped. Only the server's own rate_limited payload is treated as a limit.
-        if (r.status === 429 && j.error === "rate_limited") {
+        if (r.status === 402 && j.error === "plan_limit") {
+          // The server's own answer since 2026-10-20: the meeting is not on the free plan (a trial that
+          // ended mid-meeting). Said as the limit it is, with no Try again and nothing to buy.
+          setMeetError({ kind:"limit", text: isNativeApp() ? LOCKED_LINE : (j.message || LOCKED_LINE) });
+        } else if (r.status === 429 && j.error === "rate_limited") {
           setMeetError({ kind:"limit", text: isNativeApp()
-            ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
+            ? coachLimitLine()
             : (j.message || `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`) });
         } else if (r.status === 429 || r.status === 503) {
           setMeetError({ kind:"busy", text:"The coach is busy right now. Your agenda above is unchanged." });
@@ -10358,8 +10362,8 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
       ) : facilitatorGate === "trial" ? (
-        /* Native names no trial or tier (nothing to buy in 1.0.0); the same neutral line as PremiumGate. */
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? "Running the meeting with your coach isn't included in this version. Your agenda is above." : "Start your trial to run the meeting with your coach."}</div></div>
+        /* A store app sells nothing: it says the meeting isn't on the free plan (lib/freePlan.js), and stops. */
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? LOCKED_LINE : "Start your trial to run the meeting with your coach."}</div></div>
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
@@ -12886,7 +12890,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     if(!isPremium && freeMsgsLeft<=0){
       // On a store app onUpgrade opens a paywall that native never renders, so the tap did
       // nothing at all. Say what happened and when it lifts — no upsell, no website.
-      if(isNativeApp()){ setLimitNote(`You've used this week's ${FREE_LIMIT} coach messages. They reset Monday.`); return; }
+      if(isNativeApp()){ setLimitNote(coachLimitLine(FREE_LIMIT)); return; }
       onUpgrade(); return;
     }
     // Detect if user is asking about balance mismatch
@@ -12954,7 +12958,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         // so a 429 can arrive while this device still believes it has messages left. Native writes
         // its own line rather than printing whatever the server sent.
         const limitMsg = isNativeApp()
-          ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
+          ? coachLimitLine()
           : (j.message || "You've hit today's Coach message limit. It resets tomorrow.");
         setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: limitMsg}]);
         setLoading(false);
@@ -13511,7 +13515,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? STORE_TERMS_SECTION_7 : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -13538,6 +13542,26 @@ function TermsOfService({onBack}){
 }
 
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
+// A store app's end-of-trial banner, where the web shows "Your free trial has ended" and an upgrade button:
+// the founder's line (lib/freePlan.js TRIAL_ENDED_BANNER) and a way to put it away. Nothing to buy, no link.
+function NativeTrialEndedLine({onDismiss}){
+  return(
+    <div role="status" style={{background:C.cardAlt,borderBottom:`1px solid ${C.border}`,padding:`${SPACE.xs}px ${SPACE.xs}px ${SPACE.xs}px ${SPACE.lg}px`,display:"flex",alignItems:"center",gap:SPACE.sm,flexShrink:0}}>
+      <span style={{color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,lineHeight:1.5,flex:1}}>{TRIAL_ENDED_BANNER}</span>
+      <button onClick={onDismiss} aria-label="Dismiss" style={{background:"none",border:"none",color:C.muted,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap,fontSize:18,fontFamily:"inherit",flexShrink:0}}>×</button>
+    </div>
+  );
+}
+
+// A store app's chip during the trial: the days left (lib/freePlan.js trialChip). No button, no link.
+function NativeTrialChip({daysLeft}){
+  return(
+    <div style={{display:"flex",justifyContent:"center",padding:`${SPACE.xs}px ${SPACE.lg}px`,flexShrink:0}}>
+      <span role="status" style={{background:C.purpleDim,border:`1px solid ${C.purple}33`,color:C.purpleBright,borderRadius:99,padding:`${SPACE.xs}px ${SPACE.md}px`,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.4}}>{trialChip(daysLeft)}</span>
+    </div>
+  );
+}
+
 function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
@@ -13548,11 +13572,12 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false}){
       </div>
       {/* On a store app there is nothing to buy, so the pitch below would be an upgrade offer with
           no purchase behind it — and its button opens a paywall native never renders. Apple and
-          Google both forbid it. Round-3: one neutral line, with no tier and no trial named either. */}
+          Google both forbid it. One neutral line: what the free plan includes (lib/freePlan.js), with
+          no price, no button and no link. */}
       {isNativeApp() ? (
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
-            {nativeNote || <>{feature} isn't included in this version.</>}
+            {nativeNote || LOCKED_LINE}
           </div>
         </div>
       ) : (
@@ -16580,8 +16605,8 @@ export default function FlourishApp(){
       return foundingLinkPending(localStorage);
     }catch{ return false; }
   });
-  // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
-  // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
+  // The store apps (iOS, Android) sell nothing: no paywall, no upgrade button, no Plus pitch, no price
+  // (billingUiState, PremiumGate). Their plan follows the web's rules since 2026-10-20 (lib/featureAccess.js).
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
   // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
@@ -16600,16 +16625,18 @@ export default function FlourishApp(){
   const trialDaysLeft = getTrialDaysLeft();
   const trialActive = isTrialActive();
   const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
+  // A store app says once that the trial has ended (NativeTrialEndedLine); put away, it stays away on this device.
+  const [trialEndNoteHidden,setTrialEndNoteHidden]=useState(()=>{ try { return localStorage.getItem("flourish_trial_end_note_seen")==="1"; } catch { return false; } });
+  const hideTrialEndNote=()=>{ try { localStorage.setItem("flourish_trial_end_note_seen","1"); } catch {} setTrialEndNoteHidden(true); };
   // ── AI Coach free message count (now backed by usageLimits.js) ─────────────
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
   // also run the grandfather check so existing users get beta_founder status.
-  // A store app counts every user's coach messages against the weekly limit, trial or not (only a paid
-  // or founder flag lifts it there); the web keeps trial, premium and founder unlimited.
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining({ native: isNativeApp() }); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
+  // Trial, premium and founder are unlimited and the free plan is counted, in every app (2026-10-20).
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining(); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
   const bumpCoachMsg=()=>{
-    if (coachUnlimited({ native: isNativeApp(), isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
-    recordCoachUse({ native: isNativeApp() });
+    if (coachUnlimited({ isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
+    recordCoachUse();
     setCoachMsgCount(c=>c+1);
   };
 
@@ -16694,13 +16721,15 @@ export default function FlourishApp(){
 
   // ── BILLING VISIBILITY ─────────────────────────────────────────────────────────────────────
   // One ask, one answer, and every failure means hidden: a 404 (the flag is off), an offline
-  // device, a shape we do not recognise. Not asked at all inside a native shell — Apple and
-  // Google require their own purchase systems for digital subscriptions, so the iOS and Android
-  // builds must show no price, no link and no button. See docs/ops/BILLING-SETUP.md.
+  // device, a shape we do not recognise. Inside a native shell the same call answers only whether
+  // the household pays on the web (billing.js), and only that is kept: Apple and Google require
+  // their own purchase systems for digital subscriptions, so the iOS and Android builds show no
+  // price, no link and no button (billingUiState hides every surface there). Since 2026-10-20 that
+  // `paid` gives a household paying on the web full access in the apps too. See docs/ops/BILLING-SETUP.md.
   const nativeApp = isNativeApp();
   useEffect(()=>{
     let cancelled = false;
-    if(nativeApp || !user?.id){ setBillingStatus(null); return; }
+    if(!user?.id){ setBillingStatus(null); return; }
     (async ()=>{
       try{
         const jwt = await getJwt();
@@ -16712,7 +16741,7 @@ export default function FlourishApp(){
         });
         if(!res.ok) return;                       // 404 while billing is off: stay hidden
         const body = await res.json();
-        if(!cancelled) setBillingStatus(body);
+        if(!cancelled) setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
       }catch{ /* offline or blocked: stay hidden */ }
       finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
@@ -16724,14 +16753,15 @@ export default function FlourishApp(){
   // exactly as it did before, so nothing about today's app changes.
   const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
   // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
-  // the paid period, planRules.isPaidSubscription): it lifts a free web household to premium, and it ends
-  // when the paid period does. A store app never asks and never counts it (Apple 3.1.3(b)). Billing off:
-  // there is no status, `paid` is false, and the plan is the profile's, exactly as before.
+  // the paid period, planRules.isPaidSubscription): it lifts a free household to premium, and it ends
+  // when the paid period does. The same in a store app (2026-10-20), which the server holds to the same
+  // plan (planRules.deriveEntitlement). Billing off: there is no status, `paid` is false, and the plan is
+  // the profile's, exactly as before.
   useEffect(()=>{
     // Only this account's own answer counts: billingAskedFor is the account the status call finished for.
-    webPaidRef.current = !nativeApp && !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
+    webPaidRef.current = !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
     if(profilePlan===null) return;
-    const plan = webPlan(profilePlan, { paid: webPaidRef.current, native: nativeApp });
+    const plan = webPlan(profilePlan, { paid: webPaidRef.current });
     setPlan(plan);
     setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
@@ -17863,7 +17893,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={openUpgrade} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
+            ? (creditAvailable({ isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate billingOn={billingUi.show} feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={openUpgrade}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -17872,16 +17902,16 @@ export default function FlourishApp(){
       // demo-clarity: the demo's coach is a scripted conversation (no /api/coach request), so no disclosure there.
       if(!aiDisclosureSeen && !appData?.demo) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
-      // A store app: the weekly limit applies to every user, so only a paid or founder flag lifts it;
-      // the trial does not (lib/featureAccess.js). The web is unchanged.
-      const freeCoachAllowed = canUseCoach({ native: nativeApp });
-      const coachIsOpenEnded = coachUnlimited({ native: nativeApp, isPremium: isPremium || isTrialActive() });
-      const showCoach = (nativeApp ? coachIsOpenEnded : isPremium) || freeCoachAllowed;
+      // The same in every app (lib/featureAccess.js, 2026-10-20): a trial, a paid plan or a founder flag
+      // lifts the weekly limit, and the free plan has it.
+      const freeCoachAllowed = canUseCoach();
+      const coachIsOpenEnded = coachUnlimited({ isPremium: isPremium || isTrialActive() });
+      const showCoach = isPremium || freeCoachAllowed;
       if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={coachIsOpenEnded} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is
       // included, so say what actually happened and when it lifts, not that the feature is missing.
-      return <PremiumGate billingOn={billingUi.show} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={openUpgrade}/>;
+      return <PremiumGate billingOn={billingUi.show} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
@@ -18003,6 +18033,8 @@ input,button,select,textarea { font-family:inherit; }
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
+          {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<div style={{marginBottom:SPACE.sm,borderRadius:12,overflow:"hidden"}}><NativeTrialEndedLine onDismiss={hideTrialEndNote}/></div>}
+          {isNativeApp()&&trialActive&&trialDaysLeft>0&&<div style={{marginBottom:SPACE.sm}}><NativeTrialChip daysLeft={trialDaysLeft}/></div>}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={openUpgrade} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
@@ -18104,6 +18136,8 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
+        {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
+        {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         <div style={{padding:"max(14px, calc(env(safe-area-inset-top, 0px) - var(--banner-h, 0px))) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0,minHeight:LAYOUT.minTap}}>
             <FlourishMark size={36}/>

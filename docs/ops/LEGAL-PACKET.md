@@ -17,7 +17,7 @@ Questions:
 5. Founding price lock clause (section 4 of this packet): enforceability, and what happens on a lapse or a change to the standard price for everyone else.
 6. Terms section 3 "Not a Licensed Adviser": is it sufficient for an Ontario company offering budgeting, debt and savings projections and RRSP, TFSA and FHSA explanations to consumers, and should any wording reference securities or financial-planning title rules in Ontario?
 7. Terms section 2 eligibility: Canada outside Quebec, or the United States (decision 17 excludes Quebec at signup until French-language copy and Law 25 basics exist; "outside Quebec for now" ships September 17). Please confirm the wording and what Quebec re-entry requires.
-8. The store apps' line in section 7 ("The iOS and Android apps are free, and there is nothing to buy in them…", quoted in section 3) will need replacing when in-app purchase ships; please give us the Apple-compatible version now so it is ready.
+8. The store apps' line in section 7 ("There is nothing to buy in the iOS and Android apps…", quoted in section 3) changed on 2026-10-20, when the apps began following the web's trial and free plan limits; please review it, and it will need replacing again when in-app purchase ships, so please give us the Apple-compatible version now so it is ready.
 9. App Store review notes (section 5): anything that would draw a reviewer's objection or a legal exposure.
 10. Trademark: file FLOURISH MONEY word mark, classes 9, 36, 42, per TRADEMARK-KNOCKOUT.md; advise on the logo mark and on watching pending application 2455859.
 
@@ -105,7 +105,7 @@ You agree not to: use the App for any unlawful purpose; attempt to reverse-engin
 
 Web version: Free Tier: Core features are available at no charge with a 14-day trial of premium features. Flourish Plus: Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.
 
-The iOS and Android apps show instead, under "7. Cost and usage limits": "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies."
+The iOS and Android apps show instead, under "7. Cost and usage limits" (from the next store builds; changed 2026-10-20, when the apps began following the web's 14-day trial and free plan limits; wording approved by the founder 2026-10-20, not yet reviewed by counsel): "There is nothing to buy in the iOS and Android apps. A new account has every feature for its first 14 days. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies."
 
 8. Intellectual Property
 

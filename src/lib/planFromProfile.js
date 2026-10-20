@@ -82,13 +82,15 @@ const PLANS = ["beta_founder", "premium", "trial", "free"];
  * off that call answers 404, so `paid` is false and this returns the profile's plan, exactly as before.
  *
  * Mirrors planRules.deriveEntitlement, and tests/webPaidPlan.test.cjs holds the two together:
- *   a store app            the profile's plan, whatever was bought on the web (Apple 3.1.3(b))
  *   founder, trial, plus   unchanged: a payment only ever adds, so nobody loses trial days by paying early
  *   free, and paid         "premium"
  *   free, not paid         "free" (a cancelled subscription, once its paid period is over)
+ * The same in a store app (founder's decision, 2026-10-20): a household paying on the web keeps full
+ * access in the iOS and Android apps, which learn `paid` from the same status call (billing.js tells a
+ * store app nothing else). There is no store-app argument, so no caller can give a store app its own rule.
  */
-export function webPlan(profilePlan, { paid = false, native = false } = {}) {
+export function webPlan(profilePlan, { paid = false } = {}) {
   const p = PLANS.includes(profilePlan) ? profilePlan : "free";
-  if (native || p !== "free") return p;
+  if (p !== "free") return p;
   return paid === true ? "premium" : "free";
 }

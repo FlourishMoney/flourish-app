@@ -49,7 +49,7 @@ function facts(data, today) {
   const nd = nextDepositFor(data, today);
   const days = daysToNextDepositFor(data, today);
   const debt = selectHighestRateDebt(data.debts || []);
-  const decision = (meetAgendaFor(data).decisions || [])[0] || null;
+  const decision = (meetAgendaFor(data, today).decisions || [])[0] || null;   // the same day as every other figure here
   return { ss, view, pace, nd, days, debt, decision };
 }
 
