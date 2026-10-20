@@ -10,6 +10,8 @@
 //   • a webhook with a bad, missing or stale signature is 400 and the body is never parsed
 //   • a REPLAYED event writes the subscription once
 //   • a handler failure returns 5xx (so Stripe retries) and marks the event failed
+//   • the checkout's amounts reach the row, even when it arrives after a subscription event, and
+//     Stripe's cancel_at counts as "will not renew"
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -324,6 +326,76 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     const res = await on.handler(post({ action: "create_checkout_session", plan_key: "monthly" }));
     t.eq(res.statusCode, 200, "10e …and the same call works once it is switched on, so the flag is the only thing off");
     if (saved === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = saved;
+  }
+
+  // ── 11. THE AMOUNTS AND CANCEL_AT (live smoke purchase, 2026-10-20) ───────────────────────────
+  // Stripe Tax on: the row kept automatic_tax true but every amount null, and a dashboard "cancel at period
+  // end" left cancel_at_period_end false, because Stripe's current API sets cancel_at instead.
+  {
+    const sign = (b) => ({ "stripe-signature": signPayload(b, "whsec_gate_test") });
+    const T = Math.floor(Date.parse("2026-10-20T18:00:00Z") / 1000);
+    const session = (extra = {}) => ({ customer: "cus_tax", subscription: "sub_tax", metadata: { user_id: "u_tax", plan_key: "monthly" },
+      amount_subtotal: 1199, amount_total: 1355, total_details: { amount_tax: 156 }, ...extra });
+    const subObj = (extra = {}) => ({ id: "sub_tax", customer: "cus_tax", status: "active", metadata: { user_id: "u_tax", plan_key: "monthly" },
+      automatic_tax: { enabled: true }, current_period_end: T + 30 * 86400, items: { data: [{ price: { id: "price_monthly_test" } }] }, ...extra });
+    const amountsOf = (row) => [row.amount_subtotal_cents ?? null, row.amount_tax_cents ?? null, row.amount_total_cents ?? null];
+    const send = async (hook, id, created, type, object) => { const b = JSON.stringify({ id, created, type, data: { object } }); return hook.handler(post(b, sign(b))); };
+
+    // (a) the checkout arrives first: the amounts are written with it.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      await send(hook, "evt_t1", T, "checkout.session.completed", session());
+      t.eq(amountsOf(state.rows.subscriptions[0]), [1199, 156, 1355], "11a a checkout writes the amounts: before tax, the tax and the total, in cents");
+      await send(hook, "evt_t2", T + 5, "customer.subscription.updated", subObj());
+      t.eq([...amountsOf(state.rows.subscriptions[0]), state.rows.subscriptions[0].automatic_tax], [1199, 156, 1355, true], "11b …and a later subscription event keeps them (it carries none)");
+    }
+
+    // (b) the subscription event arrives first, so the checkout is stale for the plan: the amounts still land.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      await send(hook, "evt_s1", T + 5, "customer.subscription.updated", subObj());
+      const res = await send(hook, "evt_s0", T, "checkout.session.completed", session({ metadata: { user_id: "u_tax", plan_key: "annual" } }));
+      const row = state.rows.subscriptions[0];
+      t.eq([res.statusCode, JSON.parse(res.body).stale, ...amountsOf(row)], [200, true, 1199, 156, 1355], "11c a stale checkout still fills in the amounts (they come from nowhere else)");
+      t.eq([row.plan_key, row.status, state.rows.billing_events.find(e => e.event_id === "evt_s0").status], ["monthly", "active", "ignored"], "11d …and changes nothing else: the newer event's plan stands, and the ledger says stale");
+    }
+
+    // (c) a stale checkout never writes another subscription's amounts, and never overwrites any.
+    {
+      const state = { rows: { subscriptions: [{ user_id: "u_tax", provider_subscription_id: "sub_newer", last_event_at: new Date((T + 999) * 1000).toISOString() }] }, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      await send(hook, "evt_old", T, "checkout.session.completed", session());
+      t.eq(amountsOf(state.rows.subscriptions[0]), [null, null, null], "11e a stale checkout for an earlier subscription writes nothing onto the current one");
+      const state2 = { rows: { subscriptions: [{ user_id: "u_tax", provider_subscription_id: "sub_tax", amount_subtotal_cents: 9999, amount_tax_cents: 1300, amount_total_cents: 11299, last_event_at: new Date((T + 999) * 1000).toISOString() }] }, writes: [] };
+      await send(loadWithStubs(HOOK_PATH, { state: state2 }), "evt_old2", T, "checkout.session.completed", session());
+      t.eq(amountsOf(state2.rows.subscriptions[0]), [9999, 1300, 11299], "11f …and amounts already there are never overwritten by a stale one");
+    }
+
+    // (d) an amount that is not a whole number of cents is left out, never guessed.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      await send(hook, "evt_bad_amt", T, "checkout.session.completed", session({ amount_subtotal: "1199", amount_total: 13.55, total_details: null }));
+      t.eq(amountsOf(state.rows.subscriptions[0]), [null, null, null], "11g a string, a fraction or a missing value: no amount written");
+    }
+
+    // (e) cancel_at is read as "will not renew".
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      const flag = () => state.rows.subscriptions[0].cancel_at_period_end;
+      await send(hook, "evt_c1", T, "customer.subscription.updated", subObj({ cancel_at_period_end: false, cancel_at: null }));
+      const renewing = flag();
+      await send(hook, "evt_c2", T + 10, "customer.subscription.updated", subObj({ cancel_at_period_end: false, cancel_at: T + 30 * 86400 }));
+      const dashboardCancel = flag();
+      await send(hook, "evt_c3", T + 20, "customer.subscription.updated", subObj({ cancel_at_period_end: false, cancel_at: null }));
+      const resumed = flag();
+      await send(hook, "evt_c4", T + 30, "customer.subscription.updated", subObj({ cancel_at_period_end: true }));
+      t.eq([renewing, dashboardCancel, resumed, flag()], [false, true, false, true],
+        "11h renewing: false; the dashboard's cancel (cancel_at set, the old flag false): true; renewal back on: false; the older flag alone: still true");
+    }
   }
 
   t.summary("billingFunctions.test");
