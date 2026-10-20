@@ -12,7 +12,7 @@
 //   FREE_CHAT_WEEKLY    applies only to accounts with no entitlement, only while the flag is on.
 // -----------------------------------------------------------------------------
 "use strict";
-const { isNativeRequest } = require("../netlify/functions/_lib/cors.js");
+const { isNativeRequest, isStoreBillingRequest } = require("../netlify/functions/_lib/cors.js");
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -114,7 +114,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       missing: () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function public.increment_coach_usage_weekly(p_user) in the schema cache" } }),
     };
 
-    const run = async ({ mode, unlimited, enforce = true, origin = "https://flourishmoney.app" }) => {
+    const run = async ({ mode, unlimited, enforce = true, origin = "https://flourishmoney.app", query = undefined }) => {
       const calls = { weekly: 0, daily: 0, planOpts: [] };
       const logs = [];
       const admin = {
@@ -127,7 +127,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       const fn = new Function(
         "getUserPlan", "getAdminClient", "ENFORCE_PLAN_LIMITS", "CHAT_DAILY_CEILING", "FREE_CHAT_WEEKLY",
         "countFreeWeek", "decideChatLimit", "corsHeaders", "user_id", "ipCount", "EMERGENCY_IP_DAILY", "console",
-        "isNativeRequest", "event",
+        "isNativeRequest", "isStoreBillingRequest", "event",
         `return (async () => {\n${block}\n  return { allowedThrough: true };\n})();`
       );
       // countFreeWeek logs through the module's own console, not the one injected into the block,
@@ -139,7 +139,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
         out = await fn(
           async (_u, opts) => { calls.planOpts.push(opts); return { unlimited }; }, () => admin, enforce, CEILING, FREE_CHAT_WEEKLY,
           countFreeWeek, decideChatLimit, CORS, "user-1", 1, 10, { error: (...a) => logs.push(a.map(String).join(" ")) },
-          isNativeRequest, { headers: { origin } }
+          isNativeRequest, isStoreBillingRequest, { headers: { origin }, ...(query ? { queryStringParameters: query } : {}) }
         );
       } finally { console.error = quiet; }
       const body = out && out.body ? JSON.parse(out.body) : null;

@@ -94,3 +94,14 @@ export function webPlan(profilePlan, { paid = false } = {}) {
   if (p !== "free") return p;
   return paid === true ? "premium" : "free";
 }
+
+/**
+ * A STORE APP THAT SELLS (version 1.1, in-app purchase, lib/storeBilling.js): the same rule as the web's
+ * (founder's decisions, 2026-10-20). The profile's plan, plus a paid subscription from ANY provider as the server
+ * answers it (billing.js store_status `paid`, from the same row and the same period-aware rule as the web's). The
+ * 14-day account trial counts here exactly as on the web: it is the only trial, and no store product has a free
+ * trial or an introductory offer. Mirrors planRules.deriveEntitlement; tests/storeBilling.test.cjs holds them together.
+ */
+export function storePlan(profilePlan, { paid = false } = {}) {
+  return webPlan(profilePlan, { paid });
+}

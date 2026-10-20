@@ -153,8 +153,10 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     const gate = APP.slice(start, APP.indexOf("\n}", start));
     t.ok(/\{isNativeApp\(\) \? \(/.test(gate), "8b it branches on the platform before it renders a pitch");
     const native = gate.slice(gate.indexOf("{isNativeApp() ? ("), gate.indexOf(") : ("));
-    t.ok(!/Flourish Plus|Get Flourish|Start 14 days free|Cancel any time|onClick=\{onUpgrade\}/.test(native),
-      "8c the native branch has no Plus pitch, no trial offer and no upgrade button");
+    // A selling build (1.1, storeOn) has one way in to the store's own paywall; a build that sells nothing has none.
+    const unsold = native.replace(/\{storeOn&&onUpgrade&&<button onClick=\{onUpgrade\}[\s\S]*?>See plans<\/button>\}/, "");
+    t.ok(!/Flourish Plus|Get Flourish|Start 14 days free|Cancel any time|onClick=\{onUpgrade\}/.test(unsold) && unsold !== native,
+      "8c the native branch has no Plus pitch, no trial offer and no upgrade button, except See plans behind storeOn (a build that sells)");
     // 2026-10-20: the founder's brief asks a store app to say what the free plan includes, so "the free
     // plan" is the one plan it may name (lib/freePlan.js closedOnFreePlan). Still no trial, no paid tier.
     t.ok(/\{nativeNote \|\| LOCKED_LINE\}/.test(native), "8d it says the founder's locked-screen line (LOCKED_LINE)");

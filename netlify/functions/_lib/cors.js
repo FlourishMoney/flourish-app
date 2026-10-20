@@ -53,6 +53,22 @@ function isNativeRequest(event) {
   return NATIVE_ORIGINS.has(origin);
 }
 
+// A STORE APP THAT SELLS (version 1.1, in-app purchase). A store build with in-app purchase switched on marks
+// every request whose answer depends on the household's plan: "store_billing": true in the JSON body (the
+// coach's chat and every Plaid call, src/lib/storeBilling.js storeBillingFields), or ?store_billing=1. Not a
+// header, so the CORS allow-list above stays exactly as it is.
+// Since #84 it changes no answer: the plan rule is the same for the web and every app, and a paid plan from any
+// provider counts everywhere (Apple 3.1.3(b), multiplatform, once 1.1 sells the same plans). It stays a marker
+// of which build asked. Only ever read together with isNativeRequest: a web page that sends it is still a web
+// page, and a caller that fakes it gains nothing it has not paid for.
+function isStoreBillingRequest(event) {
+  if (!isNativeRequest(event)) return false;
+  if (String(event?.queryStringParameters?.store_billing || "").trim() === "1") return true;
+  const raw = typeof event?.body === "string" ? event.body : "";
+  if (!raw) return false;
+  try { return JSON.parse(raw).store_billing === true; } catch { return false; }
+}
+
 /**
  * The CORS headers for this request. An allowed Origin is echoed back; anything else gets the
  * production origin, which will not match the caller, so the browser refuses the response.
@@ -69,4 +85,4 @@ function corsHeadersFor(event) {
   };
 }
 
-module.exports = { ALLOWED_ORIGINS, NATIVE_ORIGINS, PRODUCTION_ORIGIN, isAllowedOrigin, isNativeRequest, corsHeadersFor };
+module.exports = { ALLOWED_ORIGINS, NATIVE_ORIGINS, PRODUCTION_ORIGIN, isAllowedOrigin, isNativeRequest, isStoreBillingRequest, corsHeadersFor };

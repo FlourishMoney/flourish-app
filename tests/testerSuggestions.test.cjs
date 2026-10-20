@@ -265,13 +265,13 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
-    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.0.0", "1.0.0", ["1.0.0"], "1.0.0"], "7a one version, 1.0.0, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526902, [526902], 16, 16], "7b the builds in whatsNew.json are the ones the projects build: iOS 526902, Android 16");
+    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.0", "1.1.0", ["1.1.0"], "1.1.0"], "7a one version, 1.1.0, in whatsNew.json, package.json, Xcode and Gradle");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526903, [526903], 18, 18], "7b the builds in whatsNew.json are the ones the projects build: iOS 526903, Android 18");
     t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", W.notes.join(" "));
     noAdvice("7e release notes", W.notes);
     const st = settingsText();
-    t.ok(st.includes("What's new") && st.includes("Version 1.0.0") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
+    t.ok(st.includes("What's new") && st.includes("Version 1.1.0") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
     t.ok(/\{WHATS_NEW\.notes\.map\(\(n,i\)=><li key=\{i\}/.test(APP), "7f2 …the notes from whatsNew.json");
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");

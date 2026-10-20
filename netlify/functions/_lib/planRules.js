@@ -85,19 +85,24 @@ function isPaidSubscription(sub, now = Date.now()) {
   return t < end;
 }
 
+// WHERE A SUBSCRIPTION ROW CAME FROM (migration 0020). 'stripe' is the website; the other two are the
+// stores, through RevenueCat (_lib/storeSubscriptions.js). A row with no provider predates 0020: Stripe.
+const STORE_PROVIDERS = Object.freeze(["app_store", "play_store"]);
+const isStoreRow = (sub) => !!sub && STORE_PROVIDERS.includes(sub.provider);
+
 // The whole entitlement answer: the profile rule above, plus the subscription.
 //
 // A paid subscription can only ADD. It never downgrades someone the profile already entitles —
 // a founder stays a founder, and an unexpired trial stays a trial even after the card is charged,
 // so nobody loses trial days by paying early.
 //
-// STORE APPS GET THE SAME ANSWER AS THE WEB (founder's decision, 2026-10-20). There is no separate
-// rule for a request from the iOS or Android app: the 14-day trial, then the free plan's limits,
-// unless the household is a founder, a beta founder or pays on the web. This replaced a rule that
-// ignored a web subscription in a store app (Apple 3.1.3(b)); a paid web household now keeps full
-// access there too, which leans on Apple 3.1.3(f) and Play's rules for content bought elsewhere,
-// and both hold only while the store apps show no price, no upgrade button and no link to pay.
-// tests/nativeTrialLimits.test.cjs holds the two platforms to one answer.
+// ONE ANSWER FOR THE WEB AND THE STORE APPS (founder's decisions, 2026-10-20). There is no separate rule
+// for a request from the iOS or Android app: the 14-day account trial (the only trial: no store trial, no
+// intro offer), then the free plan's limits, unless the household is a founder, a beta founder, or has a
+// paid subscription, bought on the web (Stripe) or in a store (RevenueCat). The subscription row is the
+// same one either way. From 1.1 the same plans are sold in the apps, so a web subscription counting there
+// is clean under Apple 3.1.3(b) (multiplatform services). tests/nativeTrialLimits.test.cjs holds the
+// platforms to one answer.
 function deriveEntitlement(profile, subscription, now = Date.now()) {
   const fromProfile = derivePlan(profile, now);
   if (fromProfile !== "free") {
@@ -111,5 +116,5 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
 
 module.exports = {
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile,
-  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement,
+  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
 };

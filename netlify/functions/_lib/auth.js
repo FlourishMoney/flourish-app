@@ -102,8 +102,8 @@ const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
 // + 14 days, so trials created before that migration do not move. The rule itself lives in
 // _lib/planRules.js and is parity-tested against the client's copy. Defaults to free on any error —
 // auth still gates access; worst case a paid user is briefly treated as free on a transient DB error.
-// The same answer whichever app asks: a store app's request reads the subscription too, so a household
-// paying on the web keeps full access in the iOS and Android apps (_lib/planRules.js deriveEntitlement).
+// The same answer whichever app asks: every request reads the subscription row, so a household paying
+// on the web or in a store keeps full access in every app (_lib/planRules.js deriveEntitlement).
 async function getUserPlan(user_id) {
   try {
     const admin = getAdminClient();
@@ -125,7 +125,7 @@ async function getUserPlan(user_id) {
     try {
       const { data: subRow, error: subErr } = await admin
         .from("subscriptions")
-        .select("status, current_period_end, plan_key, cancel_at_period_end")
+        .select("provider, status, current_period_end, plan_key, cancel_at_period_end")
         .eq("user_id", user_id)
         .maybeSingle();
       if (!subErr) sub = subRow || null;
