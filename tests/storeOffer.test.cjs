@@ -100,6 +100,13 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     t.eq(texts.filter((x) => US.test(x)), [], "5e Canadian spelling (cancelled, not canceled; licence, the noun)");
     t.eq(texts.filter((x) => /\bfree\b(?! plan)|\btrial\b|\bintro|first month/i.test(x)), [], "5f no store trial, no free month, no introductory price anywhere on the paywall");
     t.eq(texts.filter((x) => /website|flourishmoney\.app(?!\b)|https?:|checkout|stripe|\$\s?(79|99|11)\.\d\d(?! a)/i.test(x.replace("hello@flourishmoney.app", ""))), [], "5g no website price, no checkout, no link to pay outside the app");
+    const F = await import("../src/lib/freePlan.js");
+    const T7 = F.STORE_TERMS_SECTION_7_IAP;
+    t.eq([BANNED.test(T7), SAVING.test(T7), US.test(T7), adviceProblems(T7), /\$\s?\d|website|https?:|checkout/i.test(T7), /nothing to buy/i.test(T7)], [false, false, false, [], false, false],
+      "5j Terms section 7 in a selling build: no banned word, saving, US spelling, money instruction, price or website, and never \"nothing to buy\"");
+    t.ok(/auto-renewing subscription bought through the App Store or Google Play/.test(T7) && /at least 24 hours before the end of the period/.test(T7) && /first 50 households/.test(T7)
+      && /first 14 days\. There is no other trial\./.test(T7) && T7.endsWith(F.STORE_TERMS_SECTION_7.slice(F.STORE_TERMS_SECTION_7.indexOf("the free plan has usage limits"))),
+      "5k …it says how the store sells and renews it, the founding price's rule, the account trial as the only trial, and the free plan's limits as approved");
     const ios = O.offerCopy({ plan: "monthly", priceString: "$11.99", platform: "ios" }).terms.join(" ");
     const and = O.offerCopy({ plan: "annual", priceString: "$99.99", platform: "android" }).terms.join(" ");
     t.ok(/charged to your Apple Account when you confirm/.test(ios) && /at least 24 hours before the end of the period/.test(ios) && /renews automatically at \$11\.99 a month/.test(ios) && /manage or cancel it in your Apple Account settings, under Subscriptions/.test(ios),

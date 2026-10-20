@@ -38,8 +38,8 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
   t.ok(/const last="October 14, 2026";/.test(terms), "3a the Terms' Last updated date is October 14, 2026");
   const privacy = APP.slice(APP.indexOf("function PrivacyPolicy("), APP.indexOf("function ", APP.indexOf("function PrivacyPolicy(") + 30));
   t.ok(privacy.length > 100 && !/October 14, 2026/.test(privacy), "3b the Privacy Policy's date is not touched");
-  t.ok(/\{isNativeApp\(\) \? STORE_TERMS_SECTION_7 : <>/.test(terms) && /^There is nothing to buy in the iOS and Android apps\. /.test(STORE_TERMS_SECTION_7),
-    "4 the store apps' Terms paragraph is STORE_TERMS_SECTION_7, which starts by saying there is nothing to buy in them");
+  t.ok(/\{isNativeApp\(\) \? \(storeBillingBuild\(\) \? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7\) : <>/.test(terms) && /^There is nothing to buy in the iOS and Android apps\. /.test(STORE_TERMS_SECTION_7),
+    "4 a 1.0.x store app's Terms paragraph is STORE_TERMS_SECTION_7, which starts by saying there is nothing to buy in them; a 1.1 selling build has its own (storeOffer.test 5j)");
 
   let A = {};
   try { A = loadApp(["TermsOfService"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
