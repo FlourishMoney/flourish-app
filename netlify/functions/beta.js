@@ -32,6 +32,7 @@ const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
+const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
 function clientIp(event) {
@@ -324,8 +325,8 @@ async function handle(event) {
   // this endpoint is public, so a different answer for each case would make it an account oracle.
   // Supabase rate-limits its own resend endpoint; the per-IP and per-email limits below cover ours.
   if (action === "resend_confirmation") {
-    const addr = String(body.email || "").trim().toLowerCase();
-    if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+    const addr = cleanEmail(body.email);
+    if (!addr || !isEmail(addr)) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
     }
     const limit = await rateLimit(event, addr);
@@ -348,10 +349,13 @@ async function handle(event) {
     // which is a typo and not a different address, used to fail the check outright ("you@example.com "
     // was a 400 while "you@example.com" was fine). Normalizing first also means the value that is
     // validated is exactly the value that is stored and emailed: one address, decided in one place.
+    // Trimmed only. A space INSIDE an address is still refused here (tests/waitlistWelcomeEmail 10d): this
+    // row carries CASL consent to email, so it is never quietly changed into an address nobody typed. The
+    // signup and resend paths remove inner spaces, because there the address must still be confirmed.
     const emailAddr = typeof email === "string" ? email.trim().toLowerCase() : "";
 
     // Basic email validation
-    if (!emailAddr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) {
+    if (!emailAddr || !isEmail(emailAddr)) {
       return {
         statusCode: 400, headers: CORS,
         body: JSON.stringify({ error: "Valid email required" }),
@@ -513,11 +517,11 @@ async function handle(event) {
   // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
   // created unconfirmed and must open the email first.
   if (action === "signup") {
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = cleanEmail(body.email);   // a phone keyboard's stray space is not a different address
     const password = body.password;
     const code = String(body.code || "").trim().toUpperCase();
 
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email || !isEmail(email)) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
     }
     if (!password || typeof password !== "string" || password.length < 8) {
