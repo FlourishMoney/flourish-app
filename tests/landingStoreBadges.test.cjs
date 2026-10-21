@@ -6,7 +6,8 @@
 //   2  the artwork is the stores' own, unaltered (pinned by SHA-256) and plain (no script, handler, link or image);
 //   3  the size and clear space both guidelines ask for: 40px tall (Apple's 40px minimum, over Google's 28px), and a
 //      quarter of that height clear on every side;
-//   4  where they show: right under the hero form, and in the footer; each opens in a new tab;
+//   4  where they show: right under the hero form, and nowhere else on the page (Apple: one App Store badge per
+//      layout); each opens in a new tab;
 //   5  the website no longer says the apps are coming;
 //   6  never in a store app: the badges render nothing there, and a store app never shows the landing.
 // -----------------------------------------------------------------------------
@@ -54,11 +55,12 @@ const OFFICIAL = {
   t.ok(/<a key=\{b\.store\} className="fll-store" href=\{b\.href\} target="_blank" rel="noopener noreferrer">\s*<img src=\{b\.src\} alt=\{b\.alt\} width=\{b\.width\} height=\{b\.height\} \/>/.test(comp),
     "4a each badge is a link to its store that opens in a new tab");
   const auth = APP.slice(APP.indexOf("function AuthScreen("), APP.indexOf("\n}\n", APP.indexOf("function AuthScreen(")));
-  t.eq((auth.match(/<StoreBadges\/>/g) || []).length, 2, "4b two places on the landing");
+  t.eq((auth.match(/<StoreBadges\/>/g) || []).length, 1, "4b one place on the landing: one App Store badge per layout, as Apple asks");
   t.ok(/<button type="button" className="fll-btn" onClick=\{goSignup\}>Create your account<\/button>[\s\S]{0,400}<\/div>\s*\)\}\s*<StoreBadges\/>\s*<\/div>/.test(auth)
     && auth.indexOf("<StoreBadges/>") > auth.indexOf('<div className="fll-hero-form">') && auth.indexOf("<StoreBadges/>") < auth.indexOf("<FoundingOffer"),
     "4c the first right under the hero form (its button and the line under it), before the founding block");
-  t.ok(/<div className="fll-foot-in">[\s\S]{0,600}<StoreBadges\/>\s*<span>© 2026 GrowSmart Inc\. · Flourish Money<\/span>/.test(auth), "4d the second in the footer, above the copyright line");
+  const foot = auth.slice(auth.indexOf('<div className="fll-foot">'));
+  t.ok(foot.length > 200 && !/StoreBadges|fll-stores/.test(foot) && !/\.fll-foot \.fll-stores/.test(APP), "4d none in the footer (the footer pair was removed for Apple's one-badge rule)");
   t.ok(/<button className="fll-login" onClick=\{goLogin\}>Log in<\/button>/.test(auth), "4e Log in is unchanged, a quiet text button in the nav");
 
   // ── 5. Nothing says the apps are coming ───────────────────────────────────────────────────────

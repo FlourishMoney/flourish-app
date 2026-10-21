@@ -15449,7 +15449,6 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-foot a{ color:#52624f; font-size:13px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-foot a:hover{ color:#2E8B2E; }
             .fll-contact{ flex-basis:100%; scroll-margin-top:16px; }
-            .fll-foot .fll-stores{ flex-basis:100%; justify-content:flex-start; margin:0 0 0 -10px; }
             .fll-contact h2{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 6px; }
             .fll-contact p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.6; color:#52624f; margin-block:0 2px; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
@@ -15657,7 +15656,6 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                 <p>flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.</p>
                 <p><a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a></p>
               </div>
-              <StoreBadges/>
               <span>© 2026 GrowSmart Inc. · Flourish Money</span>
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
                 <a href="/privacy">Privacy</a>

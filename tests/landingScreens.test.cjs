@@ -80,7 +80,7 @@ function imageSize(file) {
   t.ok(landing.length > 20000 && /Real screens from the app\./.test(landing), "5 (the scan reads the landing page, its waitlist form and consent, and index.html)");
   t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
   t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
-  t.ok(!/Coming soon/i.test(landing) && (landing.match(/<StoreBadges\/>/g) || []).length === 2
+  t.ok(!/Coming soon/i.test(landing) && (landing.match(/<StoreBadges\/>/g) || []).length === 1
     && /Stop doing the money math <em>in your head\.<\/em>/.test(landing)
     && /flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\./.test(landing)
     && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
