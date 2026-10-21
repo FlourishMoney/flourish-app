@@ -104,7 +104,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.eq(E.foundingLinkParagraphs(7), [
       "Payments for flourish are open.",
       "You're founding household #7 of 50, and your founding price is ready:",
-      "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
+      "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
       "Your link: https://flourishmoney.app/?checkout=founding",
       "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
       "Questions? Just reply to this email.",

@@ -284,7 +284,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   {
     // In the order they show (2026-10-15): eyebrow, price, pill, the price's terms, then what everyone else pays.
     const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
-      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+      "Plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
       "Everyone else: $99.99 a year, plus tax."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
@@ -344,7 +344,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
     t.eq(await fd.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean)),
-      ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
+      ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
         "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
         "35 of 50 founding spots left"], "10m desktop: the founding block is unchanged, with its count");
     await fctx.close();

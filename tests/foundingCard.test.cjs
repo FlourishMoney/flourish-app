@@ -16,7 +16,7 @@ const ROWS = {
   eyebrow: "FOUNDING PRICE · FIRST 50 HOUSEHOLDS",
   price: "$79.99 a year",
   pill: "35 of 50 left",
-  small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+  small: "Plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
   save: "Everyone else: $99.99 a year, plus tax.",
 };
 
