@@ -22,6 +22,7 @@
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSimulatorLimit, decideFacilitator } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
+const { connectBlobs } = require("./_lib/blobsContext");
 
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
 // trusted header (falls back to x-forwarded-for).
@@ -162,6 +163,7 @@ const MAX_BODY_BYTES = 100000;
 const { corsHeadersFor } = require("./_lib/cors");
 
 exports.handler = async (event) => {
+  connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
   const corsHeaders = corsHeadersFor(event);
 
   if (event.httpMethod === "OPTIONS") {
