@@ -48,7 +48,7 @@ const SUBJECT = "Your founding price is ready";
 const LAUNCH_SUBJECT = "flourish has launched in Canada";
 
 // The landing page's founding price sentence, word for word. The one price in this email.
-const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.";
+const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.";
 // The landing page's Contact block (src/App.jsx, id="contact"), word for word, one line per paragraph.
 const CONTACT_BLOCK = Object.freeze(["flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", "hello@flourishmoney.app"]);
 const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";

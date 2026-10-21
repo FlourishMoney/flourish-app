@@ -83,7 +83,9 @@ const FORBIDDEN = [
 
     // The check cannot pass by scanning nothing: it must be reading real copy.
     const app = fs.readFileSync(path.join(srcDir, "App.jsx"), "utf8");
-    t.ok(/Coming soon to iPhone and Android/.test(app), "sanity: the landing still names the platforms it ships on");
+    const links = fs.readFileSync(path.join(srcDir, "lib", "storeLinks.js"), "utf8");
+    t.ok(/alt: "Download on the App Store"/.test(links) && /alt: "Get it on Google Play"/.test(links) && /<StoreBadges\/>/.test(app) && !/Coming soon to iPhone and Android/.test(app),
+      "sanity: the landing names the stores it ships on, with their own badges, and no longer says they are coming");
   }
 
   // ── 2. index.html, where a person can read it ─────────────────────────────────────────────────

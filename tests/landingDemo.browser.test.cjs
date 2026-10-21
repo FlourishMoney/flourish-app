@@ -260,15 +260,15 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const m = await page.evaluate(() => {
       const hero = document.querySelector(".fll-hero"), r = (el) => el && el.getBoundingClientRect();
       const q = (s) => hero.querySelector(s);
-      const parts = { pill: r(q(".fll-badge")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), input: r(q(".fll-input")), join: r(q(".fll-btn")), consent: r(q(".fll-consent")), demo: r(q(".fll-demo")), trust: r(q(".fll-trust")) };
+      const parts = { pill: r(q(".fll-badge")), stores: r(q(".fll-stores")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), input: r(q(".fll-input")), join: r(q(".fll-btn")), consent: r(q(".fll-consent")), demo: r(q(".fll-demo")), trust: r(q(".fll-trust")) };
       const pad = parseFloat(getComputedStyle(hero).paddingLeft);
       return { parts, pad, scrollW: document.documentElement.scrollWidth, consent: q(".fll-consent").textContent, cardSrc: q(".fll-hero-card img").getAttribute("src"),
         h1: q(".fll-h1").innerHTML, emColor: getComputedStyle(q(".fll-h1 em")).color, emStyle: getComputedStyle(q(".fll-h1 em")).fontStyle, h1Font: getComputedStyle(q(".fll-h1")).fontFamily };
     });
     const p = m.parts;
-    t.ok(p.pill.top < p.h1.top && p.h1.top < p.sub.top && p.sub.top < p.input.top && p.input.top < p.join.top && p.join.top < p.consent.top
-      && p.consent.bottom <= p.card.top && p.card.bottom <= p.demo.top && p.demo.bottom <= p.trust.top,
-      "6a at 390px the hero reads pill, H1, subline, email field, Join, consent line, card, demo button, read-only line");
+    t.ok(!p.pill && p.h1.top < p.sub.top && p.sub.top < p.input.top && p.input.top < p.join.top && p.join.top < p.consent.top
+      && p.consent.bottom <= p.stores.top && p.stores.bottom <= p.card.top && p.card.bottom <= p.demo.top && p.demo.bottom <= p.trust.top,
+      "6a at 390px the hero reads H1, subline, email field, Join, consent line, the store badges, card, demo button, read-only line (no \"Coming soon\" pill)");
     t.ok(p.input.bottom <= 844 && p.join.bottom <= 844, `6b the email field and the whole Join button are on screen without scrolling (Join's bottom at ${Math.round(p.join.bottom)}px of 844)`);
     t.ok(p.card.top < 844, `6b2 …and so is the card's top (at ${Math.round(p.card.top)}px of 844)`);
     t.ok(m.pad >= 16 && [p.input, p.join, p.demo].every(b => b.left >= m.pad - 0.5 && b.right <= 390 - m.pad + 0.5) && m.scrollW <= 390,
@@ -284,7 +284,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   {
     // In the order they show (2026-10-15): eyebrow, price, pill, the price's terms, then what everyone else pays.
     const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
-      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
+      "Plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
       "Everyone else: $99.99 a year, plus tax."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
@@ -344,7 +344,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
     t.eq(await fd.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean)),
-      ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
+      ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
         "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
         "35 of 50 founding spots left"], "10m desktop: the founding block is unchanged, with its count");
     await fctx.close();
@@ -370,7 +370,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       await pg.evaluate(async () => { await document.fonts.ready; });
       const m = await pg.evaluate(() => {
         const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect();
-        return { h1: r(".fll-h1"), sub: r(".fll-sub"), form: r(".fll-input"), join: r(".fll-btn"), founding: document.querySelector(".fll-founding").getBoundingClientRect(),
+        return { h1: r(".fll-h1"), sub: r(".fll-sub"), form: r(".fll-input"), join: r(".fll-btn"), stores: r(".fll-stores"), founding: document.querySelector(".fll-founding").getBoundingClientRect(),
           card: r(".fll-hero-card"), walk: r(".fll-walk"), familiar: r(".fll-familiar"), demo: r(".fll-demo"), wrap: document.querySelector(".fll-hero .fll-hero-grid").getBoundingClientRect(),
           hScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth };
       });
@@ -378,6 +378,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       t.ok(Math.abs(m.card.top - m.h1.top) <= 2 && m.card.bottom <= h && m.card.left > m.h1.right && m.card.left > m.form.right,
         `6i ${tag}: the $1,944 card is on the right, its top level with the headline's, wholly in the first screen (card ${Math.round(m.card.top)}-${Math.round(m.card.bottom)}, headline top ${Math.round(m.h1.top)})`);
       t.ok(m.join.bottom <= h && m.form.top > m.sub.bottom, `6j ${tag}: Join is in the first screen (${Math.round(m.join.top)}-${Math.round(m.join.bottom)}), with the form under the subline`);
+      const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+      t.ok(m.stores.top >= m.join.bottom && m.stores.right <= m.card.left && apart(m.stores, m.founding) && apart(m.stores, m.card) && m.stores.height >= 60,
+        `6j2 ${tag}: the store badges sit under Join in the left column, clear of the card and the founding block, with their clear space (${Math.round(m.stores.top)}-${Math.round(m.stores.bottom)})`);
       t.ok(m.founding.top >= m.card.bottom && m.founding.top - m.card.bottom <= 24 && Math.abs(m.founding.left - m.card.left) <= 2 && Math.abs(m.founding.right - m.card.right) <= 2 && m.founding.left > m.form.right,
         `6n ${tag}: the founding box is in the right column, directly under the card and as wide (box ${Math.round(m.founding.top)}-${Math.round(m.founding.bottom)}, card bottom ${Math.round(m.card.bottom)})`);
       t.ok(m.walk.top > m.founding.bottom && m.walk.top > m.card.bottom && m.walk.left < m.h1.right && m.walk.right > m.card.left && m.familiar.top > m.walk.bottom && m.demo.top > m.familiar.bottom,
