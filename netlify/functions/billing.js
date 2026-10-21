@@ -24,6 +24,7 @@ const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
 const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = require("./_lib/foundingCohort");
 const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
 const { getStore } = require("@netlify/blobs");
+const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost } = require("./_lib/stripeApi");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
@@ -104,6 +105,7 @@ async function ensureCustomer(admin, user_id, email) {
 }
 
 exports.handler = async (event) => {
+  connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
   const CORS = corsHeadersFor(event);
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return json(405, CORS, { error: "Method not allowed" });

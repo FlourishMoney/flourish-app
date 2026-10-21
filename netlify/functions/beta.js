@@ -31,6 +31,7 @@ const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { getStore } = require("@netlify/blobs");
+const { connectBlobs } = require("./_lib/blobsContext");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
 function clientIp(event) {
@@ -705,6 +706,7 @@ function logLine(event, res) {
 }
 
 exports.handler = async (event) => {
+  connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
   let res;
   try { res = await handle(event); }
   catch (e) { console.log(logLine(event, { statusCode: 500, body: JSON.stringify({ error: "threw" }) })); throw e; }
