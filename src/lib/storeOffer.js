@@ -65,7 +65,7 @@ export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settings
 // netlify/functions/billing.js: paid, monthly or annual, in the App Store or Google Play, and still offered the founding
 // price). Which line follows the store the subscription is in, since that is where it is cancelled: B1 for the App
 // Store, B2 for Google Play. Never on the website (Settings renders the card only in a selling store build), never
-// without a founding spot, never once the household is on Founding annual. tests/foundingSpotLine.test.cjs.
+// without a founding spot, never once the household is on Founding annual. tests/privacyAndWords.test.cjs.
 export const FOUNDING_SPOT_LINE = Object.freeze({
   app_store: "You hold a founding spot. Founding annual is a separate plan, so to avoid being charged for two, cancel your current plan in your Apple Account settings first. You keep access until it ends, then choose Founding annual in See plans.",
   play_store: "You hold a founding spot. To avoid being charged during a plan change, cancel your current plan in Google Play under Subscriptions first. You keep access until it ends, then choose Founding annual in See plans.",
