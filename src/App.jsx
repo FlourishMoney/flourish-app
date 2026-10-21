@@ -17650,7 +17650,8 @@ export default function FlourishApp(){
     const nextSig = d.prompt ? d.suggestion.signature : null;
     const curSig  = appData.incomeSuggestion?.signature || null;
     if (nextSig === curSig) return;                      // no change → no write → no loop
-    console.error("[income] detection:", detected ? `${detected.perDeposit}/${detected.freq}` : "none",
+    // The cadence only: an income amount never goes to the console (Sentry records console calls as breadcrumbs).
+    console.error("[income] detection:", detected ? detected.freq : "none",
                   "→", d.prompt ? `SUGGEST (${d.reasons?.join(",")})` : `no card (${d.reason})`);
     setAppData(prev => ({ ...prev, incomeSuggestion: d.prompt ? d.suggestion : null }));
   }, [incomeDetectSig]); // eslint-disable-line react-hooks/exhaustive-deps
