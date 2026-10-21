@@ -68,6 +68,7 @@ import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/fea
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
+import { STORE_BADGES } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -15030,6 +15031,21 @@ function FoundingCard() {
   );
 }
 
+// The App Store and Google Play badges (lib/storeLinks.js), on the website only: a store app never shows the
+// landing page, and this renders nothing there even if it ever did. Each opens the store in a new tab.
+function StoreBadges(){
+  if (isNativeApp()) return null;
+  return (
+    <div className="fll-stores">
+      {STORE_BADGES.map((b) => (
+        <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer">
+          <img src={b.src} alt={b.alt} width={b.width} height={b.height} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -15053,7 +15069,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   const [success, setSuccess] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
-  // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
+  // Both store apps boot straight into login/signup. The waitlist landing (with the store badges) is a web
   // page for people who cannot use the product yet; someone who has installed the app already can.
   // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
   const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
@@ -15387,7 +15403,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-hero-card img{ display:block; width:100%; height:auto; }
             .fll-hero-card > img{ border-radius:22px; border:1px solid rgba(46,139,46,0.18); }
             .fll-hero-card .fll-sample{ margin-top:10px; }
-            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:13px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
+            /* The stores' own badges, unaltered (lib/storeLinks.js). Both 40px tall: Apple's minimum on screen, above
+               Google's 28px, and Google's the same size as Apple's. Each link's 10px padding is the clear space both
+               guidelines ask for, a quarter of the badge's height; nothing else sits inside it. */
+            .fll-stores{ display:flex; flex-wrap:wrap; align-items:center; justify-content:center; margin:${SPACE.xs}px auto 0; }
+            .fll-store{ display:block; padding:10px; line-height:0; }
+            .fll-store img{ display:block; height:40px; width:auto; }
             .fll-h1{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(33px,6.2vw,58px); line-height:1.06; letter-spacing:-0.6px; color:#15321a; margin:0 auto 18px; max-width:13ch; }
             .fll-h1 em{ font-style:italic; color:#2E8B2E; }
             .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto; }
@@ -15428,6 +15449,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-foot a{ color:#52624f; font-size:13px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-foot a:hover{ color:#2E8B2E; }
             .fll-contact{ flex-basis:100%; scroll-margin-top:16px; }
+            .fll-foot .fll-stores{ flex-basis:100%; justify-content:flex-start; margin:0 0 0 -10px; }
             .fll-contact h2{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 6px; }
             .fll-contact p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.6; color:#52624f; margin-block:0 2px; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
@@ -15457,6 +15479,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               .fll-fo-phone{ display:none; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
+              .fll-hero-form .fll-stores{ justify-content:flex-start; margin-left:-10px; }
               .fll-trust-row{ text-align:left; }
               .fll-walk, .fll-familiar{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
@@ -15476,8 +15499,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                "Sound familiar?" and the button, centred. Under 1024px nothing here applies. */
             @media(min-width:1024px){
               .fll-hero-grid{ grid-template-areas:"text card" "form card" "form founding" "demo demo"; grid-template-rows:auto auto auto auto; }
-              .fll-badge{ line-height:${SPACE.lg}px; }
-              .fll-hero-card{ align-self:start; margin-top:${SPACE.lg + 2 * 7 + 2 * 1 + 22}px; margin-bottom:0; }
+              /* Top-aligned with the headline. It used to sit lower by the old platform pill's height (line + padding +
+                 border + margin); the pill is gone, so the headline is the text column's first line. */
+              .fll-hero-card{ align-self:start; margin-top:0; margin-bottom:0; }
               .fll-founding{ justify-self:end; margin-top:-${SPACE.xl - SPACE.lg}px; }
               .fll-hero-demo{ justify-self:stretch; max-width:none; margin-top:${SPACE.xl}px; }
               .fll-walk{ display:grid; max-width:960px; margin-inline:auto; margin-block:0 ${SPACE.xl}px; grid-template-columns:minmax(0,360px) minmax(0,1fr);
@@ -15507,7 +15531,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
 
-          {/* Hero. Mobile, one column: pill, H1, subline, the form (field, Join, consent line), the card, then
+          {/* Hero. Mobile, one column: H1, subline, the form (field, Join, consent line), the store badges, the card, then
               the demo button and the read-only line, so Join is on screen at 390 x 844. 960 to 1023px: text,
               form and demo button on the left, the card on the right. 1024px and up: the card beside the text
               and form, top-aligned with the headline, and the videos, "Sound familiar?" and the demo button in
@@ -15515,15 +15539,6 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           <div className="fll-wrap fll-hero">
             <div className="fll-hero-grid">
               <div className="fll-hero-text">
-              <span className="fll-badge">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} aria-hidden="true">
-                  {/* Apple / App Store */}
-                  <svg width="12" height="12" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
-                  {/* Google Play */}
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                </span>
-                Coming soon to iPhone and Android
-              </span>
                 <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
                 <p className="fll-sub">Safe to spend is built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
               </div>
@@ -15549,6 +15564,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                     <p className="fll-consent">Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.</p>
                   </div>
                 )}
+                <StoreBadges/>
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
               {(waitlistForms || waitlistHeld) && <FoundingOffer launched={waitlistArea !== "waitlist"} held={waitlistHeld}/>}
@@ -15641,6 +15657,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                 <p>flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.</p>
                 <p><a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a></p>
               </div>
+              <StoreBadges/>
               <span>© 2026 GrowSmart Inc. · Flourish Money</span>
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
                 <a href="/privacy">Privacy</a>

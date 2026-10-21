@@ -80,11 +80,11 @@ function imageSize(file) {
   t.ok(landing.length > 20000 && /Real screens from the app\./.test(landing), "5 (the scan reads the landing page, its waitlist form and consent, and index.html)");
   t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
   t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
-  t.ok(/Coming soon to iPhone and Android/.test(landing)
+  t.ok(!/Coming soon/i.test(landing) && (landing.match(/<StoreBadges\/>/g) || []).length === 2
     && /Stop doing the money math <em>in your head\.<\/em>/.test(landing)
     && /flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\./.test(landing)
     && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
-    && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c the badge, the hero, the What-If card and the waitlist line, word for word");
+    && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c no \"Coming soon\" (the store badges instead, landingStoreBadges.test), the hero, the What-If card and the waitlist line, word for word");
 
   // ── 6. landing-voc copy (2026-10-14) ─────────────────────────────────────────────────────────
   t.ok(/<p className="fll-sub">Safe to spend is built around your paydays, not the calendar month\. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\.<\/p>/.test(landing),
