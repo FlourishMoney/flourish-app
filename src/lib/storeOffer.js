@@ -60,6 +60,27 @@ export function storeDisclosure(platform) {
 //   bodyCancelled                 the same, once the regular plan will not renew (it is already cancelled)
 export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settingsButton: null, title: null, body: null, bodyCancelled: null });
 
+// APPROVED 2026-10-21 (ChatGPT and Grok agreed), word for word: Settings' Subscription card in a store app, for an
+// account that holds a founding spot while it pays for a regular store plan (store_status founding.held_on_regular_plan,
+// netlify/functions/billing.js: paid, monthly or annual, in the App Store or Google Play, and still offered the founding
+// price). Which line follows the store the subscription is in, since that is where it is cancelled: B1 for the App
+// Store, B2 for Google Play. Never on the website (Settings renders the card only in a selling store build), never
+// without a founding spot, never once the household is on Founding annual. tests/foundingSpotLine.test.cjs.
+export const FOUNDING_SPOT_LINE = Object.freeze({
+  app_store: "You hold a founding spot. Founding annual is a separate plan, so to avoid being charged for two, cancel your current plan in your Apple Account settings first. You keep access until it ends, then choose Founding annual in See plans.",
+  play_store: "You hold a founding spot. To avoid being charged during a plan change, cancel your current plan in Google Play under Subscriptions first. You keep access until it ends, then choose Founding annual in See plans.",
+});
+
+/** B1 or B2 for this store status, or null. */
+export function foundingSpotLine(status) {
+  if (!status || status.paid !== true) return null;
+  if (status.provider !== "app_store" && status.provider !== "play_store") return null;
+  if (status.plan_key !== "monthly" && status.plan_key !== "annual") return null;
+  const held = status.founding && status.founding.held_on_regular_plan;
+  if (!held || typeof held !== "object") return null;
+  return FOUNDING_SPOT_LINE[status.provider];
+}
+
 export const PAYWALL_COPY = Object.freeze({
   title: "Flourish Plus",
   lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",

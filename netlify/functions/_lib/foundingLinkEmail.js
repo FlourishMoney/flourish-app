@@ -74,7 +74,7 @@ function foundingLinkParagraphs(position) {
 function launchParagraphs() {
   return [
     "flourish has launched in Canada. When you joined the waitlist, you asked us to email you when it did, so here it is.",
-    "flourish is now available in Canada at flourishmoney.app.",
+    "flourish is now available in Canada at flourishmoney.app, on the App Store and on Google Play.",
     "This is the one email you asked for when you joined, so we won't send you anything else from the waitlist.",
     "Questions? Just reply to this email.",
     "Amanda, founder of flourish",

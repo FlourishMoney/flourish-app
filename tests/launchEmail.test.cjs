@@ -49,7 +49,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     t.eq(p.subject, "flourish has launched in Canada", "1b the subject");
     t.eq(E.launchParagraphs(), [
       "flourish has launched in Canada. When you joined the waitlist, you asked us to email you when it did, so here it is.",
-      "flourish is now available in Canada at flourishmoney.app.",
+      "flourish is now available in Canada at flourishmoney.app, on the App Store and on Google Play.",
       "This is the one email you asked for when you joined, so we won't send you anything else from the waitlist.",
       "Questions? Just reply to this email.",
       "Amanda, founder of flourish",
@@ -272,7 +272,11 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     const fnDir = path.join(REPO, "netlify", "functions");
     t.ok(!fs.existsSync(path.join(fnDir, "founding-reminder-sweep.js")) && !fs.existsSync(path.join(fnDir, "_lib", "foundingReminderEmail.js")), "6m the founding reminder sweep and its email are gone");
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
-    t.eq([...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort(), ["founding-link-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep and the founding link sweep");
+    const scheduled = [...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort();
+    const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
+    t.eq([scheduled, scheduled.filter(sends)], [["founding-link-sweep", "limiter-cleanup", "waitlist-sweep"], ["founding-link-sweep", "waitlist-sweep"]],
+      "6n0 three scheduled functions, and the limiter cleanup sends nothing");
+    t.eq(scheduled.filter(sends), ["founding-link-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep and the founding link sweep");
     const everywhere = [toml, fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8"),
       ...fs.readdirSync(fnDir).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, f), "utf8")),
       ...fs.readdirSync(path.join(fnDir, "_lib")).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, "_lib", f), "utf8"))].join("\n");
