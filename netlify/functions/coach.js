@@ -23,6 +23,7 @@ const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } =
 const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSimulatorLimit, decideFacilitator } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
+const { subjectKey, dayWindow, countIn } = require("./_lib/limiterKeys");
 
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
 // trusted header (falls back to x-forwarded-for).
@@ -34,14 +35,16 @@ function clientIp(event) {
 
 // Increment + return today's per-IP coach count in Netlify Blobs. Read-then-write isn't atomic, so
 // it can slightly undercount under heavy concurrency — fine for an abuse/cost backstop (not a precise
-// quota). Returns null when no IP or Blobs is unavailable, so callers can decide how to degrade.
-async function bumpIpUsage(ip) {
-  if (!ip) return null;
-  const store = getStore("coach_ip_usage");
-  const key = `${new Date().toISOString().slice(0, 10)}:${ip}`;
-  const cur = await store.get(key, { type: "json" });
-  const n = ((cur && cur.n) || 0) + 1;
-  await store.setJSON(key, { n });
+// quota). Returns null when no IP, no hashing secret, or Blobs is unavailable, so callers can decide how to
+// degrade. The IP is stored only as a keyed hash, with today's count only (_lib/limiterKeys.js); yesterday's is
+// replaced on the next request and deleted daily by limiter-cleanup.js.
+async function bumpIpUsage(ip, { store = null, now = new Date(), secret } = {}) {
+  const key = secret === undefined ? subjectKey("coach-ip", ip) : subjectKey("coach-ip", ip, secret);
+  if (!key) return null;
+  const s = store || getStore("coach_ip_usage");
+  const w = dayWindow(now);
+  const n = countIn(await s.get(key, { type: "json" }), w) + 1;
+  await s.setJSON(key, { w, n });
   return n;
 }
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
@@ -466,3 +469,4 @@ exports.handler = async (event) => {
     };
   }
 };
+exports._bumpIpUsage = bumpIpUsage;

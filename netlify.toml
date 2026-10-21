@@ -19,6 +19,11 @@
 [functions."founding-link-sweep"]
   schedule = "*/15 * * * *"
 
+# Scheduled: the rate limiters' cleanup (netlify/functions/_lib/limiterCleanup.js). Once a day it deletes every
+# limiter entry whose window has passed, and any key still in the old format that held a raw IP or email address.
+[functions."limiter-cleanup"]
+  schedule = "@daily"
+
 # Security headers
 [[headers]]
   for = "/*"

@@ -50,7 +50,7 @@ const clearContext = () => { delete process.env.NETLIFY_BLOBS_CONTEXT; delete gl
     let s2 = null, err2 = "";
     try { s2 = getStore("signup_attempts"); } catch (e) { err2 = e.message; }
     t.eq([!!s2, err2], [true, ""], "2a after connectBlobs(event), getStore works");
-    const ok = await checkSignupLimit({ store: s2, ip: "203.0.113.7", email: "someone@example.com" });
+    const ok = await checkSignupLimit({ store: s2, ip: "203.0.113.7", email: "someone@example.com", secret: "test-limiter-secret-not-real" });
     t.eq([ok.allowed, ok.reason], [true, null], "2b …and the real limiter allows a first attempt");
     t.ok(seen.some((x) => /^GET .*signup_attempts.* Bearer tok-test$/.test(x)) && seen.some((x) => /^PUT .*signup_attempts/.test(x)),
       `2c …reading and writing the counter in the store, with the event's token (${seen.length} requests)`);
@@ -65,8 +65,8 @@ const clearContext = () => { delete process.env.NETLIFY_BLOBS_CONTEXT; delete gl
   t.ok(!process.env.NETLIFY_BLOBS_CONTEXT, "3b …and a bad or missing context leaves the environment as it was");
 
   // ── 4. Every function that uses getStore connects first ───────────────────────────────────────
-  const users = fs.readdirSync(FN).filter((f) => f.endsWith(".js") && /getStore\(/.test(fs.readFileSync(path.join(FN, f), "utf8")));
-  t.eq(users.sort(), ["beta.js", "billing.js", "coach.js"], "4a (the functions that use Netlify Blobs)");
+  const users = fs.readdirSync(FN).filter((f) => f.endsWith(".js") && /getStore\(|require\("@netlify\/blobs"\)/.test(fs.readFileSync(path.join(FN, f), "utf8")));
+  t.eq(users.sort(), ["beta.js", "billing.js", "coach.js", "limiter-cleanup.js"], "4a (the functions that use Netlify Blobs)");
   for (const f of users) {
     const src = fs.readFileSync(path.join(FN, f), "utf8");
     t.ok(/require\("\.\/_lib\/blobsContext"\)/.test(src) && /exports\.handler = async \(event\) => \{\n  connectBlobs\(event\);/.test(src), `4b ${f}: its handler calls connectBlobs(event) before anything else`);
