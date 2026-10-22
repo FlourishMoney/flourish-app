@@ -60,6 +60,11 @@ if (mode === "artifact") {
     die(`dist/ still holds landing-only media (${shipped.join(", ")}), which would ship inside the iOS and ` +
         `Android apps.\n    build:native runs scripts/strip-landing-media.mjs after vite build; run that, then this check.`);
   }
+  const indexHtml = path.join(root, "dist", "index.html");
+  if (fs.existsSync(indexHtml) && fs.readFileSync(indexHtml, "utf8").includes("LANDING-META")) {
+    die(`dist/index.html still holds the landing's link-preview tags, which name the website.\n` +
+        `    build:native runs scripts/strip-landing-media.mjs after vite build; run that, then this check.`);
+  }
   console.log("  no landing media   dist/");
   const dir = path.join(root, "dist", "assets");
   if (!fs.existsSync(dir)) die("dist/assets does not exist — run the build before this check.");

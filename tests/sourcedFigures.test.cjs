@@ -413,17 +413,12 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Don't use AI", "10. Contact Us", "Contact us", "13. Contact",
       // Subscription screens (web only; a store build renders none of them, nativeNoPrice.test).
       "Get Flourish Plus", "Get Flourish Plus →", "Start 14 days free →", "You can cancel any time.", "14 days free. Cancel any time.", "Keep the free plan",
-      // The landing's founding spot form after the launch (approved by ChatGPT and Grok, 2026-10-15).
-      "Get my founding spot",
       // The Google Play badge's own name, its required alt text (lib/storeLinks.js; Google's badge guidelines): it
       // names the store, it is not an instruction about money. ("Download on the App Store" does not start with a verb on the list.)
       "Get it on Google Play",
       ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",
-      // The landing page's headline, locked to the live Meta ad (landing-hero, 2026-10-05). "Stop" is about
-      // doing the arithmetic in your head, not about what to do with money; its italic tail is a separate string.
-      "Stop doing the money math",
     ]);
     // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
     const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;

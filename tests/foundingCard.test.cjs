@@ -74,13 +74,16 @@ const ROWS = {
   // ── 4. phones and tablets only, directly above the email field ─────────────────────────────
   const desk = APP.slice(APP.indexOf("@media(min-width:960px){"), APP.indexOf("@media(min-width:960px){") + 3000);
   t.ok(/\.fll-founding-card\{ display:none; \}/.test(desk) && /\.fll-founding-card\{ display:block;/.test(APP), "4a shown in the one-column layout, hidden at 960px and up");
-  t.ok(/<div className="fll-hero-form">\s+<FoundingCard\/>\s+\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}/.test(APP), "4b it sits in the hero form, directly above the email field (shown while a waitlist form is)");
+  // The trial-first landing (approved Oct 22): the card is the top of the price box, above its lines and the
+  // founding list form.
+  t.ok(/<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*>\s*<FoundingCard\/>/.test(APP) && (APP.match(/<FoundingCard\/>/g) || []).length === 1,
+    "4b it sits at the top of the price box, and only there");
   let A = {};
   try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A.AuthScreen) {
     const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
-    const at = html.indexOf('class="fll-founding-card"'), inputAt = html.indexOf('class="fll-input"');
-    t.ok(at > 0 && inputAt > at, "4c rendered: the card comes before the email field");
+    const at = html.indexOf('class="fll-founding-card"'), boxAt = html.indexOf('class="fll-founding"'), inputAt = html.indexOf('class="fll-founding-h"', at);
+    t.ok(boxAt > 0 && at > boxAt && inputAt > at, "4c rendered: the card opens the price box, before its lines");
     const text = textOf(html.slice(at, inputAt));
     t.ok([ROWS.eyebrow, ROWS.price, ROWS.save, ROWS.small].every(r => text.includes(r)) && !/of 50 left/.test(text),
       "4d before any count is read: every row, and no pill");
@@ -92,8 +95,8 @@ const ROWS = {
   }
 
   // ── 5. tapping it goes to the founding block ───────────────────────────────────────────────
-  t.ok(/<button type="button" className="fll-founding-card" onClick=\{toBlock\}>/.test(card) && /document\.querySelector\("\.fll-founding"\)/.test(card)
-    && /el\.scrollIntoView\(\{ block: "start"/.test(card), "5a it is a button that scrolls the founding block (.fll-founding) into view");
+  t.ok(/<div className="fll-founding-card">/.test(card) && !/toBlock|scrollIntoView|<button/.test(card),
+    "5a inside the price box it is part of the box, not a button (there is nothing to scroll to)");
 
   // ── 6. AA on every row, and it does not look like the Join button ──────────────────────────
   const lum = (hex) => { const c = hex.match(/\w\w/g).map(x => parseInt(x, 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };

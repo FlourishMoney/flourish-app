@@ -81,16 +81,26 @@ function imageSize(file) {
   t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
   t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
   t.ok(!/Coming soon/i.test(landing) && (landing.match(/<StoreBadges\/>/g) || []).length === 1
-    && /Stop doing the money math <em>in your head\.<\/em>/.test(landing)
-    && /flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\./.test(landing)
+    && /<h1 className="fll-h1">Know what's safe to spend <em>until payday\.<\/em><\/h1>/.test(landing)
+    && /flourish accounts for bills due before payday, your minimum debt payments, a buffer and a savings amount, then shows what's safe to spend\. You can see how it adds up\./.test(landing)
     && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
     && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c no \"Coming soon\" (the store badges instead, landingStoreBadges.test), the hero, the What-If card and the waitlist line, word for word");
 
   // ── 6. landing-voc copy (2026-10-14) ─────────────────────────────────────────────────────────
-  t.ok(/<p className="fll-sub">Safe to spend is built around your paydays, not the calendar month\. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\.<\/p>/.test(landing),
-    "6a the hero subline opens with the paydays sentence, word for word");
+  // The trial-first landing (approved Oct 22), word for word.
+  t.ok(/<p className="fll-sub">Rent, hydro, the Visa minimum, takeout tonight\? flourish accounts for bills due before payday, your minimum debt payments, a buffer and a savings amount, then shows what's safe to spend\. You can see how it adds up\.<\/p>/.test(landing),
+    "6a the hero subline, word for word");
   {
-    const demoCol = landing.slice(landing.indexOf('<div className="fll-hero-demo">'), landing.indexOf('className="fll-trust-row"'));
+    const form = landing.slice(landing.indexOf('<div className="fll-hero-form">'), landing.indexOf("{/* The price box"));
+    const order = ["<TrialButton onClick={goSignup}", ">Every feature free for 14 days. Also on iPhone and Android.</p>", "<StoreBadges/>",
+      "🔒 Bank connections are read-only. flourish can't move your money.", "<FoundingListLine "].map(x => form.indexOf(x));
+    t.ok(order.every((x, i) => x >= 0 && (i === 0 || x > order[i - 1])), `6a2 the hero's column: the main button, its line, the badges, the read-only line, the founding line (${order.join(", ")})`);
+    t.ok((landing.match(/🔒 Bank connections are read-only\. flourish can't move your money\./g) || []).length === 1, "6a3 the read-only line moved, not copied (once on the page)");
+    const trial = APP.slice(APP.indexOf("function TrialButton("), APP.indexOf("\n}\n", APP.indexOf("function TrialButton(")));
+    t.ok(/>Try flourish free for 14 days<\/button>/.test(trial) && /countLanding\("main_tap"/.test(trial) && /onClick\(\);/.test(trial), "6a4 the main button's words; a tap is counted, then opens sign-up");
+  }
+  {
+    const demoCol = landing.slice(landing.indexOf('<div className="fll-hero-demo">'), landing.indexOf("{/* Proof"));
     const iVideo = demoCol.indexOf("<LandingHowTo/>"), iSec = demoCol.indexOf("Sound familiar?"), iBtn = demoCol.indexOf('className="fll-demo"');
     t.ok(iVideo >= 0 && iSec > iVideo && iBtn > iSec, "6b \"Sound familiar?\" sits after the videos and before the demo button");
     const sec = demoCol.slice(iSec - 200, iBtn);

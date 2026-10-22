@@ -218,6 +218,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const asked = []; page.on("request", r => { if (/\/video\/[\w-]+\.mp4/.test(r.url())) asked.push(r.url().split("/").pop()); });
     await page.goto(base, { waitUntil: "load" });
     await page.getByText("Real screens from the app.").waitFor(); await page.waitForTimeout(1200);
+    // The trial-first landing (approved Oct 22): only Overview shows; the other seven sit behind "More videos".
+    const closed = await page.evaluate(() => { const box = document.querySelector(".fll-hero .fll-walk"), more = box.querySelector(".fll-more");
+      return { more: more && more.textContent.trim(), expanded: more && more.getAttribute("aria-expanded"), tiles: box.querySelectorAll(".fll-walk-tile").length, src: box.querySelector("video").getAttribute("src"), moreH: more && more.getBoundingClientRect().height }; });
+    t.eq([closed.more, closed.expanded, closed.tiles, closed.src], ["More videos", "false", 0, "/video/overview.mp4"], `9a0 at ${w}px only Overview shows, the others behind a "More videos" toggle`);
+    t.ok(closed.moreH >= 44, `9a00 at ${w}px the toggle is a full tap target (${closed.moreH}px)`);
+    await page.getByRole("button", { name: "More videos" }).click();
+    t.eq(await page.locator(".fll-more").getAttribute("aria-expanded"), "true", `9a01 at ${w}px the toggle opens the tiles and says so`);
     const v = await page.evaluate(() => {
       const box = document.querySelector(".fll-hero .fll-walk"), d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect(), vid = box.querySelector("video"), play = box.querySelector(".fll-walk-play");
       const tiles = [...box.querySelectorAll(".fll-walk-tile")];
@@ -250,37 +257,45 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       [true, "🔇 Sound off", "true"], `9h ${tag} the sound button mutes, and says so (44px: ${p.soundH})`);
     await ctx.close();
   }
-  // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────
+  // ── The hero at 390 x 844 (a phone), signup open with founding spots left (approved Oct 22) ───────────
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35,"openSignup":true}' }));
+    await page.route("**/api/beta", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.getByText("Real screens from the app.").waitFor();
+    await page.locator(".fll-found-line").waitFor();
     await page.locator(".fll-hero-card img").evaluate(img => img.decode());
+    await page.evaluate(async () => { await document.fonts.ready; });
     const m = await page.evaluate(() => {
       const hero = document.querySelector(".fll-hero"), r = (el) => el && el.getBoundingClientRect();
       const q = (s) => hero.querySelector(s);
-      const parts = { pill: r(q(".fll-badge")), stores: r(q(".fll-stores")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), input: r(q(".fll-input")), join: r(q(".fll-btn")), consent: r(q(".fll-consent")), demo: r(q(".fll-demo")), trust: r(q(".fll-trust")) };
+      const parts = { pill: r(q(".fll-badge")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), main: r(q(".fll-main")), line4: r(q(".fll-trial-line")),
+        stores: r(q(".fll-stores")), trust: r(q(".fll-trust")), line6: r(q(".fll-found-line")), box: r(q(".fll-founding")), input: r(q(".fll-founding .fll-input")), demo: r(q(".fll-demo")) };
       const pad = parseFloat(getComputedStyle(hero).paddingLeft);
-      return { parts, pad, scrollW: document.documentElement.scrollWidth, consent: q(".fll-consent").textContent, cardSrc: q(".fll-hero-card img").getAttribute("src"),
+      return { parts, pad, scrollW: document.documentElement.scrollWidth, cardSrc: q(".fll-hero-card img").getAttribute("src"),
+        texts: [".fll-main", ".fll-trial-line", ".fll-trust", ".fll-found-line"].map(s => q(s).textContent.trim()),
         h1: q(".fll-h1").innerHTML, emColor: getComputedStyle(q(".fll-h1 em")).color, emStyle: getComputedStyle(q(".fll-h1 em")).fontStyle, h1Font: getComputedStyle(q(".fll-h1")).fontFamily };
     });
     const p = m.parts;
-    t.ok(!p.pill && p.h1.top < p.sub.top && p.sub.top < p.input.top && p.input.top < p.join.top && p.join.top < p.consent.top
-      && p.consent.bottom <= p.stores.top && p.stores.bottom <= p.card.top && p.card.bottom <= p.demo.top && p.demo.bottom <= p.trust.top,
-      "6a at 390px the hero reads H1, subline, email field, Join, consent line, the store badges, card, demo button, read-only line (no \"Coming soon\" pill)");
-    t.ok(p.input.bottom <= 844 && p.join.bottom <= 844, `6b the email field and the whole Join button are on screen without scrolling (Join's bottom at ${Math.round(p.join.bottom)}px of 844)`);
+    const order = ["h1", "sub", "card", "main", "line4", "stores", "trust", "line6", "box"];
+    t.ok(!p.pill && order.every((k, i) => i === 0 || p[k].top >= p[order[i - 1]].bottom - 1),
+      `6a at 390px the hero reads: H1, subline, the $1,944 card, the main button, its line, the badges, the read-only line, the founding line, then the price box (${order.map(k => Math.round(p[k].top)).join(", ")})`);
+    t.eq(m.texts, ["Try flourish free for 14 days", "Every feature free for 14 days. Also on iPhone and Android.", "🔒 Bank connections are read-only. flourish can't move your money.",
+      "Founding price: $79.99 a year plus tax for the first 50 households on the founding list. 35 of 50 left."], "6a2 …word for word, with the live count");
+    t.ok(p.main.bottom <= 844 && p.main.height >= 44, `6b the whole main button is on the first screen (its bottom at ${Math.round(p.main.bottom)}px of 844)`);
     t.ok(p.card.top < 844, `6b2 …and so is the card's top (at ${Math.round(p.card.top)}px of 844)`);
-    t.ok(m.pad >= 16 && [p.input, p.join, p.demo].every(b => b.left >= m.pad - 0.5 && b.right <= 390 - m.pad + 0.5) && m.scrollW <= 390,
-      `6c the email field, Join and the demo button sit inside the ${m.pad}px side padding (field ${Math.round(p.input.left)} to ${Math.round(p.input.right)}), and nothing scrolls sideways`);
-    t.ok(p.demo.height >= 48 && Math.abs(p.demo.width - p.join.width) < 1 && p.demo.top > p.card.bottom, `6d the demo button is under the card, full width, at least 48px tall (${Math.round(p.demo.width)} x ${Math.round(p.demo.height)})`);
-    t.ok(p.consent.top >= p.join.bottom && p.consent.bottom <= p.card.top, "6e one consent line sits directly under the Join button");
-    t.ok(/^Stop doing the money math <em>in your head\.<\/em>$/.test(m.h1) && m.emStyle === "italic" && /rgb\(46, 139, 46\)/.test(m.emColor) && /Playfair Display/.test(m.h1Font),
-      "6f the H1 is the ad's line, with \"in your head.\" in the serif italic green");
+    t.ok(m.pad >= 16 && [p.main, p.box, p.demo].every(b => b.left >= m.pad - 0.5 && b.right <= 390 - m.pad + 0.5) && m.scrollW <= 390,
+      `6c the main button, the price box and the demo button sit inside the ${m.pad}px side padding, and nothing scrolls sideways`);
+    t.ok(p.demo.height >= 48 && p.demo.top > p.box.bottom, `6d the demo button is under the price box, at least 48px tall (${Math.round(p.demo.width)} x ${Math.round(p.demo.height)})`);
+    t.ok(p.input.top > p.box.top && p.input.bottom < p.box.bottom, "6e the founding list's email box is inside the price box");
+    t.ok(/^Know what's safe to spend <em>until payday\.<\/em>$/.test(m.h1) && m.emStyle === "italic" && /rgb\(46, 139, 46\)/.test(m.emColor) && /Playfair Display/.test(m.h1Font),
+      "6f the H1, word for word, with \"until payday.\" in the serif italic green");
     t.eq(m.cardSrc, "/app-screens/hero-card.jpg", "6g the card is the crop of the real capture");
     await ctx.close();
   }
-  // ── The founding card above the email field: phones and tablets only (2026-10-07) ─────────────
+  // ── The founding card, at the top of the price box: phones and tablets only (2026-10-07; inside the box Oct 22) ──
   {
     // In the order they show (2026-10-15): eyebrow, price, pill, the price's terms, then what everyone else pays.
     const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
@@ -309,12 +324,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
           .map(e => e.textContent) : null;
         const struck = card ? !!card.querySelector("s, del, strike") || [card, ...card.querySelectorAll("*")].some(e => getComputedStyle(e).textDecorationLine.includes("line-through")) : null;
         return { rows, struck,
-          card: r(".fll-founding-card"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"),
+          card: r(".fll-founding-card"), box: r(".fll-founding"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"), isButton: !!document.querySelector("button.fll-founding-card"),
           live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
       });
       t.eq(calls, 1, `10a ${mode}: one /api/founding request, shared by the card and the block`);
       // Under 960px the block does not repeat the card's price or count.
-      const block = await page.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean));
+      const block = await page.evaluate(() => { const b = document.querySelector(".fll-founding"), c = b.querySelector(".fll-founding-card");
+        return b.innerText.slice(c ? c.innerText.length : 0).split("\n").map(x => x.trim()).filter(Boolean); });
       t.eq(block, ["How founding spots work", "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
         "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
         `10k ${mode}: the founding block says how the spots work${mode === "zero" ? ", and that they are full" : ""}`);
@@ -327,13 +343,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         t.eq(m.rows, mode === "count" ? ROWS : ROWS.filter((r, k) => k !== 2),
           mode === "count" ? "10d the card, row by row, with the live count in the pill" : "10e no count read: only the pill is left out");
         t.eq(m.struck, false, `10f ${mode}: no price on the card is struck through (2026-10-14)`);
-        t.ok(m.card.top >= 0 && m.card.bottom <= 844 && m.card.bottom <= m.input.top && m.input.top - m.card.bottom <= 16,
-          `10g ${mode}: the card is fully on screen (${Math.round(m.card.top)} to ${Math.round(m.card.bottom)}), directly above the email field`);
+        t.ok(m.card.top >= m.box.top && m.card.top - m.box.top <= 32 && m.card.bottom <= m.box.bottom,
+          `10g ${mode}: the card opens the price box (box top ${Math.round(m.box.top)}, card ${Math.round(m.card.top)} to ${Math.round(m.card.bottom)})`);
         t.ok(m.join.bottom <= 844 && m.top.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the $1,944 card's top (${Math.round(m.top.top)}) stay above the fold`);
-        await page.locator(".fll-founding-card").click();
-        await page.waitForTimeout(900);
-        const top = await page.evaluate(() => document.querySelector(".fll-founding").getBoundingClientRect().top);
-        t.ok(top >= -1 && top < 60, `10i ${mode}: tapping the card scrolls to the founding block (its top at ${Math.round(top)}px)`);
+        t.eq(m.isButton, false, `10i ${mode}: inside the box the card is not a button (there is nothing to scroll to)`);
       }
       await ctx.close();
     }
@@ -356,9 +369,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(dm.card.left > dm.h1.right && dm.card.left > dm.form.right && dm.form.top > dm.h1.top && dm.card.top < 900,
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");
     await dctx.close();
-    // 2026-10-14: from 1024px the card sits level with the headline and wholly in the first screen, the
-    // founding box directly under it in the right column, and the videos, "Sound familiar?" and the demo
-    // button are one full-width row below the hero. (Under 1024px nothing changed; the 390 x 844 hero is
+    // 2026-10-14: from 1024px the card sits level with the headline and wholly in the first screen, and the
+    // videos, "Sound familiar?" and the demo button are one full-width row below the hero. Oct 22: the price box
+    // is in the left column. (Under 1024px nothing changed; the 390 x 844 hero is
     // checked in 6b above.)
     for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900]]) {
       const c = await browser.newContext({ viewport: { width: w, height: h } });
@@ -381,8 +394,8 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
       t.ok(m.stores.top >= m.join.bottom && m.stores.right <= m.card.left && apart(m.stores, m.founding) && apart(m.stores, m.card) && m.stores.height >= 60,
         `6j2 ${tag}: the store badges sit under Join in the left column, clear of the card and the founding block, with their clear space (${Math.round(m.stores.top)}-${Math.round(m.stores.bottom)})`);
-      t.ok(m.founding.top >= m.card.bottom && m.founding.top - m.card.bottom <= 24 && Math.abs(m.founding.left - m.card.left) <= 2 && Math.abs(m.founding.right - m.card.right) <= 2 && m.founding.left > m.form.right,
-        `6n ${tag}: the founding box is in the right column, directly under the card and as wide (box ${Math.round(m.founding.top)}-${Math.round(m.founding.bottom)}, card bottom ${Math.round(m.card.bottom)})`);
+      t.ok(m.founding.top >= m.stores.bottom && m.founding.right <= m.card.left && Math.abs(m.founding.left - m.form.left) <= 2,
+        `6n ${tag}: the price box is in the left column, under the badges and the read-only line (box ${Math.round(m.founding.top)}-${Math.round(m.founding.bottom)})`);
       t.ok(m.walk.top > m.founding.bottom && m.walk.top > m.card.bottom && m.walk.left < m.h1.right && m.walk.right > m.card.left && m.familiar.top > m.walk.bottom && m.demo.top > m.familiar.bottom,
         `6k ${tag}: the videos are one row below the hero across both columns, then "Sound familiar?", then the demo button`);
       t.ok(Math.abs((m.walk.left + m.walk.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2 && Math.abs((m.demo.left + m.demo.right) / 2 - (m.wrap.left + m.wrap.right) / 2) <= 2,
@@ -391,25 +404,44 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       await c.close();
     }
   }
+  // ── 6o. Desktop with signup open (approved Oct 22): the card on the right; the left column in the phone's order ──
+  for (const [w, h] of [[1024, 768], [1440, 900]]) {
+    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    const pg = await c.newPage(); pg.setDefaultTimeout(15000);
+    await pg.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35,"openSignup":true}' }));
+    await pg.route("**/api/beta", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
+    await pg.goto(base, { waitUntil: "load" });
+    await pg.locator(".fll-found-line").waitFor();
+    await pg.evaluate(async () => { await document.fonts.ready; });
+    const m = await pg.evaluate(() => { const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect();
+      return Object.fromEntries(["fll-h1", "fll-sub", "fll-main", "fll-trial-line", "fll-stores", "fll-trust", "fll-found-line", "fll-founding", "fll-hero-card"].map(k => [k, r("." + k)])); });
+    const left = ["fll-h1", "fll-sub", "fll-main", "fll-trial-line", "fll-stores", "fll-trust", "fll-found-line", "fll-founding"];
+    t.ok(left.every((k, i) => i === 0 || m[k].top >= m[left[i - 1]].bottom - 1) && left.every(k => m[k].right <= m["fll-hero-card"].left) && Math.abs(m["fll-hero-card"].top - m["fll-h1"].top) <= 2,
+      `6o ${w}x${h}: the card on the right, level with the headline; on the left H1, subline, main button, its line, badges, read-only line, founding line, price box`);
+    t.ok(m["fll-main"].bottom <= h, `6p ${w}x${h}: the main button is in the first screen (bottom ${Math.round(m["fll-main"].bottom)})`);
+    await c.close();
+  }
   // ── 11. The landing after the launch (approved by ChatGPT and Grok, 2026-10-15) ─────────────────────
   // tests/landingWaitlist.test.cjs has the rule. Here, the built page, with /api/founding answering
   // { spotsLeft, openSignup } (signup_status is not asked by the landing):
   //   shut: today's page; open with spots left: the founding spot form, its line and its version, and the
   //   founding block without its two stale bits; open and full: no form and no founding block.
   const TODAY_LINE = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
-  const FOUNDING_LINE = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
-  const landingAt = async ({ open, spots, width = 390, at }) => {
+  // The founding list form's small print (approved Oct 22; consent version 2026-10-22).
+  const FOUNDING_LINE = "We'll email you your founding price link, and no other marketing. Unsubscribe any time. Who we are: see Contact below.";
+  const landingAt = async ({ open, spots, width = 390, at, src = "" }) => {
     const ctx = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 960, hasTouch: width < 960 }, at || TODAY);
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
-    const seen = { founding: 0, status: 0, joins: [] };
+    const seen = { founding: 0, status: 0, joins: [], counts: [] };
     await page.route("**/api/founding", r => { seen.founding++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots, openSignup: open }) }); });
     await page.route("**/api/beta", r => {
       const body = JSON.parse(r.request().postData() || "{}");
       if (body.action === "signup_status") seen.status++;
       if (body.action === "join_waitlist") seen.joins.push(body);
+      if (body.action === "landing_count") seen.counts.push(body);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body.action === "join_waitlist" ? { joined: true } : { openSignup: open }) });
     });
-    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.goto(base + (src ? `?src=${src}` : ""), { waitUntil: "domcontentloaded" });
     await page.getByText("Real screens from the app.").waitFor();
     return { ctx, page, seen };
   };
@@ -431,20 +463,31 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await ctx.close();
   }
   {
-    const { ctx, page, seen } = await landingAt({ open: true, spots: 35 });
-    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
+    const { ctx, page, seen } = await landingAt({ open: true, spots: 35, src: "ig" });
+    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
     const v = await look(page);
-    t.eq([v.buttons, v.lines], [["Get my founding spot", "Get my founding spot"], [FOUNDING_LINE, FOUNDING_LINE]], "11d open, spots left: both forms say \"Get my founding spot\", with the founding spot line");
+    t.eq([v.buttons, v.lines, v.inputs], [["Join the founding list"], [FOUNDING_LINE], 1], "11d open, spots left: one founding list form, \"Join the founding list\", with its small print");
+    const top = await page.evaluate(() => ({ mains: [...document.querySelectorAll(".fll-main")].map(b => b.textContent.trim()),
+      inBox: !!document.querySelector(".fll-founding .fll-capture .fll-input"), free: (document.querySelector(".fll-founding .fll-join-note") || {}).textContent || null,
+      label: (() => { const l = document.querySelector(".fll-founding label.fll-label"); return l && [l.textContent, getComputedStyle(l).display !== "none" && l.getBoundingClientRect().height > 0, l.getAttribute("for") === document.querySelector(".fll-founding .fll-input").id]; })() }));
+    t.eq([top.mains, top.inBox, top.free, top.label], [["Try flourish free for 14 days", "Try flourish free for 14 days"], true, "Joining is free. No payment now.", ["Email address", true, true]],
+      "11d2 …the main button top and bottom; the form inside the price box, \"Joining is free. No payment now.\" above it, and a visible \"Email address\" label");
     t.eq([v.cta2, v.promise, /Join the waitlist/.test(await page.evaluate(() => document.body.innerText))], [false, false, false], "11e …no \"Be first to know\", no launch promise, no \"Join the waitlist\" anywhere");
     t.ok(v.block && v.block.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/Payments open October 26|Join the waitlist\./.test(v.block),
       "11f …and the founding block without its two stale bits");
-    await page.locator(".fll-hero .fll-input").fill("new.household@example.test");
-    await page.getByRole("button", { name: "Get my founding spot" }).first().click();
+    await page.locator(".fll-founding .fll-input").fill("new.household@example.test");
+    await page.getByRole("button", { name: "Join the founding list" }).first().click();
     await page.locator(".fll-done .fll-done-b").waitFor();
-    t.eq(seen.joins.map(j => [j.consentVersion, j.placement]), [["2026-10-26", "hero"]], "11g the signup carries the founding spot line's version, 2026-10-26");
+    t.eq(seen.joins.map(j => [j.consentVersion, j.placement, j.src]), [["2026-10-22", "hero", "ig"]], "11g the signup carries the new small print's version, 2026-10-22, and the visit's src");
     t.eq(await page.evaluate(() => [document.querySelector(".fll-done .fll-done-t").textContent, document.querySelector(".fll-done .fll-done-b").textContent]),
       ["Your founding spot is saved", "We'll email you your founding price link."], "11h the thank-you: \"Your founding spot is saved\" / \"We'll email you your founding price link.\"");
     t.eq([seen.founding, seen.status], [1, 0], "11i one /api/founding read, no signup_status call");
+    await page.getByRole("button", { name: "Try flourish free for 14 days" }).first().click();
+    await page.getByText("Create your free account").waitFor();
+    t.ok(await page.locator('input[type="password"]').first().isVisible(), "11q the main button opens website sign-up");
+    await page.waitForTimeout(300);
+    t.eq(seen.counts.map(c => [c.event, c.src]), [["landing_view", "ig"], ["main_tap", "ig"]], "11r one landing view and the tap, each counted with the visit's src and nothing else");
+    t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,event,src"), "11s …the counts carry no email and no other field");
     await ctx.close();
   }
   {
@@ -452,13 +495,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const { ctx, page, seen } = await landingAt({ open: true, spots: 1 });
     await page.unroute("**/api/beta");
     await page.route("**/api/beta", r => { seen.joins.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: '{"joined":false,"spotsFull":true}' }); });
-    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
-    await page.locator(".fll-hero .fll-input").fill("late.household@example.test");
-    await page.getByRole("button", { name: "Get my founding spot" }).first().click();
+    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
+    await page.locator(".fll-founding .fll-input").fill("late.household@example.test");
+    await page.getByRole("button", { name: "Join the founding list" }).first().click();
     await page.getByText("The founding spots just filled up").waitFor();
-    const done = await page.evaluate(() => { const d = document.querySelector(".fll-hero-form .fll-done"); return [d.querySelector(".fll-done-t").textContent, d.querySelector(".fll-done-b").textContent, [...d.querySelectorAll("button")].map(b => b.textContent.trim())]; });
+    const done = await page.evaluate(() => { const d = document.querySelector(".fll-founding .fll-done"); return [d.querySelector(".fll-done-t").textContent, d.querySelector(".fll-done-b").textContent, [...d.querySelectorAll("button")].map(b => b.textContent.trim())]; });
     t.eq(done, ["The founding spots just filled up", "You can still create your account at flourishmoney.app.", ["Create your account"]], "11n spots filled while the form was open: the title, the line and the button, in place of the thank-you");
-    await page.locator(".fll-hero-form .fll-done").getByRole("button", { name: "Create your account" }).click();
+    await page.locator(".fll-founding .fll-done").getByRole("button", { name: "Create your account" }).click();
     await page.getByText("Create your free account").waitFor();
     t.ok(await page.locator('input[type="password"]').first().isVisible(), "11o …and the button opens sign-up");
     await ctx.close();
@@ -499,7 +542,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   const watchButtons = (ctx) => ctx.addInitScript(() => {
     window.__shown = [];
     const look = () => {
-      for (const b of document.querySelectorAll(".fll-capture .fll-btn")) {
+      for (const b of document.querySelectorAll(".fll-hero .fll-main, .fll-capture .fll-btn")) {
         if (getComputedStyle(b).visibility !== "visible" || !b.offsetParent) continue;
         const text = b.textContent.trim();
         if (!window.__shown.includes(text)) window.__shown.push(text);
@@ -518,15 +561,15 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   };
   const LAUNCHED = new Date("2026-10-27T10:00:00-04:00"), BEFORE = new Date("2026-10-20T10:00:00-04:00");
   const state = (page) => page.evaluate(() => ({ shown: window.__shown, held: document.querySelectorAll(".fll-held").length,
-    formH: document.querySelector(".fll-hero-form .fll-capture") ? Math.round(document.querySelector(".fll-hero-form .fll-capture").getBoundingClientRect().height) : null }));
+    formH: document.querySelector(".fll-founding .fll-capture") ? Math.round(document.querySelector(".fll-founding .fll-capture").getBoundingClientRect().height) : null }));
   {
     const { ctx, page } = await slow({ open: true, spots: 35, delay: 2500, at: LAUNCHED });
     await page.evaluate(() => document.fonts.ready);   // measure in the page's own font, not the fallback
     const during = await state(page);
     t.ok(during.held >= 2 && during.shown.length === 0, `12a after launch, before the answer: the area held (${during.held} parts), no form visible`);
-    await page.getByRole("button", { name: "Get my founding spot" }).first().waitFor();
+    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
     const after = await state(page);
-    t.eq([after.shown, after.held], [["Get my founding spot"], 0], "12b …then the founding spot form, and no other form was ever visible");
+    t.eq([after.shown, after.held], [["Try flourish free for 14 days", "Join the founding list"], 0], "12b …then the main button and the founding list form, and no other button was ever visible");
     t.ok(during.formH > 100 && after.formH === during.formH, `12c …in exactly the space that was held (${during.formH}px, then ${after.formH}px)`);
     await ctx.close();
   }

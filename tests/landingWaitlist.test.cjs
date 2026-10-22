@@ -26,7 +26,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
 const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 const TODAY_LINE = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
-const FOUNDING_LINE = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
+// The founding list form's small print (the trial-first landing, approved Oct 22; consent version 2026-10-22).
+const FOUNDING_LINE = "We'll email you your founding price link, and no other marketing. Unsubscribe any time. Who we are: see Contact below.";
 
 (async () => {
   const t = create();
@@ -84,13 +85,17 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
     t.ok(today.includes("Join the waitlist") && today.includes(TODAY_LINE) && !today.includes("founding"), "4a today's form: \"Join the waitlist\" and today's line");
     const html = A.render(A.h(A.WaitlistForm, { source: "hero", founding: true }));
     const txt = textOf(html);
-    t.ok(txt.includes("Get my founding spot") && !txt.includes("Join the waitlist"), "4b the founding spot form: \"Get my founding spot\"");
+    t.ok(txt.includes("Join the founding list") && !txt.includes("Join the waitlist") && !txt.includes("Get my founding spot"), "4b the founding list form: \"Join the founding list\"");
+    t.ok(txt.indexOf("Joining is free. No payment now.") >= 0 && txt.indexOf("Joining is free. No payment now.") < txt.indexOf("Join the founding list") && !today.includes("No payment now"),
+      "4b2 …with \"Joining is free. No payment now.\" above its button (the founding form only)");
+    t.ok(/<label class="fll-label" for="fll-email-hero">Email address<\/label>/.test(html) && /id="fll-email-hero"/.test(html) && /Email address/.test(A.render(A.h(A.WaitlistForm, { source: "calendar" }))),
+      "4b3 a visible \"Email address\" label on the email box, in both forms");
     t.ok(txt.includes(FOUNDING_LINE) && !txt.includes(TODAY_LINE), "4c …and the founding spot line under it, word for word");
     t.ok(/<a class="fll-contact-link" href="#contact"[^>]*>Contact<\/a> below\./.test(html), "4d …with \"Contact\" linking to the page's Contact block");
     const form = APP.slice(APP.indexOf("function WaitlistForm("), APP.indexOf("\n}\n", APP.indexOf("function WaitlistForm(")));
     t.ok(/\{founding \? "We'll email you your founding price link\." : "We'll email you when flourish launches in Canada\."\}/.test(form),
       "4e the thank-you after the founding spot form: \"We'll email you your founding price link.\"");
-    t.ok(/\{busy \? "Joining…" : founding \? "Get my founding spot" : "Join the waitlist"\}/.test(form), "4f the button's words in both modes");
+    t.ok(/\{busy \? "Joining…" : founding \? "Join the founding list" : "Join the waitlist"\}/.test(form), "4f the button's words in both modes");
   }
 
   // ── 5. the landing ──────────────────────────────────────────────────────────────────────────────
@@ -98,12 +103,19 @@ const FOUNDING_LINE = "We'll email you your founding price link. We won't send o
   t.ok(/sharedFoundingAnswer\(\)\.then\(settle\);/.test(auth) && !/sharedSignupStatus/.test(APP),
     "5a the landing reads the one shared /api/founding answer (no signup_status call of its own)");
   t.ok(/if \(isNativeApp\(\)\) return undefined;\s*let live = true;\s*const settle = [^\n]*\n\s*sharedFoundingAnswer\(\)/.test(auth), "5b web only: a store app asks nothing");
-  t.eq((APP.match(/<WaitlistForm /g) || []).length, 2, "5c two waitlist forms on the landing (hero, bottom)");
-  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && <WaitlistForm source="hero" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}/.test(auth), "5d the hero form: today's or the founding spot form, by state (held while the answer is not in)");
-  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && <FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}\/>\}/.test(auth), "5e the founding block, with its after-launch words in the founding state"); 
+  // The trial-first landing (approved Oct 22): with signup shut, today's waitlist forms in the hero and at the
+  // bottom; with founding spots open, one founding list form, inside the price box, and the main button instead.
+  t.eq((APP.match(/<WaitlistForm /g) || []).length, 3, "5c three waitlist forms in the code: today's in the hero and at the bottom, and the founding list form in the price box");
+  t.ok(/\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}/.test(auth)
+    && /<FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}>\s*\{foundingOpen && <WaitlistForm source="hero" founding held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}\s*<\/FoundingOffer>/.test(auth),
+    "5d the hero: today's form with signup shut; the founding list form inside the price box while spots are open (held while the answer is not in)");
+  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && \(\s*<FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}>/.test(auth), "5e the price box, with its after-launch words in the founding state");
+  t.ok(/const trialFirst = waitlistArea === "founding" \|\| waitlistHeld;/.test(auth) && (auth.match(/<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>/g) || []).length === 2,
+    "5e2 the main button, top and bottom, only while founding spots are open (or held)");
   const second = auth.slice(auth.indexOf("{/* Second email capture */}"), auth.indexOf("{/* Footer */}"));
-  t.ok(/\{waitlistArea === "waitlist" && <>\s*<h2 className="fll-h2"[^>]*>Be first to know\.<\/h2>\s*<p className="fll-lede"[^>]*>Join the waitlist and we'll email you the moment flourish launches in Canada\.<\/p>\s*<\/>\}/.test(second)
-    && /<WaitlistForm source="bottom_cta" founding=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>/.test(second), "5f the bottom form: the launch heading and promise only on today's page");
+  t.ok(/\{waitlistArea === "waitlist" && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<h2 className="fll-h2"[^>]*>Be first to know\.<\/h2>\s*<p className="fll-lede"[^>]*>Join the waitlist and we'll email you the moment flourish launches in Canada\.<\/p>\s*<WaitlistForm source="bottom_cta"\/>/.test(second)
+    && /\{trialFirst && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>/.test(second),
+    "5f the bottom: the launch heading, promise and form only on today's page; the main button while founding spots are open");
   t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "5g the sign-up card's own status check is unchanged");
 
   // ── 6. all 50 taken: "Create your account" (approved by ChatGPT and Grok, 2026-10-15) ──────────────
