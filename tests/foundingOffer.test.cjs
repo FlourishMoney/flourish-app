@@ -149,7 +149,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function AuthScreen("));
-    t.ok(/sharedFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{liveLine && <p/.test(comp),
+    t.ok(/sharedFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{!launched && liveLine && <p/.test(comp),
       "1q the component starts with no number, sets only what the read returned, and draws the line only when there is one");
     t.ok(!/setSpotsLeft\((?!n\))/.test(comp), "1r …and sets spotsLeft nowhere else");
   }
@@ -288,8 +288,20 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingCard()"));
     t.ok(/<span className="fll-fo-desk">\{copy\.heading\}<\/span><span className="fll-fo-phone">\{copy\.phoneHeading\}<\/span>/.test(comp),
       "7c one heading, its desktop and phone words switched by CSS");
-    t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+<p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+<p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>/.test(comp),
-      "7d phones: how the spots work, then the regular price; desktop: price, regular, join, as before");
+    t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\}\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>\}/.test(comp),
+      "7d phones: how the spots work, then the regular price; desktop: price, regular, join (the how and the join only before the launch)");
+    // After the launch (Oct 22): the box drops what the page already says. Rendered, both ways.
+    let R = {};
+    try { R = loadApp(["FoundingOffer"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+    if (R.FoundingOffer) {
+      const before = R.render(R.h(R.FoundingOffer, {})), after = R.render(R.h(R.FoundingOffer, { launched: true }));
+      t.ok(/fll-fo-phone">How founding spots work</.test(before) && before.includes(JOIN_LINE.replace(/'/g, "&#x27;")), "7e before the launch: the box exactly as it was (how the spots work, the join line)");
+      const tA = textOf(after);
+      t.ok(!/How founding spots work/.test(tA) && !tA.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/data-founding-live/.test(after),
+        "7f after the launch: no \"How founding spots work\", no join line, no count line in the box");
+      t.ok(tA.includes(HEADING) && tA.includes(PRICE_LINE) && tA.includes(REGULAR_LINE) && /<h2 class="fll-founding-h fll-fo-desk" id="fll-founding-h">/.test(after),
+        "7g …and still the desktop heading, the founding price with \"Paid on flourishmoney.app, and it works in the iPhone and Android apps too.\", and the standard price");
+    }
     t.ok(/className=\{`fll-founding-live\$\{spotsLeft > 0 \? " fll-fo-desk" : ""\}`\}/.test(comp),
       "7e the \"X of 50 founding spots left\" line is desktop only; \"spots are full\" shows at every width");
     const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 3000);

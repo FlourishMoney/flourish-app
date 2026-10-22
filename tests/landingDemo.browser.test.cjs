@@ -473,8 +473,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq([top.mains, top.inBox, top.free, top.label], [["Try flourish free for 14 days", "Try flourish free for 14 days"], true, "Joining is free. No payment now.", ["Email address", true, true]],
       "11d2 …the main button top and bottom; the form inside the price box, \"Joining is free. No payment now.\" above it, and a visible \"Email address\" label");
     t.eq([v.cta2, v.promise, /Join the waitlist/.test(await page.evaluate(() => document.body.innerText))], [false, false, false], "11e …no \"Be first to know\", no launch promise, no \"Join the waitlist\" anywhere");
-    t.ok(v.block && v.block.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/Payments open October 26|Join the waitlist\./.test(v.block),
-      "11f …and the founding block without its two stale bits");
+    // After the launch the box drops what the page already says (Oct 22): on a phone, the card's rows, the standard
+    // price, then the founding list form.
+    const boxLines = await page.evaluate(() => { const b = document.querySelector(".fll-founding"), c = b.querySelector(".fll-founding-card"), f = b.querySelector(".fll-capture");
+      return b.innerText.slice(c ? c.innerText.length : 0, f ? b.innerText.indexOf(f.innerText) : undefined).split("\n").map(x => x.trim()).filter(Boolean); });
+    t.eq(boxLines, ["Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax."], "11f phone: under the card, only the standard price, then the form (no \"How founding spots work\", no join line)");
+    t.ok(v.block && v.block.includes("Paid on flourishmoney.app, and it works in the iPhone and Android apps too.") && !/Payments open October 26|Join the waitlist\.|How founding spots work|The first 50 households on the waitlist/.test(v.block),
+      "11f2 …the card's terms unchanged, and none of the removed lines anywhere in the box");
     await page.locator(".fll-founding .fll-input").fill("new.household@example.test");
     await page.getByRole("button", { name: "Join the founding list" }).first().click();
     await page.locator(".fll-done .fll-done-b").waitFor();
@@ -488,6 +493,19 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.waitForTimeout(300);
     t.eq(seen.counts.map(c => [c.event, c.src]), [["landing_view", "ig"], ["main_tap", "ig"]], "11r one landing view and the tap, each counted with the visit's src and nothing else");
     t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,event,src"), "11s …the counts carry no email and no other field");
+    await ctx.close();
+  }
+  {
+    // Desktop after the launch (Oct 22): heading, the founding price, the standard price, then the form; no join
+    // line and no count line in the box (the founding line under the badges carries the count).
+    const { ctx, page } = await landingAt({ open: true, spots: 35, width: 1440 });
+    await page.locator(".fll-found-line").waitFor();
+    const d = await page.evaluate(() => { const b = document.querySelector(".fll-founding"), f = b.querySelector(".fll-capture");
+      return { lines: b.innerText.slice(0, b.innerText.indexOf(f.innerText)).split("\n").map(x => x.trim()).filter(Boolean), live: !!b.querySelector("[data-founding-live]"),
+        counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50/g) || []).length }; });
+    t.eq(d.lines, ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
+      "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax."], "11t desktop: the box reads heading, founding price, standard price, then the form");
+    t.eq([d.live, d.counts], [false, 1], "11u …no count line in the box: the founding line under the badges is the one count");
     await ctx.close();
   }
   {

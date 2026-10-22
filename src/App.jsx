@@ -14992,13 +14992,17 @@ function FoundingOffer({ launched = false, held = false, children = null }) {
       <FoundingCard/>
       {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
           above already shows the price and the count, so the lines say how the spots work. "Founding spots are
-          full" shows at every width. */}
-      <h2 className="fll-founding-h" id="fll-founding-h"><span className="fll-fo-desk">{copy.heading}</span><span className="fll-fo-phone">{copy.phoneHeading}</span></h2>
+          full" shows at every width. After the launch (the trial-first landing, Oct 22) the box drops what the
+          page already says: the "How founding spots work" heading and line on phones, and the join line and the
+          count on desktop (the founding line under the badges carries the count). */}
+      {launched
+        ? <h2 className="fll-founding-h fll-fo-desk" id="fll-founding-h">{copy.heading}</h2>
+        : <h2 className="fll-founding-h" id="fll-founding-h"><span className="fll-fo-desk">{copy.heading}</span><span className="fll-fo-phone">{copy.phoneHeading}</span></h2>}
       <p className="fll-founding-p fll-fo-desk">{copy.price}</p>
-      <p className="fll-founding-p fll-fo-phone">{copy.phoneJoin}</p>
+      {!launched && <p className="fll-founding-p fll-fo-phone">{copy.phoneJoin}</p>}
       <p className="fll-founding-p">{copy.regular}</p>
-      <p className="fll-founding-p fll-fo-desk">{copy.join}</p>
-      {liveLine && <p className={`fll-founding-live${spotsLeft > 0 ? " fll-fo-desk" : ""}`} data-founding-live="">{liveLine}</p>}
+      {!launched && <p className="fll-founding-p fll-fo-desk">{copy.join}</p>}
+      {!launched && liveLine && <p className={`fll-founding-live${spotsLeft > 0 ? " fll-fo-desk" : ""}`} data-founding-live="">{liveLine}</p>}
       {children}
     </section>
   );
