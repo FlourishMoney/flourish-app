@@ -36,28 +36,24 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
 
   // ── 1. the rule ─────────────────────────────────────────────────────────────────────────────────
   const area = (answer, extra = {}) => U.landingWaitlistArea({ answer, ...extra });
+  // 2026-10-22 (no waitlist flash): flourish launched on October 20, so the trial-first page is the default. Only a
+  // real answer with openSignup false shows the signup-shut page; only a real spotsLeft 0 shows the spots-full page.
   for (const [answer, want, why] of [
-    [{ openSignup: false, spotsLeft: 35 }, "waitlist", "signup shut, spots left: today's page"],
-    [{ openSignup: false, spotsLeft: 0 }, "waitlist", "signup shut, 0 left: today's page"],
-    [{ openSignup: true, spotsLeft: 35 }, "founding", "signup open, spots left: the founding spot form"],
-    [{ openSignup: true, spotsLeft: 1 }, "founding", "signup open, the last spot: the founding spot form"],
-    [{ openSignup: true, spotsLeft: null }, "founding", "signup open, count not read: the founding spot form (the server still decides the number)"],
-    [{ openSignup: true, spotsLeft: 0 }, "account", "signup open, all 50 taken: Create your account"],
-    [{ openSignup: null, spotsLeft: 0 }, "waitlist", "the answer said nothing about signup: today's page"],
-    [{ spotsLeft: null, openSignup: null }, "waitlist", "no answer at all (a failure): today's page"],
-    [{ openSignup: "true", spotsLeft: 0 }, "waitlist", "a string \"true\" is not open"],
-  ]) t.eq(area(answer, { now: Date.parse("2026-10-15T12:00:00-04:00") }), want, `1a ${why}`);
-  t.eq(area({ openSignup: true, spotsLeft: 0 }, { native: true }), "waitlist", "1b a store app: never anything but today's (it shows no landing form)");
-  // The hold (item 3): only while the answer is not in, and only from launch day on.
-  t.eq(U.LAUNCH_DAY, Date.parse("2026-10-26T04:00:00Z"), "1c launch day: October 26, 00:00 Toronto time");
-  t.eq([area(null, { now: Date.parse("2026-10-15T12:00:00-04:00") }), area(null, { now: U.LAUNCH_DAY - 1 })], ["waitlist", "waitlist"],
-    "1d before launch day, no answer yet: today's form at once, nothing held (the page exactly as now)");
-  t.eq([area(null, { now: U.LAUNCH_DAY }), area(null, { now: Date.parse("2026-11-20T09:00:00-05:00") })], ["hold", "hold"],
-    "1e from launch day, no answer yet: the area is held");
-  t.eq(area(null, { now: U.LAUNCH_DAY, native: true }), "waitlist", "1f …never in a store app");
-  t.eq([area({ openSignup: true, spotsLeft: 35 }, { now: U.LAUNCH_DAY }), area({ openSignup: true, spotsLeft: 0 }, { now: U.LAUNCH_DAY }), area({ openSignup: false, spotsLeft: 35 }, { now: U.LAUNCH_DAY })],
-    ["founding", "account", "waitlist"], "1g once the answer is in, the date plays no part");
-  t.eq(U.LANDING_HOLD_MS, 4000, "1h the longest hold: 4 seconds");
+    [null, "founding", "no answer yet: the trial-first page, from the first paint"],
+    [{ spotsLeft: null, openSignup: null }, "founding", "the call failed or timed out: the trial-first page"],
+    [{ openSignup: true, spotsLeft: 35 }, "founding", "signup open, spots left: the trial-first page"],
+    [{ openSignup: true, spotsLeft: 1 }, "founding", "signup open, the last spot: the trial-first page"],
+    [{ openSignup: true, spotsLeft: null }, "founding", "signup open, count not read: the trial-first page"],
+    [{ openSignup: null, spotsLeft: 35 }, "founding", "the answer said nothing about signup: the trial-first page"],
+    [{ openSignup: "false", spotsLeft: 35 }, "founding", "a string \"false\" is not an answer that signup is shut"],
+    [{ openSignup: false, spotsLeft: 35 }, "waitlist", "an actual answer, signup shut: the signup-shut page"],
+    [{ openSignup: false, spotsLeft: 0 }, "waitlist", "an actual answer, signup shut, 0 left: the signup-shut page"],
+    [{ openSignup: true, spotsLeft: 0 }, "account", "an actual answer, all 50 taken: Create your account"],
+    [{ openSignup: null, spotsLeft: 0 }, "account", "a real count of 0 with nothing said about signup: Create your account"],
+  ]) t.eq(area(answer), want, `1a ${why}`);
+  t.eq(area({ openSignup: true, spotsLeft: 0 }, { native: true }), "waitlist", "1b a store app: never anything but \"waitlist\" (it shows no landing form)");
+  t.ok(!("LAUNCH_DAY" in U) && !("LANDING_HOLD_MS" in U) && !/now\b|Date\./.test(String(U.landingWaitlistArea)), "1c no date gate and no hold: the date plays no part");
+  t.eq(["2026-10-15T12:00:00-04:00", "2026-10-27T10:00:00-04:00"].map(() => area(null)), ["founding", "founding"], "1d before and after October 26 alike, no answer means the trial-first page");
 
   // ── 2. the one /api/founding read ───────────────────────────────────────────────────────────────
   const res = (status, body, opts = {}) => async () => ({ ok: status < 300, status, json: async () => { if (opts.html) throw new SyntaxError("Unexpected token <"); return body; } });
@@ -100,21 +96,21 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
 
   // ── 5. the landing ──────────────────────────────────────────────────────────────────────────────
   const auth = APP.slice(APP.indexOf("function AuthScreen("), APP.indexOf("\n}\n", APP.indexOf("function AuthScreen(")));
-  t.ok(/sharedFoundingAnswer\(\)\.then\(settle\);/.test(auth) && !/sharedSignupStatus/.test(APP),
+  t.ok(/sharedFoundingAnswer\(\)\.then\(a => \{ if \(live\) setFoundingAnswer\(a\); \}\);/.test(auth) && !/sharedSignupStatus/.test(APP),
     "5a the landing reads the one shared /api/founding answer (no signup_status call of its own)");
-  t.ok(/if \(isNativeApp\(\)\) return undefined;\s*let live = true;\s*const settle = [^\n]*\n\s*sharedFoundingAnswer\(\)/.test(auth), "5b web only: a store app asks nothing");
+  t.ok(/if \(isNativeApp\(\)\) return undefined;\s*let live = true;\s*sharedFoundingAnswer\(\)\.then\(a => \{ if \(live\) setFoundingAnswer\(a\); \}\);/.test(auth), "5b web only: a store app asks nothing; the answer, when it comes, is the page's state");
   // The trial-first landing (approved Oct 22): with signup shut, today's waitlist forms in the hero and at the
   // bottom; with founding spots open, one founding list form, inside the price box, and the main button instead.
   t.eq((APP.match(/<WaitlistForm /g) || []).length, 3, "5c three waitlist forms in the code: today's in the hero and at the bottom, and the founding list form in the price box");
   t.ok(/\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}/.test(auth)
-    && /<FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}>\s*\{foundingOpen && <WaitlistForm source="hero" founding held=\{waitlistHeld\} onCreateAccount=\{goSignup\}\/>\}\s*<\/FoundingOffer>/.test(auth),
-    "5d the hero: today's form with signup shut; the founding list form inside the price box while spots are open (held while the answer is not in)");
-  t.ok(/\{\(waitlistForms \|\| waitlistHeld\) && \(\s*<FoundingOffer launched=\{waitlistArea !== "waitlist"\} held=\{waitlistHeld\}>/.test(auth), "5e the price box, with its after-launch words in the founding state");
-  t.ok(/const trialFirst = waitlistArea === "founding" \|\| waitlistHeld;/.test(auth) && (auth.match(/<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>/g) || []).length === 2,
-    "5e2 the main button, top and bottom, only while founding spots are open (or held)");
+    && /<FoundingOffer launched=\{waitlistArea !== "waitlist"\}>\s*\{foundingOpen && <WaitlistForm source="hero" founding onCreateAccount=\{goSignup\}\/>\}\s*<\/FoundingOffer>/.test(auth),
+    "5d the hero: today's form with signup shut; the founding list form inside the price box on the trial-first page");
+  t.ok(/\{waitlistForms && \(\s*<FoundingOffer launched=\{waitlistArea !== "waitlist"\}>/.test(auth), "5e the price box, with its after-launch words on the trial-first page");
+  t.ok(/const trialFirst = waitlistArea === "founding";/.test(auth) && (auth.match(/<TrialButton onClick=\{goSignup\}\/>/g) || []).length === 2,
+    "5e2 the main button, top and bottom, on the trial-first page");
   const second = auth.slice(auth.indexOf("{/* Second email capture */}"), auth.indexOf("{/* Footer */}"));
   t.ok(/\{waitlistArea === "waitlist" && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<h2 className="fll-h2"[^>]*>Be first to know\.<\/h2>\s*<p className="fll-lede"[^>]*>Join the waitlist and we'll email you the moment flourish launches in Canada\.<\/p>\s*<WaitlistForm source="bottom_cta"\/>/.test(second)
-    && /\{trialFirst && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>/.test(second),
+    && /\{trialFirst && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<TrialButton onClick=\{goSignup\}\/>/.test(second),
     "5f the bottom: the launch heading, promise and form only on today's page; the main button while founding spots are open");
   t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "5g the sign-up card's own status check is unchanged");
 
@@ -125,19 +121,17 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
   t.eq((APP.match(/>Create your account</g) || []).length, 2, "6b …the only such buttons: this one, and the one under \"The founding spots just filled up\" (section 8)");
   t.ok(/const goSignup = \(\) => \{ setMode\("signup"\);[^}]*setShowAuth\(true\); \};/.test(auth), "6c goSignup is the sign-up opener the page already uses");
 
-  // ── 7. the hold (item 3): the space kept, nothing visible, the first answer final ───────────────────
-  t.ok(/const \[landingNow\] = useState\(\(\) => Date\.now\(\)\);/.test(auth) && /landingWaitlistArea\(\{ answer: foundingAnswer, now: landingNow, native: isNativeApp\(\) \}\)/.test(auth),
-    "7a the date is read once, as the page opens");
-  t.ok(/const settle = \(a\) => \{ if \(live\) setFoundingAnswer\(prev => prev \|\| a\); \};\s*sharedFoundingAnswer\(\)\.then\(settle\);\s*const timer = setTimeout\(\(\) => settle\(\{ spotsLeft: null, openSignup: null \}\), LANDING_HOLD_MS\);/.test(auth),
-    "7b the first to settle, the answer or the 4-second limit, decides; nothing switches after it");
-  t.ok(/\.fll-held\{ visibility:hidden; \}/.test(APP), "7c held: visibility hidden, so the space is kept and nothing shows, takes focus or is read out");
-  t.ok(/<div className=\{held \? "fll-capture fll-held" : "fll-capture"\} aria-hidden=\{held \? "true" : undefined\}>/.test(APP)
-    && /<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*aria-hidden=\{held \? "true" : undefined\}>/.test(APP), "7d the held form and founding block are hidden from assistive tech too");
+  // ── 7. no hold (2026-10-22): the trial-first page from the first paint; the answer, when it comes, decides ──
+  t.ok(!/landingNow|LANDING_HOLD_MS|LAUNCH_DAY|setTimeout\(\(\) => settle/.test(auth) && /landingWaitlistArea\(\{ answer: foundingAnswer, native: isNativeApp\(\) \}\)/.test(auth),
+    "7a no date read and no timer: the state is the answer alone");
+  t.ok(!/fll-held|waitlistHeld|held=\{/.test(APP), "7b nothing is held or hidden while the answer is awaited");
   if (A.WaitlistForm) {
-    const held = A.render(A.h(A.WaitlistForm, { source: "hero", founding: true, held: true }));
-    t.ok(/class="fll-capture fll-held" aria-hidden="true"/.test(held), "7e rendered held: the hidden class and aria-hidden");
-    t.ok(!/class="fll-capture fll-held"|aria-hidden="true"/.test(A.render(A.h(A.WaitlistForm, { source: "hero" }))), "7f a form not held has neither");
+    t.ok(!/aria-hidden="true"/.test(A.render(A.h(A.WaitlistForm, { source: "hero", founding: true }))), "7c the founding list form renders visible");
   }
+  const FO = await import("../src/lib/foundingOffer.js");
+  t.eq([FO.foundingListLine(null), FO.foundingListLine(undefined), FO.foundingListLine("35"), FO.foundingListLine(0)], [null, null, null, null],
+    "7d the count line: none before a real number (no placeholder, no made-up count), and none at 0");
+  t.eq(FO.foundingListLine(35), "Founding price: $79.99 a year plus tax for the first 50 households on the founding list. 35 of 50 left.", "7e …and the whole line once 35 is read");
 
   // ── 8. the two post-launch messages (approved by ChatGPT and Grok, 2026-10-15) ───────────────────────
   {

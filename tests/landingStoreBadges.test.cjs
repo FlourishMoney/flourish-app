@@ -58,7 +58,7 @@ const OFFICIAL = {
   t.eq((auth.match(/<StoreBadges\/>/g) || []).length, 1, "4b one place on the landing: one App Store badge per layout, as Apple asks");
   // The trial-first landing (approved Oct 22): the main button, its line "Every feature free for 14 days. Also on iPhone
   // and Android.", then the badges, then the read-only line, all before the price box.
-  t.ok(/<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>\}\s*\{trialFirst && <p className=\{[^}]*\}[^>]*>Every feature free for 14 days\. Also on iPhone and Android\.<\/p>\}\s*\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}[\s\S]{0,900}?Create your account<\/button>[\s\S]{0,400}?<\/div>\s*\)\}\s*<StoreBadges\/>\s*<div className="fll-trust-row">/.test(auth)
+  t.ok(/<TrialButton onClick=\{goSignup\}\/>\}\s*\{trialFirst && <p className="fll-trial-line">Every feature free for 14 days\. Also on iPhone and Android\.<\/p>\}\s*\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}[\s\S]{0,900}?Create your account<\/button>[\s\S]{0,400}?<\/div>\s*\)\}\s*<StoreBadges\/>\s*<div className="fll-trust-row">/.test(auth)
     && auth.indexOf("<StoreBadges/>") > auth.indexOf('<div className="fll-hero-form">') && auth.indexOf("<StoreBadges/>") < auth.indexOf("<FoundingOffer"),
     "4c the one placement: in the hero, right after the main button and its line, before the price box");
   const foot = auth.slice(auth.indexOf('<div className="fll-foot">'));

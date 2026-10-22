@@ -36,7 +36,7 @@ import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSp
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
-import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea, LANDING_HOLD_MS } from "./lib/signupUi.js";
+import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
@@ -14783,7 +14783,6 @@ const WAITLIST_FORM_CSS = `
             .fll-contact-link{ color:#1b5e20; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             .fll-account .fll-consent{ margin-block:10px 0; }
-            .fll-held{ visibility:hidden; }
             .fll-label{ display:block; margin-block:0 6px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; font-weight:700; color:#15321a; }
             .fll-join-note{ margin-block:0 ${SPACE.sm}px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; line-height:1.45; color:#15321a; }
             .fll-done .fll-btn{ margin-top:16px; }
@@ -14793,7 +14792,7 @@ const WAITLIST_FORM_CSS = `
               .fll-btn{ width:auto; }
             }
 `;
-function WaitlistForm({ source = "landing", founding = false, held = false, onCreateAccount = null }) {
+function WaitlistForm({ source = "landing", founding = false, onCreateAccount = null }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "full" | "error" | "stale"
   const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
@@ -14854,7 +14853,7 @@ function WaitlistForm({ source = "landing", founding = false, held = false, onCr
   }
   const busy = status === "submitting";
   return (
-    <div className={held ? "fll-capture fll-held" : "fll-capture"} aria-hidden={held ? "true" : undefined}>
+    <div className="fll-capture">
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       {/* The trial-first landing (approved Oct 22): inside the price box, one line above the form, and a visible
           label on every email box. */}
@@ -14976,7 +14975,7 @@ function LandingHowTo() {
 // card's rows (FoundingCard, hidden from 960px), then the lines for that width; from 960px, the desktop lines.
 // The live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
-function FoundingOffer({ launched = false, held = false, children = null }) {
+function FoundingOffer({ launched = false, children = null }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
@@ -14988,7 +14987,7 @@ function FoundingOffer({ launched = false, held = false, children = null }) {
   const copy = foundingOfferCopy({ launched });
   const liveLine = foundingLiveLine(spotsLeft);
   return (
-    <section className={held ? "fll-founding fll-held" : "fll-founding"} aria-labelledby="fll-founding-h" aria-hidden={held ? "true" : undefined}>
+    <section className="fll-founding" aria-labelledby="fll-founding-h">
       {/* After the launch the founding line under the badges carries the count, so the card shows no pill. */}
       <FoundingCard pill={!launched}/>
       {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
@@ -15010,7 +15009,7 @@ function FoundingOffer({ launched = false, held = false, children = null }) {
 }
 
 // THE FOUNDING LINE under the badges (approved Oct 22), with the live count (lib/foundingOffer.js).
-function FoundingListLine({ held = false }) {
+function FoundingListLine() {
   const [spotsLeft, setSpotsLeft] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
@@ -15021,16 +15020,16 @@ function FoundingListLine({ held = false }) {
   if (isNativeApp()) return null;
   const line = foundingListLine(spotsLeft);
   if (!line) return null;
-  return <p className={held ? "fll-found-line fll-held" : "fll-found-line"} data-founding-line="" aria-hidden={held ? "true" : undefined}>{line}</p>;
+  return <p className="fll-found-line" data-founding-line="">{line}</p>;
 }
 
 // THE MAIN BUTTON, top and bottom of the landing (approved Oct 22): it opens website signup. The visit's src
 // (lib/waitlistSrc.js) goes with the signup to the new account; the tap is counted (lib/landingCounts.js).
-function TrialButton({ onClick, held = false }) {
+function TrialButton({ onClick }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
-      <button type="button" className={held ? "fll-btn fll-main fll-held" : "fll-btn fll-main"} aria-hidden={held ? "true" : undefined} tabIndex={held ? -1 : undefined}
+      <button type="button" className="fll-btn fll-main"
         onClick={() => { countLanding("main_tap", { base: API_BASE }); onClick(); }}>Try flourish free for 14 days</button>
     </>
   );
@@ -15109,27 +15108,22 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   // THE LANDING'S WAITLIST AREA (signupUi.js landingWaitlistArea): today's waitlist form while signup is shut;
   // the founding spot form while it is open and founding spots remain; "Create your account" once they are
   // all taken. Read from the one /api/founding answer the founding card and block already share, so the
-  // landing makes no extra call. Web only. From launch day on the area is held until that answer is in
-  // (no form shown and then swapped); the first to settle, the answer or LANDING_HOLD_MS, decides, and the
-  // page never switches after that.
+  // landing makes no extra call. Web only. Until that answer is in, and if it never comes, the page is the
+  // trial-first page from the first paint (2026-10-22): only a real answer can turn it into another state.
   const [foundingAnswer, setFoundingAnswer] = useState(null);
-  const [landingNow] = useState(() => Date.now());
   useEffect(() => {
     if (isNativeApp()) return undefined;
     let live = true;
-    const settle = (a) => { if (live) setFoundingAnswer(prev => prev || a); };
-    sharedFoundingAnswer().then(settle);
-    const timer = setTimeout(() => settle({ spotsLeft: null, openSignup: null }), LANDING_HOLD_MS);
-    return () => { live = false; clearTimeout(timer); };
+    sharedFoundingAnswer().then(a => { if (live) setFoundingAnswer(a); });
+    return () => { live = false; };
   }, []);
-  const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, now: landingNow, native: isNativeApp() });
-  const waitlistHeld = waitlistArea === "hold";
+  const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, native: isNativeApp() });
   const waitlistForms = waitlistArea === "waitlist" || waitlistArea === "founding";
   // THE TRIAL-FIRST LANDING (approved Oct 22): while signup is open and founding spots remain, the main action is
-  // "Try flourish free for 14 days", top and bottom, and the founding list form sits inside the price box. While
-  // the answer is awaited ("hold") the same layout is laid out but hidden. With signup shut it is the waitlist;
-  // with all 50 spots taken it is "Create your account", unchanged (its line needs its own approved words).
-  const trialFirst = waitlistArea === "founding" || waitlistHeld;
+  // "Try flourish free for 14 days", top and bottom, and the founding list form sits inside the price box. With
+  // signup shut it is the waitlist; with all 50 spots taken it is "Create your account", unchanged (its line needs
+  // its own approved words).
+  const trialFirst = waitlistArea === "founding";
   const foundingOpen = trialFirst;
   // One landing view per browser session, by src and device (lib/landingCounts.js). Web only.
   useEffect(() => { if (!isNativeApp()) countLandingViewOnce({ base: API_BASE }); }, []);
@@ -15605,8 +15599,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                 {/* Founding spots open (approved Oct 22): the main button, its line, the badges, the read-only line and
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
-                {trialFirst && <TrialButton onClick={goSignup} held={waitlistHeld}/>}
-                {trialFirst && <p className={waitlistHeld ? "fll-trial-line fll-held" : "fll-trial-line"} aria-hidden={waitlistHeld ? "true" : undefined}>Every feature free for 14 days. Also on iPhone and Android.</p>}
+                {trialFirst && <TrialButton onClick={goSignup}/>}
+                {trialFirst && <p className="fll-trial-line">Every feature free for 14 days. Also on iPhone and Android.</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
@@ -15619,12 +15613,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                 )}
                 <StoreBadges/>
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
-                {foundingOpen && <FoundingListLine held={waitlistHeld}/>}
+                {foundingOpen && <FoundingListLine/>}
               </div>
               {/* The price box, its own grid item: under the founding line, in the left column on desktop. */}
-              {(waitlistForms || waitlistHeld) && (
-                <FoundingOffer launched={waitlistArea !== "waitlist"} held={waitlistHeld}>
-                  {foundingOpen && <WaitlistForm source="hero" founding held={waitlistHeld} onCreateAccount={goSignup}/>}
+              {waitlistForms && (
+                <FoundingOffer launched={waitlistArea !== "waitlist"}>
+                  {foundingOpen && <WaitlistForm source="hero" founding onCreateAccount={goSignup}/>}
                 </FoundingOffer>
               )}
               <div className="fll-hero-demo">
@@ -15698,7 +15692,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           {trialFirst && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
-              <TrialButton onClick={goSignup} held={waitlistHeld}/>
+              <TrialButton onClick={goSignup}/>
             </div>
           </div>
           )}

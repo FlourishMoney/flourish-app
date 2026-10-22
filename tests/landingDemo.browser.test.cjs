@@ -301,14 +301,17 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "35 of 50 left",
       "Plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
       "Everyone else: $99.99 a year, plus tax."];
-    // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
-    // a count (a real failure); zero: all spots taken.
+    // The signup-shut page's card and box (2026-10-22: only an actual openSignup false shows it, so each mode says
+    // so). count: a 35 the endpoint read; fail: a 503 that reads no count but still says signup is shut; zero: all
+    // spots taken.
     for (const mode of ["count", "fail", "zero"]) {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       const page = await ctx.newPage(); page.setDefaultTimeout(15000);
       let calls = 0;
       page.on("request", r => { if (/\/api\/founding/.test(r.url())) calls++; });
-      if (mode !== "fail") await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: mode === "zero" ? 0 : 35 }) }));
+      await page.route("**/api/founding", r => mode === "fail"
+        ? r.fulfill({ status: 503, contentType: "application/json", body: '{"error":"unavailable","openSignup":false}' })
+        : r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: mode === "zero" ? 0 : 35, openSignup: false }) }));
       await page.goto(base, { waitUntil: "domcontentloaded" });
       await page.getByText("Real screens from the app.").waitFor();
       await page.locator(".fll-founding").waitFor();
@@ -352,7 +355,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     }
     const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const fd = await fctx.newPage(); fd.setDefaultTimeout(15000);
-    await fd.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35}' }));
+    await fd.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35,"openSignup":false}' }));
     await fd.goto(base, { waitUntil: "domcontentloaded" });
     await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
@@ -363,7 +366,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const d = await dctx.newPage(); d.setDefaultTimeout(15000);
+    await d.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35,"openSignup":false}' }));
     await d.goto(base, { waitUntil: "domcontentloaded" });
+    await d.getByRole("button", { name: "Join the waitlist" }).first().waitFor();
     await d.getByText("Real screens from the app.").waitFor();
     const dm = await d.evaluate(() => { const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect(); return { h1: r(".fll-h1"), form: r(".fll-input"), card: r(".fll-hero-card img") }; });
     t.ok(dm.card.left > dm.h1.right && dm.card.left > dm.form.right && dm.form.top > dm.h1.top && dm.card.top < 900,
@@ -377,8 +382,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       const c = await browser.newContext({ viewport: { width: w, height: h } });
       const pg = await c.newPage(); pg.setDefaultTimeout(15000);
       const errs = []; pg.on("pageerror", e => errs.push(String(e.message)));
+      // The signup-shut page's layout (an actual openSignup false); the trial-first desktop is 6o below.
+      await pg.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35,"openSignup":false}' }));
       await pg.goto(base, { waitUntil: "load" });
       await pg.getByText("Real screens from the app.").waitFor();
+      await pg.getByRole("button", { name: "Join the waitlist" }).first().waitFor();
       await pg.locator(".fll-hero-card img").evaluate(img => img.decode());
       await pg.evaluate(async () => { await document.fonts.ready; });
       const m = await pg.evaluate(() => {
@@ -557,69 +565,73 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await ctx.close();
   }
 
-  // ── 12. No visible flash: the area is held until the answer is in, from launch day only (2026-10-15) ───
-  // /api/founding answers late (delay ms). Every visible waitlist button the page ever shows is recorded as it
-  // appears, so a form shown and then swapped or removed would be caught.
-  const watchButtons = (ctx) => ctx.addInitScript(() => {
-    window.__shown = [];
+  // ── 12. No waitlist flash (2026-10-22): the trial-first page from the first paint, whatever /api/founding does ──
+  // Live after #92, the page showed "Join the waitlist" and the launch-news line until the founding answer arrived
+  // (1,092 ms on a fast Mac), and kept them if it failed. flourish launched on October 20. Here the answer is late
+  // (3 s), a 500, or a network error. From the first paint to the end, every change to the page is checked: never
+  // "Join the waitlist", "launches in Canada", "Be first to know" or "launch news"; the main button is on the page
+  // in the same render as the headline; and the count line appears only once a real number has arrived.
+  const watchPage = (ctx) => ctx.addInitScript(() => {
+    window.__flash = []; window.__seen = { h1: null, mainWithH1: null, line: null };
+    const BAD = /Join the waitlist|launches in Canada|Be first to know|launch news/;
     const look = () => {
-      for (const b of document.querySelectorAll(".fll-hero .fll-main, .fll-capture .fll-btn")) {
-        if (getComputedStyle(b).visibility !== "visible" || !b.offsetParent) continue;
-        const text = b.textContent.trim();
-        if (!window.__shown.includes(text)) window.__shown.push(text);
+      const body = document.body; if (!body) return;
+      const m = (body.innerText || "").match(BAD);
+      if (m && !window.__flash.includes(m[0])) window.__flash.push(m[0]);
+      if (window.__seen.h1 === null && document.querySelector(".fll-h1")) {
+        window.__seen.h1 = Math.round(performance.now());
+        window.__seen.mainWithH1 = !!document.querySelector(".fll-hero .fll-main") && document.querySelector(".fll-hero .fll-main").textContent.trim() === "Try flourish free for 14 days";
       }
+      if (window.__seen.line === null && document.querySelector(".fll-found-line")) window.__seen.line = Math.round(performance.now());
     };
     new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   });
-  const slow = async ({ open, spots, delay, at }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, at);
-    await watchButtons(ctx);
+  const ANSWER = '{"spotsLeft":35,"openSignup":true}';
+  for (const [w, h] of [[390, 844], [1440, 900]]) {
+    for (const mode of ["late", "500", "network"]) {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h }, ...(w < 768 ? { isMobile: true, hasTouch: true } : {}) });
+      await watchPage(ctx);
+      const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+      let answered = false;
+      await page.route("**/api/founding", async r => {
+        if (mode === "late") { await new Promise(ok => setTimeout(ok, 3000)); answered = true; try { await r.fulfill({ status: 200, contentType: "application/json", body: ANSWER }); } catch { /* page gone */ } }
+        else if (mode === "500") { try { await r.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }); } catch { /* page gone */ } }
+        else { try { await r.abort("failed"); } catch { /* page gone */ } }
+      });
+      await page.route("**/api/beta", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
+      await page.goto(base, { waitUntil: "domcontentloaded" });
+      await page.locator(".fll-h1").waitFor();
+      const tag = `${w}px, founding answer ${mode === "late" ? "3 s late" : mode === "500" ? "a 500" : "a network error"}`;
+      const first = await page.evaluate(() => ({ ...window.__seen, line: document.querySelector(".fll-found-line") ? "shown" : null,
+        main: !!document.querySelector(".fll-hero .fll-main"), form: !!document.querySelector(".fll-founding .fll-capture .fll-input") }));
+      t.ok(first.mainWithH1 === true && first.main && first.form, `12a ${tag}: the main button is there in the same render as the headline, with the founding list form`);
+      if (mode === "late") {
+        await page.waitForTimeout(1800);
+        const before = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50/g) || []).length }));
+        t.ok(!answered && !before.line && before.counts === 0, `12b ${tag}: before the answer, no count line and no number anywhere`);
+        await page.locator(".fll-found-line").waitFor({ timeout: 8000 });
+        const after = await page.evaluate(() => ({ line: document.querySelector(".fll-found-line").textContent.trim(), at: window.__seen.line }));
+        t.ok(answered && after.line.endsWith("35 of 50 left.") && after.at >= 3000, `12c ${tag}: the count line appears only once 35 arrives (at ${after.at} ms)`);
+      } else {
+        await page.waitForTimeout(2500);
+        const v = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50/g) || []).length,
+          main: document.querySelectorAll(".fll-main").length, card: !!document.querySelector(".fll-hero-card img") }));
+        t.ok(!v.line && v.counts === 0 && v.main === 2 && v.card, `12d ${tag}: the trial-first page stays, both main buttons, and no count line or number at all`);
+      }
+      const flash = await page.evaluate(() => window.__flash);
+      t.eq(flash, [], `12e ${tag}: at no moment "Join the waitlist", "launches in Canada", "Be first to know" or "launch news"`);
+      await ctx.close();
+    }
+  }
+  // Only an actual answer moves the page off the trial-first page: openSignup false to the signup-shut page, spotsLeft
+  // 0 to "Create your account".
+  for (const [body, want, why] of [['{"spotsLeft":35,"openSignup":false}', "Join the waitlist", "an actual openSignup false"], ['{"spotsLeft":0,"openSignup":true}', "Create your account", "an actual spotsLeft 0"]]) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
-    await page.route("**/api/founding", async r => { await new Promise(ok => setTimeout(ok, delay)); try { await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: spots, openSignup: open }) }); } catch { /* page gone */ } });
+    await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body }));
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.getByText("Real screens from the app.").waitFor();
-    return { ctx, page };
-  };
-  const LAUNCHED = new Date("2026-10-27T10:00:00-04:00"), BEFORE = new Date("2026-10-20T10:00:00-04:00");
-  const state = (page) => page.evaluate(() => ({ shown: window.__shown, held: document.querySelectorAll(".fll-held").length,
-    formH: document.querySelector(".fll-founding .fll-capture") ? Math.round(document.querySelector(".fll-founding .fll-capture").getBoundingClientRect().height) : null }));
-  {
-    const { ctx, page } = await slow({ open: true, spots: 35, delay: 2500, at: LAUNCHED });
-    await page.evaluate(() => document.fonts.ready);   // measure in the page's own font, not the fallback
-    const during = await state(page);
-    t.ok(during.held >= 2 && during.shown.length === 0, `12a after launch, before the answer: the area held (${during.held} parts), no form visible`);
-    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
-    const after = await state(page);
-    t.eq([after.shown, after.held], [["Try flourish free for 14 days", "Join the founding list"], 0], "12b …then the main button and the founding list form, and no other button was ever visible");
-    t.ok(during.formH > 100 && after.formH === during.formH, `12c …in exactly the space that was held (${during.formH}px, then ${after.formH}px)`);
-    await ctx.close();
-  }
-  {
-    const { ctx, page } = await slow({ open: true, spots: 0, delay: 1500, at: LAUNCHED });
-    await page.getByRole("button", { name: "Create your account" }).waitFor();
-    const v = await state(page);
-    t.eq([v.shown, v.held], [["Create your account"], 0], "12d after launch, all taken: \"Create your account\" only; no waitlist form was ever visible");
-    await ctx.close();
-  }
-  {
-    const { ctx, page } = await slow({ open: false, spots: 35, delay: 1500, at: BEFORE });
-    const first = await state(page);
-    t.ok(first.held === 0 && first.shown.includes("Join the waitlist"), "12e before launch day, signup shut: today's form at once, before any answer, nothing held (exactly as now)");
-    await page.waitForTimeout(1800);
-    t.eq((await state(page)).shown, ["Join the waitlist"], "12f …and it stays");
-    await ctx.close();
-  }
-  {
-    const { ctx, page } = await slow({ open: false, spots: 35, delay: 1500, at: LAUNCHED });
-    await page.getByRole("button", { name: "Join the waitlist" }).first().waitFor();
-    t.eq((await state(page)).shown, ["Join the waitlist"], "12g after launch day with signup shut again: held, then today's form, and nothing else shown");
-    await ctx.close();
-  }
-  {
-    const { ctx, page } = await slow({ open: true, spots: 35, delay: 6500, at: LAUNCHED });
-    await page.getByRole("button", { name: "Join the waitlist" }).first().waitFor({ timeout: 6000 });
-    await page.waitForTimeout(3500);
-    t.eq((await state(page)).shown, ["Join the waitlist"], "12h no answer within 4 s: today's form, and a late answer does not switch it");
+    await page.getByRole("button", { name: want }).first().waitFor();
+    t.eq(await page.locator(".fll-hero .fll-main").count(), 0, `12f ${why}: "${want}" and no main button`);
     await ctx.close();
   }
 

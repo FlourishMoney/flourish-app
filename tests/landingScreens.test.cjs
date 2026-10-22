@@ -93,7 +93,7 @@ function imageSize(file) {
   {
     const form = landing.slice(landing.indexOf('<div className="fll-hero-form">'), landing.indexOf("{/* The price box"));
     const order = ["<TrialButton onClick={goSignup}", ">Every feature free for 14 days. Also on iPhone and Android.</p>", "<StoreBadges/>",
-      "🔒 Bank connections are read-only. flourish can't move your money.", "<FoundingListLine "].map(x => form.indexOf(x));
+      "🔒 Bank connections are read-only. flourish can't move your money.", "<FoundingListLine"].map(x => form.indexOf(x));
     t.ok(order.every((x, i) => x >= 0 && (i === 0 || x > order[i - 1])), `6a2 the hero's column: the main button, its line, the badges, the read-only line, the founding line (${order.join(", ")})`);
     t.ok((landing.match(/🔒 Bank connections are read-only\. flourish can't move your money\./g) || []).length === 1, "6a3 the read-only line moved, not copied (once on the page)");
     const trial = APP.slice(APP.indexOf("function TrialButton("), APP.indexOf("\n}\n", APP.indexOf("function TrialButton(")));

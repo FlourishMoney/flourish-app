@@ -80,13 +80,13 @@ const ROWS = {
   t.ok(/\.fll-founding-card\{ display:none; \}/.test(desk) && /\.fll-founding-card\{ display:block;/.test(APP), "4a shown in the one-column layout, hidden at 960px and up");
   // The trial-first landing (approved Oct 22): the card is the top of the price box, above its lines and the
   // founding list form.
-  t.ok(/<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*>\s*(?:\{\/\*[^*]*\*\/\}\s*)?<FoundingCard pill=\{!launched\}\/>/.test(APP) && (APP.match(/<FoundingCard[ /]/g) || []).length === 1,
+  t.ok(/<section className="fll-founding"[^>]*>\s*(?:\{\/\*[^*]*\*\/\}\s*)?<FoundingCard pill=\{!launched\}\/>/.test(APP) && (APP.match(/<FoundingCard[ /]/g) || []).length === 1,
     "4b it sits at the top of the price box, and only there");
   let A = {};
   try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A.AuthScreen) {
     const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
-    const at = html.indexOf('class="fll-founding-card"'), boxAt = html.indexOf('class="fll-founding"'), inputAt = html.indexOf('class="fll-founding-h"', at);
+    const at = html.indexOf('class="fll-founding-card"'), boxAt = html.indexOf('class="fll-founding"'), inputAt = html.indexOf('class="fll-founding-h', at);
     t.ok(boxAt > 0 && at > boxAt && inputAt > at, "4c rendered: the card opens the price box, before its lines");
     const text = textOf(html.slice(at, inputAt));
     t.ok([ROWS.eyebrow, ROWS.price, ROWS.save, ROWS.small].every(r => text.includes(r)) && !/of 50 left/.test(text),
