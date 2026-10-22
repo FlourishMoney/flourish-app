@@ -126,6 +126,7 @@ async function waitlistCount(supabaseUrl, secretKey, now = Date.now()) {
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
 const { WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow, waitlistConsentVersionFor, FOUNDING_SPOT_CONSENT_VERSION } = require("./_lib/waitlistConsent");
+const { CLIENT_COUNT_EVENTS, bumpLandingCount } = require("./_lib/landingCounts");
 const { FOUNDING_WAITLIST_LIMIT, countFromContentRange, isFoundingPosition, isTestEmail, welcomePositionFor } = require("./_lib/foundingWaitlist");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
@@ -295,6 +296,16 @@ async function handle(event) {
       statusCode: 500, headers: CORS,
       body: JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars" }),
     };
+  }
+
+  // THE LANDING'S OWN COUNTS (2026-10-22, _lib/landingCounts.js): a landing view or a tap on the main button,
+  // by src and device. Counts only, nothing about the visitor is stored, and the answer is the same whether
+  // or not the count was taken, so it says nothing about the database.
+  if (action === "landing_count") {
+    if (CLIENT_COUNT_EVENTS.includes(body.event)) {
+      await bumpLandingCount({ supabaseUrl, secretKey, event, name: body.event, src: body.src });
+    }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
 
   // How many households are on the waitlist (2026-10-15). One number: rows not marked is_test, counted
@@ -505,6 +516,9 @@ async function handle(event) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ joined: true, alreadyJoined: false, spotsFull: true }) };
     }
 
+    // A new founding list row: counted by src and device (_lib/landingCounts.js). Best effort, after the row.
+    if (foundingForm) await bumpLandingCount({ supabaseUrl, secretKey, event, name: "founding_join", src });
+
     return {
       statusCode: 200, headers: CORS,
       body: JSON.stringify({ joined: true, alreadyJoined: false }),
@@ -630,7 +644,9 @@ async function handle(event) {
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
         // founder_flag false, and nothing anywhere reads these fields.
-        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signed_up: new Date().toISOString() },
+        // `signup_src` (2026-10-22): the campaign the visit came from (?src=, lib/waitlistSrc.js), a known one or
+        // "direct", carried from the landing's main button through to the account. Counted, never acted on.
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_src: waitlistSourceFor(body.src), signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");
@@ -652,6 +668,8 @@ async function handle(event) {
     // The cohort is the whole point of the field: `invited` is someone who was given a code,
     // `self_serve` is a stranger who found the app. No email and no identifier is logged.
     console.log(`[beta:signup] signup_completed source=${gate.source}`);
+    // Counted by src and device (_lib/landingCounts.js). Best effort: the account exists either way.
+    await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
 
     // An unconfirmed account is unusable until the address is confirmed, so the email is the last step
     // of the signup rather than an afterthought. If Supabase would not take it the account still

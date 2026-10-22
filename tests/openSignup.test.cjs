@@ -355,7 +355,8 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       t.eq(Object.keys(u).sort(), ["app_metadata", "email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
       // app_metadata (server-only) holds one thing: how the address gets confirmed. With signup open, by link.
       t.eq(u.app_metadata, { email_confirmation: "link" }, `${label}: app_metadata says only how the address is confirmed`);
-      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_source"], `${label}: and metadata carries only the labels`);
+      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_source", "signup_src"], `${label}: and metadata carries only the labels`);
+      t.ok(["direct", "ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"].includes(u.user_metadata.signup_src), `${label}: signup_src is a known src or "direct", never free text`);
       const meta = JSON.stringify(u.user_metadata);
       t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);
     }
