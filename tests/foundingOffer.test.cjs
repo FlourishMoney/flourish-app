@@ -285,7 +285,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free."], "7a the phone heading and sentence, word for word");
     t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "7b the desktop wording is unchanged");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingCard()"));
+    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingCard("));
     t.ok(/<span className="fll-fo-desk">\{copy\.heading\}<\/span><span className="fll-fo-phone">\{copy\.phoneHeading\}<\/span>/.test(comp),
       "7c one heading, its desktop and phone words switched by CSS");
     t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\}\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>\}/.test(comp),

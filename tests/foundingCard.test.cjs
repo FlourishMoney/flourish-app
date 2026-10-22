@@ -63,12 +63,16 @@ const ROWS = {
       t.eq([a, b, await O.sharedFoundingSpots(), calls], [35, 35, 35, 1], "3a the card and the block share one /api/founding request");
     } finally { global.fetch = real; O._resetSharedFoundingSpots(); }
   }
-  const block = APP.slice(APP.indexOf("function FoundingOffer("), APP.indexOf("function FoundingCard()"));
-  const card = APP.slice(APP.indexOf("function FoundingCard()"), APP.indexOf("function AuthScreen("));
+  const block = APP.slice(APP.indexOf("function FoundingOffer("), APP.indexOf("function FoundingCard("));
+  const card = APP.slice(APP.indexOf("function FoundingCard("), APP.indexOf("function AuthScreen("));
   t.ok(/sharedFoundingSpots\(\)\.then/.test(block) && /sharedFoundingSpots\(\)\.then/.test(card) && !/fetchFoundingSpots\(/.test(block + card),
     "3b both read through sharedFoundingSpots, neither fetches on its own");
-  t.ok(/const parts = foundingCardParts\(spotsLeft\);\s+if \(!parts\) return null;/.test(card) && /\{parts\.pill && <span className="fll-fc-pill"/.test(card),
+  t.ok(/const parts = foundingCardParts\(spotsLeft\);\s+if \(!parts\) return null;/.test(card) && /\{pill && parts\.pill && <span className="fll-fc-pill"/.test(card),
     "3c no card at 0, and no pill without a count");
+  // The trial-first page (Oct 22): the founding line under the badges carries the count, so the card has no pill there.
+  // Before the launch (signup shut) the pill stays.
+  t.ok(/function FoundingCard\(\{ pill = true \}\)/.test(card) && /<FoundingCard pill=\{!launched\}\/>/.test(block),
+    "3c2 the pill only before the launch: the price box passes pill={!launched}");
   t.ok(!/fll-founding-line|FoundingLine/.test(APP), "3d the one-line version is gone");
 
   // ── 4. phones and tablets only, directly above the email field ─────────────────────────────
@@ -76,7 +80,7 @@ const ROWS = {
   t.ok(/\.fll-founding-card\{ display:none; \}/.test(desk) && /\.fll-founding-card\{ display:block;/.test(APP), "4a shown in the one-column layout, hidden at 960px and up");
   // The trial-first landing (approved Oct 22): the card is the top of the price box, above its lines and the
   // founding list form.
-  t.ok(/<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*>\s*<FoundingCard\/>/.test(APP) && (APP.match(/<FoundingCard\/>/g) || []).length === 1,
+  t.ok(/<section className=\{held \? "fll-founding fll-held" : "fll-founding"\}[^>]*>\s*(?:\{\/\*[^*]*\*\/\}\s*)?<FoundingCard pill=\{!launched\}\/>/.test(APP) && (APP.match(/<FoundingCard[ /]/g) || []).length === 1,
     "4b it sits at the top of the price box, and only there");
   let A = {};
   try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }

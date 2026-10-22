@@ -480,6 +480,9 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq(boxLines, ["Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax."], "11f phone: under the card, only the standard price, then the form (no \"How founding spots work\", no join line)");
     t.ok(v.block && v.block.includes("Paid on flourishmoney.app, and it works in the iPhone and Android apps too.") && !/Payments open October 26|Join the waitlist\.|How founding spots work|The first 50 households on the waitlist/.test(v.block),
       "11f2 …the card's terms unchanged, and none of the removed lines anywhere in the box");
+    const pill = await page.evaluate(() => ({ pill: !!document.querySelector(".fll-founding-card .fll-fc-pill"), card: !!document.querySelector(".fll-founding-card"),
+      counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50/g) || []).length }));
+    t.eq([pill.card, pill.pill, pill.counts], [true, false, 1], "11f3 phone: the founding card has no \"35 of 50 left\" pill; the founding line is the one count");
     await page.locator(".fll-founding .fll-input").fill("new.household@example.test");
     await page.getByRole("button", { name: "Join the founding list" }).first().click();
     await page.locator(".fll-done .fll-done-b").waitFor();

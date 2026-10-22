@@ -14989,7 +14989,8 @@ function FoundingOffer({ launched = false, held = false, children = null }) {
   const liveLine = foundingLiveLine(spotsLeft);
   return (
     <section className={held ? "fll-founding fll-held" : "fll-founding"} aria-labelledby="fll-founding-h" aria-hidden={held ? "true" : undefined}>
-      <FoundingCard/>
+      {/* After the launch the founding line under the badges carries the count, so the card shows no pill. */}
+      <FoundingCard pill={!launched}/>
       {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
           above already shows the price and the count, so the lines say how the spots work. "Founding spots are
           full" shows at every width. After the launch (the trial-first landing, Oct 22) the box drops what the
@@ -15039,7 +15040,7 @@ function TrialButton({ onClick, held = false }) {
 // layout), at the top of the price box (2026-10-22: it used to sit above the hero's email field and scroll to
 // the box; it is inside the box now, so it is no longer a button). Same count as the box, from the same single
 // read (sharedFoundingSpots). No count: no pill. 0 left: no card. Hidden at 960px and up.
-function FoundingCard() {
+function FoundingCard({ pill = true }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
@@ -15055,7 +15056,7 @@ function FoundingCard() {
       <span className="fll-fc-eyebrow">{parts.eyebrow}</span>
       <span className="fll-fc-row">
         <span className="fll-fc-price">{parts.price}</span>
-        {parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
+        {pill && parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
       </span>
       <span className="fll-fc-small">{parts.small}</span>
       <span className="fll-fc-save">{parts.save}</span>
