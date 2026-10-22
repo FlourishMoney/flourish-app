@@ -48,6 +48,17 @@ export function foundingLiveLine(spotsLeft) {
   return `${spotsLeft} of ${FOUNDING_HOUSEHOLDS} founding spots left`;
 }
 
+// THE FOUNDING LINE under the badges (the trial-first landing, approved Oct 22), with the live count. The price is
+// read from pricing.js. The count follows the live line's rule: only a number that was read, so no count read
+// means the first sentence alone. 0 left: no line (the landing has moved on to accounts only).
+export function foundingListLine(spotsLeft) {
+  if (spotsLeft === 0) return null;
+  const p = getPricing("CA");
+  const first = `Founding price: ${formatPrice(p.foundingAnnual)} a year plus tax for the first ${FOUNDING_HOUSEHOLDS} households on the founding list.`;
+  const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
+  return n === null ? first : `${first} ${n} of ${FOUNDING_HOUSEHOLDS} left.`;
+}
+
 // THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line
 // version). Four rows. The prices are read from pricing.js, never typed here. No count read: no pill. 0 left:
 // no card (the block below still says full). 2026-10-14: no struck-through price beside the founding one,

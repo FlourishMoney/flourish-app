@@ -144,12 +144,12 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     if (A.FoundingOffer) {
       const html = A.render(A.h(A.FoundingOffer, {}));
       t.ok(!/founding spots left|spots are full/i.test(html) && !/data-founding-live/.test(html), "1o until the endpoint answers, no live line is drawn");
-      const digits = textOf(html).replace(/\$\d+\.\d{2}/g, "").replace(/first 50 households|October 26/g, "");
+      const digits = textOf(html).replace(/\$\d+\.\d{2}/g, "").replace(/first 50 households|October 26/gi, "");
       t.ok(!/\d/.test(digits), "1p …and no other number appears in the block");
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function AuthScreen("));
-    t.ok(/sharedFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{liveLine && <p/.test(comp),
+    t.ok(/sharedFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{!launched && liveLine && <p/.test(comp),
       "1q the component starts with no number, sets only what the read returned, and draws the line only when there is one");
     t.ok(!/setSpotsLeft\((?!n\))/.test(comp), "1r …and sets spotsLeft nowhere else");
   }
@@ -229,11 +229,13 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       const formAt = html.indexOf('class="fll-hero-form"'), consentAt = html.indexOf('id="fll-consent-hero"'), offerAt = html.indexOf('class="fll-founding"'), demoAt = html.indexOf('class="fll-hero-demo"');
       t.ok(formAt > 0 && consentAt > formAt && offerAt > consentAt && demoAt > offerAt, "4e the block comes right after the hero form and its consent line, before the demo column");
       const app4 = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-      t.ok(/grid-template-areas:"text" "form" "card" "founding" "demo"/.test(app4),
-        "4e2 one column (phones): the block sits BELOW the $1,944 card, so the card's top stays in the first screen");
+      // The trial-first landing (approved Oct 22): on a phone, the $1,944 card comes straight after the subline, then the
+      // main button and its lines, then this block.
+      t.ok(/grid-template-areas:"text" "card" "form" "founding" "demo"/.test(app4),
+        "4e2 one column (phones): header text, the $1,944 card, the main button and its lines, then the block");
       const desk4 = app4.slice(app4.indexOf("@media(min-width:960px){"), app4.indexOf("@media(min-width:960px){") + 2500);
-      t.ok(/grid-template-areas:"text card" "form card" "founding card" "demo card"/.test(desk4) && /\.fll-founding\{ justify-self:start; margin-top:-\$\{SPACE\.xl - SPACE\.lg\}px; \}/.test(desk4),
-        "4e3 desktop: directly under the form, the same distance below the consent line as before");
+      t.ok(/grid-template-areas:"text card" "form card" "founding card" "demo card"/.test(desk4) && /\.fll-founding\{ justify-self:start; \}/.test(desk4),
+        "4e3 desktop: in the left column, under the main button and its lines");
       const block = textOf(html.slice(offerAt, demoAt));
       t.ok(block.includes(HEADING) && block.includes(PRICE_LINE) && block.includes(REGULAR_LINE) && block.includes(JOIN_LINE), "4f the rendered block reads the approved words");
       t.ok(block.indexOf(HEADING) < block.indexOf(PRICE_LINE) && block.indexOf(PRICE_LINE) < block.indexOf(REGULAR_LINE) && block.indexOf(REGULAR_LINE) < block.indexOf(JOIN_LINE),
@@ -263,19 +265,17 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(/useEffect\(\(\) => \{\s*if \(isNativeApp\(\)\) return undefined;/.test(comp), "5d a store app never calls /api/founding");
   }
 
-  // ── 6. The block does not push the desktop hero card down ─────────────────────────────────────
+  // ── 6. Desktop: the card on the right, top-aligned; the block in the left column (approved Oct 22) ───────
   {
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function AuthScreen("));
-    t.ok(/grid\.style\.setProperty\("--fll-founding-h"/.test(comp) && /closest\("\.fll-hero-grid"\)/.test(comp),
-      "6a the block gives the hero grid its own height as --fll-founding-h");
-    t.ok(/el\.offsetHeight \+ \(parseFloat\(getComputedStyle\(el\)\.marginTop\)/.test(comp),
-      "6b …measured with its top margin, the whole space it adds to the left column");
-    t.ok(/new ResizeObserver\(measure\)/.test(comp) && /removeProperty\("--fll-founding-h"\)/.test(comp),
-      "6c …re-measured when the live line appears, and removed when the block goes");
+    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingListLine("));
+    t.ok(!/--fll-founding-h/.test(app), "6a no space is reserved under the card any more (the block is in the left column, not beside the card)");
     const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 2000);
-    t.ok(/\.fll-hero-card\{[^}]*align-self:center;[^}]*margin-bottom:var\(--fll-founding-h, 0px\);/.test(desk),
-      "6d the desktop card reserves that space below itself, so it centres where it would without the block");
+    t.ok(/\.fll-hero-card\{[^}]*justify-self:end; align-self:start; margin-bottom:0; \}/.test(desk), "6b from 960px the card sits on the right, its top level with the headline");
+    const wide = app.slice(app.indexOf("@media(min-width:1024px){"), app.indexOf("@media(min-width:1024px){") + 1500);
+    t.ok(/grid-template-areas:"text card" "form card" "founding card" "demo demo"/.test(wide) && /\.fll-founding\{ justify-self:start; \}/.test(wide),
+      "6c from 1024px too: text, the main button's column and the block on the left, the card on the right, the videos below");
+    t.ok(/\{children\}\s*<\/section>/.test(comp), "6d the founding list form goes inside the block, after its lines");
   }
 
   // ── 7. Under 960px the block does not repeat the card's price or count (2026-10-07) ──────────
@@ -285,11 +285,23 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free."], "7a the phone heading and sentence, word for word");
     t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "7b the desktop wording is unchanged");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingCard()"));
+    const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function FoundingCard("));
     t.ok(/<span className="fll-fo-desk">\{copy\.heading\}<\/span><span className="fll-fo-phone">\{copy\.phoneHeading\}<\/span>/.test(comp),
       "7c one heading, its desktop and phone words switched by CSS");
-    t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+<p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+<p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>/.test(comp),
-      "7d phones: how the spots work, then the regular price; desktop: price, regular, join, as before");
+    t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\}\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+\{!launched && <p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>\}/.test(comp),
+      "7d phones: how the spots work, then the regular price; desktop: price, regular, join (the how and the join only before the launch)");
+    // After the launch (Oct 22): the box drops what the page already says. Rendered, both ways.
+    let R = {};
+    try { R = loadApp(["FoundingOffer"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+    if (R.FoundingOffer) {
+      const before = R.render(R.h(R.FoundingOffer, {})), after = R.render(R.h(R.FoundingOffer, { launched: true }));
+      t.ok(/fll-fo-phone">How founding spots work</.test(before) && before.includes(JOIN_LINE.replace(/'/g, "&#x27;")), "7e before the launch: the box exactly as it was (how the spots work, the join line)");
+      const tA = textOf(after);
+      t.ok(!/How founding spots work/.test(tA) && !tA.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/data-founding-live/.test(after),
+        "7f after the launch: no \"How founding spots work\", no join line, no count line in the box");
+      t.ok(tA.includes(HEADING) && tA.includes(PRICE_LINE) && tA.includes(REGULAR_LINE) && /<h2 class="fll-founding-h fll-fo-desk" id="fll-founding-h">/.test(after),
+        "7g …and still the desktop heading, the founding price with \"Paid on flourishmoney.app, and it works in the iPhone and Android apps too.\", and the standard price");
+    }
     t.ok(/className=\{`fll-founding-live\$\{spotsLeft > 0 \? " fll-fo-desk" : ""\}`\}/.test(comp),
       "7e the \"X of 50 founding spots left\" line is desktop only; \"spots are full\" shows at every width");
     const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 3000);

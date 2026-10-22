@@ -44,7 +44,7 @@ and leave the build in closed testing.
 ## C. Where each link goes
 
 Each link is the website with the campaign code, so the waitlist counts each source separately
-(`WAITLIST_SRCS`; once migration 0018 has run, its report counts signups by source and day). Use exactly these, one per place:
+(`WAITLIST_SRCS`; once migration 0018 has run, its report counts signups by source and day; once migration 0027 has run, `select * from public.landing_source_counts('<from>', '<to>');` adds count-only lines by source and device for landing views, main button taps, accounts created and founding list joins). Use exactly these, one per place:
 
 | Place | Link |
 |---|---|

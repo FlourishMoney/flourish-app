@@ -56,9 +56,11 @@ const OFFICIAL = {
     "4a each badge is a link to its store that opens in a new tab");
   const auth = APP.slice(APP.indexOf("function AuthScreen("), APP.indexOf("\n}\n", APP.indexOf("function AuthScreen(")));
   t.eq((auth.match(/<StoreBadges\/>/g) || []).length, 1, "4b one place on the landing: one App Store badge per layout, as Apple asks");
-  t.ok(/<button type="button" className="fll-btn" onClick=\{goSignup\}>Create your account<\/button>[\s\S]{0,400}<\/div>\s*\)\}\s*<StoreBadges\/>\s*<\/div>/.test(auth)
+  // The trial-first landing (approved Oct 22): the main button, its line "Every feature free for 14 days. Also on iPhone
+  // and Android.", then the badges, then the read-only line, all before the price box.
+  t.ok(/<TrialButton onClick=\{goSignup\} held=\{waitlistHeld\}\/>\}\s*\{trialFirst && <p className=\{[^}]*\}[^>]*>Every feature free for 14 days\. Also on iPhone and Android\.<\/p>\}\s*\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}[\s\S]{0,900}?Create your account<\/button>[\s\S]{0,400}?<\/div>\s*\)\}\s*<StoreBadges\/>\s*<div className="fll-trust-row">/.test(auth)
     && auth.indexOf("<StoreBadges/>") > auth.indexOf('<div className="fll-hero-form">') && auth.indexOf("<StoreBadges/>") < auth.indexOf("<FoundingOffer"),
-    "4c the first right under the hero form (its button and the line under it), before the founding block");
+    "4c the one placement: in the hero, right after the main button and its line, before the price box");
   const foot = auth.slice(auth.indexOf('<div className="fll-foot">'));
   t.ok(foot.length > 200 && !/StoreBadges|fll-stores/.test(foot) && !/\.fll-foot \.fll-stores/.test(APP), "4d none in the footer (the footer pair was removed for Apple's one-badge rule)");
   t.ok(/<button className="fll-login" onClick=\{goLogin\}>Log in<\/button>/.test(auth), "4e Log in is unchanged, a quiet text button in the nav");

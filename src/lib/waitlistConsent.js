@@ -7,8 +7,9 @@ export const CONSENT_VERSION = "2026-10-06";
 
 export const CONSENT_TEXT = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
 // While signup is open and founding spots remain, the forms show this line instead, and send its version.
-export const FOUNDING_SPOT_CONSENT_VERSION = "2026-10-26";
-export const FOUNDING_SPOT_CONSENT_TEXT = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
+// 2026-10-22: the founding list form inside the price box (the 2026-10-26 wording stays on the server for its rows).
+export const FOUNDING_SPOT_CONSENT_VERSION = "2026-10-22";
+export const FOUNDING_SPOT_CONSENT_TEXT = "We'll email you your founding price link, and no other marketing. Unsubscribe any time. Who we are: see Contact below.";
 export const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
 
 // Where on the page the form sat (metadata.placement), and the campaign srcs the server stores in source.

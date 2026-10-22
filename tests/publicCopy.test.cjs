@@ -101,6 +101,24 @@ const FORBIDDEN = [
     t.eq(htmlHits, [], "index.html's readable copy makes no browser, download or PWA claim");
     // The meta names themselves are untouched: they configure the iOS shell.
     t.ok(/name="apple-mobile-web-app-capable"/.test(html), "…and the standard apple-mobile-web-app-capable meta is still there");
+    // The trial-first landing's link previews (approved Oct 22), word for word.
+    const D = "Know what's safe to spend until payday. A Canadian money app where safe to spend is built around your paydays. Every feature free for 14 days.";
+    const meta = (attr, key) => ((html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]*)"`)) || [])[1] || "").replace(/&#39;/g, "'");
+    t.eq([meta("name", "description"), meta("property", "og:description")], [D, D], "2b the meta description and og:description, word for word");
+    t.eq([meta("property", "og:image"), meta("name", "twitter:image"), meta("name", "twitter:card")],
+      ["https://flourishmoney.app/app-screens/hero-card.jpg", "https://flourishmoney.app/app-screens/hero-card.jpg", "summary_large_image"],
+      "2c og:image and twitter:image are the sample card's absolute URL, and the card is summary_large_image");
+    t.ok(fs.existsSync(path.join(REPO, "public", "app-screens", "hero-card.jpg")), "2d …and that file is served (public/app-screens/hero-card.jpg)");
+  }
+
+  // ── 2e. the trial-first landing's new lines (approved Oct 22) keep the copy rules ──────────────
+  {
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const NEW_LINES = ["Know what's safe to spend", "until payday.",
+      "Rent, hydro, the Visa minimum, takeout tonight? flourish accounts for bills due before payday, your minimum debt payments, a buffer and a savings amount, then shows what's safe to spend. You can see how it adds up.",
+      "Try flourish free for 14 days", "Every feature free for 14 days. Also on iPhone and Android.", "Joining is free. No payment now.", "Join the founding list", "Email address", "More videos"];
+    t.ok(NEW_LINES.every(l => app.includes(l)), "2e every new landing line is in the page, word for word");
+    t.eq(NEW_LINES.filter(l => /[\u2014\u2013]/.test(l) || FORBIDDEN.some(([rx]) => rx.test(l))), [], "2f …none has an em or en dash, or makes a browser, download or PWA claim");
   }
 
   // ── 3. public/, which is served verbatim ──────────────────────────────────────────────────────

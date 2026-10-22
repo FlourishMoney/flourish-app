@@ -19,11 +19,21 @@ export const LANDING_ONLY = [
   "og-image-ca.png",
 ];
 
+// The landing's link-preview tags in index.html (between the LANDING-META markers): they name the website, and a
+// store app never shows the landing, so a native build drops them (2026-10-22).
+export const LANDING_META_RX = /[ \t]*<!-- LANDING-META[\s\S]*?<!-- \/LANDING-META -->\n?/;
+export function stripLandingMeta(html) { return String(html).replace(LANDING_META_RX, ""); }
+
 export function stripLandingMedia(distDir) {
   const removed = [];
   for (const name of LANDING_ONLY) {
     const p = path.join(distDir, name);
     if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); removed.push(name); }
+  }
+  const index = path.join(distDir, "index.html");
+  if (fs.existsSync(index)) {
+    const html = fs.readFileSync(index, "utf8"), out = stripLandingMeta(html);
+    if (out !== html) { fs.writeFileSync(index, out); removed.push("landing meta tags"); }
   }
   return removed;
 }

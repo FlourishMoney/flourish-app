@@ -26,8 +26,13 @@ const CONSENT_TEXT = "We'll email you when flourish launches in Canada, plus a f
 // under it is recorded as FOUNDING_SPOT_CONSENT_VERSION, which covers the founding link email and nothing
 // else (CONSENT_COVERS). join_waitlist accepts exactly the version the page shows for the signup state:
 // this one while signup is open, CONSENT_VERSION while it is shut (waitlistConsentVersionFor).
-const FOUNDING_SPOT_CONSENT_VERSION = "2026-10-26";
-const FOUNDING_SPOT_CONSENT_TEXT = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
+// 2026-10-22 (the trial-first landing, approved Oct 22): the founding list form moved into the price box, with
+// new small print. A NEW version, so the rows that joined under the 2026-10-26 wording keep exactly that wording.
+// Both cover the founding link email and nothing else.
+const FOUNDING_SPOT_CONSENT_VERSION = "2026-10-22";
+const FOUNDING_SPOT_CONSENT_TEXT = "We'll email you your founding price link, and no other marketing. Unsubscribe any time. Who we are: see Contact below.";
+const FOUNDING_SPOT_CONSENT_VERSION_2026_10_26 = "2026-10-26";
+const FOUNDING_SPOT_CONSENT_TEXT_2026_10_26 = "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below.";
 // The sender's identity on its own: the welcome email's footer (waitlistWelcome.js), and the second of
 // the two lines version 2026-10-01 showed.
 const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
@@ -38,6 +43,7 @@ const CONSENT_VERSIONS = {
   "2026-10-01": { consent: "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.", identity: IDENTITY_TEXT },
   "2026-10-05": { consent: "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.", identity: null }, // the identity is inside the one line
   "2026-10-06": { consent: CONSENT_TEXT, identity: null, identityAt: "the page's Contact block: flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. hello@flourishmoney.app" },
+  [FOUNDING_SPOT_CONSENT_VERSION_2026_10_26]: { consent: FOUNDING_SPOT_CONSENT_TEXT_2026_10_26, identity: null, identityAt: "the page's Contact block: flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. hello@flourishmoney.app" },
   [FOUNDING_SPOT_CONSENT_VERSION]: { consent: FOUNDING_SPOT_CONSENT_TEXT, identity: null, identityAt: "the page's Contact block: flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. hello@flourishmoney.app" },
 };
 
@@ -59,6 +65,8 @@ const CONSENT_COVERS = Object.freeze({
   "2026-10-05": Object.freeze(["launch", "updates"]),
   "2026-10-06": Object.freeze(["launch", "updates"]),
   // "We'll email you your founding price link. We won't send other marketing emails from this form."
+  [FOUNDING_SPOT_CONSENT_VERSION_2026_10_26]: Object.freeze(["founding_link"]),
+  // "We'll email you your founding price link, and no other marketing."
   [FOUNDING_SPOT_CONSENT_VERSION]: Object.freeze(["founding_link"]),
 });
 

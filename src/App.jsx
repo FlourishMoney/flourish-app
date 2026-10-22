@@ -32,7 +32,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, formatPrice } from "./lib/pricing.js";
-import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
+import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
@@ -70,7 +70,8 @@ import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { STORE_BADGES } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
-import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
+import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
+import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
@@ -14761,9 +14762,10 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 // one as the row's source and anything else as "direct". The form's position goes in metadata.placement.
 // The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
 // only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
-// `founding` (billing day, approved by ChatGPT and Grok, 2026-10-15): while signup is open and founding spots
-// remain, the button says "Get my founding spot" and the line under it is the founding spot line, sent as
-// its own version (2026-10-26), whose one promise is the founding price link.
+// `founding` (billing day, approved by ChatGPT and Grok, 2026-10-15; the trial-first landing, approved Oct 22):
+// while signup is open and founding spots remain, the form sits inside the price box, the button says "Join the
+// founding list" and the line under it is the founding spot line, sent as its own version (2026-10-22), whose one
+// promise is the founding price link.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WAITLIST_FORM_CSS = `
             .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
@@ -14782,6 +14784,8 @@ const WAITLIST_FORM_CSS = `
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             .fll-account .fll-consent{ margin-block:10px 0; }
             .fll-held{ visibility:hidden; }
+            .fll-label{ display:block; margin-block:0 6px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; font-weight:700; color:#15321a; }
+            .fll-join-note{ margin-block:0 ${SPACE.sm}px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; line-height:1.45; color:#15321a; }
             .fll-done .fll-btn{ margin-top:16px; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
@@ -14852,13 +14856,17 @@ function WaitlistForm({ source = "landing", founding = false, held = false, onCr
   return (
     <div className={held ? "fll-capture fll-held" : "fll-capture"} aria-hidden={held ? "true" : undefined}>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+      {/* The trial-first landing (approved Oct 22): inside the price box, one line above the form, and a visible
+          label on every email box. */}
+      {founding && <p className="fll-join-note">Joining is free. No payment now.</p>}
+      <label className="fll-label" htmlFor={`fll-email-${tag}`}>Email address</label>
       <div className="fll-form">
-        <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email"
-          placeholder="you@example.com" value={email} aria-label="Email address" aria-describedby={`fll-consent-${tag}`}
+        <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email" id={`fll-email-${tag}`}
+          placeholder="you@example.com" value={email} aria-describedby={`fll-consent-${tag}`}
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
         <button className="fll-btn" onClick={submit} disabled={busy}>
-          {busy ? "Joining…" : founding ? "Get my founding spot" : "Join the waitlist"}
+          {busy ? "Joining…" : founding ? "Join the founding list" : "Join the waitlist"}
         </button>
         {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
             unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
@@ -14897,6 +14905,7 @@ const howtoSrc = (v) => `/video/${v.id}.mp4`;
 const howtoPoster = (v) => `/video/${v.id}-poster.jpg`;
 function LandingHowTo() {
   const [sel, setSel] = useState(HOWTO_VIDEOS[0].id);
+  const [more, setMore] = useState(false);   // the other seven, behind "More videos" (approved Oct 22)
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const video = useRef(null), stage = useRef(null);
@@ -14945,7 +14954,8 @@ function LandingHowTo() {
         )}
       </div>
       <p className="fll-walk-note">Voice is AI-generated. Example, sample data.</p>
-      <ul className="fll-walk-grid" aria-label="How-to videos">
+      <button type="button" className="fll-more" aria-expanded={more} aria-controls="fll-walk-grid" onClick={() => setMore(m => !m)}>More videos</button>
+      {more && <ul className="fll-walk-grid" id="fll-walk-grid" aria-label="How-to videos">
         {HOWTO_VIDEOS.map(v => (
           <li key={v.id}>
             <button type="button" className={`fll-walk-tile${v.id === sel ? " on" : ""}`} aria-pressed={v.id === sel} onClick={() => pick(v)}
@@ -14956,63 +14966,81 @@ function LandingHowTo() {
             </button>
           </li>
         ))}
-      </ul>
+      </ul>}
     </section>
   );
 }
 
-// The founding offer, directly under the hero's waitlist form (Amanda's decision, 2026-10-06). The
-// live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
+// THE PRICE BOX (Amanda's decision, 2026-10-06; the trial-first landing, approved Oct 22): every approved line
+// it had, unchanged, and the founding list form inside it (children). Under 960px it opens with the founding
+// card's rows (FoundingCard, hidden from 960px), then the lines for that width; from 960px, the desktop lines.
+// The live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
-function FoundingOffer({ launched = false, held = false }) {
+function FoundingOffer({ launched = false, held = false, children = null }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
-  const box = useRef(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
     let live = true;
     sharedFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
     return () => { live = false; };
   }, []);
-  // On desktop the hero card is centred beside the whole left column, so this block's row would push it
-  // down by half its height. The grid gets the space the block's row adds (its height, its top margin and
-  // one row gap) as --fll-founding-h, and the desktop card reserves the same space below itself: it
-  // centres exactly where it would without the block. Re-measured when the block changes height (the
-  // live line). On phones the card does not use it: there the block simply follows the card.
-  useEffect(() => {
-    const el = box.current, grid = el && el.closest(".fll-hero-grid");
-    if (!grid) return undefined;
-    const measure = () => {
-      const h = el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0) + (parseFloat(getComputedStyle(grid).rowGap) || 0);
-      grid.style.setProperty("--fll-founding-h", `${Math.round(h)}px`);
-    };
-    measure();
-    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
-    if (ro) ro.observe(el);
-    return () => { if (ro) ro.disconnect(); grid.style.removeProperty("--fll-founding-h"); };
-  }, []);
   if (isNativeApp()) return null;
   const copy = foundingOfferCopy({ launched });
   const liveLine = foundingLiveLine(spotsLeft);
   return (
-    <section className={held ? "fll-founding fll-held" : "fll-founding"} ref={box} aria-labelledby="fll-founding-h" aria-hidden={held ? "true" : undefined}>
+    <section className={held ? "fll-founding fll-held" : "fll-founding"} aria-labelledby="fll-founding-h" aria-hidden={held ? "true" : undefined}>
+      {/* After the launch the founding line under the badges carries the count, so the card shows no pill. */}
+      <FoundingCard pill={!launched}/>
       {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
-          at the top already shows the price and the count, so this block says how the spots work. Desktop
-          reads as it always has. "Founding spots are full" shows at every width. */}
-      <h2 className="fll-founding-h" id="fll-founding-h"><span className="fll-fo-desk">{copy.heading}</span><span className="fll-fo-phone">{copy.phoneHeading}</span></h2>
+          above already shows the price and the count, so the lines say how the spots work. "Founding spots are
+          full" shows at every width. After the launch (the trial-first landing, Oct 22) the box drops what the
+          page already says: the "How founding spots work" heading and line on phones, and the join line and the
+          count on desktop (the founding line under the badges carries the count). */}
+      {launched
+        ? <h2 className="fll-founding-h fll-fo-desk" id="fll-founding-h">{copy.heading}</h2>
+        : <h2 className="fll-founding-h" id="fll-founding-h"><span className="fll-fo-desk">{copy.heading}</span><span className="fll-fo-phone">{copy.phoneHeading}</span></h2>}
       <p className="fll-founding-p fll-fo-desk">{copy.price}</p>
-      <p className="fll-founding-p fll-fo-phone">{copy.phoneJoin}</p>
+      {!launched && <p className="fll-founding-p fll-fo-phone">{copy.phoneJoin}</p>}
       <p className="fll-founding-p">{copy.regular}</p>
-      <p className="fll-founding-p fll-fo-desk">{copy.join}</p>
-      {liveLine && <p className={`fll-founding-live${spotsLeft > 0 ? " fll-fo-desk" : ""}`} data-founding-live="">{liveLine}</p>}
+      {!launched && <p className="fll-founding-p fll-fo-desk">{copy.join}</p>}
+      {!launched && liveLine && <p className={`fll-founding-live${spotsLeft > 0 ? " fll-fo-desk" : ""}`} data-founding-live="">{liveLine}</p>}
+      {children}
     </section>
   );
 }
 
+// THE FOUNDING LINE under the badges (approved Oct 22), with the live count (lib/foundingOffer.js).
+function FoundingListLine({ held = false }) {
+  const [spotsLeft, setSpotsLeft] = useState(null);
+  useEffect(() => {
+    if (isNativeApp()) return undefined;
+    let live = true;
+    sharedFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
+    return () => { live = false; };
+  }, []);
+  if (isNativeApp()) return null;
+  const line = foundingListLine(spotsLeft);
+  if (!line) return null;
+  return <p className={held ? "fll-found-line fll-held" : "fll-found-line"} data-founding-line="" aria-hidden={held ? "true" : undefined}>{line}</p>;
+}
+
+// THE MAIN BUTTON, top and bottom of the landing (approved Oct 22): it opens website signup. The visit's src
+// (lib/waitlistSrc.js) goes with the signup to the new account; the tap is counted (lib/landingCounts.js).
+function TrialButton({ onClick, held = false }) {
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+      <button type="button" className={held ? "fll-btn fll-main fll-held" : "fll-btn fll-main"} aria-hidden={held ? "true" : undefined} tabIndex={held ? -1 : undefined}
+        onClick={() => { countLanding("main_tap", { base: API_BASE }); onClick(); }}>Try flourish free for 14 days</button>
+    </>
+  );
+}
+
 // THE FOUNDING CARD (2026-10-07, replacing the one-line version): phones and tablets only (the one-column
-// layout), directly above the hero's email field. Same count as the block below, from the same single read
-// (sharedFoundingSpots). No count: no pill. 0 left: no card. Tapping it scrolls to the founding block.
-// Hidden at 960px and up. A button, so its rows are spans laid out as blocks.
-function FoundingCard() {
+// layout), at the top of the price box (2026-10-22: it used to sit above the hero's email field and scroll to
+// the box; it is inside the box now, so it is no longer a button). Same count as the box, from the same single
+// read (sharedFoundingSpots). No count: no pill. 0 left: no card. Hidden at 960px and up.
+function FoundingCard({ pill = true }) {
   const [spotsLeft, setSpotsLeft] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
@@ -15023,22 +15051,16 @@ function FoundingCard() {
   if (isNativeApp()) return null;
   const parts = foundingCardParts(spotsLeft);
   if (!parts) return null;
-  const toBlock = () => {
-    const el = document.querySelector(".fll-founding");
-    if (!el) return;
-    let smooth = true; try { smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* default */ }
-    el.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
-  };
   return (
-    <button type="button" className="fll-founding-card" onClick={toBlock}>
+    <div className="fll-founding-card">
       <span className="fll-fc-eyebrow">{parts.eyebrow}</span>
       <span className="fll-fc-row">
         <span className="fll-fc-price">{parts.price}</span>
-        {parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
+        {pill && parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
       </span>
       <span className="fll-fc-small">{parts.small}</span>
       <span className="fll-fc-save">{parts.save}</span>
-    </button>
+    </div>
   );
 }
 
@@ -15103,6 +15125,14 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, now: landingNow, native: isNativeApp() });
   const waitlistHeld = waitlistArea === "hold";
   const waitlistForms = waitlistArea === "waitlist" || waitlistArea === "founding";
+  // THE TRIAL-FIRST LANDING (approved Oct 22): while signup is open and founding spots remain, the main action is
+  // "Try flourish free for 14 days", top and bottom, and the founding list form sits inside the price box. While
+  // the answer is awaited ("hold") the same layout is laid out but hidden. With signup shut it is the waitlist;
+  // with all 50 spots taken it is "Create your account", unchanged (its line needs its own approved words).
+  const trialFirst = waitlistArea === "founding" || waitlistHeld;
+  const foundingOpen = trialFirst;
+  // One landing view per browser session, by src and device (lib/landingCounts.js). Web only.
+  useEffect(() => { if (!isNativeApp()) countLandingViewOnce({ base: API_BASE }); }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15205,7 +15235,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password, code: betaCode }),
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc() }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
@@ -15365,7 +15395,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
-            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "form" "card" "founding" "demo"; gap:${SPACE.xl}px; }
+            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "card" "form" "founding" "demo"; gap:${SPACE.xl}px; }
             .fll-hero-text{ grid-area:text; }
             .fll-hero-card{ grid-area:card; justify-self:center; margin-block:0; margin-inline:0; width:100%; max-width:400px; }
             .fll-hero-form, .fll-hero-demo{ justify-self:center; width:100%; max-width:440px; }
@@ -15377,14 +15407,21 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             .fll-founding{ grid-area:founding; justify-self:center; width:100%; max-width:440px; box-sizing:border-box; margin-block:0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
             /* The founding card above the hero's email field (phones and tablets; hidden at 960px and up).
                Dark green, cream text, a lime pill: it reads as an offer, not as a second Join button. */
-            .fll-founding-card{ display:block; width:100%; box-sizing:border-box; margin-block:0 ${SPACE.md}px; margin-inline:0; padding:${SPACE.md}px; border:0; border-radius:${SPACE.lg}px; background:#15321a; color:#fdf6ec; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 10px 24px rgba(21,50,26,0.18); }
+            .fll-founding-card{ display:block; width:100%; box-sizing:border-box; margin-block:0 ${SPACE.md}px; margin-inline:0; padding:${SPACE.md}px; border:0; border-radius:${SPACE.lg}px; background:#15321a; color:#fdf6ec; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; box-shadow:0 10px 24px rgba(21,50,26,0.18); }
             .fll-fc-eyebrow{ display:block; font-size:13px; font-weight:800; letter-spacing:0.08em; line-height:1.3; color:#c8f169; }
             .fll-fc-row{ display:flex; flex-wrap:wrap; align-items:center; column-gap:${SPACE.sm}px; row-gap:${SPACE.xs}px; margin-block:${SPACE.xs}px; }
             .fll-fc-price{ font-family:'Playfair Display',serif; font-weight:900; font-size:24px; line-height:1.1; color:#fdf6ec; }
             .fll-fc-pill{ display:inline-block; padding:${SPACE.xs}px ${SPACE.sm}px; border-radius:99px; background:#c8f169; color:#15321a; font-size:13px; font-weight:800; line-height:1.2; white-space:nowrap; }
             .fll-fc-save{ display:block; margin-top:${SPACE.xs}px; font-size:14px; font-weight:800; line-height:1.35; color:#fdf6ec; }
             .fll-fc-small{ display:block; font-size:13px; font-weight:500; line-height:1.4; color:#d9e2d6; }
-            .fll-founding-card:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
+            /* The trial-first landing (approved Oct 22): the main button's line, the founding line, the form inside the
+               price box, and the "More videos" toggle. */
+            .fll-trial-line{ margin-block:${SPACE.sm}px 0; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; line-height:1.45; color:#15321a; text-align:center; }
+            .fll-found-line{ margin-block:${SPACE.md}px 0; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; line-height:1.5; color:#3f4f3c; text-align:center; }
+            .fll-hero-form .fll-main{ display:block; width:100%; }
+            .fll-founding .fll-capture{ max-width:none; margin-block:${SPACE.lg}px 0; margin-inline:0; text-align:left; }
+            .fll-more{ display:block; margin-block:${SPACE.md}px 0; margin-inline:auto; min-height:44px; padding:${SPACE.sm}px ${SPACE.lg}px; border-radius:99px; border:1.5px solid rgba(46,139,46,0.4); background:#fff; color:#1b5e20; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:800; cursor:pointer; }
+            .fll-more:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
             .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
             .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
             .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
@@ -15479,21 +15516,22 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
               .fll-hero{ text-align:left; }
               .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "founding card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
               .fll-hero-text .fll-h1, .fll-hero-text .fll-sub{ margin-left:0; }
-              .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; margin-bottom:var(--fll-founding-h, 0px); }
+              .fll-hero-card{ max-width:440px; justify-self:end; align-self:start; margin-bottom:0; }
               .fll-hero-form, .fll-hero-demo{ justify-self:start; }
               .fll-hero-grid{ grid-template-rows:auto auto auto 1fr; }
-              /* Desktop: directly under the form, ${SPACE.lg}px below its consent line exactly as when it sat inside
-                 the form: the row gap (${SPACE.xl}px) less ${SPACE.xl - SPACE.lg}px. */
-              .fll-founding{ justify-self:start; margin-top:-${SPACE.xl - SPACE.lg}px; }
+              /* Desktop: the price box in the left column, under the founding line. */
+              .fll-founding{ justify-self:start; }
               .fll-founding-card{ display:none; }
               .fll-fo-phone{ display:none; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-hero-form .fll-stores{ justify-content:flex-start; margin-left:-10px; }
-              .fll-trust-row{ text-align:left; }
+              .fll-trust-row, .fll-trial-line, .fll-found-line{ text-align:left; }
+              .fll-hero-form .fll-main{ width:100%; }
               .fll-walk, .fll-familiar{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
               .fll-walk-stage, .fll-walk-grid{ margin-inline:0; }
+              .fll-more{ margin-inline:0; }
               .fll-walk-grid{ max-width:none; grid-template-columns:repeat(4,minmax(0,1fr)); }
               .fll-walk-tile{ grid-template-columns:1fr; grid-template-areas:"img" "n" "s"; grid-template-rows:auto 1fr auto; row-gap:${SPACE.xs}px; justify-items:center; text-align:center; padding:${SPACE.sm}px ${SPACE.xs}px; }
               .fll-walk-tile-n{ align-self:start; }
@@ -15508,23 +15546,24 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                the player on the left, its title, subline and tiles beside it, centred on the player; then
                "Sound familiar?" and the button, centred. Under 1024px nothing here applies. */
             @media(min-width:1024px){
-              .fll-hero-grid{ grid-template-areas:"text card" "form card" "form founding" "demo demo"; grid-template-rows:auto auto auto auto; }
+              .fll-hero-grid{ grid-template-areas:"text card" "form card" "founding card" "demo demo"; grid-template-rows:auto auto auto auto; }
               /* Top-aligned with the headline. It used to sit lower by the old platform pill's height (line + padding +
                  border + margin); the pill is gone, so the headline is the text column's first line. */
               .fll-hero-card{ align-self:start; margin-top:0; margin-bottom:0; }
-              .fll-founding{ justify-self:end; margin-top:-${SPACE.xl - SPACE.lg}px; }
+              .fll-founding{ justify-self:start; }
               .fll-hero-demo{ justify-self:stretch; max-width:none; margin-top:${SPACE.xl}px; }
               .fll-walk{ display:grid; max-width:960px; margin-inline:auto; margin-block:0 ${SPACE.xl}px; grid-template-columns:minmax(0,360px) minmax(0,1fr);
-                grid-template-rows:1fr auto auto auto 1fr auto; grid-template-areas:"stage ." "stage t" "stage sub" "stage grid" "stage ." "note ."; column-gap:${SPACE.xxl + SPACE.lg}px; text-align:left; }
+                grid-template-rows:1fr auto auto auto auto 1fr auto; grid-template-areas:"stage ." "stage t" "stage sub" "stage more" "stage grid" "stage ." "note ."; column-gap:${SPACE.xxl + SPACE.lg}px; text-align:left; }
               .fll-walk-t{ grid-area:t; }
               .fll-walk-sub{ grid-area:sub; }
               .fll-walk-stage{ grid-area:stage; }
               .fll-walk-grid{ grid-area:grid; margin-block:0; }
+              .fll-more{ grid-area:more; justify-self:start; margin-block:0 ${SPACE.md}px; }
               .fll-walk-note{ grid-area:note; }
               .fll-familiar{ max-width:560px; margin-inline:auto; text-align:center; }
               .fll-familiar ul{ display:inline-block; }
               .fll-hero-demo .fll-demo{ max-width:440px; margin-inline:auto; }
-              .fll-trust-row{ text-align:center; }
+              .fll-hero-form .fll-trust-row{ text-align:left; }
             }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
@@ -15541,16 +15580,16 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
             <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
 
-          {/* Hero. Mobile, one column: H1, subline, the form (field, Join, consent line), the store badges, the card, then
-              the demo button and the read-only line, so Join is on screen at 390 x 844. 960 to 1023px: text,
-              form and demo button on the left, the card on the right. 1024px and up: the card beside the text
-              and form, top-aligned with the headline, and the videos, "Sound familiar?" and the demo button in
-              a full-width row below (grid areas in .fll-hero-grid). */}
+          {/* Hero. The trial-first landing, approved Oct 22. Phone, one column: H1, subline, the $1,944 card, the main
+              button, its line, the store badges, the read-only line, the founding line, then the price box with the
+              founding list form inside. 960px and up: the card on the right, the same order on the left; from
+              1024px the videos, "Sound familiar?" and the demo button in a full-width row below (grid areas in
+              .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
             <div className="fll-hero-grid">
               <div className="fll-hero-text">
-                <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
-                <p className="fll-sub">Safe to spend is built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
+                <h1 className="fll-h1">Know what's safe to spend <em>until payday.</em></h1>
+                <p className="fll-sub">Rent, hydro, the Visa minimum, takeout tonight? flourish accounts for bills due before payday, your minimum debt payments, a buffer and a savings amount, then shows what's safe to spend. You can see how it adds up.</p>
               </div>
               {/* The real Today card, cropped from the demo capture by scripts/crop-hero-card.mjs (never
                   redrawn): every figure in it is one the demo showed. Tapping it opens the demo. */}
@@ -15563,8 +15602,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                 <figcaption className="fll-sample">Example, sample data.</figcaption>
               </figure>
               <div className="fll-hero-form">
-                <FoundingCard/>
-                {(waitlistForms || waitlistHeld) && <WaitlistForm source="hero" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>}
+                {/* Founding spots open (approved Oct 22): the main button, its line, the badges, the read-only line and
+                    the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
+                    account". Then the badges and the read-only line. */}
+                {trialFirst && <TrialButton onClick={goSignup} held={waitlistHeld}/>}
+                {trialFirst && <p className={waitlistHeld ? "fll-trial-line fll-held" : "fll-trial-line"} aria-hidden={waitlistHeld ? "true" : undefined}>Every feature free for 14 days. Also on iPhone and Android.</p>}
+                {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
                 {waitlistArea === "account" && (
@@ -15575,9 +15618,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                   </div>
                 )}
                 <StoreBadges/>
+                <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
+                {foundingOpen && <FoundingListLine held={waitlistHeld}/>}
               </div>
-              {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
-              {(waitlistForms || waitlistHeld) && <FoundingOffer launched={waitlistArea !== "waitlist"} held={waitlistHeld}/>}
+              {/* The price box, its own grid item: under the founding line, in the left column on desktop. */}
+              {(waitlistForms || waitlistHeld) && (
+                <FoundingOffer launched={waitlistArea !== "waitlist"} held={waitlistHeld}>
+                  {foundingOpen && <WaitlistForm source="hero" founding held={waitlistHeld} onCreateAccount={goSignup}/>}
+                </FoundingOffer>
+              )}
               <div className="fll-hero-demo">
                 <LandingHowTo/>
                 <section className="fll-familiar" aria-labelledby="fll-familiar-t">
@@ -15591,7 +15640,6 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
                   <p className="fll-walk-note">flourish starts from your paydays and shows the math behind what's safe to spend.</p>
                 </section>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
-                <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>
             </div>
           </div>
@@ -15645,16 +15693,21 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
           </div>
 
           {/* Second email capture */}
-          {(waitlistForms || waitlistHeld) && (
+          {/* The bottom of the page: the main button once signup is open (approved Oct 22); the waitlist form while
+              it is shut. */}
+          {trialFirst && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
-              {/* The launch promise goes with the launch wording: after the launch the founding spot form stands
-                  alone (Amanda, 2026-10-15). */}
-              {waitlistArea === "waitlist" && <>
+              <TrialButton onClick={goSignup} held={waitlistHeld}/>
+            </div>
+          </div>
+          )}
+          {waitlistArea === "waitlist" && (
+          <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
+            <div className="fll-cta2">
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches in Canada.</p>
-              </>}
-              <WaitlistForm source="bottom_cta" founding={waitlistArea !== "waitlist"} held={waitlistHeld} onCreateAccount={goSignup}/>
+              <WaitlistForm source="bottom_cta"/>
             </div>
           </div>
           )}
