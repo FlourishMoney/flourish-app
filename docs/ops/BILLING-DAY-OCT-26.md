@@ -337,7 +337,8 @@ only while **both** `BILLING_ENABLED` and `FOUNDING_LINK_EMAIL` are exactly `tru
    | `2026-10-01` | "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time." (with the identity line) | Yes |
    | `2026-10-05` | "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time." | Yes |
    | `2026-10-06` | "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below." | Yes |
-   | `2026-10-26` | "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below." (the founding spot form: the landing shows it while signup is open and founding spots remain) | Yes, and no other email |
+   | `2026-10-26` | "We'll email you your founding price link. We won't send other marketing emails from this form. Unsubscribe any time. Who we are: see Contact below." (the founding spot form: the landing showed it while signup was open and founding spots remained, until the trial-first landing) | Yes, and no other email |
+   | `2026-10-22` | "We'll email you your founding price link, and no other marketing. Unsubscribe any time. Who we are: see Contact below." (the founding list form inside the price box, on the trial-first landing approved Oct 22: shown while signup is open and founding spots remain) | Yes, and no other email |
    | anything else | not a version the site ever showed | No |
 
    **Amanda's decision (2026-10-14): the `pre-2026-10-01` rows get the launch email.** They asked to
