@@ -226,8 +226,10 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.AuthScreen) {
       const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
-      const formAt = html.indexOf('class="fll-hero-form"'), consentAt = html.indexOf('id="fll-consent-hero"'), offerAt = html.indexOf('class="fll-founding"'), demoAt = html.indexOf('class="fll-hero-demo"');
-      t.ok(formAt > 0 && consentAt > formAt && offerAt > consentAt && demoAt > offerAt, "4e the block comes right after the hero form and its consent line, before the demo column");
+      // Before any answer the landing is the trial-first page (2026-10-22): the block follows the hero's column (the
+      // main button, its lines and the badges) and holds the founding list form and its consent line.
+      const formAt = html.indexOf('class="fll-hero-form"'), offerAt = html.indexOf('class="fll-founding"'), consentAt = html.indexOf('id="fll-consent-hero"'), demoAt = html.indexOf('class="fll-hero-demo"');
+      t.ok(formAt > 0 && offerAt > formAt && consentAt > offerAt && demoAt > consentAt, "4e the block comes right after the hero's column, holds the form and its consent line, and comes before the demo column");
       const app4 = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       // The trial-first landing (approved Oct 22): on a phone, the $1,944 card comes straight after the subline, then the
       // main button and its lines, then this block.
@@ -237,9 +239,10 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       t.ok(/grid-template-areas:"text card" "form card" "founding card" "demo card"/.test(desk4) && /\.fll-founding\{ justify-self:start; \}/.test(desk4),
         "4e3 desktop: in the left column, under the main button and its lines");
       const block = textOf(html.slice(offerAt, demoAt));
-      t.ok(block.includes(HEADING) && block.includes(PRICE_LINE) && block.includes(REGULAR_LINE) && block.includes(JOIN_LINE), "4f the rendered block reads the approved words");
-      t.ok(block.indexOf(HEADING) < block.indexOf(PRICE_LINE) && block.indexOf(PRICE_LINE) < block.indexOf(REGULAR_LINE) && block.indexOf(REGULAR_LINE) < block.indexOf(JOIN_LINE),
-        "4f2 …in the approved order: heading, founding price, regular price, how to get it");
+      t.ok(block.includes(HEADING) && block.includes(PRICE_LINE) && block.includes(REGULAR_LINE) && !block.includes(JOIN_LINE) && !/Join the waitlist|Payments open October 26/.test(block),
+        "4f the rendered block reads the approved words of the trial-first page (no join line, nothing about the waitlist)");
+      t.ok(block.indexOf(HEADING) < block.indexOf(PRICE_LINE) && block.indexOf(PRICE_LINE) < block.indexOf(REGULAR_LINE),
+        "4f2 …in the approved order: heading, founding price, regular price");
       t.eq((html.match(/class="fll-founding"/g) || []).length, 1, "4g one block, in the hero only");
       t.ok(!/[—–]/.test(HEADING + PRICE_LINE + REGULAR_LINE + JOIN_LINE + FULL_LINE + EMAIL_LINE(1)), "4h no em or en dashes in any of it");
     }

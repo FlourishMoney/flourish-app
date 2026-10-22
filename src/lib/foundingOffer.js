@@ -49,14 +49,14 @@ export function foundingLiveLine(spotsLeft) {
 }
 
 // THE FOUNDING LINE under the badges (the trial-first landing, approved Oct 22), with the live count. The price is
-// read from pricing.js. The count follows the live line's rule: only a number that was read, so no count read
-// means the first sentence alone. 0 left: no line (the landing has moved on to accounts only).
+// read from pricing.js. It is the count line, so it shows only once a real number has been read (2026-10-22):
+// before the answer, or if the call fails, there is no line, never a made-up or placeholder number. 0 left: no
+// line (the landing has moved on to accounts only).
 export function foundingListLine(spotsLeft) {
-  if (spotsLeft === 0) return null;
-  const p = getPricing("CA");
-  const first = `Founding price: ${formatPrice(p.foundingAnnual)} a year plus tax for the first ${FOUNDING_HOUSEHOLDS} households on the founding list.`;
   const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
-  return n === null ? first : `${first} ${n} of ${FOUNDING_HOUSEHOLDS} left.`;
+  if (n === null) return null;
+  const p = getPricing("CA");
+  return `Founding price: ${formatPrice(p.foundingAnnual)} a year plus tax for the first ${FOUNDING_HOUSEHOLDS} households on the founding list. ${n} of ${FOUNDING_HOUSEHOLDS} left.`;
 }
 
 // THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line
