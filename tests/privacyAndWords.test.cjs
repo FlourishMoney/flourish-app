@@ -2,7 +2,8 @@
 // -----------------------------------------------------------------------------
 // THE 2026-10-21 WORDING, WORD FOR WORD (ChatGPT AGREE and Grok AGREE), AND WHERE EACH LINE MAY SHOW.
 //
-//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (October 21, 2026);
+//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (October 22, 2026, when the store-app form came in);
+//      in a store app, A2 from its Apple and Google sentence and no Stripe line (a store app never names the website);
 //   B  B1 (App Store) and B2 (Google Play) on a store app's Subscription card, only for an account that holds a
 //      founding spot while paying for a regular store plan: every case, both ways;
 //   C  the launch email's sentence;
@@ -43,11 +44,30 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
     const pp = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {} }))).replace(/\s+/g, " ").replace(/ :/g, ":");
     for (const k of ["A1", "A2", "A3", "A4", "A5"]) t.ok(pp.includes(A[k]), `${k} word for word`);
     t.ok(A.A6.every((line) => pp.includes(line)), "A6 the five new lines in section 6");
-    t.ok(pp.includes("Last updated October 21, 2026"), "A7 Last updated October 21, 2026");
+    t.ok(pp.includes("Last updated October 22, 2026"), "A7 Last updated October 22, 2026");
     const i1 = pp.indexOf("Bank connection data (Plaid):"), i2 = pp.indexOf(A.A2), i3 = pp.indexOf(A.A3), i4 = pp.indexOf("2. How We Use Your Information");
     t.ok(i1 > 0 && i1 < i2 && i2 < i3 && i3 < i4, "A2 and A3 follow the Plaid paragraph, still in section 1");
     const s6 = pp.slice(pp.indexOf("6. Data Sharing"), pp.indexOf("7. Your Rights"));
     t.ok(A.A6.every((line) => s6.includes(line)) && s6.indexOf("• Netlify") < s6.indexOf(A.A6[0]), "A6 in section 6's list, after the existing providers");
+
+    // In a store app: A2 from "If you subscribe in the iPhone or Android app", with its label, and no Stripe line.
+    const A2_STORE = "Payments: " + A.A2.slice(A.A2.indexOf("If you subscribe in the iPhone or Android app"));
+    const real = globalThis.Capacitor;
+    const setPlatform = (pl) => Object.defineProperty(globalThis, "Capacitor", { value: { ...real, getPlatform: () => pl, isNativePlatform: () => pl !== "web" }, configurable: true, writable: true });
+    for (const pl of ["ios", "android"]) {
+      let nat = "";
+      setPlatform(pl);
+      try { nat = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {} }))).replace(/\s+/g, " ").replace(/ :/g, ":"); } finally { setPlatform("web"); }
+      t.ok(A2_STORE.startsWith("Payments: If you subscribe in the iPhone or Android app, Apple or Google processes your payment.") && nat.includes(A2_STORE) && !nat.includes(A.A2),
+        `A2 ${pl}: from the Apple and Google sentence, word for word, with its label`);
+      t.ok(!/Stripe/.test(nat), `A6 ${pl}: no Stripe anywhere in the store app's policy`);
+      t.ok(A.A6.slice(1).every((line) => nat.includes(line)), `A6 ${pl}: the other four new lines are there`);
+      // Still naming the website, and open for approved words (reported, not changed): A1's opening sentence and the
+      // Contact section's "Website:" line. The privacy@ address is an email address, not the website.
+      const rest = nat.replace(A.A1, "").replace("Website: flourishmoney.app", "").replace(/privacy@flourishmoney\.app/g, "");
+      t.ok(!/flourishmoney\.app/.test(rest), `A ${pl}: no other mention of flourishmoney.app in the store app's policy`);
+      t.ok(nat.includes("Last updated October 22, 2026") && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
+    }
   }
 
   // ── B. The founding spot line ─────────────────────────────────────────────────────────────────

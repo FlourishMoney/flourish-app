@@ -13310,7 +13310,10 @@ function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="October 21, 2026";
+  const last="October 22, 2026";
+  // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
+  // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
+  const native=isNativeApp();
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -13329,7 +13332,7 @@ function PrivacyPolicy({onBack}){
       <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connections (Plaid; one or more institutions). We also collect an email address and password when you create an account.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes. We use it briefly to limit repeated sign-up and coach requests, which protects your account and the service from abuse.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
-      <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Payments:</strong> If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax. We receive your subscription status, plan, renewal dates, and the amounts and tax charged. We never see or store your full card number. If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.</div>
+      <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Payments:</strong> {native?"":"If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax. We receive your subscription status, plan, renewal dates, and the amounts and tax charged. We never see or store your full card number. "}If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.</div>
       <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Waitlist:</strong> If you join the waitlist, we collect your email address and country, the page or link you joined from, and a record of what you agreed to receive and when.</div>
 
       <div style={h2}>2. How We Use Your Information</div>
@@ -13353,7 +13356,7 @@ function PrivacyPolicy({onBack}){
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Anthropic Statement Parser</strong>: when you upload a bank statement (CSV/PDF), the document text is sent to Anthropic to extract transactions</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Supabase</strong>: Account authentication and encrypted cloud data storage</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Netlify</strong>: App hosting and serverless function processing</div>
-      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>
+      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Apple and Google</strong>: payments for subscriptions bought in the iPhone or Android app</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: sends account and waitlist emails</div>

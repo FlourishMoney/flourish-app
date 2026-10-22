@@ -46,15 +46,15 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
     ["an upgrade call to action", /\bupgrade\b|See plans|Get Flourish|Start \d+ days free|\bSubscribe\b|\bBuy (?:now|Plus|Flourish|it now)\b|\bUnlock\b/i],
   ];
   const offences = (txt) => RULES.filter(([, rx]) => rx.test(txt)).map(([name, rx]) => `${name} ("${(txt.match(rx) || [""])[0]}")`);
-  // ONE EXACT EXCEPTION (2026-10-21): the Privacy Policy's approved "Payments:" paragraph (A2, ChatGPT and Grok
-  // agreed) says who processes a payment on each platform, so it uses the word "subscribe". It is legal disclosure,
-  // not a call to action, and it is open as a decision before merge: it names the website inside the store apps.
-  // Only that paragraph, word for word, is set aside, and it must be present exactly; anything else still counts.
-  const A2 = "If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax. We receive your subscription status, plan, renewal dates, and the amounts and tax charged. We never see or store your full card number. If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.";
+  // ONE EXACT EXCEPTION (2026-10-21, narrowed 2026-10-22): the store app's form of the Privacy Policy's approved
+  // "Payments:" paragraph (A2 from its Apple and Google sentence; the website's Stripe sentences are not shown in a store
+  // app) says who processes a payment there, so it uses the word "subscribe". It is legal disclosure, not a call to
+  // action. Only that text, word for word, is set aside, and it must be present exactly; anything else still counts.
+  const A2 = "If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.";
   const withoutA2 = (name, txt) => {
     if (name !== "PrivacyPolicy") return txt;
     const flat = txt.replace(/\s+/g, " ");
-    t.ok(flat.includes(A2), "1p (the Privacy Policy's Payments paragraph is the approved text, word for word)");
+    t.ok(flat.includes(A2) && !/flourishmoney\.app, Stripe/.test(flat), "1p (the store app's Payments paragraph is the approved store-app text, word for word, without the website's sentences)");
     return flat.replace(A2, "");
   };
 
