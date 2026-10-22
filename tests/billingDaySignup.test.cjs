@@ -38,7 +38,7 @@ function fakeAdmin(state) {
   };
 }
 async function signup(env, body, over = {}) {
-  const state = { rpc: [], tables: [], created: [], fetches: [], resends: [], seat: "ok", ...over };
+  const state = { rpc: [], tables: [], created: [], fetches: [], bodies: [], resends: [], seat: "ok", ...over };
   const savedEnv = { ...process.env }, savedFetch = global.fetch;
   for (const p of [AUTH_PATH, BETA_PATH, BLOBS_PATH]) delete require.cache[p];
   require.cache[BLOBS_PATH] = { id: BLOBS_PATH, filename: BLOBS_PATH, loaded: true, exports: freshBlobs() };
@@ -46,7 +46,7 @@ async function signup(env, body, over = {}) {
     getAdminClient: () => fakeAdmin(state),
     getPublicClient: () => ({ auth: { resend: async (a) => { state.resends.push(a); return { error: null }; } } }),
   } };
-  global.fetch = async (url) => { state.fetches.push(String(url)); throw new Error("network blocked in test"); };
+  global.fetch = async (url, init) => { state.fetches.push(String(url)); state.bodies.push(init && init.body); throw new Error("network blocked in test"); };
   // beta.js logs each signup; kept out of the gate's output (tests/betaLogging.test.cjs owns those lines).
   const quiet = { log: console.log, error: console.error };
   console.log = () => {}; console.error = () => {};
@@ -132,8 +132,11 @@ async function signup(env, body, over = {}) {
   // ── 3. the waitlist founding lookup ─────────────────────────────────────────────────────────────
   {
     const runs = [await signup(OPEN, {}), await signup(OPEN, { code: "FLOURISH2026" })];
-    t.ok(runs.every(r => r.state.fetches.length === 0 && r.state.rpc.every(c => c.fn === "reserve_beta_seat")),
-      "3a signing up reads and writes no waitlist row and no founding number (no request, no founding function)");
+    // The one request a signup makes (2026-10-22, _lib/landingCounts.js): the account_created count, which holds an
+    // event, a src and a device and nothing else. No waitlist row, no founding number, no founding function.
+    const onlyCount = (url, body) => /\/rest\/v1\/rpc\/bump_landing_count$/.test(url) && (() => { try { const b = JSON.parse(body); return b.p_event === "account_created" && Object.keys(b).sort().join() === "p_device,p_event,p_src"; } catch { return false; } })();
+    t.ok(runs.every(r => r.state.fetches.length === 1 && r.state.fetches.every((u, i) => onlyCount(u, r.state.bodies[i])) && !r.state.fetches.some(u => /waitlist|founding/.test(u)) && r.state.rpc.every(c => c.fn === "reserve_beta_seat")),
+      "3a signing up reads and writes no waitlist row and no founding number (its one request is the account_created count; no founding function)");
     const cohort = require("../netlify/functions/_lib/foundingCohort.js");
     const HOLDER = "Founder.Household@Example.test";
     const ask = async (user) => {
