@@ -46,6 +46,17 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
     ["an upgrade call to action", /\bupgrade\b|See plans|Get Flourish|Start \d+ days free|\bSubscribe\b|\bBuy (?:now|Plus|Flourish|it now)\b|\bUnlock\b/i],
   ];
   const offences = (txt) => RULES.filter(([, rx]) => rx.test(txt)).map(([name, rx]) => `${name} ("${(txt.match(rx) || [""])[0]}")`);
+  // ONE EXACT EXCEPTION (2026-10-21, narrowed 2026-10-22): the store app's form of the Privacy Policy's approved
+  // "Payments:" paragraph (A2 from its Apple and Google sentence; the website's Stripe sentences are not shown in a store
+  // app) says who processes a payment there, so it uses the word "subscribe". It is legal disclosure, not a call to
+  // action. Only that text, word for word, is set aside, and it must be present exactly; anything else still counts.
+  const A2 = "If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.";
+  const withoutA2 = (name, txt) => {
+    if (name !== "PrivacyPolicy") return txt;
+    const flat = txt.replace(/\s+/g, " ");
+    t.ok(flat.includes(A2) && !/flourishmoney\.app, Stripe/.test(flat), "1p (the store app's Payments paragraph is the approved store-app text, word for word, without the website's sentences)");
+    return flat.replace(A2, "");
+  };
 
   let A = {};
   try { A = loadApp(SURFACES); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
@@ -83,7 +94,7 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
       } catch (e) { t.ok(false, `${name} renders: ${describe(e)}`); continue; }
       const label = name + (p.feature ? ` (${p.feature})` : "");
       t.ok(nat.length > 20, `1 ${label} rendered as the store app (${nat.length} chars)`);
-      t.eq(offences(nat), [], `1 ${label} on a store app prints no price, trial, Plus plan or upgrade call to action`);
+      t.eq(offences(withoutA2(name, nat)), [], `1 ${label} on a store app prints no price, trial, Plus plan or upgrade call to action`);
       if (offences(web).length) webHits[label] = offences(web);
     }
   }

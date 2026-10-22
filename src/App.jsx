@@ -88,7 +88,7 @@ import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, 
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
-import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -12439,7 +12439,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {billingUi.mode==="manage"
             ? "Change your card or cancel."
-            : "Unlimited coaching and the full picture from your linked accounts."}
+            : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
         </div>
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
       </div>
@@ -12449,6 +12449,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Subscription</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>{storeSubscription.line}</div>
+        {storeSubscription.foundingSpotLine&&<div data-founding-spot-line="" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl}}>{storeSubscription.foundingSpotLine}</div>}
         <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
           {storeSubscription.onSubscribe&&<Btn label="See plans" onClick={storeSubscription.onSubscribe} color={C.purpleBright} outline small/>}
           {storeSubscription.onManage&&<Btn label="Manage subscription" onClick={storeSubscription.onManage} color={C.mutedHi} outline small/>}
@@ -13309,7 +13310,10 @@ function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="April 28, 2026";
+  const last="October 22, 2026";
+  // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
+  // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
+  const native=isNativeApp();
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -13321,19 +13325,21 @@ function PrivacyPolicy({onBack}){
       </div>
 
       <div style={{...p,background:C.card,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:4}}>
-        Flourish Money is operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("we", "us", or "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use the Flourish Money application ("App"), available at flourishmoney.app.
+        Flourish Money is operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("we", "us", or "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use the Flourish Money application ("App"), available at flourishmoney.app and in the Flourish iPhone and Android apps.
       </div>
 
       <div style={h2}>1. Information We Collect</div>
       <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connections (Plaid; one or more institutions). We also collect an email address and password when you create an account.</div>
-      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes. We use it briefly to limit repeated sign-up and coach requests, which protects your account and the service from abuse.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
+      <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Payments:</strong> {native?"":"If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax. We receive your subscription status, plan, renewal dates, and the amounts and tax charged. We never see or store your full card number. "}If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.</div>
+      <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Waitlist:</strong> If you join the waitlist, we collect your email address and country, the page or link you joined from, and a record of what you agreed to receive and when.</div>
 
       <div style={h2}>2. How We Use Your Information</div>
       <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.</div>
 
       <div style={h2}>3. Legal Basis for Processing (Canada: PIPEDA)</div>
-      <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law.</div>
+      <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law. Payment and tax records are kept as required by Canadian tax law, generally for six years from the end of the last tax year they relate to, even after you delete your account.</div>
 
       <div style={h2}>4. Legal Basis for Processing (United States)</div>
       <div style={p}>For US residents, we comply with applicable state and federal privacy laws. California residents have rights under the CCPA/CPRA including the right to know, delete, and opt out of sale of personal information. We do not sell personal information. To exercise your rights, contact us at privacy@flourishmoney.app.</div>
@@ -13350,6 +13356,11 @@ function PrivacyPolicy({onBack}){
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Anthropic Statement Parser</strong>: when you upload a bank statement (CSV/PDF), the document text is sent to Anthropic to extract transactions</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Supabase</strong>: Account authentication and encrypted cloud data storage</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Netlify</strong>: App hosting and serverless function processing</div>
+      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>}
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Apple and Google</strong>: payments for subscriptions bought in the iPhone or Android app</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: sends account and waitlist emails</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
 
       <div style={h2}>7. Your Rights</div>
@@ -17650,7 +17661,8 @@ export default function FlourishApp(){
     const nextSig = d.prompt ? d.suggestion.signature : null;
     const curSig  = appData.incomeSuggestion?.signature || null;
     if (nextSig === curSig) return;                      // no change → no write → no loop
-    console.error("[income] detection:", detected ? `${detected.perDeposit}/${detected.freq}` : "none",
+    // The cadence only: an income amount never goes to the console (Sentry records console calls as breadcrumbs).
+    console.error("[income] detection:", detected ? detected.freq : "none",
                   "→", d.prompt ? `SUGGEST (${d.reasons?.join(",")})` : `no card (${d.reason})`);
     setAppData(prev => ({ ...prev, incomeSuggestion: d.prompt ? d.suggestion : null }));
   }, [incomeDetectSig]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -18202,6 +18214,8 @@ export default function FlourishApp(){
   // Version 1.1: Settings' Subscription card, in a selling build only.
   const storeSubscription = storeBilling ? {
     line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
+    // B1 / B2 (approved 2026-10-21): a founding spot held while paying for a regular store plan.
+    foundingSpotLine: foundingSpotLine(storeStatus),
     onManage: storeStatus?.paid && (storeStatus.provider==="app_store" || storeStatus.provider==="play_store") ? manageStoreSubscription : null,
     // Not paying yet: the way in to the plans, as the web's Settings card has.
     onSubscribe: storeStatus?.paid ? null : ()=>setPaywallUp(true),

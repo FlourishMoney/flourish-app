@@ -43,11 +43,33 @@ function scrubObject(x) {
   return x;
 }
 
+// BREADCRUMBS (2026-10-21). A breadcrumb carries a message AND a data object, and a console breadcrumb's data
+// holds the console call's raw arguments: the message was scrubbed but the data reached Sentry as it was. Both are
+// scrubbed now, like an event, when the breadcrumb is recorded (beforeBreadcrumb) and again before an event
+// leaves (beforeSend). A console breadcrumb comes from our own free-text console calls, so in it every plain number
+// of three or more digits (an amount written without a $, a comma or cents, like 2345) and every number argument
+// is treated as money and removed too.
+const PLAIN_NUMBER = /(?<![\w.-])\d{3,}(?![\w.-])/g;
+function redactConsole(x) {
+  if (typeof x === "string") return redact(x).replace(PLAIN_NUMBER, "[num]");
+  if (typeof x === "number") return "[num]";
+  if (Array.isArray(x)) return x.map(redactConsole);
+  if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, redactConsole(v)]));
+  return x;
+}
+export function scrubBreadcrumb(b) {
+  if (!b || typeof b !== "object") return b;
+  const consoleCrumb = b.category === "console";
+  const out = { ...b };
+  if (out.message) out.message = consoleCrumb ? redactConsole(out.message) : redact(out.message);
+  if (out.data) out.data = consoleCrumb ? redactConsole(out.data) : scrubObject(out.data);
+  return out;
+}
 function scrubPII(event) {
   if (event.user) event.user = event.user.id ? { id: event.user.id } : undefined;
   if (event.message) event.message = redact(event.message);
   (event.exception?.values || []).forEach(v => { if (v.value) v.value = redact(v.value); });
-  (event.breadcrumbs || []).forEach(b => { if (b.message) b.message = redact(b.message); });
+  if (Array.isArray(event.breadcrumbs)) event.breadcrumbs = event.breadcrumbs.map(scrubBreadcrumb);
   if (event.extra) event.extra = scrubObject(event.extra); // Phase D #1: backstop for any rich `extra`
   return event;
 }
@@ -111,6 +133,7 @@ export async function initErrorReporting() {
       sendDefaultPii: false,   // don't auto-attach IP / headers / cookies
       tracesSampleRate: 0,     // v1: error reporting only, no performance tracing
       beforeSend: beforeSendEvent,   // drops injected window.webkit noise (CAPACITOR-8), scrubs PII
+      beforeBreadcrumb: scrubBreadcrumb,   // scrubs each breadcrumb's message and data as it is recorded
     });
     _sentry = Sentry;
   } catch (e) {

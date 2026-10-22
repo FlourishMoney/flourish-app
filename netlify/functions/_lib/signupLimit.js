@@ -27,6 +27,10 @@
 // victim+1@, victim+2@ … all land in one inbox and would otherwise each get their own three. It is
 // only ever a counter key — the address stored on the account is untouched.
 //
+// NOTHING RAW IS KEPT (2026-10-21, _lib/limiterKeys.js). The IP and the inbox go into the store only as a
+// keyed hash, each entry holds only its current window, and limiter-cleanup.js deletes expired entries
+// daily. With no hashing secret the attempt is refused, like any other unavailable counter.
+//
 // FAILS CLOSED. If the store cannot be reached the attempt is refused. An abuse control that opens
 // when its counter is unavailable is not a control: the outage is exactly when it matters, and the
 // cost of being wrong is a person seeing "try again in an hour" while the alternative is an unmetered
@@ -37,15 +41,14 @@
 
 "use strict";
 
+const { limiterSecret, subjectKey, hourWindow, dayWindow, countIn } = require("./limiterKeys");
+
 const IP_HOURLY_LIMIT = 5;
 const EMAIL_DAILY_LIMIT = 3;
 
 // One message for every refusal. A different one per bucket would tell a stranger which limit they
 // hit, which is a map of the limits; and the person who is simply trying again does not care.
 const TOO_MANY_MESSAGE = "Too many attempts. Try again in an hour.";
-
-const hourKey = (now) => `ip:${now.toISOString().slice(0, 13)}`;   // YYYY-MM-DDTHH
-const dayKey  = (now) => `email:${now.toISOString().slice(0, 10)}`; // YYYY-MM-DD
 
 // The inbox this address belongs to, for counting only.
 function inboxKey(email) {
@@ -64,10 +67,12 @@ function inboxKey(email) {
  * @param {string|null} o.ip
  * @param {string} o.email
  * @param {Date} [o.now]
+ * @param {string} [o.secret]  the hashing secret (_lib/limiterKeys.js); from the environment by default
  * @returns {Promise<{allowed: boolean, reason: string|null, message: string|null}>}
  */
-async function checkSignupLimit({ store, ip, email, now = new Date() }) {
+async function checkSignupLimit({ store, ip, email, now = new Date(), secret = limiterSecret() }) {
   if (!store) return { allowed: false, reason: "store_unavailable", message: TOO_MANY_MESSAGE };
+  if (!secret) return { allowed: false, reason: "no_secret", message: TOO_MANY_MESSAGE };
   const inbox = inboxKey(email);
   // No IP means Netlify gave us no client address. That is not a licence to skip the limit: the
   // address bucket still applies, and an attempt we cannot attribute is the one to be strictest with.
@@ -75,16 +80,15 @@ async function checkSignupLimit({ store, ip, email, now = new Date() }) {
 
   try {
     if (ip) {
-      const key = `${hourKey(now)}:${ip}`;
-      const cur = await store.get(key, { type: "json" });
-      const n = ((cur && cur.n) || 0) + 1;
-      await store.setJSON(key, { n });
+      const key = subjectKey("ip", ip, secret), w = hourWindow(now);
+      const n = countIn(await store.get(key, { type: "json" }), w) + 1;
+      await store.setJSON(key, { w, n });          // a past hour's count is replaced, not kept
       if (n > IP_HOURLY_LIMIT) return { allowed: false, reason: "ip_hourly", message: TOO_MANY_MESSAGE };
     }
     if (inbox) {
       // Read only. recordEmailSent() is what fills this, once the mail has actually gone.
-      const cur = await store.get(`${dayKey(now)}:${inbox}`, { type: "json" });
-      if (((cur && cur.n) || 0) >= EMAIL_DAILY_LIMIT) return { allowed: false, reason: "email_daily", message: TOO_MANY_MESSAGE };
+      const n = countIn(await store.get(subjectKey("email", inbox, secret), { type: "json" }), dayWindow(now));
+      if (n >= EMAIL_DAILY_LIMIT) return { allowed: false, reason: "email_daily", message: TOO_MANY_MESSAGE };
     }
     return { allowed: true, reason: null, message: null };
   } catch (e) {
@@ -97,13 +101,12 @@ async function checkSignupLimit({ store, ip, email, now = new Date() }) {
  * One confirmation email has just gone to this address. Never throws and never blocks: the mail is
  * already sent, so a counter that cannot be written must not turn that into an error.
  */
-async function recordEmailSent({ store, email, now = new Date() }) {
+async function recordEmailSent({ store, email, now = new Date(), secret = limiterSecret() }) {
   const inbox = inboxKey(email);
-  if (!store || !inbox) return;
+  if (!store || !inbox || !secret) return;
   try {
-    const key = `${dayKey(now)}:${inbox}`;
-    const cur = await store.get(key, { type: "json" });
-    await store.setJSON(key, { n: ((cur && cur.n) || 0) + 1 });
+    const key = subjectKey("email", inbox, secret), w = dayWindow(now);
+    await store.setJSON(key, { w, n: countIn(await store.get(key, { type: "json" }), w) + 1 });
   } catch (e) {
     console.error("[signup] could not record a sent confirmation:", e.message);
   }

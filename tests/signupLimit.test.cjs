@@ -31,6 +31,9 @@ function memStore(over = {}) {
   };
 }
 
+// The limiter hashes what it counts (_lib/limiterKeys.js); a test-only secret, so the counts can be exercised.
+process.env.LIMITER_HASH_SECRET = "test-limiter-secret-not-real";
+
 (async () => {
   const { checkSignupLimit, recordEmailSent, inboxKey, IP_HOURLY_LIMIT, EMAIL_DAILY_LIMIT, TOO_MANY_MESSAGE } =
     require("../netlify/functions/_lib/signupLimit.js");
