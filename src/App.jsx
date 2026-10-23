@@ -5625,7 +5625,7 @@ function SetupChecklistCard({items,onDismiss,style}){
   );
 }
 
-function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo,tourActive=false}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -6234,7 +6234,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         })()}
         {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
         {!data.demo&&<DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>}
-        {showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
+        {/* The first session (2026-10-23): the tour first, then this list once the tour has ended. */}
+        {!tourActive&&showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
           <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
             onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
         )}
@@ -18319,7 +18320,7 @@ export default function FlourishApp(){
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }} tourActive={tourShown}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
