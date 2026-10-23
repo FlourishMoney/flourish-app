@@ -1,8 +1,9 @@
 // src/lib/deviceCountry.js
 // -----------------------------------------------------------------------------
 // THE COUNTRY A NEW HOUSEHOLD STARTS WITH (onboarding, 2026-10-23). Onboarding no longer asks, so it is read from
-// the device: the region of its language (the first of navigator.languages that names one, then Intl's own
-// locale) and its time zone. A US region or a US time zone means the United States; anything else, Canada.
+// the device: its time zone and the region of its language (the first of navigator.languages that names one,
+// then Intl's own locale), in this order: a Canadian time zone means Canada (many browsers in Canada report
+// en-US); else a US time zone or a US region means the United States; else Canada.
 // Editable in Settings (Profile & Income: Country). Onboarding passes it to Plaid's institution search
 // (create_link_token's country), so a US household is shown US banks.
 // -----------------------------------------------------------------------------
@@ -15,6 +16,21 @@ const US_ZONES = new Set([
   "America/Indianapolis", "America/Fort_Wayne", "America/Louisville", "America/Knox_IN", "Navajo",
 ]);
 const US_ZONE_PREFIXES = ["America/Indiana/", "America/Kentucky/", "America/North_Dakota/", "US/"];
+
+// The IANA zones of the provinces and territories, and their old Canada/* names.
+const CA_ZONES = new Set([
+  "America/St_Johns", "America/Halifax", "America/Glace_Bay", "America/Moncton", "America/Goose_Bay", "America/Toronto",
+  "America/Montreal", "America/Nipigon", "America/Thunder_Bay", "America/Iqaluit", "America/Pangnirtung", "America/Winnipeg",
+  "America/Rainy_River", "America/Resolute", "America/Rankin_Inlet", "America/Regina", "America/Swift_Current",
+  "America/Edmonton", "America/Cambridge_Bay", "America/Yellowknife", "America/Inuvik", "America/Dawson_Creek",
+  "America/Fort_Nelson", "America/Creston", "America/Vancouver", "America/Whitehorse", "America/Dawson",
+  "America/Atikokan", "America/Coral_Harbour", "America/Blanc-Sablon",
+]);
+
+export function isCanadianTimeZone(zone) {
+  const z = typeof zone === "string" ? zone : "";
+  return CA_ZONES.has(z) || z.startsWith("Canada/");
+}
 
 export function isUsTimeZone(zone) {
   const z = typeof zone === "string" ? zone : "";
@@ -43,5 +59,6 @@ export function deviceCountry({ languages, timeZone } = {}) {
     if (zone === undefined) zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch { /* no navigator or Intl: Canada */ }
   const region = (langs || []).map(regionOf).find(Boolean) || null;
+  if (isCanadianTimeZone(zone)) return "CA";
   return region === "US" || isUsTimeZone(zone) ? "US" : "CA";
 }
