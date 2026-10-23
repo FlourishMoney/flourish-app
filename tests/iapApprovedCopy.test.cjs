@@ -64,7 +64,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
 
   // ── 5. What's new ─────────────────────────────────────────────────────────────────────────────
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
-  t.eq([W.version, W.notes.join(" ")], ["1.1.0", APPROVED.whatsNew], "5a What's new for 1.1.0 is the approved paragraph, word for word (one sentence per note)");
+  // 1.1.1 (2026-10-23) has no approved notes of its own, so it keeps 1.1's approved paragraph, word for word.
+  t.eq([W.version, W.notes.join(" ")], ["1.1.1", APPROVED.whatsNew], "5a What's new for 1.1.1 is the approved 1.1 paragraph, word for word (one sentence per note)");
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
   t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x)) && /error: "plan_limit", message: "Connecting more than one bank/.test(PLAID) && /error: "plan_limit", message: "Free plan supports one bank/.test(PLAID),
