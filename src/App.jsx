@@ -18607,8 +18607,6 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
-        {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         <div style={{padding:"max(14px, calc(env(safe-area-inset-top, 0px) - var(--banner-h, 0px))) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0,minHeight:LAYOUT.minTap}}>
             <FlourishMark size={36}/>
@@ -18622,6 +18620,10 @@ input,button,select,textarea { font-family:inherit; }
             <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings" style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
         </div>
+        {/* 2026-10-23: below the header, which clears the top safe area (the Duo's 82 px strip, the notch).
+            Above it, with the demo banner hidden, both sat in the strip. */}
+        {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
+        {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

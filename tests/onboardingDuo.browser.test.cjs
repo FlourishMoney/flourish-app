@@ -14,6 +14,9 @@
 //   bank     the bank consent sheet, W4 after Plaid is closed, "Connected!", the paycheques and the bills
 //            pre-filled from the bank
 //   token    the retry after the link token could not be fetched
+//   store    the demo as the store app renders it (window.CapacitorCustomPlatform), its banner hidden: the trial
+//            chip shows only in a store app, so no other browser gate sees it. Found on the Duo simulator: below
+//            a hidden banner the chip sat in the top strip (now under the header, which clears it).
 // On each: every WCAG 2.x A and AA rule axe automates (meta-viewport excepted, as in the a11y check), every
 // icon-only button named in words, and the layout measurement (tests/_layoutScan.cjs): nothing overlaps,
 // nothing scrolls sideways, no text is cut short with an ellipsis, nothing sits in the safe-area strip.
@@ -84,13 +87,14 @@ function buildApp(supabaseUrl) {
   const browser = await playwright.chromium.launch();
 
   // A new account, signed in, on one Duo pass: its viewport, theme and insets, a Canadian device.
-  const open = async (vp, { token = "ok" } = {}) => {
+  const open = async (vp, { token = "ok", store = false } = {}) => {
     const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       colorScheme: vp.scheme, locale: "en-CA", timezoneId: "America/Toronto" });
-    await ctx.addInitScript(([key, session, scheme]) => { try {
+    await ctx.addInitScript(([key, session, scheme, store]) => { try {
       localStorage.setItem("flourish_theme", scheme); localStorage.setItem("flourish_theme_manual", "1");
-      localStorage.setItem(key, session);
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), vp.scheme]);
+      if (store) window.CapacitorCustomPlatform = { name: "ios", plugins: {} };
+      else localStorage.setItem(key, session);
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), vp.scheme, store]);
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
       ? r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" })
       : r.fulfill({ status: 201, contentType: "application/json", body: "[]" }));
@@ -111,7 +115,8 @@ function buildApp(supabaseUrl) {
     await applyInsets(ctx, page, vp.insets);
     page.setDefaultTimeout(15000);
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "I Understand & Accept", exact: true }).waitFor({ timeout: 40000 });
+    if (store) await page.getByText("Try the demo", { exact: false }).first().waitFor({ timeout: 40000 });
+    else await page.getByRole("button", { name: "I Understand & Accept", exact: true }).waitFor({ timeout: 40000 });
     return { ctx, page };
   };
 
@@ -186,8 +191,23 @@ function buildApp(supabaseUrl) {
     ["Link-token retry", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get Started →").click(); await p.locator('[data-bank-button="retry"]').waitFor({ timeout: 20000 }); }],
   ];
 
+  const STORE = [
+    ["Store app: Today, demo banner hidden", async (p) => {
+      await p.getByText("Try the demo", { exact: false }).first().click();
+      const accept = p.getByRole("button", { name: "I Understand & Accept", exact: true });
+      const demo = p.getByText("Demo mode", { exact: false }).first();
+      await accept.or(demo).waitFor({ timeout: 40000 });
+      if (await accept.isVisible()) await accept.click();
+      const skip = p.getByRole("button", { name: "Skip", exact: true });
+      await skip.or(demo).first().waitFor();
+      if (await skip.count() && await skip.first().isVisible()) await skip.first().click();
+      await p.getByRole("button", { name: "Hide demo banner" }).first().click();
+      await p.getByText("days left in your trial", { exact: false }).first().waitFor();
+    }],
+  ];
+
   const passes = duoPasses();
-  const jobs = passes.flatMap((vp) => [[vp, "manual", MANUAL], [vp, "bank", BANK], [vp, "token", TOKEN, { token: "fail" }]]);
+  const jobs = passes.flatMap((vp) => [[vp, "manual", MANUAL], [vp, "bank", BANK], [vp, "token", TOKEN, { token: "fail" }], [vp, "store", STORE, { store: true }]]);
   const results = [];
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => {
@@ -196,7 +216,7 @@ function buildApp(supabaseUrl) {
   await browser.close(); server.close();
   if (process.env.ONBOARDING_DUO_JSON) fs.writeFileSync(process.env.ONBOARDING_DUO_JSON, JSON.stringify(results, null, 1));
 
-  const perPass = MANUAL.length + BANK.length + TOKEN.length;
+  const perPass = MANUAL.length + BANK.length + TOKEN.length + STORE.length;
   t.eq(passes.length, DUO_VIEWPORTS.length * 2 + DUO_VIEWPORTS.filter((v) => v.insets.left !== v.insets.right).length, "0 every Duo viewport in both themes, and each side strip mirrored");
   t.eq(results.length, passes.length * perPass, `0b ${passes.length} passes x ${perPass} screens were checked`);
   t.eq(results.filter((r) => r.unreachable).map((r) => `${r.view}: ${r.unreachable}`), [], "1 every onboarding screen opened on every pass");
