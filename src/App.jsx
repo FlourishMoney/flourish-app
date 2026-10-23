@@ -59,6 +59,7 @@ import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
+import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
@@ -6133,58 +6134,17 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
       {/* Phase 3b: Today tab content guard */}
       {dashTab === "today" && (<>
 
-      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
-      {(!data.transactions||data.transactions.length===0)&&(()=>{
-        // Calculate a real estimate from their onboarding data
-        const toMo = toMonthly; // Bug 1: canonical converter
-        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-        const safetyBuffer = monthlyIncome * 0.15;
-        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
-        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
-        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
-        const hasData = monthlyIncome > 0;
-        return(
-          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
-            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
-            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
-            onClick={()=>setScreen("coach")}>
-            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
-            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
-              <div style={{flex:1}}>
-                {hasData?(
-                  <>
-                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
-                      {overspend>0
-                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
-                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
-                    </div>
-                    <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
-                      {overspend>0
-                        ? "Connect your bank to see exactly where it's going, and fix it."
-                        : "Connect your bank to track it live and make it work harder."}
-                    </div>
-                    <div style={{marginTop:8,display:"flex",gap:8}}>
-                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Ask Coach →
-                      </button>
-                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Connect Bank
-                      </button>
-                    </div>
-                  </>
-                ):(
-                  <>
-                    <span style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
-                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* ── No bank linked: where the numbers come from (W3, approved 2026-10-23). It replaces the pre-bank
+          "Estimate" card, whose overspending and "to work with" lines came from an assumed spend rate (68% of
+          income) and an assumed 15% buffer, not from anything the household entered: nothing here is computed. ── */}
+      {!data.bankConnected&&(!data.transactions||data.transactions.length===0)&&(
+        <div data-entered-banner="" style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 200px",color:C.mutedHi,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>From the numbers you entered. A linked bank can keep them up to date.</div>
+          <button onClick={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Connect Bank
+          </button>
+        </div>
+      )}
 
       {/* Income accuracy: folded into priority tile below */}
 
@@ -14011,7 +13971,9 @@ function Paywall({onClose,onPromoValid,country}){
 // Shown once, immediately after onboarding completes.
 // One number. One sentence. One button.
 // Dismissed permanently after user taps through.
-function FirstVisitScreen({data, onDismiss}) {
+// 2026-10-23 (the first number): its words say only what is in this number (lib/firstNumber.js), and
+// onNumberShown runs once when a number is on the screen (the counts: safe_view and first_number_shown).
+function FirstVisitScreen({data, onDismiss, onNumberShown}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Truth-fix item 6: rebuild the breakdown from the SAME five SafeSpendEngine rows as the Today card,
@@ -14032,7 +13994,6 @@ function FirstVisitScreen({data, onDismiss}) {
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
   const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup && !noIncome;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
-  const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
   // so gate it on real balance data — a connected cash account — NOT on income. Gating on income
   // let the number render at $0 before Plaid finished syncing, then visibly jump to the real value.
@@ -14047,7 +14008,7 @@ function FirstVisitScreen({data, onDismiss}) {
       <div style={{position:"relative",width:"100%",maxWidth:360}}>
         {/* Welcome */}
         <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-          Welcome, {name}
+          {firstNumberGreeting(data.profile?.name)}
         </div>
 
         {/* The Number — shown only once real balance data has loaded (a cash account exists).
@@ -14062,7 +14023,7 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{color:ssView.isShort?C.cream:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3,maxWidth:300,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>
               {ssView.isShort
                 ? "You're short before your next payday. Here's exactly what's already committed."
-                : "You're covered. Here's your breathing room."}
+                : FIRST_NUMBER_HEADLINE}
             </div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               {ssView.isShort&&<span style={{fontSize:88,color:C.cream,letterSpacing:-4}}>-</span>}<span style={{fontSize:22,color:(ssView.isShort?C.cream:C.greenBright)+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
@@ -14096,7 +14057,8 @@ function FirstVisitScreen({data, onDismiss}) {
           {ssView.isShort || ssView.needsSetup || noIncome
             ? null
             : incomeAmt > 0
-              ? "Bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for."
+              // Only the parts in this number (lib/firstNumber.js), and W2 when the buffer is $0 for want of transactions.
+              ? <span data-first-number-line="">{firstNumberSentence(ss)}{bufferPending(data, ss)&&<>{firstNumberSentence(ss)?" ":""}<span data-buffer-pending="">{BUFFER_PENDING_LINE}</span></>}</span>
               : "Add your income in Settings to see your personalised safe to spend number."}
         </div>
 

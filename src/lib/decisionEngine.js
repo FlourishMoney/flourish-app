@@ -262,7 +262,7 @@ export const AutopilotEngine = {
 
     // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
     // Prompt 3d: what the engine found, not a grade. ("On Track" / "Monitor" / "At Risk" read as verdicts.)
-    const modeLabel = mode === "low" ? "Bills covered" : mode === "medium" ? "Cash is tight" : "Overdraft risk";
+    const modeLabel = mode === "low" ? "Bills accounted for" : mode === "medium" ? "Cash is tight" : "Overdraft risk";
     // Signals, not adjustments: the daily pace is the same number on every surface, so a chip may
     // report what was detected but must never claim the limit was moved by it.
     const adaptations = [
