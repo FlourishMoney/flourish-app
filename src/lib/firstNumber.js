@@ -13,6 +13,9 @@
 //                              either (the breakdown still shows it).
 //   bufferPending(data, ss)    the spending buffer is $0 because there are no transactions yet, so the screen
 //                              adds W2: BUFFER_PENDING_LINE.
+//   accountedForClause(ss)     the same parts as a clause ("bills due before payday and a savings amount are
+//                              accounted for"), or null by the same rule; the tour's Today step reads it
+//                              (lib/tour.js todayStepBody), so the two can never name different parts.
 // Pure: the Safe to spend result (SafeSpendEngine.calculate) and the household's data in, words out.
 // -----------------------------------------------------------------------------
 import { correctionsOf } from "./forecastEdits.js";
@@ -45,12 +48,17 @@ function listOf(names) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-export function firstNumberSentence(ss) {
+export function accountedForClause(ss) {
   const parts = partsInNumber(ss);
   if (!parts.length) return null;
   if (parts.length === 1 && !parts[0].plural) return null;   // would need "is"
-  const text = `${listOf(parts.map((p) => p.name))} are accounted for.`;
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  const text = `${listOf(parts.map((p) => p.name))} are accounted for`;
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+export function firstNumberSentence(ss) {
+  const clause = accountedForClause(ss);
+  return clause ? `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.` : null;
 }
 
 // W2: the buffer took nothing because there is no spending to measure yet, not because the household set it to 0.

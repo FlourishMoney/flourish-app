@@ -58,7 +58,7 @@ import { dueSoonList } from "./lib/dueSoon.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
-import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
+import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
@@ -18673,7 +18673,8 @@ input,button,select,textarea { font-family:inherit; }
                   <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
                     {step.title}
                   </div>
-                  <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
+                  {/* The Today step names only the parts in this household's number (lib/tour.js stepBody). */}
+                  <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{stepBody(step, step.target==="today"&&dataWithHousehold ? SafeSpendEngine.calculate(dataWithHousehold) : null)}</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
