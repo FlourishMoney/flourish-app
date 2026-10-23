@@ -208,7 +208,7 @@ const CC = {
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"The CESG is added on top of contributions, up to yearly and lifetime limits (Canada.ca)",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"The CESG rate and its limits are on Canada.ca."},
     ],
     benefitsChecker:[
-      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
+      {name:"Canada Child Benefit",kids:true,icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
       {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"CRA benefits calculator",url:TAX_DATA.CA.CGEB.calculator},
       // `province` gates a benefit that is not federal. This row was shown to every Canadian — a claim
       // about money owed, made to someone who is not owed it. The same defect the tip list had, in a
@@ -290,9 +290,9 @@ const CC = {
       {name:"Earned Income Tax Credit",icon:"💰",eligible:`Working; with 3+ children, under ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} (single) / ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (joint) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)})`,amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"Through a tax return (IRS Free File)",url:"https://irs.gov/eitc"},
       {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:`Up to ${usd(TAX_DATA.US.SNAP_MAX_1.value)}/mo for a household of 1 in the 48 states and DC (${taxCite(TAX_DATA.US.SNAP_MAX_1)})`,apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",kids:true,icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
-      {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
+      {name:"WIC Program",kids:true,icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
     creditBureaus:["Equifax","Experian","TransUnion"],
     emergencyMonths:6,
@@ -335,7 +335,7 @@ const CC = {
 // income types, and family situation.
 function getPersonalizedTaxCredits(profile) {
   const country   = profile?.country   || "CA";
-  const province  = profile?.province  || "ON";
+  const province  = profile?.province  || "";   // unset: federal tips only (2026-10-23)
   const rawLifeStage = profile?.lifeStages || profile?.lifeStage || ["t4"];
   const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
   const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
@@ -4157,10 +4157,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
   // Leaving a step forward counts it once per visit.
   const done=(name,next)=>{ count("onboarding_step_completed",name); setStep(next); };
-  // profile.province holds CA province code when country=CA, US state code when country=US.
-  // Defaults: ON for CA, CA (California) for US. The country is the device's (lib/deviceCountry.js: a US
-  // region or time zone is the US, anything else Canada); Settings changes it. It is also Plaid's search.
-  const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:country==="US"?"CA":"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
+  // profile.province holds CA province code when country=CA, US state code when country=US. Left unset ("")
+  // here, as are status and kids: until Settings sets them, Flourish shows federal content only, no couple
+  // framing and no child-benefit tips. The country is the device's (lib/deviceCountry.js: a Canadian time zone
+  // is Canada; else a US time zone or US region is the US; else Canada); Settings changes it. It is also Plaid's search.
+  const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -9784,7 +9785,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       // Only the benefits this household could actually claim. An entry with no `province` is federal;
       // one with a `province` is shown only to residents of it. Both the count badge and the list read
       // THIS, so they can never disagree.
-      const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>!b.province||b.province===(data.profile?.province||""));
+      // `kids` (2026-10-23): a benefit only a household with children can claim is shown only to one that said it has
+      // them (Family Settings); unset is no kids, as it is for the tax tips.
+      const _hasKids=!!data.profile?.hasKids||((data.profile?.kids||[]).length>0);
+      const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>(!b.province||b.province===(data.profile?.province||""))&&(!b.kids||_hasKids));
       const tips=getPersonalizedTaxCredits(data.profile);
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
@@ -10618,7 +10622,7 @@ function Family({data,setAppData,household,setHousehold,setScreen,tourActive=fal
   const activeKid=kids.find(k=>String(k.id)===String(activeKidId))||null;
 
   // Derived — after all hooks
-  const isCouple=data.profile?.status!=="single";
+  const isCouple=data.profile?.status==="couple"||data.profile?.status==="cohabit";   // unset is not a couple
 
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
@@ -11904,7 +11908,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           // Phase D12: reset province to a sensible default when country changes
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
           const newCountry = e.target.value;
-          const defaultProvince = newCountry === "CA" ? "ON" : "CA";
+          const defaultProvince = "";   // 2026-10-23: unset (federal content only) until picked below
           if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince, creditScore:Math.min(prev.profile?.creditScore??680, newCountry==="US"?850:900)}}));
         }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
@@ -11913,8 +11917,10 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
       <div style={row}><span style={lbl}>{(data.profile?.country||"CA")==="CA" ? "Province" : "State"}</span>
-        <select aria-label={(data.profile?.country||"CA")==="CA" ? "Province" : "State"} value={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
+        <select aria-label={(data.profile?.country||"CA")==="CA" ? "Province" : "State"} value={data.profile?.province||""} onChange={e=>updateProfile("province",e.target.value)}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit",maxWidth:180}}>
+          {/* Unset (2026-10-23): a blank, wordless choice, so no province is shown as picked until one is. */}
+          {!data.profile?.province&&<option value="" disabled></option>}
           {(CC[data.profile?.country||"CA"]?.regions||[]).map(r=>(
             <option key={r.code} value={r.code}>{r.name}</option>
           ))}
@@ -12122,7 +12128,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* BUG 3: Partner's Name only for non-single users. Reactive — the Status select above writes
           profile.status via updateProfile, which re-renders and re-evaluates this guard. */}
-      {data.profile?.status!=="single" && (
+      {(data.profile?.status==="couple"||data.profile?.status==="cohabit") && (
       <div style={row}><span style={lbl}>Partner's Name</span>
         <input defaultValue={data.profile?.partnerName||""} placeholder="Partner's first name" onBlur={e=>updateProfile("partnerName",e.target.value)}
           style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
@@ -12881,14 +12887,14 @@ ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED P
 - RRSP deadline: ${(()=>{ const n=nextRrspDeadline(); return n.taxYear===new Date().getFullYear()-1 ? `the RRSP contribution deadline for the ${n.taxYear} tax year is ${formatRrspDeadline(n.date)} (CRA: the 60th day of the year, or the next business day after a weekend); check canada.ca` : `the RRSP contribution deadline for the ${n.taxYear-1} tax year has passed; contributions now count toward the ${n.taxYear} tax year, whose deadline is ${formatRrspDeadline(n.date)}`; })()}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at canada.ca: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
 - ${profile.hasKids?`PARENT: CCB (${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr under-6, $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr ages 6 to 17. Tax-free, income-tested, full amount at an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less, then it reduces gradually and more slowly again over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}), RESP+CESG (the government adds a grant on top of RESP contributions. Quote the rate only from Canada.ca, never from memory), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: RESP withdrawal rules may be relevant":""}`:""}
-- Province ${prov||"ON"}: provincial tax rates and credits apply; check canada.ca or the province for eligibility`:
+- Province ${prov||"unknown"}${prov?": provincial tax rates and credits apply; check canada.ca or the province for eligibility":""}`:
 `- Employment: ${isSelfEmp?`SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax (${TAX_DATA.US.SE_TAX.ratePct}%, half of it deductible), home office Form 8829, SEP-IRA (up to ${usd(TAX_DATA.US.SEP_LIMIT.value)} for ${TAX_DATA.US.SEP_LIMIT.year}) or Solo 401k may be relevant; check irs.gov`:"W-2 EMPLOYEE: withholding and any employer 401k match may be relevant; check irs.gov"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
 - ${age&&age>=65?`SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% taxable), RMDs start at ${TAX_DATA.US.RMD.startAge}, additional standard deduction (${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} per spouse if married, ${TAX_DATA.US.ADDITIONAL_STD_65.year}), senior deduction (${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person, ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} to ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear}, phases out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} MAGI, ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint), QCD from IRA up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} (${TAX_DATA.US.QCD_LIMIT.year})`:""}
 - ${age&&age>=TAX_DATA.US.RMD.startAge?`RMDs may be relevant (age ${TAX_DATA.US.RMD.startAge}+); the excise tax on a missed amount is ${TAX_DATA.US.RMD.exciseTaxPct}% (${TAX_DATA.US.RMD.correctedPct}% if corrected in time); check irs.gov`:""}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, IRA first-home withdrawal without the early-withdrawal tax (up to ${usd(TAX_DATA.US.IRA_FIRST_HOME.value)} lifetime), state programs`:""}
 - ${profile.hasKids?`PARENT: Child Tax Credit (${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child under 17, ${TAX_DATA.US.CHILD_TAX_CREDIT.year}), Dependent Care FSA (up to ${usd(TAX_DATA.US.DEPENDENT_CARE_FSA.value)} pre-tax for ${TAX_DATA.US.DEPENDENT_CARE_FSA.year}), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?`AOTC for college (${usd(TAX_DATA.US.AOTC.max)}/yr, ${TAX_DATA.US.AOTC.refundablePct}% refundable)`:""}`:""}
-- State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`}
+- State ${prov||"unknown"}${prov?`: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`:""}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
@@ -13902,7 +13908,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   );
 }
 
-function Paywall({onClose,onPromoValid,country}){
+function Paywall({onClose,onPromoValid,country,province=""}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
@@ -13918,7 +13924,7 @@ function Paywall({onClose,onPromoValid,country}){
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
-    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
+    {icon:"target",title:"Benefits explained",desc:isCA?`CCB, Canada Groceries and Essentials Benefit, ${province==="ON"?"Trillium, ":""}RRSP, TFSA, FHSA: which rule applies to you and why`:"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit plan",desc:"Factor breakdown with amounts and dates"},
     {icon:"chartUp",title:"Contribution room",desc:isCA?"RRSP, TFSA and FHSA balances and room together":"401k, IRA, Fidelity, Vanguard"},
     {icon:"house2",title:"Weekly money meeting",desc:"Agenda from your week, coach as facilitator, solo or couple"},
@@ -18125,7 +18131,7 @@ export default function FlourishApp(){
   if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
-  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
     try {
