@@ -4745,9 +4745,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                     <label htmlFor={`next-pay-${inc.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,fontWeight:600}}>When is your next payday?</label>
                     <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick the date your next pay lands.</div>
                   </div>
-                  <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
-                    onChange={e=>setPayDate(inc.id, e.target.value)}
-                    style={{width:"100%",boxSizing:"border-box",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none"}}/>
+                  {/* The border is on the wrapper and the input shrinks into it (as SheetField does): on iOS WebKit an
+                      empty date input keeps an intrinsic width and, bordered itself at 100%, ran past its box (1.1.1 smoke). */}
+                  <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
+                      onChange={e=>setPayDate(inc.id, e.target.value)}
+                      style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",colorScheme:C.isDark?"dark":"light"}}/>
+                  </div>
                 </div>
               )}
               {inc.freq==="monthly"&&(
