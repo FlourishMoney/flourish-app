@@ -72,7 +72,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);
   t.ok(/const err = new Error\(data\.error \|\| "Plaid error"\);/.test(call) && !/data\.message/.test(call), "6b the app builds a Plaid error from the code only, never the server's message");
   t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || APP.includes(x.split(". ")[1])), [], "6c neither upgrade text is anywhere in the app");
-  t.ok(/: \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)[\s\S]{0,200}\? FREE_BANK_LINE/.test(APP), "6d onboarding's connect: a store app shows FREE_BANK_LINE");
+  // Onboarding (2026-10-23): any other failure there is W4, so the plan_limit case sets the line on its own.
+  t.ok(/if \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\) setBankError\(FREE_BANK_LINE\);/.test(APP), "6d onboarding's connect: a store app shows FREE_BANK_LINE");
   t.ok(/if\(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\?\.message\|\|""\)\)\)\{ alertModal\(\{ message: FREE_BANK_LINE \}\); return; \}/.test(APP), "6e Settings' add-bank: a store app shows FREE_BANK_LINE (it used to say \"Please try again\")");
 
   // ── 8. The rest of the store copy, approved 2026-10-20 (three changes applied) ────────────────

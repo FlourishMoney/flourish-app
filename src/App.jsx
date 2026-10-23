@@ -947,13 +947,16 @@ function removeBillWithOverride(setAppData, idx, name) {
 
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
-// never stale even if the callback closes over fresh state.
-function usePlaidLinkSDK(linkToken, onSuccess) {
+// never stale even if the callback closes over fresh state. onExit (optional, onboarding 2026-10-23) hears every
+// exit: (err, meta) with err null when the person closed Link, an error object when Plaid failed.
+function usePlaidLinkSDK(linkToken, onSuccess, onExit) {
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
   useEffect(() => { if (sdkError) noteReviewTrouble(); }, [sdkError]); // Plaid's script failed: no review ask for a while
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+  const onExitRef = useRef(onExit);
+  useEffect(() => { onExitRef.current = onExit; }, [onExit]);
 
   useEffect(() => {
     if (window.Plaid) { setSdkReady(true); return; }
@@ -985,7 +988,7 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -4227,7 +4230,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
   // Called by Plaid Link after user authenticates
   const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
-    setBankStage("loading");setBankProg(0);setBankError(null);
+    setBankStage("loading");setBankProg(0);setBankError(null);setBankOutcome(null);
     // Bug fix: declare timer outside try so catch can always clear it
     let progTimer=null;
     try{
@@ -4263,32 +4266,55 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         captureError(txErr, { area: "plaid" });
       }
 
+      // Pre-fill the next two screens from what the bank shows, with the app's own detection (the same calls the
+      // post-onboarding sync makes), for the person to confirm: their pay, so they don't retype it, and the bills
+      // that repeat. Only into fields they have not filled.
+      const marked = markTransfers(fetchedTxns, t => isInternalTransfer(t) || isCCPayment(t, []), isCashAdvance);
+      let found = null, foundBills = [];
+      try { found = detectIncomeFromTxns(incomeEvidence({ transactions: marked })); } catch { found = null; }
+      try { foundBills = detectRecurringBills(marked, { overrides: {}, debts: [] }) || []; } catch { foundBills = []; }
+
       setTimeout(()=>{
         // Promote into appData IMMEDIATELY (single source of truth). Previously this wrote to local
         // state that only reached appData at finish() — and was lost on any unmount before then.
         onAccountsConnected?.(mappedAccounts, fetchedTxns);
-        setDetectedBills([]);
+        setBankTxns(marked);
+        if (found && Number(found.perDeposit) > 0) setIncomes(prev => prev.some(i => i.amount) ? prev : [{
+          id:1, label:found.label||"", amount:String(found.perDeposit), freq:found.freq||"monthly", type:"employment", sourceTypes:["employment"],
+          isVariable:!!found.isVariable, typicalAmount:String(found.perDeposit), owner:"self",
+          ...(found.anchorDay?{anchorDay:found.anchorDay}:{}), autoDetected:true }]);
+        const billRows = foundBills.map(b => ({ name:b.name, amount:String(b.amount), date:String(b.date||""), type:b.type||"fixed", freq:b.freq||"monthly", auto:true, origin:"observed" }));
+        if (billRows.length) setBills(prev => prev.some(b => b.name || b.amount) ? prev : billRows);
+        setDetectedBills(billRows);
         setBankStage("done");
+        count("bank_link_completed");
       },400);
     }catch(err){
       // Bug fix: always clear the progress interval even if exchange fails
       if(progTimer) clearInterval(progTimer);
-      // Bug fix: surface needs_reconnect errors distinctly
-      const msg = err.message?.includes("needs_reconnect") || err.needs_reconnect
-        ? "Your bank session expired. Please reconnect your bank."
-        : (isNativeApp() && /plan_limit/.test(String(err.message||"")))
-          // A store app has nothing to buy, so never show the server's plan code or an upgrade path.
-          ? FREE_BANK_LINE
-          : "Connection failed: "+err.message;
-      setBankError(msg);
+      count("bank_link_failed");
+      // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
+      // Every other failure (an expired session included) is W4: try again or enter the numbers.
+      if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
+      else setBankOutcome("failed");
       setBankStage("select");
     }
   },[]);
+  // W4 when Plaid closes without linking: err is null when the person closed it, an error when Plaid failed.
+  const onPlaidExit=useCallback((err)=>{
+    count(err ? "bank_link_failed" : "bank_link_cancelled");
+    setBankOutcome(err ? "failed" : "cancelled");
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess);
+  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess,onPlaidExit);
   const isLinkReady = plaidReady && !linkTokenLoading;
   const initError   = plaidSdkError ? "Plaid SDK failed to load. Try refreshing the page." : null;
   const canConnect = isLinkReady && !initError;
+  // The link token could not be fetched: the main button is the retry, never "Ready".
+  const tokenFailed = !!bankError && !linkToken && !linkTokenLoading && !initError;
+  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken(); };
+  // Open Plaid (after the consent sheet): counted as a bank link started.
+  const startPlaid = ()=>{ setBankOutcome(null); count("bank_link_started"); openPlaidLink(); };
 
   const [stmtStatus, setStmtStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
   const [stmtMsg, setStmtMsg] = useState('');
@@ -4457,30 +4483,45 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           ))}
         </div>
 
-        {/* Error state with retry */}
+        {/* W4 (approved 2026-10-23): the person closed Plaid, or the link failed. */}
+        {bankOutcome&&(
+          <div data-bank-outcome={bankOutcome} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+            <div style={{color:C.cream,fontSize:13,lineHeight:1.5,marginBottom:10}}>Your bank wasn't connected. You can try again or enter your numbers yourself.</div>
+            <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
+              <Btn label="Try again" onClick={()=>{ if(canConnect) startPlaid(); else { setBankOutcome(null); retryToken(); } }} color={C.teal} small/>
+              <Btn label="Enter it myself" onClick={()=>{ setBankOutcome(null); skipBank(); }} outline color={C.muted} small/>
+            </div>
+          </div>
+        )}
+        {/* Error state: the main button below is the retry when the link token could not be fetched. */}
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-            <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
-            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#ff8888",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+            <div style={{color:"#ff8888",fontSize:13}}>{bankError||initError}</div>
           </div>
         )}
 
         {/* Main CTA button */}
-        <button
-          onClick={canConnect?()=>setShowBankConsent(true):undefined}
-          disabled={!canConnect}
-          style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:canConnect?textOn(C.teal,C.tealBright):C.mutedHi,fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
-          {linkTokenLoading?(
+        {/* One button, four states: ready to connect; the retry after a link-token error; preparing (the token or
+            Plaid's script is on its way); Plaid's script could not load. Never "Ready" while it cannot connect.
+            While W4 shows, its "Try again" is this button, so this one steps aside. */}
+        {!bankOutcome&&<button
+          onClick={canConnect?()=>setShowBankConsent(true):tokenFailed?retryToken:undefined}
+          disabled={!canConnect&&!tokenFailed}
+          data-bank-button={canConnect?"connect":tokenFailed?"retry":initError?"unavailable":"preparing"}
+          style={{width:"100%",background:(canConnect||tokenFailed)?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:(canConnect||tokenFailed)?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:(canConnect||tokenFailed)?textOn(C.teal,C.tealBright):C.mutedHi,fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:(canConnect||tokenFailed)?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:(canConnect||tokenFailed)?1:0.55}}>
+          {tokenFailed?(
+            <span>↺ Retry</span>
+          ):(linkTokenLoading||(!isLinkReady&&!initError))?(
             <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
           ):(
-            <><span style={{fontSize:20}}>🏦</span><span>{isLinkReady?"Connect My Bank Securely →":initError?"SDK unavailable":"Ready"}</span></>
+            <><span style={{fontSize:20}}>🏦</span><span>{initError?"SDK unavailable":"Connect My Bank Securely →"}</span></>
           )}
-        </button>
+        </button>}
         {/* "Not Now" just dismisses — the user stays on this step and can still skip it or upload a
             statement instead, so declining never blocks onboarding. */}
         {showBankConsent&&<BankConsentModal
           onViewLegal={onViewLegal}
-          onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); openPlaidLink(); }}
+          onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); startPlaid(); }}
           onCancel={()=>setShowBankConsent(false)}/>}
 
         <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:14}}>
@@ -4512,7 +4553,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           {!stmtStatus&&<div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
         </div>
 
-        <div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>
+        {!bankOutcome&&<div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>}
       </>}
 
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>

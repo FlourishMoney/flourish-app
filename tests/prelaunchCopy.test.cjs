@@ -75,7 +75,8 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     t.ok(credit.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda."),
       "1e other gates say the founder's locked-screen line, word for word");
     t.ok(!/what to do next/.test(APP.slice(APP.indexOf('feature="AI Coach"'), APP.indexOf('feature="AI Coach"') + 200)), "1f the coach is described as explaining your options, not telling you what to do");
-    t.ok(/isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)\s*\/\/[^\n]*\n\s*\? FREE_BANK_LINE/.test(APP),
+    // Onboarding (2026-10-23): any other failure there is W4, so the plan_limit case sets the line on its own.
+    t.ok(/if \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\) setBankError\(FREE_BANK_LINE\);/.test(APP),
       "1g a store app never shows the server's plan_limit code: it says what the free plan connects (FREE_BANK_LINE)");
   }
 
