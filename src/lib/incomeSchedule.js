@@ -120,6 +120,27 @@ export function findAnchor(inc, incAmt, transactions) {
   return loose ? loose.date : null;
 }
 
+// THE NEXT PAYDAY THE HOUSEHOLD ENTERED (onboarding, 2026-10-23: "When is your next payday?"), as
+// inc.nextPayDate "YYYY-MM-DD". For weekly and every-two-weeks pay it phases the cycle when there is no deposit
+// history to phase from (findAnchor finds none), in place of counting forward from today. Real deposits still
+// win: once a chain of them exists, the cycle follows them. A date that has passed is stepped forward a whole
+// cycle at a time, so it keeps its phase. Returns the date at noon, or null when there is none or it is not a date.
+export function enteredNextPayDate(inc) {
+  const iso = inc && typeof inc.nextPayDate === "string" ? inc.nextPayDate : "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3]) ? d : null;
+}
+// The first payday of an entered weekly or every-two-weeks cycle that is after `today`.
+function _enteredNextAfter(inc, freqDays, today) {
+  const d = enteredNextPayDate(inc);
+  if (!d || !freqDays) return null;
+  const next = new Date(d);
+  while (_dayGap(today, next) <= 0) next.setDate(next.getDate() + freqDays);
+  return next;
+}
+
 // Day-of-month this income lands on. Explicit user/Plaid-derived anchorDay wins; otherwise the day
 // of this income's most recent observed deposit; only then the 1st (genuine no-signal last resort).
 export function anchorDayOf(inc, incAmt, transactions) {
@@ -161,6 +182,14 @@ export function depositDatesFor(inc, incAmt, transactions, today, days) {
         out.push(new Date(next));
         next = new Date(next); next.setDate(next.getDate() + freqDays);
       }
+    } else if (enteredNextPayDate(inc)) {
+      // No deposit history, but the household told us its next payday: step from that date.
+      const horizon = new Date(today); horizon.setDate(horizon.getDate() + days);
+      let next = _enteredNextAfter(inc, freqDays, today);
+      while (next <= horizon) {
+        out.push(new Date(next));
+        next = new Date(next); next.setDate(next.getDate() + freqDays);
+      }
     } else {
       // No anchor found — fallback: count forward from today at frequency.
       for (let k = freqDays; k <= days; k += freqDays) {
@@ -185,11 +214,11 @@ export function depositDatesFor(inc, incAmt, transactions, today, days) {
   return out;
 }
 
-// How sure are we of THIS income's next date: "high" when phased off real history or an explicit
-// anchor day, "estimated" when we can only count forward from today at the stated cadence.
+// How sure are we of THIS income's next date: "high" when phased off real history, an explicit anchor day or
+// the next payday the household entered; "estimated" when we can only count forward from today at the stated cadence.
 function _confidenceFor(inc, incAmt, transactions) {
   const freq = inc.freq || "biweekly";
-  if (_freqDays(freq)) return findAnchor(inc, incAmt, transactions) ? "high" : "estimated";
+  if (_freqDays(freq)) return findAnchor(inc, incAmt, transactions) || enteredNextPayDate(inc) ? "high" : "estimated";
   const explicit = parseInt(inc.anchorDay, 10);
   if (Number.isFinite(explicit) && explicit >= 1 && explicit <= 31) return "high";
   return findAnchor(inc, incAmt, transactions) ? "high" : "estimated";
@@ -239,7 +268,8 @@ export function isDepositToday(incomes, transactions, today = new Date()) {
     const freq = inc.freq || "biweekly";
     const freqDays = _freqDays(freq);
     if (freqDays) {
-      const anchor = findAnchor(inc, amt, transactions);
+      // Real deposits first; with none, the next payday the household entered (a payday before it is not one).
+      const anchor = findAnchor(inc, amt, transactions) || enteredNextPayDate(inc);
       if (!anchor) continue; // phase unknown
       const gap = _dayGap(anchor, t);
       if (gap >= 0 && gap % freqDays === 0) return true;

@@ -59,6 +59,7 @@ import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
+import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
@@ -73,7 +74,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
-import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
@@ -4137,17 +4138,27 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
   );
 }
 
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected}){
+// ONBOARDING (2026-10-23, the first number): Welcome, then Link your accounts (bank, statement or the balance
+// entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
+// score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
+// completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount}){
   const [step,setStep]=useState(0);
+  // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
+  const onCountRef=useRef(onCount); onCountRef.current=onCount;
+  const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
+  // Leaving a step forward counts it once per visit.
+  const done=(name,next)=>{ count("onboarding_step_completed",name); setStep(next); };
   // profile.province holds CA province code when country=CA, US state code when country=US.
-  // Defaults: ON for CA, CA (California) for US.
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
+  // Defaults: ON for CA, CA (California) for US. The country is the device's (lib/deviceCountry.js: a US
+  // region or time zone is the US, anything else Canada); Settings changes it. It is also Plaid's search.
+  const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:country==="US"?"CA":"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
   // Pre-populate debts from connected credit card accounts when user reaches debt step
   useEffect(()=>{
-    if(step !== 5) return;
+    if(step !== 4) return;
     const creditAccts = connAccts.filter(a =>
       a.type === "credit" || a.type === "credit card" ||
       a.subtype === "credit card" || a.type === "line of credit"
@@ -4167,6 +4178,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     setDebts(prePopulated);
   }, [step]);
   const [bankStage,setBankStage]=useState("select");
+  // W4: the person closed Plaid ("cancelled") or the link failed ("failed"). Either way: try again or enter it.
+  const [bankOutcome,setBankOutcome]=useState(null);
+  // The bank's transactions, kept here so the paycheque screen can tell whether payday is already known.
+  const [bankTxns,setBankTxns]=useState([]);
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
   useEffect(()=>{ if(bankError) noteReviewTrouble(); },[bankError]); // any bank link failure rules out a review ask for a while
@@ -4200,11 +4215,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
-  useEffect(()=>{ if(step===2) fetchLinkToken(); },[step]); // eslint-disable-line
+  useEffect(()=>{ if(step===1) fetchLinkToken(); },[step]); // eslint-disable-line
   // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
   // bank step without one yet (callPlaid also retries transient drops with backoff).
   useEffect(()=>{
-    const onOnline = ()=>{ if(step===2 && !linkToken) fetchLinkToken(); };
+    const onOnline = ()=>{ if(step===1 && !linkToken) fetchLinkToken(); };
     window.addEventListener("online", onOnline);
     return ()=>window.removeEventListener("online", onOnline);
   },[step, linkToken, fetchLinkToken]); // eslint-disable-line
@@ -4377,7 +4392,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     const next=enterBalance({profile:p,accounts:connAccts,debts:[]},{accountId:prior?prior.id:undefined,kind:"chequing",amount,asOf},new Date());
     const acct=prior?next.accounts.find(a=>a.id===prior.id):next.accounts[next.accounts.length-1];
     if(acct&&acct!==prior) onAccountsConnected?.([acct],[]);
-    setStep(3);
+    count("onboarding_step_completed","balance");
+    done("bank",2);
   };
   const confirmStatementBalance=(entry)=>{
     const next=enterBalance({profile:p,accounts:connAccts,debts:[]},entry,new Date());
@@ -4394,9 +4410,23 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // get_accounts succeeds, so re-sending them here would let a stale local copy overwrite the truth.
   // `transactions` still carries statement-upload rows (plaidTxns); the parent MERGES rather than
   // replaces, so bank transactions promoted earlier survive.
-  const finish=()=>onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]});
+  const finish=()=>{ count("onboarding_step_completed","debts"); return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
+  // W1: weekly, every-two-weeks and twice-a-month pay asks for the next payday, unless the bank's deposits
+  // already show it (findAnchor over the bank's own transactions). Monthly pay keeps its day-of-month question.
+  const PAYDAY_FREQS = ["weekly","biweekly","semimonthly"];
+  const needsPayDate = (inc) => PAYDAY_FREQS.includes(inc.freq) && !findAnchor(inc, num(inc.amount), bankTxns);
+  const payDateMissing = (inc) => !!inc.amount && needsPayDate(inc) && !enteredNextPayDate(inc);
+  const setPayDate = (id, iso) => setIncomes(incomes.map(x => {
+    if (x.id !== id) return x;
+    const next = { ...x, nextPayDate: iso || undefined };
+    // Twice a month: the date's day is the anchor of the pair (semimonthlyPair), as the old question set it.
+    if (x.freq === "semimonthly") { const d = enteredNextPayDate(next); next.anchorDay = d ? d.getDate() : undefined; }
+    return next;
+  }));
+  // The income type stays reachable, collapsed under the type already chosen (Employment by default).
+  const [typesOpen,setTypesOpen]=useState(()=>new Set());
 
   const screens=[
     // 0: Welcome (slim — Phase 3e-A trim)
@@ -4405,7 +4435,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           app-icon art) replaces the icon + a separate text wordmark — no more duplicated "flourish". */}
       <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
-      <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
+      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
       <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
@@ -4413,24 +4443,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       </div>
     </div>,
 
-    // 1: Profile (Phase 3e-B trim + D12 region picker)
-    <div>
-      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:6}}>About you</div>
-      <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:20}}>A quick few things to get started. You can flesh out your profile later in Settings.</div>
-      <Inp label="Your name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
-      <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA",creditScore:Math.min(p.creditScore,v==="US"?850:900)})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
-      <Sel label={p.country==="CA" ? "Province" : "State"} value={p.province} onChange={v=>setP({...p,province:v})} options={(CC[p.country]?.regions || []).map(r => ({ value: r.code, label: r.name }))}/>
-      {/* BUG 1: household basics. These keys already exist on `p` and finish() persists them; only the
-          inputs were missing, so status/hasKids/partnerName used to leave onboarding at their defaults.
-          Partner's name is gated on status so single users never see it. hasKids stays a boolean —
-          no kids-detail (ages/count) capture in this pass. */}
-      <Sel label="Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Couple"}]}/>
-      {p.status!=="single"&&<Inp label="Partner's name" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
-      <Sel label="Do you have kids?" value={p.hasKids?"yes":"no"} onChange={v=>setP({...p,hasKids:v==="yes"})} options={[{value:"no",label:"No"},{value:"yes",label:"Yes"}]}/>
-      <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
-    </div>,
-
-    // 2: Bank Connection
+    // 1: Bank Connection
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Link your accounts (optional)</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Read-only. Flourish sees balances and transactions and can't move money. Linked accounts give you live numbers; manual entry works fine to start.</div>
@@ -4515,7 +4528,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
       {/* manual-balances: "Enter it myself" asks for the chequing balance, so a household with no bank
           reaches a real safe to spend on Today instead of one built on $0. */}
-      {bankStage==="skipped"&&<ManualBalanceStep country={p.country} account={manualChequing} onDone={saveManualChequing} onSkip={()=>setStep(3)}/>}
+      {bankStage==="skipped"&&<ManualBalanceStep country={p.country} account={manualChequing} onDone={saveManualChequing} onSkip={()=>done("bank",2)}/>}
       {bankStage==="done"&&<div>
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
@@ -4536,11 +4549,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
           </div>
         ))}
-        <Btn label="Let's go →" onClick={()=>setStep(3)}/>
+        <Btn label="Let's go →" onClick={()=>done("bank",2)}/>
       </div>}
     </div>,
 
-    // 3: Income (after bank — auto-detection runs first)
+    // 2: Income (after bank — auto-detection runs first)
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>{p.country==="US"?"Your income":`Your ${payWord(p.country,{plural:true})}`}</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -4591,10 +4604,21 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
 
             <div style={{padding:"12px 16px 16px"}}>
-              {/* Step 1 — Income type chips */}
+              {/* Step 1 — Income type. Employment unless changed: collapsed under the type chosen, the chips one tap
+                  away (2026-10-23). */}
+              {(()=>{
+                const typeList = CC[p.country]?.incomeTypes||CC.CA.incomeTypes;
+                const open = typesOpen.has(inc.id);
+                const names = selTypes.map(v => (typeList.find(([x])=>x===v)||[v, incTypeMeta[v]?.label||v])[1]).join(", ");
+                const toggle = () => setTypesOpen(prev => { const n = new Set(prev); if (n.has(inc.id)) n.delete(inc.id); else n.add(inc.id); return n; });
+                return (
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Income type <span style={{textTransform:"none",letterSpacing:0,color:C.border}}>· tap all that apply</span></div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button type="button" aria-expanded={open} onClick={toggle} data-income-type-toggle=""
+                  style={{background:"none",border:"none",padding:"10px 0",minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:6}}>
+                  <span>Income type <span style={{textTransform:"none",letterSpacing:0,color:open?C.border:C.mutedHi}}>· {open?"tap all that apply":names}</span></span>
+                  <span aria-hidden="true">{open?"▴":"▾"}</span>
+                </button>
+                {open&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>{
                     const on=selTypes.includes(val);
                     return <button key={val} onClick={()=>setIncomes(incomes.map(x=>{
@@ -4606,8 +4630,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                     }))}
                       style={{background:on?C.green+"22":C.cardAlt,border:`1px solid ${on?C.green:C.border}`,color:on?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400,transition:"all .15s"}}>{lbl}</button>;
                   })}
-                </div>
+                </div>}
               </div>
+                );
+              })()}
 
               {/* Sprint 6a-2: spousal income owner (couples only) */}
               {(p.status==="couple"||p.status==="cohabit")&&<div style={{marginBottom:12}}>
@@ -4661,11 +4687,25 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               {/* Pay day — only meaningful for monthly / twice-a-month cadences. Without this the
                   forecast has no signal for WHEN monthly pay lands and every such income defaulted to
                   the 1st, phasing the whole cash-flow projection wrong for anyone paid mid-month. */}
-              {(inc.freq==="monthly"||inc.freq==="semimonthly")&&(
+              {/* W1 (approved 2026-10-23): weekly, every-two-weeks and twice-a-month pay. The date phases the pay
+                  cycle (incomeSchedule.js enteredNextPayDate), so payday is no longer counted from today. Not asked
+                  when the bank's deposits already show it. */}
+              {needsPayDate(inc)&&(
+                <div data-next-payday="" style={{display:"flex",flexDirection:"column",alignItems:"stretch",gap:8,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+                  <div style={{minWidth:0}}>
+                    <label htmlFor={`next-pay-${inc.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,fontWeight:600}}>When is your next payday?</label>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick the date your next pay lands.</div>
+                  </div>
+                  <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
+                    onChange={e=>setPayDate(inc.id, e.target.value)}
+                    style={{width:"100%",boxSizing:"border-box",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              )}
+              {inc.freq==="monthly"&&(
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px"}}>
                   <div style={{minWidth:0}}>
-                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>{inc.freq==="monthly"?"Day of the month you're paid":"First pay day of the month"}</div>
-                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>{inc.freq==="semimonthly"?"We'll plan the second one about 15 days later.":"Pick 31 and short months use the last day."}</div>
+                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>Day of the month you're paid</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick 31 and short months use the last day.</div>
                   </div>
                   <input value={inc.anchorDay??""}
                     onChange={e=>{const raw=e.target.value.replace(/[^0-9]/g,"");const n=parseInt(raw,10);setIncomes(incomes.map(x=>x.id===inc.id?{...x,anchorDay:raw===""?undefined:Math.min(Math.max(Number.isFinite(n)?n:1,1),31)}:x));}}
@@ -4700,10 +4740,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source, even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>setStep(4)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount))}/>
+      <Btn label="Continue →" onClick={()=>done("income",3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
     </div>,
 
-    // 4: Bills
+    // 3: Bills
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your bills</div>
       {detectedBills&&detectedBills.length>0?(
@@ -4738,10 +4778,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         </div>
       ))}
       <Btn label="+ Add Bill" onClick={addBill} outline color={C.green} small/>
-      <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>setStep(5)}/></div>
+      <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>done("bills",4)}/></div>
     </div>,
 
-    // 5: Debts
+    // 4: Debts (then the first number)
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your debts</div>
       {connAccts.some(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card")?(
@@ -4775,53 +4815,21 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         </div>
       ))}
       <Btn label="+ Add Debt" onClick={addDebt} outline color={C.green} small/>
-      <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={()=>setStep(6)} outline color={C.muted} small/></div>
-      <div style={{marginTop:8}}><Btn label="Continue →" onClick={()=>setStep(6)}/></div>
+      <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={finish} outline color={C.muted} small/></div>
+      <div style={{marginTop:8}}><Btn label="Show me today's number →" onClick={finish}/></div>
     </div>,
 
-    // 6: Credit Score
-    <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can explain what affects it.</div>
-      <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
-        <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
-        {[["✅","Soft pull only, never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
-      </div>
-      <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:13,marginBottom:8,fontWeight:700}}>Do you know your current score?</div>
-        <div style={{display:"flex",gap:10}}>
-          {["Yes, I know it","Not sure / skip"].map(opt=><button key={opt} onClick={()=>setP({...p,creditKnown:opt.startsWith("Yes")})} style={{flex:1,background:((opt.startsWith("Yes")?p.creditKnown:!p.creditKnown))?C.teal+"33":C.cardAlt,border:`1px solid ${(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.teal:C.border}`,color:(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.tealBright:C.muted,borderRadius:12,padding:"12px 8px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
-        </div>
-      </div>
-      {p.creditKnown&&<>
-        <div style={{color:C.muted,fontSize:13,marginBottom:12,fontWeight:700}}>Drag to your score</div>
-        <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.teal}44`,marginBottom:16}}>
-          <div style={{textAlign:"center",marginBottom:16}}>
-            <div style={{fontSize:52,fontWeight:900,fontFamily:"Georgia,serif",color:p.creditScore>=750?C.greenBright:p.creditScore>=700?C.teal:p.creditScore>=650?C.goldBright:p.creditScore>=600?C.orange:C.redBright}}>{p.creditScore}</div>
-            <Chip label={p.creditScore>=750?"Excellent 🌟":p.creditScore>=700?"Very Good 👍":p.creditScore>=650?"Good ✓":p.creditScore>=600?"Fair ⚠️":"Needs Work 🔧"} color={p.creditScore>=750?C.green:p.creditScore>=700?C.teal:p.creditScore>=650?C.gold:p.creditScore>=600?C.orange:C.red} size={13}/>
-          </div>
-          <input aria-label="Credit score" type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
-          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{creditScaleNote(p.country)}</div>
-        </div>
-        <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
-      </>}
-      {!p.creditKnown&&<div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:16}}>
-        <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>No problem. Flourish will estimate your score range from your debt utilization and payment patterns once you're connected. You can add it later in Settings.</div>
-      </div>}
-      <Btn label="Show me today's number →" onClick={finish}/>
-    </div>,
   ];
 
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
-        {step>0&&step<7&&(
+        {step>0&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
           </div>
         )}
-        {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:6}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
+        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:4}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
         {screens[step]}
       </div>
     </div>

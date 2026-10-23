@@ -408,7 +408,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Credit scores update monthly. Get yours free at Borrowell (Canada) or Credit Karma (US/Canada), then update it here.",
       "Open flourishmoney.app in Safari", "Open flourishmoney.app in Chrome", "Open Flourish and sign in.", "Wrong email? Start over",
       "Open your authenticator app and enter the current 6-digit code for Flourish Money.",
-      "Your password is updated. Open the Flourish app and log in with your new password.", "Never shared with lenders or third parties",
+      "Your password is updated. Open the Flourish app and log in with your new password.",
       "with a question, a problem or feedback. Write from the address your account uses so we can find it. Never send a password or a bank login.",
       "Don't use AI", "10. Contact Us", "Contact us", "13. Contact",
       // Subscription screens (web only; a store build renders none of them, nativeNoPrice.test).
