@@ -64,7 +64,8 @@ function buildApp(supabaseUrl) {
   if (process.env.ONBOARDING_DIST) return process.env.ONBOARDING_DIST;
   const out = tempDir("onboarding-duo");
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "warn"],
-    { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: supabaseUrl, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" } });
+    { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: supabaseUrl, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+      VITE_IAP_ENABLED: "true" } });   // as the 1.1.1 store build: in-app purchase is on in a store app only (lib/storeBilling.js)
   return out;
 }
 
@@ -204,6 +205,10 @@ function buildApp(supabaseUrl) {
       await p.getByRole("button", { name: "Hide demo banner" }).first().click();
       await p.getByText("days left in your trial", { exact: false }).first().waitFor();
     }],
+    ["Store app: Settings", async (p) => { await p.getByRole("button", { name: "Settings", exact: true }).first().click(); await p.getByText("Restore purchases").first().waitFor(); }, true],
+    ["Store app: What's new", async (p) => { await p.getByRole("button", { name: /What's new/ }).first().click(); await p.getByText("Getting started is quicker.", { exact: false }).first().waitFor(); }, true],
+    ["Store app: See plans", async (p) => { await p.getByRole("button", { name: "See plans", exact: true }).first().click();
+      await p.getByRole("button", { name: "Close", exact: true }).last().waitFor(); }, true],
   ];
 
   const passes = duoPasses();
