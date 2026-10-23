@@ -185,7 +185,8 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
 
     // And the wiring that made the grant possible is gone, so it cannot come back by prop.
     t.ok(!/setPlan\("premium"\)/.test(app), "5j nothing in App.jsx sets the plan to premium in the browser");
-    t.ok(/function Paywall\(\{onClose,onPromoValid,country\}\)/.test(app), "5k Paywall takes no upgrade handler at all");
+    // province (2026-10-23): Trillium is named only to Ontario; still no upgrade handler.
+    t.ok(/function Paywall\(\{onClose,onPromoValid,country,province=""\}\)/.test(app), "5k Paywall takes no upgrade handler at all");
     // The gate widened from iOS to every native shell (Play requires its own billing too), so the
     // anchor moved with it. Asserted rather than assumed: indexOf returning -1 would slice from the
     // END of the file and make 5l and 5m pass on an empty string.

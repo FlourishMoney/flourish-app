@@ -12,8 +12,10 @@
 //      time, never in the demo, no amount or name in the body.
 //   5. Migration 0028: counts only, service role only. Not run here.
 //   6. The screens' source: the approved words, the flow, and what is gone.
-//   7. The country is the device's (src/lib/deviceCountry.js): a US region or a US time zone is the US, anything
-//      else Canada; it is what Plaid's institution search is asked for.
+//   7. The country is the device's (src/lib/deviceCountry.js): a Canadian time zone is Canada; else a US time
+//      zone or a US region is the US; else Canada. It is what Plaid's institution search is asked for.
+//   8. Province, status and kids are left unset: federal content only, no couple framing, no child benefits.
+//   9. The tour's Today step names only the parts in the number, from the same module as the first number.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -194,16 +196,70 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
   t.eq(["en-US", "en-CA", "fr-CA", "en", "zh-Hant-TW", "en_US", "es-419", "", null].map(D.regionOf), ["US", "CA", "CA", null, "TW", "US", "419", null, null], "7a the region of a language tag");
   t.eq(["America/New_York", "America/Los_Angeles", "America/Phoenix", "Pacific/Honolulu", "America/Indiana/Indianapolis", "US/Eastern", "America/Toronto", "America/Vancouver", "America/Edmonton", "America/Halifax", "Europe/Paris", "UTC", ""].map(D.isUsTimeZone),
     [true, true, true, true, true, true, false, false, false, false, false, false, false], "7b US time zones, and Canadian and other ones");
+  t.eq(["America/Toronto", "America/Montreal", "America/Vancouver", "America/Edmonton", "America/Winnipeg", "America/Regina", "America/Halifax", "America/St_Johns", "America/Whitehorse", "America/Iqaluit", "Canada/Eastern", "America/New_York", "America/Detroit", "Europe/London", ""].map(D.isCanadianTimeZone),
+    [true, true, true, true, true, true, true, true, true, true, true, false, false, false, false], "7b2 Canadian time zones (the provinces, the territories, the old Canada/* names), and not US or other ones");
   const dc = (languages, timeZone) => D.deviceCountry({ languages, timeZone });
   t.eq([dc(["en-CA"], "America/Toronto"), dc(["fr-CA", "en-US"], "America/Montreal"), dc(["en"], "America/Vancouver"), dc(["fr-FR"], "Europe/Paris"), dc([], "UTC"), dc([null, ""], null)],
     ["CA", "CA", "CA", "CA", "CA", "CA"], "7c a Canadian (or any non-US) region and time zone: Canada; the first language that names a region decides");
   t.eq([dc(["en-US"], "America/New_York"), dc(["en-US"], "Europe/London"), dc(["es-MX", "en"], "America/Chicago"), dc(["en"], "America/Denver")], ["US", "US", "US", "US"], "7d a US region, or a US time zone: the United States");
-  t.eq(dc(["en-US"], "America/Toronto"), "US", "7e the rule as decided: a US region counts even in a Canadian time zone");
+  t.eq([dc(["en-US"], "America/Toronto"), dc(["en-US"], "America/Vancouver"), dc(["en-US", "en"], "Canada/Pacific")], ["CA", "CA", "CA"],
+    "7e a Canadian time zone wins over a US language region (desktop browsers in Canada often report en-US)");
+  t.eq([dc(["en-CA"], "America/New_York"), dc(["fr-CA"], "America/Chicago")], ["US", "US"], "7e2 …and a US time zone is the US whatever the language");
   t.eq(dc(["en", "en-CA"], "America/Toronto"), "CA", "7f a language with no region is passed over for the next one that has one");
-  t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=deviceCountry\(\); return \{name:"",country,province:country==="US"\?"CA":"ON",/.test(ob),
-    "7g onboarding starts from the device's country, with the province Settings would pick for it (ON, or CA for California)");
+  t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=deviceCountry\(\); return \{name:"",country,province:"",partnerName:""/.test(ob),
+    "7g onboarding starts from the device's country, with the province, status and kids left unset");
   t.ok(/callPlaid\("create_link_token",\{country:p\.country,/.test(ob), "7h …and that country is what Plaid's institution search is asked for");
   t.ok(/<select aria-label="Country" defaultValue=\{data\.profile\?\.country\|\|"CA"\}/.test(app), "7i Settings still changes it");
+
+  // ── 8. province, status and kids unset ─────────────────────────────────────────────────────
+  const { loadApp, textOf } = require("./_renderApp.cjs");
+  let R = {};
+  try { R = loadApp(["getPersonalizedTaxCredits", "Paywall", "Goals", "CC"]); } catch (e) { t.ok(false, `App.jsx bundles: ${e && e.message}`); }
+  const PROVINCIAL = /Ontario|Trillium|Quebec|Alberta|Saskatchewan|Atlantic|Manitoba|British Columbia|New York|Illinois|Minnesota|NYC/;
+  const CHILD = /Child Benefit|CCB|Child Tax Credit|Child Care|Childcare|RESP|Dependent Care|WIC/i;
+  const tipsOf = (profile) => R.getPersonalizedTaxCredits(profile).map((x) => `${x.title} ${x.body}`).join("\n");
+  for (const country of ["CA", "US"]) {
+    const unset = tipsOf({ country, province: "", lifeStages: [country === "US" ? "w2" : "t4"] });
+    t.ok(unset.length > 0 && !PROVINCIAL.test(unset), `8a ${country}, province unset: federal tax tips only, none for any province or state`);
+    t.ok(!CHILD.test(unset), `8b ${country}, kids unset: no child-benefit tip`);
+  }
+  const split = (status) => /Spousal Income Splitting/.test(tipsOf({ country: "CA", province: "", status, lifeStages: ["t4"], partnerLifeStages: ["selfemployed"] }));
+  t.eq([split(undefined), split("single"), split("couple")], [false, false, true], "8c status unset: no couple tip (it shows for a couple, as today)");
+  t.ok(/Trillium/.test(tipsOf({ country: "CA", province: "ON", lifeStages: ["t4"] })) && /Solidarity/.test(tipsOf({ country: "CA", province: "QC", lifeStages: ["t4"] })),
+    "8d once a province is set, its own tips come back, as today");
+  t.ok(/Canada Child Benefit/.test(tipsOf({ country: "CA", province: "", hasKids: true, lifeStages: ["t4"] })), "8e once kids are set, the child benefits come back");
+  const renderText = (el) => { try { return textOf(R.render(el)); } catch (e) { return `RENDER FAILED ${e && e.message}`; } };
+  const noop = () => {};
+  const goalsData = (profile) => ({ profile, incomes: [], bills: [], debts: [], accounts: [], transactions: [], goals: [] });
+  const benefitsText = (profile) => renderText(R.h(R.Goals, { data: goalsData(profile), initialTab: "tax", onUpgrade: noop, setScreen: noop, setAppData: noop }));
+  const caUnset = benefitsText({ country: "CA", province: "", lifeStages: ["t4"] });
+  t.ok(/Canada Workers Benefit/.test(caUnset) && !/Trillium/.test(caUnset) && !/Canada Child Benefit/.test(caUnset), `8f Goals > Tax with nothing set: the federal benefits, no Ontario Trillium Benefit, no Canada Child Benefit (${caUnset.slice(0, 60)}…)`);
+  const caSet = benefitsText({ country: "CA", province: "ON", hasKids: true, lifeStages: ["t4"] });
+  t.ok(/Trillium/.test(caSet) && /Canada Child Benefit/.test(caSet), "8g …and with Ontario and kids set in Settings, both are listed, as today");
+  const usUnset = benefitsText({ country: "US", province: "", lifeStages: ["w2"] });
+  t.ok(/Earned Income Tax Credit/.test(usUnset) && !/Child Tax Credit/.test(usUnset) && !/WIC Program/.test(usUnset), "8h US with nothing set: no Child Tax Credit or WIC entry");
+  const paywall = (province) => renderText(R.h(R.Paywall, { onClose: noop, onPromoValid: noop, country: "CA", province }));
+  t.ok(!/Trillium/.test(paywall("")) && /CCB, Canada Groceries and Essentials Benefit, RRSP, TFSA, FHSA/.test(paywall("")) && /Trillium, RRSP/.test(paywall("ON")), "8i the paywall names Trillium only to Ontario");
+  t.ok(/const isCouple=data\.profile\?\.status==="couple"\|\|data\.profile\?\.status==="cohabit";/.test(app) && /\{\(data\.profile\?\.status==="couple"\|\|data\.profile\?\.status==="cohabit"\) && \(/.test(app),
+    "8k unset status is not a couple: Meet and the partner-name field in Family Settings");
+  t.ok(/const province  = profile\?\.province  \|\| "";/.test(app) && /const defaultProvince = "";/.test(app) && /value=\{data\.profile\?\.province\|\|""\}/.test(app) && /\{!data\.profile\?\.province&&<option value="" disabled><\/option>\}/.test(app),
+    "8l no Ontario fallback in the tax engine; a country change in Settings leaves the province to pick; the picker shows none picked");
+  t.ok(/- Province \$\{prov\|\|"unknown"\}\$\{prov\?/.test(app) && /- State \$\{prov\|\|"unknown"\}\$\{prov\?/.test(app), "8m the coach is told the province or state is unknown, with no provincial or state tax claim");
+
+  // ── 9. the tour's Today step ───────────────────────────────────────────────────────────────
+  const T = await import("../src/lib/tour.js");
+  const all = ss({ upcomingBills: 1400, debtPayments: 90, safetyBuf: 120, savingsAlloc: 300 });
+  t.eq(T.todayStepBody(all), T.TOUR_STEPS[0].body, "9a with all four parts, the step reads as before, word for word");
+  t.eq(T.todayStepBody(ss({ upcomingBills: 1400, savingsAlloc: 76 })),
+    "Your number. What's safe to spend until payday, after bills due before payday and a savings amount are accounted for. Tap it to see the math.", "9b only the parts in the number");
+  t.eq([T.todayStepBody(ss({ savingsAlloc: 76 })), T.todayStepBody(ss({}))], ["Your number. What's safe to spend until payday. Tap it to see the math.", "Your number. What's safe to spend until payday. Tap it to see the math."],
+    "9c the same rule as the first number when there is no plural form: no clause");
+  for (const parts of [{ upcomingBills: 1 }, { debtPayments: 1, safetyBuf: 1 }, { safetyBuf: 1, savingsAlloc: 1 }, all]) {
+    const clause = F.accountedForClause(ss(parts));
+    t.ok(T.todayStepBody(ss(parts)).includes(clause) && F.firstNumberSentence(ss(parts)).toLowerCase() === `${clause}.`.toLowerCase(), `9d the tour and the first number name the same parts (${Object.keys(parts).join(", ")})`);
+  }
+  t.eq([T.stepBody(T.TOUR_STEPS[1], all), T.stepBody(T.TOUR_STEPS[4], null)], [T.TOUR_STEPS[1].body, T.TOUR_STEPS[4].body], "9e the other steps are unchanged");
+  t.ok(/\{stepBody\(step, step\.target==="today"&&dataWithHousehold \? SafeSpendEngine\.calculate\(dataWithHousehold\) : null\)\}/.test(app), "9f the tour renders the step from this household's number");
 
   t.summary("onboardingFirstNumber.test");
 })();

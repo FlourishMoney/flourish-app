@@ -83,7 +83,8 @@ function userVisibleStrings(file, parser) {
 
   // The feature list names the benefit that exists.
   const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-  t.ok(app.includes('desc:isCA?"CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why"'),
+  // 2026-10-23: Trillium is named only to an Ontario household (province unset is federal only).
+  t.ok(app.includes('desc:isCA?`CCB, Canada Groceries and Essentials Benefit, ${province==="ON"?"Trillium, ":""}RRSP, TFSA, FHSA: which rule applies to you and why`'),
        "the paywall's Benefits explained line names the Canada Groceries and Essentials Benefit");
   const doc = fs.readFileSync(path.join(REPO, "docs", "product", "COPY-CHANGES.md"), "utf8");
   t.ok(doc.includes("**CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why**"),

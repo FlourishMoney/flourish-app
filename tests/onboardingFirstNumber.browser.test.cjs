@@ -14,8 +14,8 @@
 //   token     the link token could not be fetched: the main button is the retry, never "Ready".
 //   confirm   the confirmation link lands on /confirmed with its session: a web signup goes on into the app
 //             with no second sign-in; a signup made in a store app keeps "Open Flourish and sign in."
-//   country   the country is the device's (a US region or time zone is the US, anything else Canada), and it is
-//             what Plaid's institution search is asked for.
+//   country   the country is the device's (a Canadian time zone is Canada; else a US time zone or region is the
+//             US; else Canada), and it is what Plaid's institution search is asked for.
 // And the counts: each step once, the bank link's outcomes, safe_view and first_number_shown on the first number,
 // and no meeting_opened from the tour's Meet step. ONBOARDING_SHOTS=<dir> saves a screenshot of every screen.
 // -----------------------------------------------------------------------------
@@ -97,10 +97,10 @@ function buildApp(supabaseUrl) {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
     } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), signedIn]);
-    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [] };
+    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [] };
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
       ? r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" })
-      : r.fulfill({ status: 201, contentType: "application/json", body: "[]" }));
+      : (seen.saved.push(r.request().postData() || ""), r.fulfill({ status: 201, contentType: "application/json", body: "[]" })));
     if (user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) }));
     await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
     await ctx.route("**/api/activation", (r) => { try { seen.counts.push(JSON.parse(r.request().postData() || "{}")); } catch {} return r.fulfill({ status: 204, body: "" }); });
@@ -211,6 +211,13 @@ function buildApp(supabaseUrl) {
     await page.getByText("Step 1 of 5").first().waitFor();
     const today = await text(page);
     t.ok(!/Getting set up/.test(today), "1s Today opens with the tour, and no \"Getting set up\" while it shows");
+    t.eq(await page.locator("#tour-body").innerText(), "Your number. What's safe to spend until payday, after bills due before payday and a savings amount are accounted for. Tap it to see the math.",
+      "1s2 the tour's Today step names only the parts in this number, as the first-number screen did (no debt, no buffer yet)");
+    for (let i = 0; i < 40 && !seen.saved.some((b) => b.includes('"profile"')); i++) await page.waitForTimeout(250);   // the save is debounced (2 s)
+    const profiles = seen.saved.map((b) => { try { const j = JSON.parse(b); const row = Array.isArray(j) ? j[0] : j; const d = row && row.data; return d && d.core && d.core.appData && d.core.appData.profile; } catch { return null; } }).filter(Boolean);
+    const prof = profiles[profiles.length - 1] || {};
+    t.ok(profiles.length > 0 && prof.country === "CA" && prof.province === "" && !("status" in prof) && !("hasKids" in prof),
+      `1s3 the saved profile: country CA, province unset, no status or kids assumed (${JSON.stringify({ country: prof.country, province: prof.province, status: prof.status, hasKids: prof.hasKids })})`);
     t.ok(today.includes(W3) && !/overspending|Estimate · Based on your setup|to work with/.test(today), "1t W3 for no bank, and no estimate built on an assumed spend rate");
     await shot(page, "manual-today-tour");
     for (let i = 0; i < 4; i++) { await page.getByRole("button", { name: "Next →" }).last().click(); await page.waitForTimeout(500); }
@@ -318,7 +325,7 @@ function buildApp(supabaseUrl) {
   }
 
   // ── the device's country, and Plaid's search ────────────────────────────────────────────────
-  for (const [locale, timezoneId, want] of [["en-CA", "America/Toronto", "CA"], ["fr-CA", "America/Vancouver", "CA"], ["en-US", "America/New_York", "US"], ["en-CA", "America/Chicago", "US"]]) {
+  for (const [locale, timezoneId, want] of [["en-CA", "America/Toronto", "CA"], ["fr-CA", "America/Vancouver", "CA"], ["en-US", "America/Toronto", "CA"], ["en-US", "America/New_York", "US"], ["en-CA", "America/Chicago", "US"]]) {
     const { ctx, page, seen } = await open({ locale, timezoneId });
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
