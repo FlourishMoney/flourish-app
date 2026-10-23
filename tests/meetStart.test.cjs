@@ -22,7 +22,8 @@ const fs = require("fs");
 const path = require("path");
 
 const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-const MEET_AT = APP.indexOf("function MeetAgenda({ data, isCouple, setScreen, setAppData }){");
+// tourActive (2026-10-23): the tour's Meet step is not counted as a meeting opened (tests/activation.test.cjs 4m2).
+const MEET_AT = APP.indexOf("function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false }){");
 const MEET = APP.slice(MEET_AT, APP.indexOf("\nfunction Family({data,", MEET_AT));
 
 (async () => {

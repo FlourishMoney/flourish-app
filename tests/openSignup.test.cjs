@@ -53,7 +53,7 @@ function fakeAdmin(state) {
 }
 
 // Loads the REAL beta.js against that fake, with `env` applied for this call only.
-async function runBeta(state, env, body) {
+async function runBeta(state, env, body, origin = "https://flourishmoney.app") {
   const savedEnv = { ...process.env };
   const savedFetch = global.fetch;
   delete require.cache[AUTH_PATH];
@@ -82,7 +82,7 @@ async function runBeta(state, env, body) {
     // environment in `finally` before it resolves would pull the configuration out from under it.
     return await beta.handler({
       httpMethod: "POST",
-      headers: { origin: "https://flourishmoney.app" },
+      headers: { origin },
       body: JSON.stringify(body),
     });
   } finally {
@@ -101,9 +101,9 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
   const t = create();
 
   const CODES = "FLOURISH2026,BETA100";
-  const signup = async (env, body, over) => {
+  const signup = async (env, body, over, origin) => {
     const state = freshState(over);
-    const res = await runBeta(state, env, { action: "signup", email: "new@example.invalid", password: "a-long-enough-password", ...body });
+    const res = await runBeta(state, env, { action: "signup", email: "new@example.invalid", password: "a-long-enough-password", ...body }, origin);
     return { state, status: res.statusCode, data: JSON.parse(res.body) };
   };
 
@@ -355,10 +355,17 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       t.eq(Object.keys(u).sort(), ["app_metadata", "email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
       // app_metadata (server-only) holds one thing: how the address gets confirmed. With signup open, by link.
       t.eq(u.app_metadata, { email_confirmation: "link" }, `${label}: app_metadata says only how the address is confirmed`);
-      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_source", "signup_src"], `${label}: and metadata carries only the labels`);
+      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_platform", "signup_source", "signup_src"], `${label}: and metadata carries only the labels`);
+      t.eq(u.user_metadata.signup_platform, "web", `${label}: a signup from the website is labelled "web" (the confirmation link carries it on into the app)`);
       t.ok(["direct", "ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"].includes(u.user_metadata.signup_src), `${label}: signup_src is a known src or "direct", never free text`);
       const meta = JSON.stringify(u.user_metadata);
       t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);
+    }
+    // A signup made in a store app (its WebView's origin) is labelled "app": its confirmation link keeps
+    // "Open Flourish and sign in.", because the website cannot hand a session to the app.
+    for (const origin of ["capacitor://localhost", "https://localhost"]) {
+      const r = await signup(OPEN, { code: "" }, undefined, origin);
+      t.eq(r.state.created[0] && r.state.created[0].user_metadata.signup_platform, "app", `a signup from ${origin} is labelled "app"`);
     }
     const beta = fs.readFileSync(path.join(REPO, "netlify", "functions", "beta.js"), "utf8");
     // Comments stripped: the comments here EXPLAIN what the trigger grants, so a naive scan would

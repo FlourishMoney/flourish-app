@@ -18,6 +18,8 @@
 //          a couple a money meeting.
 // -----------------------------------------------------------------------------
 
+import { accountedForClause } from "./firstNumber.js";
+
 // target: the [data-tour] element(s) each step describes. The app scrolls them into view and keeps the
 // step's sheet off them (demo-clarity: step 1's sheet used to cover the figure it tells you to tap).
 export const TOUR_STEPS = [
@@ -29,3 +31,16 @@ export const TOUR_STEPS = [
 ];
 
 export const TOUR_DONE_KEY = "flourish_tour_done";
+
+// The Today step names only the parts actually in this household's number (2026-10-23), from the same module as
+// the first-number screen (lib/firstNumber.js): the body above is the case where all four are in it. With no
+// part to name by that rule, the step says what the number is and how to see the math, without the clause.
+export function todayStepBody(ss) {
+  const clause = accountedForClause(ss);
+  return clause
+    ? `Your number. What's safe to spend until payday, after ${clause}. Tap it to see the math.`
+    : "Your number. What's safe to spend until payday. Tap it to see the math.";
+}
+export function stepBody(step, ss) {
+  return step && step.target === "today" ? todayStepBody(ss) : (step ? step.body : "");
+}

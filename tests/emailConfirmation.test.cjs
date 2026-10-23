@@ -211,7 +211,9 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.ok(/setResendConfirmCooldown\(60\)/.test(app), "…set before the request, so a failure cannot be retried instantly");
 
     t.ok(/if \(path === "\/confirmed"\) return "confirmed";/.test(app), "/confirmed is a route");
-    t.ok(/if\(screen==="confirmed"\)return <ConfirmedPage\/>;/.test(app), "…rendering the page");
+    // 2026-10-23 (the first number): a web signup's link signs them in and goes on into the app; the page is for a
+    // signup made in a store app (and for anyone the link did not sign in).
+    t.ok(/if\(screen==="confirmed"\)\{\s*if\(authLoading \|\| \(user && !confirmedFromApp\(user\)\)\)return <div[^\n]*\n\s*return <ConfirmedPage\/>;\s*\}/.test(app), "…rendering the page");
     const page = app.slice(app.indexOf("function ConfirmedPage()"), app.indexOf("function DeleteAccount("));
     t.ok(/You're confirmed\./.test(page) && /Open Flourish and sign in\./.test(page), "…which reads \"You're confirmed. Open Flourish and sign in.\"");
     t.ok(!/useState|useEffect|fetch\(|supabase/.test(page), "…and it is a plain page: no state, no request, nothing to fail for a store user");

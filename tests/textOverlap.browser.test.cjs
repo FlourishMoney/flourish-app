@@ -54,15 +54,18 @@ const goals = (p, sub) => async () => { await TAB(p, "Do"); await TXT(p, "Goals"
 const plan = async (p) => { await TAB(p, "Do"); await ARIA(p, "Build Plan"); };
 
 // Onboarding, one screen at a time, after the AI disclosure is accepted. Each screen's way forward, in
-// order; a screen's empty fields are filled first (a name, amounts) where its Continue waits for them.
-// A forward control that is not found fails the screen as unreachable rather than skipping it.
-const ONBOARDING = ["welcome", "you and your household", "connect a bank", "balances", "income", "bills", "debts", "credit score"];
-const FORWARD = ["Get Started →", "Continue →", "Enter it myself", "Continue →", "Continue →", "Continue →", "Continue →"];
+// order; a screen's empty fields are filled first (a name, amounts, the next payday) where its Continue waits
+// for them. A forward control that is not found fails the screen as unreachable rather than skipping it.
+// Since 2026-10-23 (the first number) there is no "you and your household" or credit-score screen.
+const ONBOARDING = ["welcome", "connect a bank", "balances", "income", "bills", "debts"];
+const FORWARD = ["Get Started →", "Enter it myself", "Continue →", "Continue →", "Continue →"];
 const FILL = () => {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   for (const el of document.querySelectorAll("input")) {
-    if (!el.getClientRects().length || el.value || /checkbox|radio|range|date/.test(el.type)) continue;
-    set.call(el, el.type === "number" || /amount|\$|balance|income/i.test(`${el.placeholder} ${el.getAttribute("aria-label")}`) ? "1000" : "Sam");
+    if (!el.getClientRects().length || el.value || /checkbox|radio|range/.test(el.type)) continue;
+    const soon = new Date(Date.now() + 5 * 86400000);
+    set.call(el, el.type === "date" ? `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, "0")}-${String(soon.getDate()).padStart(2, "0")}`
+      : el.type === "number" || /amount|\$|balance|income/i.test(`${el.placeholder} ${el.getAttribute("aria-label")}`) ? "1000" : "Sam");
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 };

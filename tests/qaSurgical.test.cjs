@@ -56,14 +56,15 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     // no residual and no split field at all.
     t.ok(!("buffer" in plan) && !("surplus" in plan), "1b QA: the plan has no \"Left over\" residual and no surplus of its own");
     t.ok(!("savingsTransfer" in plan) && !("debtPayment" in plan) && !("goalContribution" in plan), "1c …and no split of any amount into savings, a debt or a goal");
-    // Prompt 3d: the labels state what the engine found ("Bills covered" / "Cash is tight" / "Overdraft risk"), not a grade.
-    t.eq(plan.modeLabel, "Cash is tight", "1d QA: with cash tight the plan says so, not \"Bills covered\"");
+    // Prompt 3d: the labels state what the engine found ("Bills accounted for" / "Cash is tight" / "Overdraft risk"), not a grade.
+    // W7 (approved 2026-10-23): "Bills accounted for" replaces "Bills covered".
+    t.eq(plan.modeLabel, "Cash is tight", "1d QA: with cash tight the plan says so, not \"Bills accounted for\"");
     t.eq([plan.spare, plan.spareReason], [0, "tight"], "1e …and nothing is spare, because cash is tight");
     t.ok(plan.alerts.some(a => /Safe to spend is below 15% of your monthly income/.test(a.msg)), "1f …and says why");
 
     const ssF = SafeSpendEngine.calculate(FIXED, VIEW);
     const planF = DE.AutopilotEngine.generate(FIXED, {}, VIEW);
-    t.eq(planF.modeLabel, "Bills covered", "1g fixed date: not tight, so \"Bills covered\"");
+    t.eq(planF.modeLabel, "Bills accounted for", "1g fixed date: not tight, so \"Bills accounted for\" (W7)");
     // Prompt 3e: the fixed-date plan used to send $240 to savings and $200 to the Visa (its own 40% / 40%
     // rules). It now shows the one spare amount, $486 = 25% × $1,944, the same figure as Decisions.
     t.eq([planF.spare, planF.spareFrom, planF.spareReason], [486, 1944, null], "1h …with $486 spare: 25% × $1,944, the Decisions figure");

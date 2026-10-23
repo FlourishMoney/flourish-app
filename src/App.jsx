@@ -58,7 +58,9 @@ import { dueSoonList } from "./lib/dueSoon.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
-import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
+import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
+import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
+import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
@@ -73,7 +75,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
-import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
@@ -95,6 +97,7 @@ import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js"
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
+import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -205,7 +208,7 @@ const CC = {
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"The CESG is added on top of contributions, up to yearly and lifetime limits (Canada.ca)",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"The CESG rate and its limits are on Canada.ca."},
     ],
     benefitsChecker:[
-      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
+      {name:"Canada Child Benefit",kids:true,icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
       {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"CRA benefits calculator",url:TAX_DATA.CA.CGEB.calculator},
       // `province` gates a benefit that is not federal. This row was shown to every Canadian — a claim
       // about money owed, made to someone who is not owed it. The same defect the tip list had, in a
@@ -287,9 +290,9 @@ const CC = {
       {name:"Earned Income Tax Credit",icon:"💰",eligible:`Working; with 3+ children, under ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} (single) / ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (joint) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)})`,amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"Through a tax return (IRS Free File)",url:"https://irs.gov/eitc"},
       {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:`Up to ${usd(TAX_DATA.US.SNAP_MAX_1.value)}/mo for a household of 1 in the 48 states and DC (${taxCite(TAX_DATA.US.SNAP_MAX_1)})`,apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",kids:true,icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
-      {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
+      {name:"WIC Program",kids:true,icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
     creditBureaus:["Equifax","Experian","TransUnion"],
     emergencyMonths:6,
@@ -332,7 +335,7 @@ const CC = {
 // income types, and family situation.
 function getPersonalizedTaxCredits(profile) {
   const country   = profile?.country   || "CA";
-  const province  = profile?.province  || "ON";
+  const province  = profile?.province  || "";   // unset: federal tips only (2026-10-23)
   const rawLifeStage = profile?.lifeStages || profile?.lifeStage || ["t4"];
   const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
   const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
@@ -802,6 +805,9 @@ async function activationSession() {
 let _activationOff = false;
 const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
   : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
+// Onboarding counts (2026-10-23): the steps, the first number and the bank link, aggregate only (lib/onboardingCounts.js).
+const signalOnboarding = (event, { detail, mode, demo, userId } = {}) => (_activationOff ? Promise.resolve(false)
+  : sendOnboardingCount(event, { detail, mode, demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
 
 // ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
 // Module-level, NOT component state, so "at most once per session" survives the AICoach component
@@ -945,13 +951,16 @@ function removeBillWithOverride(setAppData, idx, name) {
 
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
-// never stale even if the callback closes over fresh state.
-function usePlaidLinkSDK(linkToken, onSuccess) {
+// never stale even if the callback closes over fresh state. onExit (optional, onboarding 2026-10-23) hears every
+// exit: (err, meta) with err null when the person closed Link, an error object when Plaid failed.
+function usePlaidLinkSDK(linkToken, onSuccess, onExit) {
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
   useEffect(() => { if (sdkError) noteReviewTrouble(); }, [sdkError]); // Plaid's script failed: no review ask for a while
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+  const onExitRef = useRef(onExit);
+  useEffect(() => { onExitRef.current = onExit; }, [onExit]);
 
   useEffect(() => {
     if (window.Plaid) { setSdkReady(true); return; }
@@ -983,7 +992,7 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -4137,17 +4146,28 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
   );
 }
 
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected}){
+// ONBOARDING (2026-10-23, the first number): Welcome, then Link your accounts (bank, statement or the balance
+// entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
+// score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
+// completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount}){
   const [step,setStep]=useState(0);
-  // profile.province holds CA province code when country=CA, US state code when country=US.
-  // Defaults: ON for CA, CA (California) for US.
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
+  // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
+  const onCountRef=useRef(onCount); onCountRef.current=onCount;
+  const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
+  // Leaving a step forward counts it once per visit.
+  const done=(name,next)=>{ count("onboarding_step_completed",name); setStep(next); };
+  // profile.province holds CA province code when country=CA, US state code when country=US. Left unset ("")
+  // here, as are status and kids: until Settings sets them, Flourish shows federal content only, no couple
+  // framing and no child-benefit tips. The country is the device's (lib/deviceCountry.js: a Canadian time zone
+  // is Canada; else a US time zone or US region is the US; else Canada); Settings changes it. It is also Plaid's search.
+  const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
   // Pre-populate debts from connected credit card accounts when user reaches debt step
   useEffect(()=>{
-    if(step !== 5) return;
+    if(step !== 4) return;
     const creditAccts = connAccts.filter(a =>
       a.type === "credit" || a.type === "credit card" ||
       a.subtype === "credit card" || a.type === "line of credit"
@@ -4167,6 +4187,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     setDebts(prePopulated);
   }, [step]);
   const [bankStage,setBankStage]=useState("select");
+  // W4: the person closed Plaid ("cancelled") or the link failed ("failed"). Either way: try again or enter it.
+  const [bankOutcome,setBankOutcome]=useState(null);
+  // The bank's transactions, kept here so the paycheque screen can tell whether payday is already known.
+  const [bankTxns,setBankTxns]=useState([]);
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
   useEffect(()=>{ if(bankError) noteReviewTrouble(); },[bankError]); // any bank link failure rules out a review ask for a while
@@ -4200,18 +4224,18 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
-  useEffect(()=>{ if(step===2) fetchLinkToken(); },[step]); // eslint-disable-line
+  useEffect(()=>{ if(step===1) fetchLinkToken(); },[step]); // eslint-disable-line
   // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
   // bank step without one yet (callPlaid also retries transient drops with backoff).
   useEffect(()=>{
-    const onOnline = ()=>{ if(step===2 && !linkToken) fetchLinkToken(); };
+    const onOnline = ()=>{ if(step===1 && !linkToken) fetchLinkToken(); };
     window.addEventListener("online", onOnline);
     return ()=>window.removeEventListener("online", onOnline);
   },[step, linkToken, fetchLinkToken]); // eslint-disable-line
 
   // Called by Plaid Link after user authenticates
   const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
-    setBankStage("loading");setBankProg(0);setBankError(null);
+    setBankStage("loading");setBankProg(0);setBankError(null);setBankOutcome(null);
     // Bug fix: declare timer outside try so catch can always clear it
     let progTimer=null;
     try{
@@ -4247,32 +4271,55 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         captureError(txErr, { area: "plaid" });
       }
 
+      // Pre-fill the next two screens from what the bank shows, with the app's own detection (the same calls the
+      // post-onboarding sync makes), for the person to confirm: their pay, so they don't retype it, and the bills
+      // that repeat. Only into fields they have not filled.
+      const marked = markTransfers(fetchedTxns, t => isInternalTransfer(t) || isCCPayment(t, []), isCashAdvance);
+      let found = null, foundBills = [];
+      try { found = detectIncomeFromTxns(incomeEvidence({ transactions: marked })); } catch { found = null; }
+      try { foundBills = detectRecurringBills(marked, { overrides: {}, debts: [] }) || []; } catch { foundBills = []; }
+
       setTimeout(()=>{
         // Promote into appData IMMEDIATELY (single source of truth). Previously this wrote to local
         // state that only reached appData at finish() — and was lost on any unmount before then.
         onAccountsConnected?.(mappedAccounts, fetchedTxns);
-        setDetectedBills([]);
+        setBankTxns(marked);
+        if (found && Number(found.perDeposit) > 0) setIncomes(prev => prev.some(i => i.amount) ? prev : [{
+          id:1, label:found.label||"", amount:String(found.perDeposit), freq:found.freq||"monthly", type:"employment", sourceTypes:["employment"],
+          isVariable:!!found.isVariable, typicalAmount:String(found.perDeposit), owner:"self",
+          ...(found.anchorDay?{anchorDay:found.anchorDay}:{}), autoDetected:true }]);
+        const billRows = foundBills.map(b => ({ name:b.name, amount:String(b.amount), date:String(b.date||""), type:b.type||"fixed", freq:b.freq||"monthly", auto:true, origin:"observed" }));
+        if (billRows.length) setBills(prev => prev.some(b => b.name || b.amount) ? prev : billRows);
+        setDetectedBills(billRows);
         setBankStage("done");
+        count("bank_link_completed");
       },400);
     }catch(err){
       // Bug fix: always clear the progress interval even if exchange fails
       if(progTimer) clearInterval(progTimer);
-      // Bug fix: surface needs_reconnect errors distinctly
-      const msg = err.message?.includes("needs_reconnect") || err.needs_reconnect
-        ? "Your bank session expired. Please reconnect your bank."
-        : (isNativeApp() && /plan_limit/.test(String(err.message||"")))
-          // A store app has nothing to buy, so never show the server's plan code or an upgrade path.
-          ? FREE_BANK_LINE
-          : "Connection failed: "+err.message;
-      setBankError(msg);
+      count("bank_link_failed");
+      // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
+      // Every other failure (an expired session included) is W4: try again or enter the numbers.
+      if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
+      else setBankOutcome("failed");
       setBankStage("select");
     }
   },[]);
+  // W4 when Plaid closes without linking: err is null when the person closed it, an error when Plaid failed.
+  const onPlaidExit=useCallback((err)=>{
+    count(err ? "bank_link_failed" : "bank_link_cancelled");
+    setBankOutcome(err ? "failed" : "cancelled");
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess);
+  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess,onPlaidExit);
   const isLinkReady = plaidReady && !linkTokenLoading;
   const initError   = plaidSdkError ? "Plaid SDK failed to load. Try refreshing the page." : null;
   const canConnect = isLinkReady && !initError;
+  // The link token could not be fetched: the main button is the retry, never "Ready".
+  const tokenFailed = !!bankError && !linkToken && !linkTokenLoading && !initError;
+  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken(); };
+  // Open Plaid (after the consent sheet): counted as a bank link started.
+  const startPlaid = ()=>{ setBankOutcome(null); count("bank_link_started"); openPlaidLink(); };
 
   const [stmtStatus, setStmtStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
   const [stmtMsg, setStmtMsg] = useState('');
@@ -4377,7 +4424,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     const next=enterBalance({profile:p,accounts:connAccts,debts:[]},{accountId:prior?prior.id:undefined,kind:"chequing",amount,asOf},new Date());
     const acct=prior?next.accounts.find(a=>a.id===prior.id):next.accounts[next.accounts.length-1];
     if(acct&&acct!==prior) onAccountsConnected?.([acct],[]);
-    setStep(3);
+    count("onboarding_step_completed","balance");
+    done("bank",2);
   };
   const confirmStatementBalance=(entry)=>{
     const next=enterBalance({profile:p,accounts:connAccts,debts:[]},entry,new Date());
@@ -4394,9 +4442,23 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // get_accounts succeeds, so re-sending them here would let a stale local copy overwrite the truth.
   // `transactions` still carries statement-upload rows (plaidTxns); the parent MERGES rather than
   // replaces, so bank transactions promoted earlier survive.
-  const finish=()=>onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]});
+  const finish=()=>{ count("onboarding_step_completed","debts"); return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
+  // W1: weekly, every-two-weeks and twice-a-month pay asks for the next payday, unless the bank's deposits
+  // already show it (findAnchor over the bank's own transactions). Monthly pay keeps its day-of-month question.
+  const PAYDAY_FREQS = ["weekly","biweekly","semimonthly"];
+  const needsPayDate = (inc) => PAYDAY_FREQS.includes(inc.freq) && !findAnchor(inc, num(inc.amount), bankTxns);
+  const payDateMissing = (inc) => !!inc.amount && needsPayDate(inc) && !enteredNextPayDate(inc);
+  const setPayDate = (id, iso) => setIncomes(incomes.map(x => {
+    if (x.id !== id) return x;
+    const next = { ...x, nextPayDate: iso || undefined };
+    // Twice a month: the date's day is the anchor of the pair (semimonthlyPair), as the old question set it.
+    if (x.freq === "semimonthly") { const d = enteredNextPayDate(next); next.anchorDay = d ? d.getDate() : undefined; }
+    return next;
+  }));
+  // The income type stays reachable, collapsed under the type already chosen (Employment by default).
+  const [typesOpen,setTypesOpen]=useState(()=>new Set());
 
   const screens=[
     // 0: Welcome (slim — Phase 3e-A trim)
@@ -4405,7 +4467,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           app-icon art) replaces the icon + a separate text wordmark — no more duplicated "flourish". */}
       <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
-      <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
+      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
       <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
@@ -4413,24 +4475,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       </div>
     </div>,
 
-    // 1: Profile (Phase 3e-B trim + D12 region picker)
-    <div>
-      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:6}}>About you</div>
-      <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:20}}>A quick few things to get started. You can flesh out your profile later in Settings.</div>
-      <Inp label="Your name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
-      <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA",creditScore:Math.min(p.creditScore,v==="US"?850:900)})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
-      <Sel label={p.country==="CA" ? "Province" : "State"} value={p.province} onChange={v=>setP({...p,province:v})} options={(CC[p.country]?.regions || []).map(r => ({ value: r.code, label: r.name }))}/>
-      {/* BUG 1: household basics. These keys already exist on `p` and finish() persists them; only the
-          inputs were missing, so status/hasKids/partnerName used to leave onboarding at their defaults.
-          Partner's name is gated on status so single users never see it. hasKids stays a boolean —
-          no kids-detail (ages/count) capture in this pass. */}
-      <Sel label="Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Couple"}]}/>
-      {p.status!=="single"&&<Inp label="Partner's name" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
-      <Sel label="Do you have kids?" value={p.hasKids?"yes":"no"} onChange={v=>setP({...p,hasKids:v==="yes"})} options={[{value:"no",label:"No"},{value:"yes",label:"Yes"}]}/>
-      <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
-    </div>,
-
-    // 2: Bank Connection
+    // 1: Bank Connection
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Link your accounts (optional)</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Read-only. Flourish sees balances and transactions and can't move money. Linked accounts give you live numbers; manual entry works fine to start.</div>
@@ -4443,30 +4488,45 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           ))}
         </div>
 
-        {/* Error state with retry */}
+        {/* W4 (approved 2026-10-23): the person closed Plaid, or the link failed. */}
+        {bankOutcome&&(
+          <div data-bank-outcome={bankOutcome} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+            <div style={{color:C.cream,fontSize:13,lineHeight:1.5,marginBottom:10}}>Your bank wasn't connected. You can try again or enter your numbers yourself.</div>
+            <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
+              <Btn label="Try again" onClick={()=>{ if(canConnect) startPlaid(); else { setBankOutcome(null); retryToken(); } }} color={C.teal} small/>
+              <Btn label="Enter it myself" onClick={()=>{ setBankOutcome(null); skipBank(); }} outline color={C.muted} small/>
+            </div>
+          </div>
+        )}
+        {/* Error state: the main button below is the retry when the link token could not be fetched. */}
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-            <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
-            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#ff8888",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+            <div style={{color:"#ff8888",fontSize:13}}>{bankError||initError}</div>
           </div>
         )}
 
         {/* Main CTA button */}
-        <button
-          onClick={canConnect?()=>setShowBankConsent(true):undefined}
-          disabled={!canConnect}
-          style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:canConnect?textOn(C.teal,C.tealBright):C.mutedHi,fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
-          {linkTokenLoading?(
+        {/* One button, four states: ready to connect; the retry after a link-token error; preparing (the token or
+            Plaid's script is on its way); Plaid's script could not load. Never "Ready" while it cannot connect.
+            While W4 shows, its "Try again" is this button, so this one steps aside. */}
+        {!bankOutcome&&<button
+          onClick={canConnect?()=>setShowBankConsent(true):tokenFailed?retryToken:undefined}
+          disabled={!canConnect&&!tokenFailed}
+          data-bank-button={canConnect?"connect":tokenFailed?"retry":initError?"unavailable":"preparing"}
+          style={{width:"100%",background:(canConnect||tokenFailed)?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:(canConnect||tokenFailed)?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:(canConnect||tokenFailed)?textOn(C.teal,C.tealBright):C.mutedHi,fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:(canConnect||tokenFailed)?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:(canConnect||tokenFailed)?1:0.55}}>
+          {tokenFailed?(
+            <span>↺ Retry</span>
+          ):(linkTokenLoading||(!isLinkReady&&!initError))?(
             <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
           ):(
-            <><span style={{fontSize:20}}>🏦</span><span>{isLinkReady?"Connect My Bank Securely →":initError?"SDK unavailable":"Ready"}</span></>
+            <><span style={{fontSize:20}}>🏦</span><span>{initError?"SDK unavailable":"Connect My Bank Securely →"}</span></>
           )}
-        </button>
+        </button>}
         {/* "Not Now" just dismisses — the user stays on this step and can still skip it or upload a
             statement instead, so declining never blocks onboarding. */}
         {showBankConsent&&<BankConsentModal
           onViewLegal={onViewLegal}
-          onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); openPlaidLink(); }}
+          onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); startPlaid(); }}
           onCancel={()=>setShowBankConsent(false)}/>}
 
         <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:14}}>
@@ -4498,7 +4558,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           {!stmtStatus&&<div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
         </div>
 
-        <div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>
+        {!bankOutcome&&<div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>}
       </>}
 
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
@@ -4515,7 +4575,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
       {/* manual-balances: "Enter it myself" asks for the chequing balance, so a household with no bank
           reaches a real safe to spend on Today instead of one built on $0. */}
-      {bankStage==="skipped"&&<ManualBalanceStep country={p.country} account={manualChequing} onDone={saveManualChequing} onSkip={()=>setStep(3)}/>}
+      {bankStage==="skipped"&&<ManualBalanceStep country={p.country} account={manualChequing} onDone={saveManualChequing} onSkip={()=>done("bank",2)}/>}
       {bankStage==="done"&&<div>
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
@@ -4536,11 +4596,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
           </div>
         ))}
-        <Btn label="Let's go →" onClick={()=>setStep(3)}/>
+        <Btn label="Let's go →" onClick={()=>done("bank",2)}/>
       </div>}
     </div>,
 
-    // 3: Income (after bank — auto-detection runs first)
+    // 2: Income (after bank — auto-detection runs first)
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>{p.country==="US"?"Your income":`Your ${payWord(p.country,{plural:true})}`}</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -4591,10 +4651,21 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
 
             <div style={{padding:"12px 16px 16px"}}>
-              {/* Step 1 — Income type chips */}
+              {/* Step 1 — Income type. Employment unless changed: collapsed under the type chosen, the chips one tap
+                  away (2026-10-23). */}
+              {(()=>{
+                const typeList = CC[p.country]?.incomeTypes||CC.CA.incomeTypes;
+                const open = typesOpen.has(inc.id);
+                const names = selTypes.map(v => (typeList.find(([x])=>x===v)||[v, incTypeMeta[v]?.label||v])[1]).join(", ");
+                const toggle = () => setTypesOpen(prev => { const n = new Set(prev); if (n.has(inc.id)) n.delete(inc.id); else n.add(inc.id); return n; });
+                return (
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Income type <span style={{textTransform:"none",letterSpacing:0,color:C.border}}>· tap all that apply</span></div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button type="button" aria-expanded={open} onClick={toggle} data-income-type-toggle=""
+                  style={{background:"none",border:"none",padding:"10px 0",minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:6}}>
+                  <span>Income type <span style={{textTransform:"none",letterSpacing:0,color:open?C.border:C.mutedHi}}>· {open?"tap all that apply":names}</span></span>
+                  <span aria-hidden="true">{open?"▴":"▾"}</span>
+                </button>
+                {open&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>{
                     const on=selTypes.includes(val);
                     return <button key={val} onClick={()=>setIncomes(incomes.map(x=>{
@@ -4606,8 +4677,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                     }))}
                       style={{background:on?C.green+"22":C.cardAlt,border:`1px solid ${on?C.green:C.border}`,color:on?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400,transition:"all .15s"}}>{lbl}</button>;
                   })}
-                </div>
+                </div>}
               </div>
+                );
+              })()}
 
               {/* Sprint 6a-2: spousal income owner (couples only) */}
               {(p.status==="couple"||p.status==="cohabit")&&<div style={{marginBottom:12}}>
@@ -4661,11 +4734,25 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               {/* Pay day — only meaningful for monthly / twice-a-month cadences. Without this the
                   forecast has no signal for WHEN monthly pay lands and every such income defaulted to
                   the 1st, phasing the whole cash-flow projection wrong for anyone paid mid-month. */}
-              {(inc.freq==="monthly"||inc.freq==="semimonthly")&&(
+              {/* W1 (approved 2026-10-23): weekly, every-two-weeks and twice-a-month pay. The date phases the pay
+                  cycle (incomeSchedule.js enteredNextPayDate), so payday is no longer counted from today. Not asked
+                  when the bank's deposits already show it. */}
+              {needsPayDate(inc)&&(
+                <div data-next-payday="" style={{display:"flex",flexDirection:"column",alignItems:"stretch",gap:8,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+                  <div style={{minWidth:0}}>
+                    <label htmlFor={`next-pay-${inc.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,fontWeight:600}}>When is your next payday?</label>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick the date your next pay lands.</div>
+                  </div>
+                  <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
+                    onChange={e=>setPayDate(inc.id, e.target.value)}
+                    style={{width:"100%",boxSizing:"border-box",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              )}
+              {inc.freq==="monthly"&&(
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px"}}>
                   <div style={{minWidth:0}}>
-                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>{inc.freq==="monthly"?"Day of the month you're paid":"First pay day of the month"}</div>
-                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>{inc.freq==="semimonthly"?"We'll plan the second one about 15 days later.":"Pick 31 and short months use the last day."}</div>
+                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>Day of the month you're paid</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick 31 and short months use the last day.</div>
                   </div>
                   <input value={inc.anchorDay??""}
                     onChange={e=>{const raw=e.target.value.replace(/[^0-9]/g,"");const n=parseInt(raw,10);setIncomes(incomes.map(x=>x.id===inc.id?{...x,anchorDay:raw===""?undefined:Math.min(Math.max(Number.isFinite(n)?n:1,1),31)}:x));}}
@@ -4700,10 +4787,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source, even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>setStep(4)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount))}/>
+      <Btn label="Continue →" onClick={()=>done("income",3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
     </div>,
 
-    // 4: Bills
+    // 3: Bills
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your bills</div>
       {detectedBills&&detectedBills.length>0?(
@@ -4738,10 +4825,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         </div>
       ))}
       <Btn label="+ Add Bill" onClick={addBill} outline color={C.green} small/>
-      <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>setStep(5)}/></div>
+      <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>done("bills",4)}/></div>
     </div>,
 
-    // 5: Debts
+    // 4: Debts (then the first number)
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your debts</div>
       {connAccts.some(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card")?(
@@ -4775,53 +4862,21 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         </div>
       ))}
       <Btn label="+ Add Debt" onClick={addDebt} outline color={C.green} small/>
-      <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={()=>setStep(6)} outline color={C.muted} small/></div>
-      <div style={{marginTop:8}}><Btn label="Continue →" onClick={()=>setStep(6)}/></div>
+      <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={finish} outline color={C.muted} small/></div>
+      <div style={{marginTop:8}}><Btn label="Show me today's number →" onClick={finish}/></div>
     </div>,
 
-    // 6: Credit Score
-    <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can explain what affects it.</div>
-      <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
-        <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
-        {[["✅","Soft pull only, never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
-      </div>
-      <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:13,marginBottom:8,fontWeight:700}}>Do you know your current score?</div>
-        <div style={{display:"flex",gap:10}}>
-          {["Yes, I know it","Not sure / skip"].map(opt=><button key={opt} onClick={()=>setP({...p,creditKnown:opt.startsWith("Yes")})} style={{flex:1,background:((opt.startsWith("Yes")?p.creditKnown:!p.creditKnown))?C.teal+"33":C.cardAlt,border:`1px solid ${(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.teal:C.border}`,color:(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.tealBright:C.muted,borderRadius:12,padding:"12px 8px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
-        </div>
-      </div>
-      {p.creditKnown&&<>
-        <div style={{color:C.muted,fontSize:13,marginBottom:12,fontWeight:700}}>Drag to your score</div>
-        <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.teal}44`,marginBottom:16}}>
-          <div style={{textAlign:"center",marginBottom:16}}>
-            <div style={{fontSize:52,fontWeight:900,fontFamily:"Georgia,serif",color:p.creditScore>=750?C.greenBright:p.creditScore>=700?C.teal:p.creditScore>=650?C.goldBright:p.creditScore>=600?C.orange:C.redBright}}>{p.creditScore}</div>
-            <Chip label={p.creditScore>=750?"Excellent 🌟":p.creditScore>=700?"Very Good 👍":p.creditScore>=650?"Good ✓":p.creditScore>=600?"Fair ⚠️":"Needs Work 🔧"} color={p.creditScore>=750?C.green:p.creditScore>=700?C.teal:p.creditScore>=650?C.gold:p.creditScore>=600?C.orange:C.red} size={13}/>
-          </div>
-          <input aria-label="Credit score" type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
-          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{creditScaleNote(p.country)}</div>
-        </div>
-        <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
-      </>}
-      {!p.creditKnown&&<div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:16}}>
-        <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>No problem. Flourish will estimate your score range from your debt utilization and payment patterns once you're connected. You can add it later in Settings.</div>
-      </div>}
-      <Btn label="Show me today's number →" onClick={finish}/>
-    </div>,
   ];
 
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
-        {step>0&&step<7&&(
+        {step>0&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
           </div>
         )}
-        {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:6}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
+        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:4}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
         {screens[step]}
       </div>
     </div>
@@ -5575,7 +5630,7 @@ function SetupChecklistCard({items,onDismiss,style}){
   );
 }
 
-function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo,tourActive=false}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -6125,58 +6180,17 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
       {/* Phase 3b: Today tab content guard */}
       {dashTab === "today" && (<>
 
-      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
-      {(!data.transactions||data.transactions.length===0)&&(()=>{
-        // Calculate a real estimate from their onboarding data
-        const toMo = toMonthly; // Bug 1: canonical converter
-        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-        const safetyBuffer = monthlyIncome * 0.15;
-        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
-        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
-        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
-        const hasData = monthlyIncome > 0;
-        return(
-          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
-            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
-            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
-            onClick={()=>setScreen("coach")}>
-            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
-            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
-              <div style={{flex:1}}>
-                {hasData?(
-                  <>
-                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
-                      {overspend>0
-                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
-                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
-                    </div>
-                    <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
-                      {overspend>0
-                        ? "Connect your bank to see exactly where it's going, and fix it."
-                        : "Connect your bank to track it live and make it work harder."}
-                    </div>
-                    <div style={{marginTop:8,display:"flex",gap:8}}>
-                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Ask Coach →
-                      </button>
-                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Connect Bank
-                      </button>
-                    </div>
-                  </>
-                ):(
-                  <>
-                    <span style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
-                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* ── No bank linked: where the numbers come from (W3, approved 2026-10-23). It replaces the pre-bank
+          "Estimate" card, whose overspending and "to work with" lines came from an assumed spend rate (68% of
+          income) and an assumed 15% buffer, not from anything the household entered: nothing here is computed. ── */}
+      {!data.bankConnected&&(!data.transactions||data.transactions.length===0)&&(
+        <div data-entered-banner="" style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 200px",color:C.mutedHi,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>From the numbers you entered. A linked bank can keep them up to date.</div>
+          <button onClick={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Connect Bank
+          </button>
+        </div>
+      )}
 
       {/* Income accuracy: folded into priority tile below */}
 
@@ -6225,7 +6239,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         })()}
         {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
         {!data.demo&&<DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>}
-        {showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
+        {/* The first session (2026-10-23): the tour first, then this list once the tour has ended. */}
+        {!tourActive&&showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
           <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
             onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
         )}
@@ -9770,7 +9785,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       // Only the benefits this household could actually claim. An entry with no `province` is federal;
       // one with a `province` is shown only to residents of it. Both the count badge and the list read
       // THIS, so they can never disagree.
-      const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>!b.province||b.province===(data.profile?.province||""));
+      // `kids` (2026-10-23): a benefit only a household with children can claim is shown only to one that said it has
+      // them (Family Settings); unset is no kids, as it is for the tax tips.
+      const _hasKids=!!data.profile?.hasKids||((data.profile?.kids||[]).length>0);
+      const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>(!b.province||b.province===(data.profile?.province||""))&&(!b.kids||_hasKids));
       const tips=getPersonalizedTaxCredits(data.profile);
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
@@ -10217,10 +10235,11 @@ const HOUSEHOLD_ENABLED = false;
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
-function MeetAgenda({ data, isCouple, setScreen, setAppData }){
+function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false }){
   // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
   // Once per account; never in the demo.
-  useEffect(()=>{ if(!data?.demo) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opened by the household, not by the tour's Meet step (2026-10-23): a tour stop is not a meeting opened.
+  useEffect(()=>{ if(!data?.demo && !tourActive) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
@@ -10446,7 +10465,7 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
-function Family({data,setAppData,household,setHousehold,setScreen}){
+function Family({data,setAppData,household,setHousehold,setScreen,tourActive=false}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
   const [householdCode,setHouseholdCode]=useState("");
@@ -10603,7 +10622,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   const activeKid=kids.find(k=>String(k.id)===String(activeKidId))||null;
 
   // Derived — after all hooks
-  const isCouple=data.profile?.status!=="single";
+  const isCouple=data.profile?.status==="couple"||data.profile?.status==="cohabit";   // unset is not a couple
 
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
@@ -10702,7 +10721,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
     })()}
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData}/>}
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive}/>}
     {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
     {false&&<>
       {!started&&!done2&&<>
@@ -11889,7 +11908,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           // Phase D12: reset province to a sensible default when country changes
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
           const newCountry = e.target.value;
-          const defaultProvince = newCountry === "CA" ? "ON" : "CA";
+          const defaultProvince = "";   // 2026-10-23: unset (federal content only) until picked below
           if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince, creditScore:Math.min(prev.profile?.creditScore??680, newCountry==="US"?850:900)}}));
         }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
@@ -11898,8 +11917,10 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
       <div style={row}><span style={lbl}>{(data.profile?.country||"CA")==="CA" ? "Province" : "State"}</span>
-        <select aria-label={(data.profile?.country||"CA")==="CA" ? "Province" : "State"} value={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
+        <select aria-label={(data.profile?.country||"CA")==="CA" ? "Province" : "State"} value={data.profile?.province||""} onChange={e=>updateProfile("province",e.target.value)}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit",maxWidth:180}}>
+          {/* Unset (2026-10-23): a blank, wordless choice, so no province is shown as picked until one is. */}
+          {!data.profile?.province&&<option value="" disabled></option>}
           {(CC[data.profile?.country||"CA"]?.regions||[]).map(r=>(
             <option key={r.code} value={r.code}>{r.name}</option>
           ))}
@@ -12107,7 +12128,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* BUG 3: Partner's Name only for non-single users. Reactive — the Status select above writes
           profile.status via updateProfile, which re-renders and re-evaluates this guard. */}
-      {data.profile?.status!=="single" && (
+      {(data.profile?.status==="couple"||data.profile?.status==="cohabit") && (
       <div style={row}><span style={lbl}>Partner's Name</span>
         <input defaultValue={data.profile?.partnerName||""} placeholder="Partner's first name" onBlur={e=>updateProfile("partnerName",e.target.value)}
           style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
@@ -12866,14 +12887,14 @@ ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED P
 - RRSP deadline: ${(()=>{ const n=nextRrspDeadline(); return n.taxYear===new Date().getFullYear()-1 ? `the RRSP contribution deadline for the ${n.taxYear} tax year is ${formatRrspDeadline(n.date)} (CRA: the 60th day of the year, or the next business day after a weekend); check canada.ca` : `the RRSP contribution deadline for the ${n.taxYear-1} tax year has passed; contributions now count toward the ${n.taxYear} tax year, whose deadline is ${formatRrspDeadline(n.date)}`; })()}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at canada.ca: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
 - ${profile.hasKids?`PARENT: CCB (${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr under-6, $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr ages 6 to 17. Tax-free, income-tested, full amount at an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less, then it reduces gradually and more slowly again over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}), RESP+CESG (the government adds a grant on top of RESP contributions. Quote the rate only from Canada.ca, never from memory), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: RESP withdrawal rules may be relevant":""}`:""}
-- Province ${prov||"ON"}: provincial tax rates and credits apply; check canada.ca or the province for eligibility`:
+- Province ${prov||"unknown"}${prov?": provincial tax rates and credits apply; check canada.ca or the province for eligibility":""}`:
 `- Employment: ${isSelfEmp?`SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax (${TAX_DATA.US.SE_TAX.ratePct}%, half of it deductible), home office Form 8829, SEP-IRA (up to ${usd(TAX_DATA.US.SEP_LIMIT.value)} for ${TAX_DATA.US.SEP_LIMIT.year}) or Solo 401k may be relevant; check irs.gov`:"W-2 EMPLOYEE: withholding and any employer 401k match may be relevant; check irs.gov"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
 - ${age&&age>=65?`SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% taxable), RMDs start at ${TAX_DATA.US.RMD.startAge}, additional standard deduction (${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} per spouse if married, ${TAX_DATA.US.ADDITIONAL_STD_65.year}), senior deduction (${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person, ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} to ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear}, phases out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} MAGI, ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint), QCD from IRA up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} (${TAX_DATA.US.QCD_LIMIT.year})`:""}
 - ${age&&age>=TAX_DATA.US.RMD.startAge?`RMDs may be relevant (age ${TAX_DATA.US.RMD.startAge}+); the excise tax on a missed amount is ${TAX_DATA.US.RMD.exciseTaxPct}% (${TAX_DATA.US.RMD.correctedPct}% if corrected in time); check irs.gov`:""}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, IRA first-home withdrawal without the early-withdrawal tax (up to ${usd(TAX_DATA.US.IRA_FIRST_HOME.value)} lifetime), state programs`:""}
 - ${profile.hasKids?`PARENT: Child Tax Credit (${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child under 17, ${TAX_DATA.US.CHILD_TAX_CREDIT.year}), Dependent Care FSA (up to ${usd(TAX_DATA.US.DEPENDENT_CARE_FSA.value)} pre-tax for ${TAX_DATA.US.DEPENDENT_CARE_FSA.year}), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?`AOTC for college (${usd(TAX_DATA.US.AOTC.max)}/yr, ${TAX_DATA.US.AOTC.refundablePct}% refundable)`:""}`:""}
-- State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`}
+- State ${prov||"unknown"}${prov?`: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`:""}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
@@ -13394,6 +13415,10 @@ function PrivacyPolicy({onBack}){
 // instruction that is true for everybody is "go back to the app and sign in". No auto-redirect, no
 // deep link, nothing to get wrong. Supabase has already marked the address confirmed by the time this
 // renders; this page's only job is to say so.
+// A signup made in a store app (beta.js user_metadata.signup_platform): its confirmation link opens in a browser,
+// so this page sends the person back to the app instead of signing the browser into onboarding.
+function confirmedFromApp(user){ return !!(user && user.user_metadata && user.user_metadata.signup_platform === "app"); }
+
 function ConfirmedPage(){
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -13883,7 +13908,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   );
 }
 
-function Paywall({onClose,onPromoValid,country}){
+function Paywall({onClose,onPromoValid,country,province=""}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
@@ -13899,7 +13924,7 @@ function Paywall({onClose,onPromoValid,country}){
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
-    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
+    {icon:"target",title:"Benefits explained",desc:isCA?`CCB, Canada Groceries and Essentials Benefit, ${province==="ON"?"Trillium, ":""}RRSP, TFSA, FHSA: which rule applies to you and why`:"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit plan",desc:"Factor breakdown with amounts and dates"},
     {icon:"chartUp",title:"Contribution room",desc:isCA?"RRSP, TFSA and FHSA balances and room together":"401k, IRA, Fidelity, Vanguard"},
     {icon:"house2",title:"Weekly money meeting",desc:"Agenda from your week, coach as facilitator, solo or couple"},
@@ -13999,7 +14024,9 @@ function Paywall({onClose,onPromoValid,country}){
 // Shown once, immediately after onboarding completes.
 // One number. One sentence. One button.
 // Dismissed permanently after user taps through.
-function FirstVisitScreen({data, onDismiss}) {
+// 2026-10-23 (the first number): its words say only what is in this number (lib/firstNumber.js), and
+// onNumberShown runs once when a number is on the screen (the counts: safe_view and first_number_shown).
+function FirstVisitScreen({data, onDismiss, onNumberShown}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Truth-fix item 6: rebuild the breakdown from the SAME five SafeSpendEngine rows as the Today card,
@@ -14020,12 +14047,15 @@ function FirstVisitScreen({data, onDismiss}) {
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
   const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup && !noIncome;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
-  const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
   // so gate it on real balance data — a connected cash account — NOT on income. Gating on income
   // let the number render at $0 before Plaid finished syncing, then visibly jump to the real value.
   // Mirrors the dashboard hero ("no fake number when no cash account is connected").
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0;
+  // A number is on the screen (not one of the setup states below): tell the app once.
+  const numberShown = hasCashAccount && !noIncome && !ssView.needsSetup;
+  const shownOnce = useRef(false);
+  useEffect(() => { if (numberShown && !shownOnce.current) { shownOnce.current = true; try { if (onNumberShown) onNumberShown(); } catch { /* never blocks the screen */ } } }, [numberShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
@@ -14035,7 +14065,7 @@ function FirstVisitScreen({data, onDismiss}) {
       <div style={{position:"relative",width:"100%",maxWidth:360}}>
         {/* Welcome */}
         <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-          Welcome, {name}
+          {firstNumberGreeting(data.profile?.name)}
         </div>
 
         {/* The Number — shown only once real balance data has loaded (a cash account exists).
@@ -14050,7 +14080,7 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{color:ssView.isShort?C.cream:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3,maxWidth:300,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>
               {ssView.isShort
                 ? "You're short before your next payday. Here's exactly what's already committed."
-                : "You're covered. Here's your breathing room."}
+                : FIRST_NUMBER_HEADLINE}
             </div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               {ssView.isShort&&<span style={{fontSize:88,color:C.cream,letterSpacing:-4}}>-</span>}<span style={{fontSize:22,color:(ssView.isShort?C.cream:C.greenBright)+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
@@ -14084,7 +14114,8 @@ function FirstVisitScreen({data, onDismiss}) {
           {ssView.isShort || ssView.needsSetup || noIncome
             ? null
             : incomeAmt > 0
-              ? "Bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for."
+              // Only the parts in this number (lib/firstNumber.js), and W2 when the buffer is $0 for want of transactions.
+              ? <span data-first-number-line="">{firstNumberSentence(ss)}{bufferPending(data, ss)&&<>{firstNumberSentence(ss)?" ":""}<span data-buffer-pending="">{BUFFER_PENDING_LINE}</span></>}</span>
               : "Add your income in Settings to see your personalised safe to spend number."}
         </div>
 
@@ -16754,6 +16785,15 @@ export default function FlourishApp(){
   // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
   // before the event resolves. Overrides the normal app render until the user sets a new password.
   const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
+  // The confirmation link signed a web signup in: on into the app, with "/" in the address bar (2026-10-23).
+  useEffect(()=>{
+    if(screen!=="confirmed" || authLoading || !user || confirmedFromApp(user)) return;
+    try { window.history.replaceState(null,"","/"); } catch { /* no history */ }
+    setScreen("home");
+  },[screen, authLoading, user]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The first time this device sees this account signed in: the clock first_number_shown is timed from
+  // (lib/onboardingCounts.js). Kept on the device, like the other once-only keys.
+  useEffect(()=>{ if(user?.id) noteFirstSignin(user.id); },[user?.id]);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
@@ -17270,6 +17310,7 @@ export default function FlourishApp(){
       if (fromInit) setAuthLoading(false);
     };
     supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
+    // (The confirmation link's session arrives in the URL; getSession above reads it before it resolves.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // Sprint Q item 12: the recovery link creates a temporary session AND fires PASSWORD_RECOVERY.
       // Flag it so the render gate shows the set-new-password screen instead of the authed app.
@@ -18026,7 +18067,15 @@ export default function FlourishApp(){
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
-  if(screen==="confirmed")return <ConfirmedPage/>;
+  // THE CONFIRMATION LINK (2026-10-23). Supabase confirms the address and lands here with the session in the
+  // URL, which the auth client reads, so the person is signed in. A web signup goes straight on into the app (the
+  // AI disclosure, then onboarding), with no second sign-in: the effect above moves to "/". A signup made in a
+  // store app (user_metadata.signup_platform "app", beta.js) keeps this page, which sends them back to the app,
+  // because the link opens in a browser and there is no way back into the app from here yet.
+  if(screen==="confirmed"){
+    if(authLoading || (user && !confirmedFromApp(user)))return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+    return <ConfirmedPage/>;
+  }
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
@@ -18075,12 +18124,14 @@ export default function FlourishApp(){
         return merged;
       });
       setOnboarded(true);
-    }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+    }} onViewLegal={s=>setScreen(s)} userId={user?.id}
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
-  // demo-clarity: the demo has one intro, the five-step tour over Today; the "You're covered" screen is for a real account.
-  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
+  // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
+  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
+    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
-  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
     try {
@@ -18289,7 +18340,7 @@ export default function FlourishApp(){
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }} tourActive={tourShown}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
@@ -18326,7 +18377,7 @@ export default function FlourishApp(){
       // included, so say what actually happened and when it lifts, not that the feature is missing.
       return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen} tourActive={tourShown}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
@@ -18622,7 +18673,8 @@ input,button,select,textarea { font-family:inherit; }
                   <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
                     {step.title}
                   </div>
-                  <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
+                  {/* The Today step names only the parts in this household's number (lib/tour.js stepBody). */}
+                  <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{stepBody(step, step.target==="today"&&dataWithHousehold ? SafeSpendEngine.calculate(dataWithHousehold) : null)}</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
