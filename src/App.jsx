@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
@@ -3377,14 +3377,16 @@ function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}
 }
 function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm,inputMode}){
   const [focused,setFocused]=useState(false);
+  // The label names the input (2026-10-23: a field with no placeholder had no accessible name).
+  const inputId=useId();
   const _inputMode = inputMode || (type === "number" ? "decimal" : undefined);
   return <div style={{marginBottom:sm?10:16}}>
-    {label&&<div style={{color:C.muted,fontSize:13,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
+    {label&&<label htmlFor={inputId} style={{display:"block",color:C.muted,fontSize:13,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</label>}
     <div style={{display:"flex",alignItems:"center",background:C.isDark?`rgba(255,255,255,${focused?0.07:0.04})`:focused?C.surface:C.cardAlt,border:`1.5px solid ${focused?C.green+"77":C.border}`,borderRadius:16,overflow:"hidden",transition:"all .2s cubic-bezier(.16,1,.3,1)",boxShadow:focused?`0 0 0 3px ${C.green}18`:""}}>
       {prefix&&<div style={{padding:"0 14px",color:focused?C.mutedHi:C.muted,fontSize:14,borderRight:`1px solid ${C.border}`,transition:"color .2s"}}>{prefix}</div>}
-      <input type={type} inputMode={_inputMode} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      <input id={label?inputId:undefined} type={type} inputMode={_inputMode} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
-        style={{flex:1,background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"10px 13px":"13px 15px",fontFamily:"inherit"}}/>
+        style={{flex:1,minWidth:0,width:"100%",background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"10px 13px":"13px 15px",fontFamily:"inherit"}}/>
     </div>
     {note&&<div style={{color:C.muted,fontSize:13,marginTop:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{note}</div>}
   </div>;
@@ -4482,7 +4484,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {bankStage==="select"&&<>
         {/* Trust bar */}
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
-          <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Read-only connection</div>
+          <div style={{color:C.isDark?C.tealBright:"#00606F",fontWeight:700,marginBottom:8}}>🔒 Read-only connection</div>
           {[["✅","Read-only. We can never move your money"],["✅","Encrypted in transit and at rest"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
             <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
           ))}
@@ -4501,7 +4503,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {/* Error state: the main button below is the retry when the link token could not be fetched. */}
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-            <div style={{color:"#ff8888",fontSize:13}}>{bankError||initError}</div>
+            <div style={{color:C.isDark?"#ff8888":"#A51F37",fontSize:13}}>{bankError||initError}</div>
           </div>
         )}
 
@@ -4662,7 +4664,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               <div style={{marginBottom:12}}>
                 <button type="button" aria-expanded={open} onClick={toggle} data-income-type-toggle=""
                   style={{background:"none",border:"none",padding:"10px 0",minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:6}}>
-                  <span>Income type <span style={{textTransform:"none",letterSpacing:0,color:open?C.border:C.mutedHi}}>· {open?"tap all that apply":names}</span></span>
+                  <span>Income type <span style={{textTransform:"none",letterSpacing:0,color:open?C.muted:C.mutedHi}}>· {open?"tap all that apply":names}</span></span>
                   <span aria-hidden="true">{open?"▴":"▾"}</span>
                 </button>
                 {open&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -4696,7 +4698,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
               {/* Step 2 — Label */}
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:13,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional, e.g. "Part-time at Tim's")</span></div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:6}}>Label <span style={{color:C.muted,textTransform:"none",letterSpacing:0}}>(optional, e.g. "Part-time at Tim's")</span></div>
                 <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
                   placeholder={meta.label}
                   style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
@@ -4743,9 +4745,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                     <label htmlFor={`next-pay-${inc.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,fontWeight:600}}>When is your next payday?</label>
                     <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>Pick the date your next pay lands.</div>
                   </div>
-                  <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
-                    onChange={e=>setPayDate(inc.id, e.target.value)}
-                    style={{width:"100%",boxSizing:"border-box",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none"}}/>
+                  {/* The border is on the wrapper and the input shrinks into it (as SheetField does): on iOS WebKit an
+                      empty date input keeps an intrinsic width and, bordered itself at 100%, ran past its box (1.1.1 smoke). */}
+                  <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <input id={`next-pay-${inc.id}`} type="date" value={inc.nextPayDate||""} min={todayISO(new Date())}
+                      onChange={e=>setPayDate(inc.id, e.target.value)}
+                      style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"9px 8px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",colorScheme:C.isDark?"dark":"light"}}/>
+                  </div>
                 </div>
               )}
               {inc.freq==="monthly"&&(
@@ -4768,7 +4774,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                   {/* Same setting as Settings and the forecast sheet: plan on the low end, shown as a range. */}
                   <div style={{color:C.muted,fontSize:13,marginTop:1}}>{inc.isVariable?"Flourish plans on the low end of your recent pays. Until it has seen three, it plans on the amount above.":"Consistent amount every pay period"}</div>
                 </div>
-                <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
+                <button role="switch" aria-checked={!!inc.isVariable} aria-label="My pay varies" onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
                   style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
                   <div style={{position:"absolute",top:3,left:inc.isVariable?23:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
                 </button>
@@ -4809,13 +4815,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {bills.map((b,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${b.auto?C.teal+"66":C.border}`,marginBottom:10}}>
           {b.auto&&<div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-            <span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 10px",color:C.tealBright,fontSize:13,fontWeight:700}}>✦ Auto-detected</span>
+            <span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 10px",color:C.isDark?C.tealBright:"#00606F",fontSize:13,fontWeight:700}}>✦ Auto-detected</span>
             {b.avgNote&&<span style={{color:C.muted,fontSize:13}}>{b.avgNote}</span>}
           </div>}
           <div style={{display:"flex",gap:8}}>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <Inp label="Bill Name" value={b.name} onChange={v=>upBill(i,"name",v)} placeholder="Netflix, Hydro, Rent…" sm/>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:8}}>
                 <Inp label="Amount $" value={b.amount} onChange={v=>upBill(i,"amount",v)} type="number" sm/>
                 <Inp label="Day Due" value={b.date} onChange={v=>upBill(i,"date",v)} type="number" inputMode="numeric" placeholder="1 to 28" sm/>
               </div>
@@ -4845,12 +4851,12 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {debts.map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:10}}>
           <div style={{display:"flex",gap:8}}>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{position:"relative"}}>
                 <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
                 {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:13,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px"}}>🏦 live balance</span>}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:8}}>
                 <Inp label="Balance $" value={d.balance} onChange={v=>upDebt(i,"balance",v)} type="number" sm/>
                 <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm placeholder="e.g. 19.99"/>
               </div>
@@ -4870,7 +4876,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
-      <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
+      <div style={{width:"100%",maxWidth:430,minWidth:0,boxSizing:"border-box",padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
         {step>0&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
@@ -5519,6 +5525,8 @@ function IncomeReconcileCard({data, setAppData}){
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
 // "1.0.0 (526902)" on iOS, "1.0.0 (17)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+// What's new: the iPhone notes in an iOS build, Android's elsewhere (the web shows Android's: it names no device).
+const whatsNewNotes = (platform = currentPlatform()) => (platform === "ios" ? WHATS_NEW.notes : (WHATS_NEW.notesAndroid || WHATS_NEW.notes));
 const appVersionLabel = (platform = currentPlatform()) => {
   const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
   return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
@@ -12505,9 +12513,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span>What's new</span>
         <span style={{color:C.muted,fontSize:13,fontWeight:600}}>Version {appVersionLabel()} {showWhatsNew?"▴":"▾"}</span>
       </button>
-      {showWhatsNew&&<ul id="whats-new-notes" style={{paddingLeft:20,marginTop:SPACE.sm,marginBottom:SPACE.xs,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
-        {WHATS_NEW.notes.map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
-      </ul>}
+      {showWhatsNew&&<div id="whats-new-notes" style={{marginTop:SPACE.sm,marginBottom:SPACE.xs,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
+        {WHATS_NEW.intro&&<p style={{margin:`0 0 ${SPACE.xs}px`}}>{WHATS_NEW.intro}</p>}
+        <ul style={{paddingLeft:20,margin:0}}>
+          {whatsNewNotes().map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
+        </ul>
+      </div>}
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
@@ -14181,8 +14192,8 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
     // on success the screen unmounts (aiDisclosureSeen flips), so no need to clear saving
   };
   return (
-    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
-      <div style={{maxWidth:480,width:"100%"}}>
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px",...safeX(24)}}>
+      <div style={{maxWidth:480,width:"100%",minWidth:0}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🤖</div>
           <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:24,color:C.cream,marginBottom:6}}>About AI in Flourish</div>
@@ -14211,7 +14222,7 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:20}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your control</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream,whiteSpace:"nowrap"}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
         </div>
 
         {failed&&<div style={{background:C.red+"14",border:`1px solid ${C.red}55`,borderRadius:12,padding:"10px 14px",marginBottom:10,color:C.redBright||C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>We couldn't save your choice. Check your connection and tap Accept again.</div>}
@@ -18600,8 +18611,6 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
-        {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         <div style={{padding:"max(14px, calc(env(safe-area-inset-top, 0px) - var(--banner-h, 0px))) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0,minHeight:LAYOUT.minTap}}>
             <FlourishMark size={36}/>
@@ -18615,6 +18624,10 @@ input,button,select,textarea { font-family:inherit; }
             <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings" style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
         </div>
+        {/* 2026-10-23: below the header, which clears the top safe area (the Duo's 82 px strip, the notch).
+            Above it, with the demo banner hidden, both sat in the strip. */}
+        {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
+        {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

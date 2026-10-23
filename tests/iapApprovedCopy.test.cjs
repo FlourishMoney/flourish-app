@@ -26,7 +26,22 @@ const APPROVED = {
   links: ["Terms of Use", "Privacy Policy", "Restore purchases"],
   founding: "For the first 50 founding members. Your price stays the same while you stay subscribed.",
   terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 founding members and stays the same while that subscription stays active.",
-  whatsNew: "Flourish Plus is now available in the app. Every new account still gets every feature for its first 14 days. After that, you can stay on the free plan or choose Flourish Plus for the coach with no weekly limit, What-If as often as you like, more than one connected bank, Credit and the coach-run money meeting.",
+  // 1.1.1 (approved 2026-10-23): the intro, then the notes; iPhone and Android differ only in the fifth line.
+  whatsNewIntro: "Getting started is quicker. Get your first Safe to spend number in a few steps, with or without a bank.",
+  whatsNewIos: [
+    "Setup now asks when your next payday is, so the number runs to the right day.",
+    "Link a bank during setup and your pay and bills are filled in for you to confirm.",
+    "If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself.",
+    "Layout and accessibility fixes, including support for iPhone Duo.",
+    "Updated privacy policy.",
+  ],
+  whatsNewAndroid: [
+    "Setup now asks when your next payday is, so the number runs to the right day.",
+    "Link a bank during setup and your pay and bills are filled in for you to confirm.",
+    "If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself.",
+    "Layout and accessibility fixes.",
+    "Updated privacy policy.",
+  ],
 };
 const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
 
@@ -64,7 +79,10 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
 
   // ── 5. What's new ─────────────────────────────────────────────────────────────────────────────
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
-  t.eq([W.version, W.notes.join(" ")], ["1.1.0", APPROVED.whatsNew], "5a What's new for 1.1.0 is the approved paragraph, word for word (one sentence per note)");
+  t.eq([W.version, W.intro, W.notes, W.notesAndroid], ["1.1.1", APPROVED.whatsNewIntro, APPROVED.whatsNewIos, APPROVED.whatsNewAndroid],
+    "5a What's new for 1.1.1 is the approved text, word for word: the intro, the iPhone notes, the Android notes");
+  t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
+    "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
   t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x)) && /error: "plan_limit", message: "Connecting more than one bank/.test(PLAID) && /error: "plan_limit", message: "Free plan supports one bank/.test(PLAID),
