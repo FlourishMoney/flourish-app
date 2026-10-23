@@ -13402,6 +13402,10 @@ function PrivacyPolicy({onBack}){
 // instruction that is true for everybody is "go back to the app and sign in". No auto-redirect, no
 // deep link, nothing to get wrong. Supabase has already marked the address confirmed by the time this
 // renders; this page's only job is to say so.
+// A signup made in a store app (beta.js user_metadata.signup_platform): its confirmation link opens in a browser,
+// so this page sends the person back to the app instead of signing the browser into onboarding.
+function confirmedFromApp(user){ return !!(user && user.user_metadata && user.user_metadata.signup_platform === "app"); }
+
 function ConfirmedPage(){
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -16762,6 +16766,12 @@ export default function FlourishApp(){
   // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
   // before the event resolves. Overrides the normal app render until the user sets a new password.
   const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
+  // The confirmation link signed a web signup in: on into the app, with "/" in the address bar (2026-10-23).
+  useEffect(()=>{
+    if(screen!=="confirmed" || authLoading || !user || confirmedFromApp(user)) return;
+    try { window.history.replaceState(null,"","/"); } catch { /* no history */ }
+    setScreen("home");
+  },[screen, authLoading, user]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
@@ -17278,6 +17288,7 @@ export default function FlourishApp(){
       if (fromInit) setAuthLoading(false);
     };
     supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
+    // (The confirmation link's session arrives in the URL; getSession above reads it before it resolves.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // Sprint Q item 12: the recovery link creates a temporary session AND fires PASSWORD_RECOVERY.
       // Flag it so the render gate shows the set-new-password screen instead of the authed app.
@@ -18034,7 +18045,15 @@ export default function FlourishApp(){
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
-  if(screen==="confirmed")return <ConfirmedPage/>;
+  // THE CONFIRMATION LINK (2026-10-23). Supabase confirms the address and lands here with the session in the
+  // URL, which the auth client reads, so the person is signed in. A web signup goes straight on into the app (the
+  // AI disclosure, then onboarding), with no second sign-in: the effect above moves to "/". A signup made in a
+  // store app (user_metadata.signup_platform "app", beta.js) keeps this page, which sends them back to the app,
+  // because the link opens in a browser and there is no way back into the app from here yet.
+  if(screen==="confirmed"){
+    if(authLoading || (user && !confirmedFromApp(user)))return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+    return <ConfirmedPage/>;
+  }
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;

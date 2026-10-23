@@ -76,7 +76,7 @@ function validateBetaCode(code) {
   return codes.includes(String(code || "").trim().toUpperCase());
 }
 
-const { corsHeadersFor } = require("./_lib/cors");
+const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 
 async function getUserCount(supabaseUrl, secretKey) {
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
@@ -646,7 +646,10 @@ async function handle(event) {
         // founder_flag false, and nothing anywhere reads these fields.
         // `signup_src` (2026-10-22): the campaign the visit came from (?src=, lib/waitlistSrc.js), a known one or
         // "direct", carried from the landing's main button through to the account. Counted, never acted on.
-        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_src: waitlistSourceFor(body.src), signed_up: new Date().toISOString() },
+        // `signup_platform` (2026-10-23): "app" for a signup made in a store app, "web" otherwise. The confirmation
+        // link opens in a browser either way; the website's /confirmed page reads this to sign a web signup straight
+        // into onboarding and to send an app signup back to the app (src/App.jsx confirmedFromApp).
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_src: waitlistSourceFor(body.src), signup_platform: isNativeRequest(event) ? "app" : "web", signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");
