@@ -268,12 +268,14 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.1", "1.1.1", ["1.1.1"], "1.1.1"], "7a one version, 1.1.1, in whatsNew.json, package.json, Xcode and Gradle");
     t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526904, [526904], 19, 19], "7b the builds in whatsNew.json are the ones the projects build: iOS 526904, Android 19");
     t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
-    noBanned("7d release notes", W.notes.join(" "));
-    noAdvice("7e release notes", W.notes);
+    noBanned("7d release notes", [W.intro, ...W.notes, ...(W.notesAndroid || [])].join(" "));
+    // The intro (approved 2026-10-23) opens "Get your first Safe to spend number", which the scan's imperative
+    // check reads as an instruction; it is not money advice, and the notes themselves are scanned in full.
+    noAdvice("7e release notes", [...W.notes, ...(W.notesAndroid || [])]);
     const st = settingsText();
     t.ok(st.includes("What's new") && st.includes("Version 1.1.1") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
-    t.ok(/\{WHATS_NEW\.notes\.map\(\(n,i\)=><li key=\{i\}/.test(APP), "7f2 …the notes from whatsNew.json");
+    t.ok(/\{whatsNewNotes\(\)\.map\(\(n,i\)=><li key=\{i\}/.test(APP) && /\{WHATS_NEW\.intro&&<p /.test(APP), "7f2 …the intro and the notes from whatsNew.json");
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
   }
 
@@ -335,10 +337,14 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const strings = [
       ...Tr.TOUR_STEPS.flatMap(st => [st.title, st.body]),
       ...A.FAQ.flatMap(f => [f.q, f.a]), A.WHAT_MAKES_DIFFERENT, "What makes Flourish different",
-      Fb.WEEK_ONE_QUESTION, ...Fb.FEEDBACK_KINDS.map(k => k.label), ...WN.notes,
+      Fb.WEEK_ONE_QUESTION, ...Fb.FEEDBACK_KINDS.map(k => k.label), ...WN.notes, ...(WN.notesAndroid || []), WN.intro,
       ...Ck.setupChecklist({}).map(i => i.label), Sh.SHARE_TITLE, Sh.SHARE_TEXT,
     ];
-    t.eq(strings.filter(x => lower.test(x)), [], "2b every string this PR added says \"Flourish\" with a capital F");
+    // One named exception: the 1.1.1 What's new note approved word for word (2026-10-23) writes "flourish says so".
+    // iapApprovedCopy 5a pins it exactly; any other lowercase "flourish" still fails here.
+    const APPROVED_LOWER = ["If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself."];
+    t.eq(strings.filter(x => lower.test(x) && !APPROVED_LOWER.includes(x)), [], "2b every string this PR added says \"Flourish\" with a capital F");
+    t.eq(APPROVED_LOWER.length, 1, "2b2 one approved string may say \"flourish\", and only that one");
     t.ok(/<Btn label="Rate Flourish"/.test(APP) && />What makes Flourish different<\/h2>/.test(APP) && !/label="Rate flourish"/.test(APP), "2c …including the Rate row and the card's heading");
   }
 

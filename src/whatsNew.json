@@ -4,9 +4,19 @@
     "ios": 526904,
     "android": 19
   },
+  "intro": "Getting started is quicker. Get your first Safe to spend number in a few steps, with or without a bank.",
   "notes": [
-    "Flourish Plus is now available in the app.",
-    "Every new account still gets every feature for its first 14 days.",
-    "After that, you can stay on the free plan or choose Flourish Plus for the coach with no weekly limit, What-If as often as you like, more than one connected bank, Credit and the coach-run money meeting."
+    "Setup now asks when your next payday is, so the number runs to the right day.",
+    "Link a bank during setup and your pay and bills are filled in for you to confirm.",
+    "If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself.",
+    "Layout and accessibility fixes, including support for iPhone Duo.",
+    "Updated privacy policy."
+  ],
+  "notesAndroid": [
+    "Setup now asks when your next payday is, so the number runs to the right day.",
+    "Link a bank during setup and your pay and bills are filled in for you to confirm.",
+    "If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself.",
+    "Layout and accessibility fixes.",
+    "Updated privacy policy."
   ]
 }

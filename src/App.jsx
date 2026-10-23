@@ -5521,6 +5521,8 @@ function IncomeReconcileCard({data, setAppData}){
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
 // "1.0.0 (526902)" on iOS, "1.0.0 (17)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+// What's new: the iPhone notes in an iOS build, Android's elsewhere (the web shows Android's: it names no device).
+const whatsNewNotes = (platform = currentPlatform()) => (platform === "ios" ? WHATS_NEW.notes : (WHATS_NEW.notesAndroid || WHATS_NEW.notes));
 const appVersionLabel = (platform = currentPlatform()) => {
   const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
   return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
@@ -12507,9 +12509,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span>What's new</span>
         <span style={{color:C.muted,fontSize:13,fontWeight:600}}>Version {appVersionLabel()} {showWhatsNew?"▴":"▾"}</span>
       </button>
-      {showWhatsNew&&<ul id="whats-new-notes" style={{paddingLeft:20,marginTop:SPACE.sm,marginBottom:SPACE.xs,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
-        {WHATS_NEW.notes.map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
-      </ul>}
+      {showWhatsNew&&<div id="whats-new-notes" style={{marginTop:SPACE.sm,marginBottom:SPACE.xs,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
+        {WHATS_NEW.intro&&<p style={{margin:`0 0 ${SPACE.xs}px`}}>{WHATS_NEW.intro}</p>}
+        <ul style={{paddingLeft:20,margin:0}}>
+          {whatsNewNotes().map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
+        </ul>
+      </div>}
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
