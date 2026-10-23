@@ -97,6 +97,7 @@ import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js"
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
+import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -804,6 +805,9 @@ async function activationSession() {
 let _activationOff = false;
 const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
   : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
+// Onboarding counts (2026-10-23): the steps, the first number and the bank link, aggregate only (lib/onboardingCounts.js).
+const signalOnboarding = (event, { detail, mode, demo, userId } = {}) => (_activationOff ? Promise.resolve(false)
+  : sendOnboardingCount(event, { detail, mode, demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
 
 // ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
 // Module-level, NOT component state, so "at most once per session" survives the AICoach component
@@ -10227,10 +10231,11 @@ const HOUSEHOLD_ENABLED = false;
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
-function MeetAgenda({ data, isCouple, setScreen, setAppData }){
+function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false }){
   // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
   // Once per account; never in the demo.
-  useEffect(()=>{ if(!data?.demo) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opened by the household, not by the tour's Meet step (2026-10-23): a tour stop is not a meeting opened.
+  useEffect(()=>{ if(!data?.demo && !tourActive) signalActivation("meeting_opened", false); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
@@ -10456,7 +10461,7 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
-function Family({data,setAppData,household,setHousehold,setScreen}){
+function Family({data,setAppData,household,setHousehold,setScreen,tourActive=false}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
   const [householdCode,setHouseholdCode]=useState("");
@@ -10712,7 +10717,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
     })()}
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData}/>}
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive}/>}
     {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
     {false&&<>
       {!started&&!done2&&<>
@@ -14041,6 +14046,10 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
   // let the number render at $0 before Plaid finished syncing, then visibly jump to the real value.
   // Mirrors the dashboard hero ("no fake number when no cash account is connected").
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0;
+  // A number is on the screen (not one of the setup states below): tell the app once.
+  const numberShown = hasCashAccount && !noIncome && !ssView.needsSetup;
+  const shownOnce = useRef(false);
+  useEffect(() => { if (numberShown && !shownOnce.current) { shownOnce.current = true; try { if (onNumberShown) onNumberShown(); } catch { /* never blocks the screen */ } } }, [numberShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
@@ -16776,6 +16785,9 @@ export default function FlourishApp(){
     try { window.history.replaceState(null,"","/"); } catch { /* no history */ }
     setScreen("home");
   },[screen, authLoading, user]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The first time this device sees this account signed in: the clock first_number_shown is timed from
+  // (lib/onboardingCounts.js). Kept on the device, like the other once-only keys.
+  useEffect(()=>{ if(user?.id) noteFirstSignin(user.id); },[user?.id]);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
@@ -18106,10 +18118,12 @@ export default function FlourishApp(){
         return merged;
       });
       setOnboarded(true);
-    }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+    }} onViewLegal={s=>setScreen(s)} userId={user?.id}
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
-  // demo-clarity: the demo has one intro, the five-step tour over Today; the "You're covered" screen is for a real account.
-  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
+  // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
+  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
+    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
   if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
 
@@ -18357,7 +18371,7 @@ export default function FlourishApp(){
       // included, so say what actually happened and when it lifts, not that the feature is missing.
       return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen} tourActive={tourShown}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above

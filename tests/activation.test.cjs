@@ -125,9 +125,12 @@ async function call({ metric = "app_open", body, user = { id: "u1", email: "alex
   const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
   t.ok(/const showsSafeFigure = isVisible\('hero'\) && hasCashAccount && !_ss\.noIncome;\s+useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);/.test(APP),
     "4m safe_view is sent only when Today is SHOWING the figure (the card on, a cash account, an income), never for \"Connect an account\" or \"Add your income\"");
-  t.ok(/useEffect\(\(\)=>\{ if\(!data\?\.demo\) signalActivation\("meeting_opened", false\); \},\[\]\);/.test(APP)
+  // 2026-10-23: and not when the tour's Meet step is what put the agenda on screen (tests/onboardingFirstNumber.test.cjs).
+  t.ok(/useEffect\(\(\)=>\{ if\(!data\?\.demo && !tourActive\) signalActivation\("meeting_opened", false\); \},\[\]\);/.test(APP)
     && /if \(!\(user && hydratedUidRef\.current === user\.id && !appData\?\.demo\)\) return;\s+signalActivation\("app_open", false, user\.id\);\s+if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);/.test(APP),
     "4m2 meeting_opened from the meeting agenda, app_open and data_source once the account's data has loaded; none in the demo");
+  t.ok(/onNumberShown=\{\(\)=>\{ signalActivation\("safe_view", false, user\?\.id\);/.test(APP),
+    "4m3 safe_view is also sent when the first-number screen shows its number (2026-10-23)");
   t.ok(/const loadSampleHousehold = \(\) => \{\s+_activationOff = true;/.test(APP) && /_activationOff = false;\s+if \(normalizeEmail\(user\.email\) === SCREENSHOT_EMAIL\)/.test(APP)
     && /const signalActivation = \(metric, demo, userId\) => \(_activationOff \? Promise\.resolve\(false\)/.test(APP), "4m3 the App Review and screenshot sample households send nothing");
   t.ok(!/posthog|mixpanel|amplitude|segment\.com|googletagmanager|gtag\(/i.test(APP + fs.readFileSync(path.join(__dirname, "..", "src", "lib", "activation.js"), "utf8")), "4n no third-party analytics");

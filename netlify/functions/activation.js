@@ -35,6 +35,10 @@
 
 const { getUserFromRequest, getAdminClient } = require("./_lib/auth");
 const { corsHeadersFor } = require("./_lib/cors");
+// Onboarding counts (2026-10-23): the steps, the first number and the bank link, into public.onboarding_counts
+// (migration 0028) through onboarding_bump. Until 0028 runs the bump fails, the answer is 503, and the app carries
+// on exactly as before: no count is ever load-bearing.
+const { ONBOARDING_EVENTS, onboardingRows } = require("./_lib/onboardingCounts");
 
 // Flourish's own test addresses (Amanda, 2026-10-14). The same two domains as migration 0019's report;
 // PR #69 adds the shared helper (_lib/foundingCohort.js isTestEmail) and this can use it once merged.
@@ -88,9 +92,12 @@ async function handler(event, _context, now = new Date()) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
 
-  let metric = null;
-  try { const b = JSON.parse(event.body || "{}"); metric = b && typeof b.metric === "string" ? b.metric : null; } catch { /* not JSON */ }
-  if (!METRICS.includes(metric)) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
+  let metric = null, body = null;
+  try { body = JSON.parse(event.body || "{}"); metric = body && typeof body.metric === "string" ? body.metric : null; } catch { /* not JSON */ }
+  const onboarding = ONBOARDING_EVENTS.includes(metric);
+  if (!METRICS.includes(metric) && !onboarding) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
+  // An onboarding event with a detail, mode or time outside the fixed lists is refused before anything is read.
+  if (onboarding && onboardingRows(body, now.toISOString(), now) === null) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
 
   const { user_id } = await getUserFromRequest(event);
   if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
@@ -103,6 +110,14 @@ async function handler(event, _context, now = new Date()) {
     if (error) { console.error("[activation] account read failed"); return retryLater; }
     const user = data && data.user;
     if (!user || isTestEmail(user.email) || isSampleAccount(user.email)) return done;
+    if (onboarding) {
+      const cohortDay = torontoDay(new Date(user.created_at));
+      for (const row of onboardingRows(body, user.created_at, now)) {
+        const { error: bumpError } = await admin.rpc("onboarding_bump", { p_cohort_day: cohortDay, p_event: row.event, p_detail: row.detail });
+        if (bumpError) { console.error("[activation] onboarding bump failed", row.event); return retryLater; }
+      }
+      return done;
+    }
     const counter = counterFor(metric, user.created_at, now);
     if (!counter) return done;
     const { error: bumpError } = await admin.rpc("activation_bump", { p_cohort_day: torontoDay(new Date(user.created_at)), p_metric: counter });
@@ -115,4 +130,4 @@ async function handler(event, _context, now = new Date()) {
 }
 
 exports.handler = (event, context) => handler(event, context);
-exports._test = { handler, counterFor, torontoDay, isTestEmail, isSampleAccount, METRICS, TEST_EMAIL_DOMAINS };
+exports._test = { handler, counterFor, torontoDay, isTestEmail, isSampleAccount, METRICS, TEST_EMAIL_DOMAINS, ONBOARDING_EVENTS };
