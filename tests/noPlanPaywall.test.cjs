@@ -114,6 +114,15 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
     t.ok(/const exportMyData = \(\) => downloadExport\(data\);/.test(APP), "3h Settings exports through the same function");
   }
 
+  // ── 3b. Review round (2026-10-24) ──────────────────────────────────────────────────────────────────
+  {
+    const ret = APP.slice(APP.indexOf("const notice = billingReturnNotice("), APP.indexOf("const notice = billingReturnNotice(") + 1400);
+    t.ok(/if\(notice\.kind!=="success"\) return;\s*const timers = \[2000, 6000, 15000, 30000\]\.map\(ms=>setTimeout\(\(\)=>setBillingRecheck\(n=>n\+1\), ms\)\);\s*return \(\)=>timers\.forEach\(clearTimeout\);/.test(ret),
+      "3i back from a Stripe checkout: the status is asked again over the next half minute, so a household that just paid is not left on the paywall");
+    t.ok(/if\(billingAskedFor && billingAskedFor!==user\.id\) setBillingStatus\(null\);/.test(APP) && /if\(storeAskedFor && storeAskedFor!==user\.id\) setStoreStatus\(null\);/.test(APP),
+      "3j another account on the same device never inherits the last one's answer while its own is asked");
+  }
+
   // ── 4. The server tells the app ──────────────────────────────────────────────────────────────────
   {
     t.eq(R.accessAnswer({ known: true, unlimited: false, entitlement: "free" }), { entitled: false, basis: "none", grace_ends_at: null }, "4a no plan: entitled false");

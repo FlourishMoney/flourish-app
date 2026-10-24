@@ -96,7 +96,7 @@ function fakeSupabase(h, { fail = null, grace = null } = {}) {
   return { client, calls };
 }
 
-function load(h, { enforce = "true", fail = null, grace = null } = {}) {
+function load(h, { enforce = "true", fail = null, grace = null, user = null } = {}) {
   const fake = fakeSupabase(h, { fail, grace });
   Object.assign(process.env, {
     SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", ENFORCE_PLAN_LIMITS: enforce,
@@ -105,7 +105,7 @@ function load(h, { enforce = "true", fail = null, grace = null } = {}) {
   require.cache[SUPA_PATH] = { id: SUPA_PATH, filename: SUPA_PATH, loaded: true, exports: { createClient: () => fake.client } };
   for (const p of [AUTH_PATH, COACH_PATH, PLAID_PATH]) delete require.cache[p];
   const auth = require(AUTH_PATH);
-  auth.getUserFromRequest = async () => ({ user_id: "u1", error: null });
+  auth.getUserFromRequest = user || (async () => ({ user_id: "u1", error: null }));
   return { auth, coach: require(COACH_PATH), plaid: require(PLAID_PATH), calls: fake.calls };
 }
 
@@ -245,6 +245,30 @@ const plaidCall = (mod, origin, action, extra = {}) => mod.plaid.handler({ httpM
       t.ok(!/planGate|decidePlanAccess|plan_required/.test(billing), "5d billing.js (status, checkout, the portal, the store sync) asks for no plan: a household can always subscribe");
       const meeting = require("fs").readFileSync(path.join(REPO, "netlify", "functions", "meeting.js"), "utf8");
       t.ok(!/planGate|decidePlanAccess/.test(meeting), "5e recording a meeting's answers (the household's own data) asks for no plan, so nothing an older build sends is lost");
+    }
+
+    // ── 5b. Review round (2026-10-24) ──────────────────────────────────────────────────────────────
+    {
+      // A gated Plaid action whose session the gate cannot verify is refused there, never let past the plan check.
+      let n = 0;
+      const mod = load(NO_PLAN["trial over"], { user: async () => (++n === 1 ? { user_id: null, error: "unauthorized" } : { user_id: "u1", error: null }) });
+      const before = plaidApi();
+      const res = await plaidCall(mod, WEB, "get_accounts", { item_id: "it1" });
+      t.eq([res.statusCode, plaidApi()], [401, before], "5f a session the plan check cannot verify is a 401 before Plaid, even if a later lookup would succeed");
+      // Only a missing TABLE is "no subscription": any other subscriptions error (a missing column, a timeout) is not an answer.
+      const colMod = load(NO_PLAN["trial over"]);
+      const fakeFrom = require.cache[SUPA_PATH].exports.createClient().from;
+      require.cache[SUPA_PATH].exports.createClient = () => ({ ...colMod.auth.getAdminClient(), from: (table) => {
+        const q = fakeFrom(table);
+        if (table !== "subscriptions") return q;
+        return { ...q, select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: { code: "42703", message: "column subscriptions.plan_key does not exist" } }; } };
+      } });
+      for (const p of [AUTH_PATH, COACH_PATH]) delete require.cache[p];
+      const auth2 = require(AUTH_PATH);
+      auth2.getUserFromRequest = async () => ({ user_id: "u1", error: null });
+      const coach2 = require(COACH_PATH);
+      const r2 = await coach2.handler({ httpMethod: "POST", headers: { origin: WEB, authorization: "Bearer x" }, body: JSON.stringify(coachBody("chat")) });
+      t.eq([r2.statusCode, JSON.parse(r2.body).error], [503, "plan_unavailable"], "5g a subscriptions read that fails on a column is \"try again\", never \"no subscription\"");
     }
 
     // ── 6. The flag off ─────────────────────────────────────────────────────────────────────────────

@@ -17089,6 +17089,7 @@ export default function FlourishApp(){
   useEffect(()=>{
     let cancelled = false, timer = null;
     if(!storeBilling || !user?.id){ setStoreStatus(null); return; }
+    if(storeAskedFor && storeAskedFor!==user.id) setStoreStatus(null);     // another account: not its answer
     // No answer yet (offline, the server not reached): asked again after 5, 20 and 60 seconds, and whenever the
     // network comes back, so a household is never left on an unknown answer for the whole session.
     const ask = async (attempt)=>{
@@ -17129,6 +17130,9 @@ export default function FlourishApp(){
   useEffect(()=>{
     let cancelled = false;
     if(!user?.id){ setBillingStatus(null); return; }
+    // Another account on this device: the last one's answer must not stand in while this one's is asked
+    // (it would show, or hide, the no-plan paywall for the wrong household).
+    if(billingAskedFor && billingAskedFor!==user.id) setBillingStatus(null);
     (async ()=>{
       try{
         const jwt = await getJwt();
@@ -17285,6 +17289,12 @@ export default function FlourishApp(){
       BILLING_RETURN_PARAMS.forEach(k=>url.searchParams.delete(k));
       window.history.replaceState({},"",url.pathname+url.search+url.hash);
     }catch{}
+    // No free plan (2026-10-23): the status asked on load usually came before Stripe's webhook wrote the
+    // subscription, and said "no plan". Ask again over the next half minute, so a household that has just paid is
+    // not left on the no-plan paywall (each answer replaces the last; Check again stays for a slower webhook).
+    if(notice.kind!=="success") return;
+    const timers = [2000, 6000, 15000, 30000].map(ms=>setTimeout(()=>setBillingRecheck(n=>n+1), ms));
+    return ()=>timers.forEach(clearTimeout);
   },[user?.id]);
 
   const hydratedUidRef = useRef(null);    // the user id we've COMPLETED hydrate/decide for. DB save is gated on this === user.id (POSITIVE gate — structurally impossible to write before hydrate finishes for this user, so no empty pre-hydrate overwrite).

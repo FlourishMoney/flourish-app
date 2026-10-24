@@ -99,14 +99,13 @@ exports.handler = async (event) => {
   try {
     // NO FREE PLAN (founder's decision, 2026-10-23). Linking a bank and reading it are paid features, so a
     // household with no plan is refused before Plaid is asked, whatever app it calls from (_lib/planGate.js).
-    // Listing and disconnecting banks, and deleting the account, stay open. An anonymous caller falls through to
-    // the action's own 401.
+    // Listing and disconnecting banks, and deleting the account, stay open. Every one of these actions needs a
+    // session anyway, so one this check cannot verify is refused here (401), never let past the plan check.
     if (PLAID_PLAN_ACTIONS.includes(action)) {
-      const { user_id } = await getUserFromRequest(event);
-      if (user_id) {
-        const verdict = decidePlanAccess({ enforce: ENFORCE_PLAN_LIMITS, plan: await getUserPlan(user_id) });
-        if (!verdict.allowed) return planRefusal(verdict, CORS);
-      }
+      const { user_id, error: gateAuthError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: gateAuthError || "unauthorized" }) };
+      const verdict = decidePlanAccess({ enforce: ENFORCE_PLAN_LIMITS, plan: await getUserPlan(user_id) });
+      if (!verdict.allowed) return planRefusal(verdict, CORS);
     }
 
     // 1. create_link_token — auth-required (Tier 1.3). Every mint (new or

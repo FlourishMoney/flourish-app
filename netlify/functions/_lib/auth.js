@@ -193,7 +193,7 @@ function missingColumn(e) {
 
 // Postgres "undefined_table" and PostgREST's "table not in the schema cache".
 function missingRelation(e) {
-  return !!e && (e.code === "42P01" || e.code === "PGRST205" || /does not exist|could not find the table/i.test(String(e.message || "")));
+  return !!e && (e.code === "42P01" || e.code === "PGRST205" || /relation .* does not exist|could not find the table/i.test(String(e.message || "")));
 }
 
 // Returns a Netlify Functions-style 401 response

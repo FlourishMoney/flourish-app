@@ -26,10 +26,13 @@
 -- still in its trial at go-live is not (its trial ends into the paywall, the
 -- new rule for every new account).
 --
--- RUN IT AT GO-LIVE: just before, or with, the deploy that removes the free
--- plan. Run before that deploy, it changes nothing anyone sees (the code that
--- reads the column is not live yet). Run late, accounts are refused until it
--- runs, so do not run the deploy first.
+-- RUN IT AT GO-LIVE, in the same window as the deploy that removes the free
+-- plan. Go-live is the moment this file first runs, not the deploy, so:
+--   run N days early, and those accounts' 30 days are N days shorter in use;
+--   a trial that ends between this run and the deploy gets no 30 days;
+--   run late, and accounts past their trial are refused until it runs.
+-- Run before the deploy, it changes nothing anyone sees (the code that reads
+-- the column is not live yet).
 --
 -- SAFE TO RE-RUN. Go-live is the time recorded on the first run, so a second
 -- run gives nobody new days and moves no end date: an account whose trial
@@ -116,7 +119,9 @@ end $$;
 commit;
 
 -- ============================================================================
--- DRY RUN (run first; changes nothing; one count, no user_id, no email)
+-- DRY RUN (run first, before the first run; changes nothing; one count, no
+-- user_id, no email. It counts as of now(), so after the first run it is not
+-- the migration's own count: that is the notice the first run raised.)
 -- ============================================================================
 -- select count(*) as get_30_days
 --   from public.profiles p

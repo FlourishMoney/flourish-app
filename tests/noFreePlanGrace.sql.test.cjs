@@ -57,8 +57,9 @@ function pgBin() {
 }
 const freePort = () => new Promise((ok) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); }); });
 
-// The dry run is a comment block of "-- " lines under its heading, ending at the first blank line.
-const dryRun = (src) => src.slice(src.indexOf("-- DRY RUN")).split("\n").slice(2)
+// The dry run is a comment block of "-- " lines under its heading's closing "-- ===" line, ending at the first blank line.
+const dryRun = (src) => { const lines = src.slice(src.indexOf("-- DRY RUN")).split("\n"); return lines.slice(lines.findIndex((l) => /^-- =+$/.test(l)) + 1); };
+const dryRunSql = (src) => dryRun(src)
   .reduce((acc, l) => (acc.done || !l.startsWith("-- ") ? { ...acc, done: acc.lines.length > 0 || acc.done } : { ...acc, lines: [...acc.lines, l.slice(3)] }), { lines: [], done: false }).lines.join("\n");
 
 (async () => {
@@ -104,7 +105,7 @@ const dryRun = (src) => src.slice(src.indexOf("-- DRY RUN")).split("\n").slice(2
     sql(`insert into public.subscriptions (user_id, provider, status, current_period_end) values ('${users.store}', 'app_store', 'active', now() + interval '20 days')`);
 
     // ── 2 (first half). The dry run, before ───────────────────────────────────────────────────────
-    const dry = write("dry.sql", dryRun(S29));
+    const dry = write("dry.sql", dryRunSql(S29));
     t.ok(/select count\(\*\) as get_30_days/.test(fs.readFileSync(dry, "utf8")), "2a (the dry run is read out of the file's own footer)");
     t.eq(file(dry), "4", "2b the dry run counts the accounts past their trial with no paid plan: 4");
 
