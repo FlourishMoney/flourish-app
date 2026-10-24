@@ -162,8 +162,8 @@ function load(db) {
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const refresh = app.slice(app.indexOf("const refreshPlanFromProfile"), app.indexOf("const refreshPlanFromProfile") + 900);
     t.ok(/\.from\("profiles"\)/.test(refresh) && !/subscriptions/.test(refresh), "5b the app reads its plan from the profiles row and never reads a subscription row itself");
-    t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app) && /setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(app),
-      "5c a store app asks /api/billing for its status and keeps only enabled and paid");
+    t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(app) && /setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true, access: body\?\.access \?\? null \} : body\)/.test(app),
+      "5c a store app asks /api/billing for its status and keeps only enabled, paid and (no free plan, 2026-10-23) access");
     const hook = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "5d the Stripe webhook never writes the profiles row the app reads");
   }

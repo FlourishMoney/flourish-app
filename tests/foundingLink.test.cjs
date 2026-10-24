@@ -313,12 +313,16 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.ok(/foundingLinkAction\(\{ requested: foundingLink, native: nativeApp,/.test(APP), "6c …and asks it what to do");
     t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : null\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them");
     t.ok(/useState\(isNativeApp\(\) \|\| !!foundingNote\)/.test(APP), "6e …and opens straight to sign-in");
-    t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, 1, "6f still one way to mount the checkout screen (behind billingUi.show)");
+    // Two mounts since 2026-10-23 (the no-plan paywall opens the checkout inside itself), both behind billingUi.show.
+    t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, 2, "6f still only two ways to mount the checkout screen");
+    t.ok(/if\(showUpgrade && billingUi\.show\)return covered\(<UpgradeScreen /.test(APP) && /: \(noPlanView==="plans" && !nativeApp && billingUi\.show\) \? <UpgradeScreen /.test(APP), "6f2 …both behind billingUi.show");
     // 2026-10-20: a store app asks /api/billing whether the household pays on the web, and keeps only that
     // (billing.js answers it with { enabled, paid }), so the founding offer can never reach it.
-    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
-      "6g a store app keeps only enabled and paid from /api/billing: never the founding offer");
-    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\) \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
+    // Since 2026-10-23 a store app also keeps `access` (whether the household has a plan at all; no price or offer).
+    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true, access: body\?\.access \?\? null \} : body\)/.test(APP),
+      "6g a store app keeps only enabled, paid and access from /api/billing: never the founding offer");
+    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\), access \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8"))
+      && /const access = accessAnswer\(await getUserPlan\(user_id\)\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
       "6g2 …and the server tells a store app nothing about the founding price in the first place");
     const srcFiles = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
     t.ok(!/FOUNDING_LINK_EMAIL|VITE_FOUNDING/.test(srcFiles), "6h the send switch is a server variable: never in src/, never VITE_");

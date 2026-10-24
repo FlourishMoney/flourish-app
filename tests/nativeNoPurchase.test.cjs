@@ -160,13 +160,14 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
       return false;
     };
     // Screens that are purchase screens through and through, and the one guarded line that mounts each.
+    // Each mount is listed: the original, and (no free plan, 2026-10-23) the no-plan paywall's own, behind the same guard.
     const MOUNTED_ONLY_OFF_NATIVE = {
-      UpgradeScreen: /if\(showUpgrade && billingUi\.show\)return <UpgradeScreen /,
-      Paywall: /if\(showPaywall && !isNativeApp\(\)\)return <Paywall /,
+      UpgradeScreen: [/if\(showUpgrade && billingUi\.show\)return covered\(<UpgradeScreen /, /: \(noPlanView==="plans" && !nativeApp && billingUi\.show\) \? <UpgradeScreen /],
+      Paywall: [/if\(showPaywall && !isNativeApp\(\)\)return covered\(<Paywall /],
     };
-    for (const [name, mount] of Object.entries(MOUNTED_ONLY_OFF_NATIVE)) {
-      t.ok(mount.test(src), `${name} is mounted only when native is off`);
-      t.eq((src.match(new RegExp(`<${name}\\b`, "g")) || []).length, 1, `…and nowhere else`);
+    for (const [name, mounts] of Object.entries(MOUNTED_ONLY_OFF_NATIVE)) {
+      t.ok(mounts.every((m) => m.test(src)), `${name} is mounted only when native is off`);
+      t.eq((src.match(new RegExp(`<${name}\\b`, "g")) || []).length, mounts.length, `…and nowhere else`);
     }
     const { billingUiState } = await import("../src/lib/billingVisibility.js");
     t.eq(billingUiState({ status: { enabled: true, plans: [{}] }, native: true, paid: false }).show, false, "billingUi.show is false on native, even with billing on");

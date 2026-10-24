@@ -172,8 +172,11 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     for (const origin of ["capacitor://localhost", "https://localhost"]) {
       for (const [row, paid] of [[{ status: "active", current_period_end: iso(Date.now() + 30 * DAY) }, true], [null, false], [{ status: "canceled", current_period_end: iso(Date.now() - DAY) }, false]]) {
         const r = await statusFor(row, { origin });
-        t.eq([r.code, Object.keys(r.body).sort().join(","), r.body.paid], [200, "enabled,paid", paid],
-          `4a3 ${origin}: the status answer is enabled and paid (${paid}) only: no founding offer, no portal, no confirmation link`);
+        // Since 2026-10-23 also `access` (whether the household has a plan at all), which carries no price or offer.
+        t.eq([r.code, Object.keys(r.body).sort().join(","), r.body.paid], [200, "access,enabled,paid", paid],
+          `4a3 ${origin}: the status answer is enabled, paid (${paid}) and access only: no founding offer, no portal, no confirmation link`);
+        t.ok(r.body.access === null || Object.keys(r.body.access).sort().join(",") === "basis,entitled,grace_ends_at",
+          `4a5 ${origin}: …and access says only whether there is a plan, why, and when the 30 days end`);
       }
     }
     const webStatus = await statusFor({ status: "active", current_period_end: iso(Date.now() + 30 * DAY) }, { origin: "https://flourishmoney.app" });
@@ -181,8 +184,8 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     t.ok(/webPaidRef\.current = !!user\?\.id && billingAskedFor===user\.id && billingIsOn\(billingStatus\) && billingStatus\.paid === true;/.test(APP) && !/webPaidRef\.current = !nativeApp/.test(APP),
       "4b the App counts a payment the same way in a store app as on the web");
     t.ok(/if\(!user\?\.id\)\{ setBillingStatus\(null\); return; \}/.test(APP), "4c …and a store app asks for the billing status too");
-    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
-      "4c2 …keeping only enabled and paid in a store app, whatever the answer carries");
+    t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true, access: body\?\.access \?\? null \} : body\)/.test(APP),
+      "4c2 …keeping only enabled, paid and (no free plan, 2026-10-23) access in a store app, whatever the answer carries");
     t.eq(vis.billingUiState({ status: { enabled: true, paid: false }, native: true, paid: false }).show, false, "4c3 …and no billing surface shows in a store app");
   }
 

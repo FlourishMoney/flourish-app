@@ -104,12 +104,13 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
 
   // ── 3. The sales screens are only ever rendered behind the native guard ─────────────────────
   const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-  t.ok(/if\(showPaywall && !isNativeApp\(\)\)return <Paywall /.test(app), "3a the Paywall renders only when not a store app");
-  t.ok(/if\(showUpgrade && billingUi\.show\)return <UpgradeScreen /.test(app), "3b the upgrade screen renders only when billing is shown, which it never is on a store app");
+  t.ok(/if\(showPaywall && !isNativeApp\(\)\)return covered\(<Paywall /.test(app), "3a the Paywall renders only when not a store app");
+  t.ok(/if\(showUpgrade && billingUi\.show\)return covered\(<UpgradeScreen /.test(app) && /: \(noPlanView==="plans" && !nativeApp && billingUi\.show\) \? <UpgradeScreen /.test(app), "3b the upgrade screen renders only when billing is shown, which it never is on a store app");
   const { billingUiState } = await import("../src/lib/billingVisibility.js");
   t.eq(billingUiState({ status: { enabled: true, plans: [{}] }, native: true, paid: false }).show, false, "3c billing is never shown on a store app, even with billing on");
   t.eq((app.match(/<Paywall /g) || []).length, 1, "3d there is one Paywall render site, the guarded one");
-  t.eq((app.match(/<UpgradeScreen /g) || []).length, 1, "3e …and one upgrade screen render site, the guarded one");
+  // Two since 2026-10-23: the no-plan paywall opens the same screen inside itself, behind the same guard (3b).
+  t.eq((app.match(/<UpgradeScreen /g) || []).length, 2, "3e …and two upgrade screen render sites, both guarded");
 
   t.summary("nativeNoPrice.test");
   setImmediate(() => process.exit(process.exitCode || 0));

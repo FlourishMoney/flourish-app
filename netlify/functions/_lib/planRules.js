@@ -114,7 +114,19 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
   return { plan: "free", unlimited: false, paidSubscription: false };
 }
 
+// WHAT THE APP IS TOLD (no free plan, 2026-10-23): whether this household has a plan, and why, from getUserPlan's
+// answer (_lib/auth.js). billing.js puts it in its status answers, and the app shows its no-plan paywall only on
+// entitled: false (src/lib/paywallGate.js). An answer the server could not read is null: never "no plan".
+const ACCESS_BASIS = Object.freeze({ beta_founder: "founder", premium: "paid", trial: "trial", grace: "grace", free: "none" });
+function accessAnswer(planAnswer) {
+  if (!planAnswer || planAnswer.known === false) return null;
+  const entitled = planAnswer.unlimited === true;
+  const basis = ACCESS_BASIS[planAnswer.entitlement] || (entitled ? "paid" : "none");
+  return { entitled, basis, grace_ends_at: planAnswer.grace_ends_at || null };
+}
+
 module.exports = {
+  accessAnswer,
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile,
   SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
 };

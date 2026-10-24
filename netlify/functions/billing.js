@@ -19,14 +19,14 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, unauthorized } = require("./_lib/auth");
 const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
 const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = require("./_lib/foundingCohort");
 const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost } = require("./_lib/stripeApi");
-const { isPaidSubscription } = require("./_lib/planRules");
+const { isPaidSubscription, accessAnswer } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
@@ -142,7 +142,11 @@ exports.handler = async (event) => {
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
       // founding offer, no confirmation link and no portal, because a store app shows no price, no upgrade
       // button and no link to pay (Apple 3.1.1, Google Play's payments policy).
-      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row) });
+      // NO FREE PLAN (2026-10-23): every status answer also says whether this household has a plan at all, by the
+      // rule that refuses the paid calls (_lib/planRules.js accessAnswer). The app's no-plan paywall reads it; null
+      // when the plan could not be read, which the app never takes as "no plan".
+      const access = accessAnswer(await getUserPlan(user_id));
+      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row), access });
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
@@ -162,6 +166,7 @@ exports.handler = async (event) => {
         paid: isPaidSubscription(row),
         manageable: !!row?.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
+        access,
       });
     }
 
@@ -210,6 +215,8 @@ exports.handler = async (event) => {
         // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
         period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular },
+        // Read after the sync above, so a purchase just confirmed counts (no free plan, 2026-10-23).
+        access: accessAnswer(await getUserPlan(user_id)),
       });
     }
 
