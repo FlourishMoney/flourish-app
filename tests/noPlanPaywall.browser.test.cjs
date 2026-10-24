@@ -12,6 +12,8 @@
 //      subscribes, and saves; the household's saved data is the same before and after
 //   4  a plan: no paywall
 //   5  no answer from the server: no paywall for an account that was entitled (offline is not "no plan")
+//   6  the live demo stays free and needs no account: no paywall, and it asks the server for nothing (no billing
+//      status, no coach, no Plaid), even with the server saying "no plan"
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -34,9 +36,11 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
   // What billing.js answers. `access` is set per step; null means the call fails (offline, blocked).
   let access = { entitled: false, basis: "none", grace_ends_at: null };
   const billingCalls = [];
+  const serverCalls = [];      // every call to the app's own functions, for the demo's check
   let dist = null;
   const server = http.createServer((req, res) => {
     const p = new URL(req.url, "http://x").pathname;
+    if (p.startsWith("/api/") || p.startsWith("/.netlify/")) serverCalls.push(p);
     if (p === "/api/billing") {
       let raw = ""; req.on("data", (c) => { raw += c; });
       req.on("end", () => {
@@ -164,6 +168,30 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       await ctx.close();
     }
 
+    // ── 6. The live demo ─────────────────────────────────────────────────────────────────────────────
+    {
+      access = { entitled: false, basis: "none", grace_ends_at: null };
+      billingCalls.length = 0; serverCalls.length = 0;
+      const { ctx, page } = await open({ signedIn: false });
+      const welcome = page.getByText("Try the demo with", { exact: false }).first();
+      await welcome.waitFor({ timeout: 40000 });
+      await welcome.click();
+      await page.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 });
+      await page.waitForTimeout(1000);
+      t.eq(await paywall(page).count(), 0, "6a the live demo: no account, no paywall, with the server saying \"no plan\" to anyone who asks");
+      // Around the demo: Today, Watch, Do, Learn (the scripted coach), and What-If, each opened once.
+      for (const tab of ["Watch", "Do", "Learn", "Today"]) {
+        await page.getByRole("button").filter({ hasText: new RegExp("^" + tab + "(\\s*\\d+)?$") }).last().click();
+        await page.waitForTimeout(400);
+        t.eq(await paywall(page).count(), 0, `6b …${tab} opens, with no paywall`);
+      }
+      await page.getByText("What if? →").first().click();
+      await page.waitForTimeout(800);
+      t.eq(await paywall(page).count(), 0, "6c …What-If opens, with no paywall");
+      t.eq(billingCalls.length, 0, "6d billing is never asked in the demo");
+      t.eq(serverCalls.filter((c) => /coach|plaid|billing|meeting/.test(c)), [], "6e …nor the coach, Plaid or any paid function: the demo needs no account and costs nothing");
+      await ctx.close();
+    }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && e.message) || e).split("\n").slice(0, 4).join(" | ").slice(0, 400));
   } finally {
