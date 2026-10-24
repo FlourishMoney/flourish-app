@@ -53,7 +53,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   t.ok(!/iosFreeUnlock/.test(APP), "3a iosFreeUnlock no longer exists");
   t.ok(/const \[isPremium,setIsPremium\]=useState\(\(\)=>saved\?\.isPremium\|\|false\)/.test(APP),
     "3b isPremium starts false and is never seeded from the platform");
-  t.ok(/setIsPremium\(cp === "premium" \|\| cp === "beta_founder" \|\| cp === "trial"\)/.test(APP),
+  t.ok(/setIsPremium\(cp === "premium" \|\| cp === "beta_founder" \|\| cp === "trial" \|\| cp === "grace"\)/.test(APP),
     "3c the plan comes from the profile the server wrote");
   t.ok(/startTrialIfEligible\(\);\s*\n\s*expireTrialIfNeeded\(\);/.test(APP),
     "3d the trial runs everywhere, so native gets 14 days and then the free tier");
@@ -181,9 +181,10 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     t.ok(/localStorage\.getItem\("flourish_trial_ends_at"\)/.test(limitsSrc),
       "9a the trial clock reads the explicit end date the server wrote");
     t.ok(/function trialEndsAtMs\(\)/.test(limitsSrc), "9b …through one helper, as the server does");
-    t.ok(/setIsPremium\(isPremiumOrFounder\(\) \|\| isTrialActive\(\)\)/.test(APP),
-      "9c isPremium is DERIVED from the plan, so a trial that ends offline switches it off");
-    t.eq((APP.match(/setIsPremium\(isPremiumOrFounder\(\) \|\| isTrialActive\(\)\)/g) || []).length, 2,
+    // isUnlimited (2026-10-23) is isPremiumOrFounder || isTrialActive || isGraceActive: still derived, still dated.
+    t.ok(/setIsPremium\(isUnlimited\(\)\)/.test(APP) && /return isPremiumOrFounder\(\) \|\| isTrialActive\(\) \|\| isGraceActive\(\);/.test(limitsSrc),
+      "9c isPremium is DERIVED from the plan, so a trial (or the 30 days) that ends offline switches it off");
+    t.eq((APP.match(/setIsPremium\(isUnlimited\(\)\)/g) || []).length, 2,
       "9d …at boot and on restore, the two places that used to only ever raise it");
     t.ok(!/if \(isPremiumOrFounder\(\)\) setIsPremium\(true\)/.test(APP),
       "9e the raise-only version is gone");

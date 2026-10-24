@@ -10,7 +10,7 @@
 //      and Delete Account (their own confirmations, above it); it has no Close
 //   3  NOTHING IS LOST: a bill half typed when the paywall arrives is still there, typed, when the household
 //      subscribes, and saves; the household's saved data is the same before and after
-//   4  a plan: no paywall
+//   4  a plan: no paywall; the 30 days from go-live: the small notice with the server's date, and no paywall
 //   5  no answer from the server: no paywall for an account that was entitled (offline is not "no plan")
 //   6  the live demo stays free and needs no account: no paywall, and it asks the server for nothing (no billing
 //      status, no coach, no Plaid), even with the server saying "no plan"
@@ -151,6 +151,24 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       await page.getByText("Getting set up", { exact: false }).first().waitFor({ timeout: 40000 });
       await page.waitForTimeout(800);
       t.eq(await paywall(page).count(), 0, "4a a paid plan: no paywall");
+      t.eq(await page.locator("[data-grace-notice]").count(), 0, "4b …and no 30-day notice");
+      await ctx.close();
+    }
+    {
+      const ends = new Date(Date.now() + 20 * 86400000).toISOString();
+      access = { entitled: true, basis: "grace", grace_ends_at: ends };
+      const { ctx, page } = await open();
+      await page.getByText("Getting set up", { exact: false }).first().waitFor({ timeout: 40000 });
+      await page.waitForTimeout(800);
+      t.eq(await paywall(page).count(), 0, "4c the 30 days from go-live: no paywall");
+      const notice = page.locator("[data-grace-notice]").first();
+      t.ok(await notice.isVisible(), "4d …and the small notice shows");
+      const label = new Date(ends).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" });
+      t.ok((await notice.textContent()).includes(label), `4e …with the server's end date (${label})`);
+      access = { entitled: false, basis: "none", grace_ends_at: null };
+      await recheck(page);
+      await paywall(page).waitFor({ timeout: 15000 });
+      t.ok(await paywall(page).isVisible(), "4f the 30 days over: the paywall");
       await ctx.close();
     }
 

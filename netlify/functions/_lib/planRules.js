@@ -14,7 +14,8 @@
 //   founder_flag true            -> unlimited
 //   plan "plus" or "pro"         -> unlimited
 //   plan "trial", not yet ended  -> unlimited
-//   anything else                -> free
+//   grace_ends_at not yet passed -> unlimited ("grace": the 30 days from go-live of no free plan, migration 0029)
+//   anything else                -> free (since 2026-10-23: no plan at all)
 //
 // When a trial ends: trial_ends_at if the row has one, otherwise trial_started_at + 14 days (rows
 // created before migration 0007 have no trial_ends_at, and their trials must not move). A row on
@@ -40,23 +41,27 @@ function trialEndsAtMs(profile) {
   return started === null ? null : started + TRIAL_MS;
 }
 
-// "beta_founder" | "premium" | "trial" | "free" — the same four answers the client derives.
+// "beta_founder" | "premium" | "trial" | "grace" | "free" — the same five answers the client derives.
 function derivePlan(profile, now = Date.now()) {
   if (!profile) return "free";
   if (profile.founder_flag) return "beta_founder";
   const plan = profile.plan;
   if (plan === "plus" || plan === "pro") return "premium";
+  const t = now instanceof Date ? now.getTime() : now;
   if (plan === "trial") {
     const ends = trialEndsAtMs(profile);
-    const t = now instanceof Date ? now.getTime() : now;
     if (ends !== null && t < ends) return "trial";
   }
+  // NO FREE PLAN (2026-10-23): an account already past its trial when that went live has every feature until its
+  // grace_ends_at (migration 0029, go-live + 30 days). Never a founder's or a paid profile's answer (both above).
+  const grace = _time(profile.grace_ends_at);
+  if (grace !== null && t < grace) return "grace";
   return "free";
 }
 
 function isUnlimitedProfile(profile, now = Date.now()) {
   const p = derivePlan(profile, now);
-  return p === "beta_founder" || p === "premium" || p === "trial";
+  return p === "beta_founder" || p === "premium" || p === "trial" || p === "grace";
 }
 
 
@@ -105,6 +110,10 @@ const isStoreRow = (sub) => !!sub && STORE_PROVIDERS.includes(sub.provider);
 // platforms to one answer.
 function deriveEntitlement(profile, subscription, now = Date.now()) {
   const fromProfile = derivePlan(profile, now);
+  // A household inside its 30 days that subscribes is a paying one: the notice about the 30 days is not for it.
+  if (fromProfile === "grace" && isPaidSubscription(subscription, now)) {
+    return { plan: "premium", unlimited: true, paidSubscription: true };
+  }
   if (fromProfile !== "free") {
     return { plan: fromProfile, unlimited: true, paidSubscription: isPaidSubscription(subscription, now) };
   }

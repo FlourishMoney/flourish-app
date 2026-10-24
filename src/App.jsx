@@ -67,7 +67,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { accessFromStatus, rememberAccess, recalledAccess, paywallShows, NO_PLAN_COPY, exportPayload } from "./lib/paywallGate.js";
+import { accessFromStatus, rememberAccess, recalledAccess, paywallShows, graceNoticeEnds, graceNotice, NO_PLAN_COPY, exportPayload } from "./lib/paywallGate.js";
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
@@ -85,7 +85,7 @@ import { demoCoachExchanges, demoFacilitatorLine, demoCheckInInsight } from "./l
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { derivePlan, webPlan, planEntitled } from "./lib/planFromProfile.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -13620,6 +13620,17 @@ function NativeTrialEndedLine({onDismiss}){
   );
 }
 
+// The 30 days from go-live of no free plan (2026-10-23): a small notice with the server's end date, in every app
+// (lib/paywallGate.js graceNotice; its words are a placeholder until the founder's are in). No button, no link.
+function GraceNotice({endsAt}){
+  const label = new Date(endsAt).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" });
+  return(
+    <div data-grace-notice="" style={{display:"flex",justifyContent:"center",padding:`${SPACE.xs}px ${SPACE.lg}px`,flexShrink:0}}>
+      <span role="status" style={{background:C.cardAlt,border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:`${SPACE.xs}px ${SPACE.md}px`,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,textAlign:"center"}}>{graceNotice(label)}</span>
+    </div>
+  );
+}
+
 // A store app's chip during the trial: the days left (lib/freePlan.js trialChip). No button, no link.
 function NativeTrialChip({daysLeft}){
   return(
@@ -16985,7 +16996,7 @@ export default function FlourishApp(){
     // read that would have corrected it never runs without a network. Derive both ways: the cached
     // plan is what the server last said, and refreshPlanFromProfile overrides it the moment one
     // arrives.
-    setIsPremium(isPremiumOrFounder() || isTrialActive());
+    setIsPremium(isUnlimited());
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
@@ -17031,11 +17042,19 @@ export default function FlourishApp(){
         .eq("user_id", userId)
         .maybeSingle();
       if (!prof) return null;
-      const cp = derivePlan(prof);
+      // The 30 days from go-live of no free plan (migration 0029), read on their own: before 0029 the column is not
+      // there, and that must not fail the plan read above.
+      let graceEndsAt = null;
+      try {
+        const { data: g, error: gErr } = await supabase.from("profiles").select("grace_ends_at").eq("user_id", userId).maybeSingle();
+        if (!gErr && g && g.grace_ends_at) graceEndsAt = g.grace_ends_at;
+      } catch { /* no column yet, or offline: no 30 days */ }
+      const cp = derivePlan({ ...prof, grace_ends_at: graceEndsAt });
+      if (graceEndsAt) { try { localStorage.setItem("flourish_grace_ends_at", graceEndsAt); } catch {} }
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
-      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
+      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial" || cp === "grace");
       // The web paid-subscription effect (after openUpgrade) applies the server's `paid` on top of this.
       setProfilePlan(cp);
       return cp;
@@ -17154,7 +17173,7 @@ export default function FlourishApp(){
     if(profilePlan===null) return;
     const plan = webPlan(profilePlan, { paid: webPaidRef.current });
     setPlan(plan);
-    setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
+    setIsPremium(planEntitled(plan));
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
   // Version 1.1: a store app that sells takes the server's store_status answer, whichever provider the
   // household pays through (lib/planFromProfile.js storePlan). Declared after the effect above so that, when
@@ -17164,7 +17183,7 @@ export default function FlourishApp(){
     if(!storeBilling || profilePlan===null) return;
     const sp = storePlan(profilePlan, { paid: !!user?.id && storeAskedFor===user.id && storeStatus?.paid === true });
     setPlan(sp);
-    setIsPremium(sp === "premium" || sp === "beta_founder" || sp === "trial");
+    setIsPremium(planEntitled(sp));
   },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
   // VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK. The store paywall is drawn OVER the app, never in place of
   // it: whatever screen, sheet or half-typed form was open stays mounted underneath with its state, and once the
@@ -17196,6 +17215,8 @@ export default function FlourishApp(){
   },[serverAccess?.entitled, user?.id]); // eslint-disable-line
   const noPlan = paywallShows({ signedIn: !!user?.id, demo: !!appData?.demo, access: serverAccess,
     recalled: user?.id ? recalledAccess(deviceStorage(), user.id) : null });
+  // The 30 days from go-live (migration 0029): the server's end date while they last, for the small notice.
+  const graceEnds = graceNoticeEnds(serverAccess);
   // The paywall's own views reset whenever it goes, so it always opens on itself.
   useEffect(()=>{ if(!noPlan){ setNoPlanView(null); setNoPlanChecking(false); } },[noPlan]);
   // THE PAYWALL OPENS ONLY WHEN THE HOUSEHOLD ASKS (2026-10-20): a locked screen's "See plans", Settings. The store
@@ -17352,7 +17373,7 @@ export default function FlourishApp(){
     // AFTER writeSideKeys, which restores flourish_plan: derive from the plan the blob just brought
     // in, not the one this device happened to be holding. The blob's own isPremium flag is written
     // by the client, so trusting it would let a stale device re-grant itself premium on restore.
-    setIsPremium(isPremiumOrFounder() || isTrialActive());
+    setIsPremium(isUnlimited());
     // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
     try {
       setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
@@ -18622,6 +18643,7 @@ input,button,select,textarea { font-family:inherit; }
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
           {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<div style={{marginBottom:SPACE.sm,borderRadius:12,overflow:"hidden"}}><NativeTrialEndedLine onDismiss={hideTrialEndNote}/></div>}
           {isNativeApp()&&trialActive&&trialDaysLeft>0&&<div style={{marginBottom:SPACE.sm}}><NativeTrialChip daysLeft={trialDaysLeft}/></div>}
+          {graceEnds&&<div style={{marginBottom:SPACE.sm}}><GraceNotice endsAt={graceEnds}/></div>}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={openUpgrade} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
@@ -18740,6 +18762,7 @@ input,button,select,textarea { font-family:inherit; }
             Above it, with the demo banner hidden, both sat in the strip. */}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
+        {graceEnds&&<GraceNotice endsAt={graceEnds}/>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

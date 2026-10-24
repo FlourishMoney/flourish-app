@@ -12,7 +12,8 @@
 //      nothing sent to Anthropic or Plaid
 //   3  a plan (trial, founder, a paid profile, a paid subscription from Stripe, the App Store or Google Play):
 //      every one of the same calls goes through
-//   4  a plan the server could not read is a 503 ("try again"), never a 402 and never an open door
+//   4  a plan the server could not read is a 503 ("try again"), never a 402 and never an open door; the 30 days
+//      from go-live (migration 0029) count as a plan while they run, and their column missing is "no 30 days"
 //   5  what stays open with no plan: consent changes, listing and disconnecting banks, deleting the account, and the
 //      billing calls a household needs to subscribe
 //   6  ENFORCE_PLAN_LIMITS off: nothing here applies
@@ -43,6 +44,7 @@ const NO_PLAN = {
   "lapsed (App Store)":   { profile: ENDED, sub: { provider: "app_store", status: "expired", current_period_end: iso(Date.now() - 2 * DAY) } },
   "period over, active":  { profile: ENDED, sub: { provider: "play_store", status: "active", current_period_end: iso(Date.now() - DAY) } },
   "past_due":             { profile: ENDED, sub: { provider: "stripe", status: "past_due", current_period_end: iso(Date.now() + 5 * DAY) } },
+  "its 30 days over":     { profile: { ...ENDED, grace_ends_at: iso(Date.now() - DAY) }, sub: null },
 };
 const HAS_PLAN = {
   "in trial":             { profile: { plan: "trial", trial_started_at: iso(Date.now() - 3 * DAY), trial_ends_at: iso(Date.now() + 11 * DAY), founder_flag: false }, sub: null },
@@ -52,10 +54,12 @@ const HAS_PLAN = {
   "App Store":            { profile: ENDED, sub: live("app_store") },
   "Google Play":          { profile: ENDED, sub: live("play_store") },
   "founding (Stripe)":    { profile: ENDED, sub: { ...live("stripe"), plan_key: "founding_annual" } },
+  "in its 30 days":       { profile: { ...ENDED, grace_ends_at: iso(Date.now() + 20 * DAY) }, sub: null },
 };
 
 // A fake Supabase holding one household. `fail` makes one table's read fail, as a database blip would.
-function fakeSupabase(h, { fail = null } = {}) {
+// `grace`: "missing" answers the grace_ends_at read as a database without migration 0029 does; "errors" as a blip.
+function fakeSupabase(h, { fail = null, grace = null } = {}) {
   const calls = { reads: [], writes: [], rpc: [] };
   const rows = {
     profiles: [{ user_id: "u1", ...h.profile, ...CONSENT }],
@@ -67,14 +71,17 @@ function fakeSupabase(h, { fail = null } = {}) {
       calls.reads.push(table);
       const q = {
         _f: [], _head: false,
-        select(_c, opts) { if (opts && opts.head) q._head = true; return q; },
+        select(c, opts) { q._cols = c; if (opts && opts.head) q._head = true; return q; },
         eq(col, val) { q._f.push(r => r[col] === val); return q; },
         in() { return q; }, order() { return q; }, limit() { return q; }, neq() { return q; },
         update(patch) { calls.writes.push({ table, patch }); return q; },
         upsert(row) { calls.writes.push({ table, row }); return q; },
         delete() { calls.writes.push({ table, delete: true }); return q; },
         _rows() { return (rows[table] || []).filter(r => q._f.every(f => f(r))); },
-        async maybeSingle() { return fail === table ? { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } } : { data: q._rows()[0] || null, error: null }; },
+        async maybeSingle() {
+          if (table === "profiles" && q._cols === "grace_ends_at" && grace === "missing") return { data: null, error: { code: "42703", message: "column profiles.grace_ends_at does not exist" } };
+          if (table === "profiles" && q._cols === "grace_ends_at" && grace === "errors") return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+          return fail === table ? { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } } : { data: q._rows()[0] || null, error: null }; },
         async single() { return q.maybeSingle(); },
         then(res, rej) {
           const out = fail === table ? { data: null, error: { message: "timeout" } } : (q._head ? { count: q._rows().length, error: null } : { data: q._rows(), error: null });
@@ -89,8 +96,8 @@ function fakeSupabase(h, { fail = null } = {}) {
   return { client, calls };
 }
 
-function load(h, { enforce = "true", fail = null } = {}) {
-  const fake = fakeSupabase(h, { fail });
+function load(h, { enforce = "true", fail = null, grace = null } = {}) {
+  const fake = fakeSupabase(h, { fail, grace });
   Object.assign(process.env, {
     SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", ENFORCE_PLAN_LIMITS: enforce,
     ANTHROPIC_API_KEY: "test-anthropic", PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret",
@@ -200,6 +207,23 @@ const plaidCall = (mod, origin, action, extra = {}) => mod.plaid.handler({ httpM
       t.eq([res.statusCode, JSON.parse(res.body).error], [503, "plan_unavailable"], "4c a paying household whose subscription cannot be read is told to try again, not to subscribe");
       const founder = load(HAS_PLAN["founder"], { fail: "subscriptions" });
       t.eq((await coachCall(founder, WEB, coachBody("chat"))).statusCode, 200, "4d a founder needs no subscription read at all");
+    }
+
+    // ── 4b. The 30 days' column: missing (before 0029) is a known "no 30 days"; a failed read is not an answer ──
+    {
+      const missing = load(NO_PLAN["trial over"], { grace: "missing" });
+      t.eq(JSON.parse((await coachCall(missing, WEB, coachBody("chat"))).body).error, "plan_required", "4e before 0029 (no column): no 30 days, so no plan, plan required");
+      const paidMissing = load(HAS_PLAN["Stripe"], { grace: "missing" });
+      t.eq((await coachCall(paidMissing, WEB, coachBody("chat"))).statusCode, 200, "4f …and a paying household is untouched by the missing column");
+      const blip = load(NO_PLAN["trial over"], { grace: "errors" });
+      t.eq(JSON.parse((await coachCall(blip, WEB, coachBody("chat"))).body).error, "plan_unavailable", "4g the column unreadable for a household that might be in its 30 days: try again, never plan required");
+      const paidBlip = load(HAS_PLAN["App Store"], { grace: "errors" });
+      t.eq((await coachCall(paidBlip, IOS, coachBody("chat"))).statusCode, 200, "4h …while a paying household needs no 30 days and goes through");
+      const R = require("../netlify/functions/_lib/planRules.js");
+      const auth = load(HAS_PLAN["in its 30 days"]).auth;
+      const answer = await auth.getUserPlan("u1");
+      t.eq([answer.entitlement, answer.unlimited, answer.known, answer.grace_ends_at], ["grace", true, true, HAS_PLAN["in its 30 days"].profile.grace_ends_at], "4i getUserPlan: in its 30 days, every feature, with the end date");
+      t.eq(R.accessAnswer(answer), { entitled: true, basis: "grace", grace_ends_at: HAS_PLAN["in its 30 days"].profile.grace_ends_at }, "4j …and that is what the app is told");
     }
 
     // ── 5. What stays open with no plan ─────────────────────────────────────────────────────────────

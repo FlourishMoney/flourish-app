@@ -153,7 +153,8 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
 
   // ── 5. migration 0028 ──────────────────────────────────────────────────────────────────────
   const files = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_/.test(f)).sort();
-  t.eq(files[files.length - 1], "0028_onboarding_counts.sql", "5a 0028 is the newest migration");
+  // 0029 (no free plan, 2026-10-23) came after it.
+  t.eq(files.slice(-2), ["0028_onboarding_counts.sql", "0029_no_free_plan_grace.sql"], "5a 0028 is the newest migration before 0029");
   const sql = read("supabase", "migrations", "0028_onboarding_counts.sql");
   const table = sql.slice(sql.indexOf("create table if not exists public.onboarding_counts"), sql.indexOf("alter table public.onboarding_counts"));
   t.eq([...table.matchAll(/^\s+(\w+)\s+(date|text|integer)\b/gm)].map((m) => m[1]), ["cohort_day", "event", "detail", "count"], "5b four columns: day, event, detail, count; no account id, amount or free text");

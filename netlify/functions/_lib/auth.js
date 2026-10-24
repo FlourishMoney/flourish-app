@@ -149,24 +149,46 @@ async function getUserPlan(user_id) {
       console.error("[auth] subscription read failed (plan unknown unless the profile entitles):", e.message);
     }
 
-    const ent = deriveEntitlement(data, sub, Date.now());
+    // The 30 days from go-live of no free plan (migration 0029), read on their own like the subscription: before
+    // 0029 the column does not exist, which is a known "no 30 days", never a failed plan read for everyone else.
+    let graceEndsAt = null;
+    let graceKnown = true;
+    try {
+      const { data: g, error: gErr } = await admin.from("profiles").select("grace_ends_at").eq("user_id", user_id).maybeSingle();
+      if (!gErr) graceEndsAt = (g && g.grace_ends_at) || null;
+      else if (!missingColumn(gErr)) {
+        graceKnown = false;
+        console.error("[auth] grace read failed (plan unknown unless the profile or a subscription entitles):", gErr.message);
+      }
+    } catch (e) {
+      graceKnown = false;
+      console.error("[auth] grace read failed (plan unknown unless the profile or a subscription entitles):", e.message);
+    }
+
+    const ent = deriveEntitlement({ ...data, grace_ends_at: graceEndsAt }, sub, Date.now());
     return {
       // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
       // existing tests read this shape. The derived answer is added beside it, not in place of it.
       plan,
-      entitlement: ent.plan,          // "beta_founder" | "premium" | "trial" | "free"
+      entitlement: ent.plan,          // "beta_founder" | "premium" | "trial" | "grace" | "free"
       founder_flag: founder,
       unlimited: ent.unlimited,
       paid: ent.paidSubscription,
       subscription_status: sub ? sub.status : null,
       // The profile alone entitles a founder, a paid profile or a live trial; otherwise the answer rests on the
       // subscription read, and is only known if that read worked.
-      known: ent.unlimited || subKnown,
+      known: ent.unlimited || (subKnown && graceKnown),
+      grace_ends_at: ent.plan === "grace" ? graceEndsAt : null,
     };
   } catch (e) {
     console.error("[auth] getUserPlan failed (plan unknown):", e.message);
     return { plan: "free", founder_flag: false, unlimited: false, paid: false, known: false };
   }
+}
+
+// Postgres "undefined_column" and PostgREST's "column not found".
+function missingColumn(e) {
+  return !!e && (e.code === "42703" || e.code === "PGRST204" || /column .*does not exist|could not find the .* column/i.test(String(e.message || "")));
 }
 
 // Postgres "undefined_table" and PostgREST's "table not in the schema cache".

@@ -40,7 +40,23 @@ const at = (days) => new Date(NOW + days * 86400000).toISOString();
     for (const founder_flag of [true, false, null, undefined, "t"])
       for (const trial_started_at of [null, at(-30), at(-14), at(-5), at(1)])
         for (const trial_ends_at of [null, at(-1), at(0.5), at(30), "not-a-date"])
-          rows.push({ plan, founder_flag, trial_started_at, trial_ends_at });
+          // grace_ends_at (migration 0029, no free plan): absent, empty, over, running, nonsense.
+          for (const grace_ends_at of [undefined, null, at(-1), at(10), "not-a-date"])
+            rows.push({ plan, founder_flag, trial_started_at, trial_ends_at, ...(grace_ends_at === undefined ? {} : { grace_ends_at }) });
+
+  // The 30 days: every feature while they run, never over a founder, a paid profile or a live trial, nothing after.
+  {
+    const ended = { plan: "trial", founder_flag: false, trial_started_at: at(-30), trial_ends_at: at(-16) };
+    for (const side of [client, server]) {
+      t.eq([side.derivePlan({ ...ended, grace_ends_at: at(10) }, NOW), side.derivePlan({ ...ended, grace_ends_at: at(-1) }, NOW), side.derivePlan(ended, NOW)], ["grace", "free", "free"],
+        "1e the 30 days: grace while they run, then no plan; without them, no plan");
+      t.eq([side.derivePlan({ plan: "plus", grace_ends_at: at(10) }, NOW), side.derivePlan({ founder_flag: true, grace_ends_at: at(10) }, NOW), side.derivePlan({ plan: "trial", trial_ends_at: at(5), grace_ends_at: at(10) }, NOW)],
+        ["premium", "beta_founder", "trial"], "1f …never in place of a paid profile, a founder or a live trial");
+      t.eq(side.isUnlimitedProfile({ ...ended, grace_ends_at: at(10) }, NOW), true, "1g …and counted as unlimited");
+    }
+    const paying = server.deriveEntitlement({ ...ended, grace_ends_at: at(10) }, { status: "active", current_period_end: at(30) }, NOW);
+    t.eq([paying.plan, client.webPlan("grace", { paid: true })], ["premium", "premium"], "1h a household in its 30 days that pays is a paying household, on both sides");
+  }
 
   const disagree = [];
   for (const row of rows) {
@@ -69,7 +85,11 @@ const at = (days) => new Date(NOW + days * 86400000).toISOString();
   for (const row of rows) {
     const fromProfile = server.derivePlan(row, NOW);
     const ent = server.deriveEntitlement(row, paid, NOW);
-    if (fromProfile !== "free" && ent.plan !== fromProfile)
+    // The one change, and it only adds: a household in its 30 days that pays is a paying household (still unlimited;
+    // the 30 days' notice is not for it). Every other profile answer stands.
+    if (fromProfile === "grace" && (ent.plan !== "premium" || !ent.unlimited))
+      disagree.push(`a paying household in its 30 days became ${ent.plan}, not premium`);
+    if (fromProfile !== "free" && fromProfile !== "grace" && ent.plan !== fromProfile)
       disagree.push(`deriveEntitlement changed ${fromProfile} into ${ent.plan}`);
     if (fromProfile === "free" && ent.plan !== "premium")
       disagree.push(`a paid free profile became ${ent.plan}, not premium`);

@@ -49,7 +49,7 @@ export const TRIAL_DURATION_DAYS = 14;
 export function getPlan() {
   try {
     const stored = localStorage.getItem(PLAN_KEY);
-    if (stored === "premium" || stored === "beta_founder" || stored === "free" || stored === "trial") {
+    if (stored === "premium" || stored === "beta_founder" || stored === "free" || stored === "trial" || stored === "grace") {
       return stored;
     }
   } catch {}
@@ -57,7 +57,7 @@ export function getPlan() {
 }
 
 export function setPlan(plan) {
-  if (plan !== "free" && plan !== "premium" && plan !== "beta_founder" && plan !== "trial") {
+  if (plan !== "free" && plan !== "premium" && plan !== "beta_founder" && plan !== "trial" && plan !== "grace") {
     return false;
   }
   try { localStorage.setItem(PLAN_KEY, plan); } catch {}
@@ -264,9 +264,20 @@ export function isTrialActive() {
   return left !== null && left > 0;
 }
 
-// Returns true if user has unlimited access (premium, beta_founder, or active trial)
+// The 30 days from go-live of no free plan (2026-10-23, migration 0029): the plan the server last said, "grace",
+// and its end date as the profile last gave it (App.jsx refreshPlanFromProfile caches both). Past the date it is over
+// even offline, as a trial is; the server decides every paid call on its own either way.
+export function isGraceActive() {
+  if (getPlan() !== "grace") return false;
+  try {
+    const end = Date.parse(localStorage.getItem("flourish_grace_ends_at") || "");
+    return Number.isFinite(end) && Date.now() < end;
+  } catch { return false; }
+}
+
+// Returns true if user has unlimited access (premium, beta_founder, an active trial, or the 30 days from go-live)
 export function isUnlimited() {
-  return isPremiumOrFounder() || isTrialActive();
+  return isPremiumOrFounder() || isTrialActive() || isGraceActive();
 }
 
 // Start a trial for new users only.

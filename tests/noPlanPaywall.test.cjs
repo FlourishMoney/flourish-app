@@ -125,6 +125,28 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
       && /access: accessAnswer\(await getUserPlan\(user_id\)\),\n\s*\}\);/.test(billing), "4d billing.js puts it in status (web and store app) and store_status (after the sync)");
   }
 
+  // ── 4b. The 30 days from go-live (migration 0029) ──────────────────────────────────────────────────
+  {
+    const ends = new Date(Date.now() + 20 * 86400000).toISOString();
+    t.eq(R.accessAnswer({ known: true, unlimited: true, entitlement: "grace", grace_ends_at: ends }), { entitled: true, basis: "grace", grace_ends_at: ends }, "4e in its 30 days: entitled, with the end date");
+    const grace = G.accessFromStatus({ access: { entitled: true, basis: "grace", grace_ends_at: ends } });
+    t.eq([G.paywallShows({ signedIn: true, access: grace }), G.graceNoticeEnds(grace)], [false, ends], "4f no paywall, and the small notice with the server's date");
+    t.eq([G.graceNoticeEnds(G.accessFromStatus({ access: { entitled: true, basis: "paid", grace_ends_at: null } })), G.graceNoticeEnds(G.accessFromStatus({ access: { entitled: true, basis: "grace", grace_ends_at: new Date(Date.now() - 1000).toISOString() } })), G.graceNoticeEnds(null)],
+      [null, null, null], "4g no notice for a paying household, after the date, or with no answer");
+    t.ok(/const graceEnds = graceNoticeEnds\(serverAccess\);/.test(APP) && (APP.match(/\{graceEnds&&/g) || []).length === 2, "4h the notice sits where the trial chip does, on the phone and the desktop, in every app");
+    // The app's own plan cache follows the same rule, so the coach and What-If open on the device too.
+    const store = new Map();
+    global.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+    const U = await import("../src/lib/usageLimits.js");
+    U.setPlan("grace"); store.set("flourish_grace_ends_at", ends);
+    t.eq([U.getPlan(), U.isGraceActive(), U.isUnlimited(), U.canUseCoach()], ["grace", true, true, true], "4i on the device, the 30 days open every feature");
+    store.set("flourish_grace_ends_at", new Date(Date.now() - 1000).toISOString());
+    t.eq([U.isGraceActive(), U.isUnlimited()], [false, false], "4j …and end on their date, even offline");
+    const refresh = APP.slice(APP.indexOf("const refreshPlanFromProfile"), APP.indexOf("const refreshPlanFromProfile") + 2200);
+    t.ok(/\.select\("grace_ends_at"\)/.test(refresh) && /const cp = derivePlan\(\{ \.\.\.prof, grace_ends_at: graceEndsAt \}\);/.test(refresh) && /\.select\("plan,trial_started_at,trial_ends_at,founder_flag"\)/.test(refresh),
+      "4k the app reads the end date on its own, so a database without 0029 never fails the plan read");
+  }
+
   // ── 5. Words ─────────────────────────────────────────────────────────────────────────────────────
   {
     const placeholders = [...G.NO_PLAN_PLACEHOLDERS];

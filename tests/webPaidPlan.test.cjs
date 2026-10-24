@@ -225,16 +225,17 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
 
   // ── 7. the App wiring ────────────────────────────────────────────────────────────────────────────
   {
-    t.ok(/import \{ derivePlan, webPlan \} from "\.\/lib\/planFromProfile\.js";/.test(APP), "7a the App uses the one shared rule");
+    t.ok(/import \{ derivePlan, webPlan, planEntitled \} from "\.\/lib\/planFromProfile\.js";/.test(APP), "7a the App uses the one shared rule");
     const refresh = APP.slice(APP.indexOf("const refreshPlanFromProfile"), APP.indexOf("const refreshPlanFromProfile") + 1500);
     t.ok(/\.from\("profiles"\)/.test(refresh) && !/from\("subscriptions"\)/.test(refresh), "7b the profile is still read from profiles; the app never reads a subscription row");
-    t.ok(/setIsPremium\(cp === "premium" \|\| cp === "beta_founder" \|\| cp === "trial"\);\s*\n(\s*\/\/[^\n]*\n)*\s*setProfilePlan\(cp\);/.test(refresh),
+    t.ok(/setIsPremium\(cp === "premium" \|\| cp === "beta_founder" \|\| cp === "trial" \|\| cp === "grace"\);\s*\n(\s*\/\/[^\n]*\n)*\s*setProfilePlan\(cp\);/.test(refresh),
       "7c a profile refresh sets the profile's plan exactly as before, then records it for the effect");
     t.ok(/\},\[billingStatus, billingAskedFor, user\?\.id, profilePlan, nativeApp\]\);/.test(APP),
       "7c2 the effect re-runs on a new profile plan and on a new status, so a refresh never leaves a paid household on free");
     t.ok(/billingAskedFor===user\.id && billingIsOn\(billingStatus\)/.test(APP), "7d only this account's own status counts (not a previous account's)");
-    t.ok(/const plan = webPlan\(profilePlan, \{ paid: webPaidRef\.current \}\);\s*setPlan\(plan\);\s*setIsPremium\(plan === "premium" \|\| plan === "beta_founder" \|\| plan === "trial"\);/.test(APP),
-      "7e when the status arrives, the plan and the paid features follow it");
+    t.ok(/const plan = webPlan\(profilePlan, \{ paid: webPaidRef\.current \}\);\s*setPlan\(plan\);\s*setIsPremium\(planEntitled\(plan\)\);/.test(APP)
+      && ["beta_founder", "premium", "trial", "grace"].every((p) => client.planEntitled(p)) && !client.planEntitled("free"),
+      "7e when the status arrives, the plan and the paid features follow it (every plan but free, which is no plan)");
     t.ok(/setIsPremium\(false\); setProfilePlan\(null\);/.test(APP), "7f signing out forgets the profile's plan");
     const hook = fs.readFileSync(HOOK_PATH, "utf8");
     t.ok(!/from\("profiles"\)/.test(hook), "7g the webhook still never writes the profiles row");

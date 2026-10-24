@@ -16,7 +16,8 @@
 //   founder_flag true            -> "beta_founder"   (existing founders keep their status)
 //   plan "plus" or "pro"         -> "premium"
 //   plan "trial", not yet ended  -> "trial"
-//   anything else                -> "free"
+//   grace_ends_at not yet passed -> "grace"  (the 30 days from go-live of no free plan, migration 0029)
+//   anything else                -> "free"   (since 2026-10-23: no plan at all)
 //
 // When a trial ends: trial_ends_at if the row has one, otherwise trial_started_at + 14 days. The
 // fallback exists because rows created before migration 0007 have no trial_ends_at, and their
@@ -48,7 +49,7 @@ export function trialEndsAtMs(profile) {
 }
 
 /**
- * The client-facing plan for a profiles row: "beta_founder" | "premium" | "trial" | "free".
+ * The client-facing plan for a profiles row: "beta_founder" | "premium" | "trial" | "grace" | "free".
  * @param {object|null} profile row with plan, trial_started_at, trial_ends_at, founder_flag
  * @param {number|Date} [now]
  */
@@ -57,21 +58,30 @@ export function derivePlan(profile, now = Date.now()) {
   if (profile.founder_flag) return "beta_founder";
   const plan = profile.plan;
   if (plan === "plus" || plan === "pro") return "premium";
+  const t = now instanceof Date ? now.getTime() : now;
   if (plan === "trial") {
     const ends = trialEndsAtMs(profile);
-    const t = now instanceof Date ? now.getTime() : now;
     if (ends !== null && t < ends) return "trial";
   }
+  // NO FREE PLAN (2026-10-23): an account already past its trial when that went live has every feature until its
+  // grace_ends_at (migration 0029, go-live + 30 days). Never a founder's or a paid profile's answer (both above).
+  const grace = _time(profile.grace_ends_at);
+  if (grace !== null && t < grace) return "grace";
   return "free";
 }
 
 /** Whether this row gets unlimited coaching. The server asks the same question of its own copy. */
 export function isUnlimitedProfile(profile, now = Date.now()) {
   const p = derivePlan(profile, now);
-  return p === "beta_founder" || p === "premium" || p === "trial";
+  return p === "beta_founder" || p === "premium" || p === "trial" || p === "grace";
 }
 
-const PLANS = ["beta_founder", "premium", "trial", "free"];
+const PLANS = ["beta_founder", "premium", "trial", "grace", "free"];
+
+/** Whether a derived plan opens every feature: every plan but "free", which since 2026-10-23 is no plan at all. */
+export function planEntitled(plan) {
+  return plan === "beta_founder" || plan === "premium" || plan === "trial" || plan === "grace";
+}
 
 /**
  * THE WEB APP'S PLAN: the profile's, plus a paid subscription as the SERVER answers it.
@@ -91,6 +101,7 @@ const PLANS = ["beta_founder", "premium", "trial", "free"];
  */
 export function webPlan(profilePlan, { paid = false } = {}) {
   const p = PLANS.includes(profilePlan) ? profilePlan : "free";
+  if (p === "grace" && paid === true) return "premium";   // as planRules.deriveEntitlement: paying ends the 30 days' notice
   if (p !== "free") return p;
   return paid === true ? "premium" : "free";
 }

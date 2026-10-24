@@ -97,7 +97,7 @@ const ahead = (days) => new Date(NOW + days * DAY).toISOString();
     const fs = require("fs");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8").replace(/\/\/[^\n]*/g, "");
     t.ok(/refreshPlanFromProfile/.test(app), "5a App.jsx reads the plan through refreshPlanFromProfile");
-    t.ok(/derivePlan\(prof\)/.test(app), "5b …which derives it with the shared rule, not its own inline copy");
+    t.ok(/derivePlan\(\{ \.\.\.prof, grace_ends_at: graceEndsAt \}\)/.test(app), "5b …which derives it with the shared rule, not its own inline copy");
     t.ok(!/const TRIAL_MS = 14 \* 86400000/.test(app), "5c the old inline 14-day arithmetic is gone from App.jsx");
     t.ok(/select\("plan,trial_started_at,trial_ends_at,founder_flag"\)/.test(app), "5d …and it asks for trial_ends_at, which the rule needs");
     const auth = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "auth.js"), "utf8");
@@ -106,7 +106,7 @@ const ahead = (days) => new Date(NOW + days * DAY).toISOString();
     // answer from 2026-10-26. The guarantee is unchanged and checked two ways: it calls INTO
     // planRules, and it does no trial arithmetic of its own.
     t.ok(/require\("\.\/planRules"\)/.test(auth), "5e the server gets the rule from planRules");
-    t.ok(/deriveEntitlement\(data|isUnlimitedProfile\(data/.test(auth), "5e2 …and asks it about this profile row");
+    t.ok(/deriveEntitlement\(\{ \.\.\.data, grace_ends_at: graceEndsAt \}|deriveEntitlement\(data|isUnlimitedProfile\(data/.test(auth), "5e2 …and asks it about this profile row");
     t.ok(!/86400000|TRIAL_DAYS\s*=|14\s*\*\s*24/.test(auth), "5e3 …with no trial-window arithmetic re-derived in auth.js");
     t.ok(/trial_ends_at/.test(auth), "5f …and selects trial_ends_at");
     t.ok(!/14 \* 86400000/.test(auth), "5g the old 14-day arithmetic is gone from auth.js");
