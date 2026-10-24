@@ -9,8 +9,9 @@
 // five households the founder named through the REAL coach.js and plaid.js, from the iOS origin, the Android
 // origin and the web, with every outside call stubbed:
 //   trial         14 days not yet over          everything open, nothing counted
-//   ended         trial over, no subscription  the free plan: 1 What-If explanation a day, no facilitator,
-//                                               one bank (the coach's 2 a week is coachLimits.test's)
+//   ended         trial over, no subscription  no plan (since 2026-10-23 there is no free plan): the
+//                                               facilitator, What-If and a bank link all refused, plan required
+//                                               (every type and action is tests/planRequired.test.cjs)
 //   founder       founder_flag                 everything open, nothing counted
 //   paid          trial over, paying on the web everything open, nothing counted
 //   web           the same four, from the web  the same answers (section 5)
@@ -25,7 +26,7 @@ const SUPA_PATH = require.resolve("@supabase/supabase-js", { paths: [path.join(R
 const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
 const COACH_PATH = require.resolve("../netlify/functions/coach.js");
 const PLAID_PATH = require.resolve("../netlify/functions/plaid.js");
-const { FREE_SIMULATIONS_DAILY, FACILITATOR_FREE_MESSAGE } = require("../netlify/functions/_lib/coachLimits.js");
+const { PLAN_REQUIRED_MESSAGE } = require("../netlify/functions/_lib/planGate.js");
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -135,7 +136,7 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
         note(origin, who, "facilitator", res.statusCode);
         if (who === "ended") {
           const body = JSON.parse(res.body);
-          t.eq([res.statusCode, body.error, body.message], [402, "plan_limit", FACILITATOR_FREE_MESSAGE], `1a ${name}: trial over, not paying: the facilitator is refused`);
+          t.eq([res.statusCode, body.error, body.message], [402, "plan_required", PLAN_REQUIRED_MESSAGE], `1a ${name}: trial over, not paying: the facilitator is refused, plan required`);
           t.eq(anthropicCalls(), before, `1b ${name}: …before Anthropic is asked`);
           t.ok(!/upgrade|plus|\$|price|flourishmoney\.app|subscribe/i.test(body.message), `1c ${name}: …in words that sell nothing`);
         } else {
@@ -145,18 +146,18 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
       }
     }
 
-    // ── 2. What-If: 1 explanation a day on the free plan, for any app ─────────────────────────────
+    // ── 2. What-If: no free plan (2026-10-23), so not even the first explanation of the day, for any app ──
     for (const [origin, name] of ORIGINS) {
       const mod = load(HOUSEHOLDS.ended);
-      const first = await coachCall(mod, origin, "simulator");
-      t.eq(first.statusCode, 200, `2a ${name}: trial over: the first What-If explanation of the day is answered`);
       const before = anthropicCalls();
+      const first = await coachCall(mod, origin, "simulator");
+      t.eq([first.statusCode, JSON.parse(first.body).error], [402, "plan_required"], `2a ${name}: trial over: the first What-If explanation of the day is refused, plan required`);
       const second = await coachCall(mod, origin, "simulator");
-      t.eq([second.statusCode, JSON.parse(second.body).error], [429, "rate_limited"], `2b ${name}: …the second is refused (the free plan has ${FREE_SIMULATIONS_DAILY} a day)`);
+      t.eq([second.statusCode, JSON.parse(second.body).error], [402, "plan_required"], `2b ${name}: …and so is the second`);
       t.eq(anthropicCalls(), before, `2c ${name}: …before Anthropic is asked`);
       note(origin, "ended", "whatIf", `${first.statusCode},${second.statusCode}`);
-      t.eq(mod.calls.rpc.filter(c => c.name === "increment_ai_usage_daily").map(c => c.args.p_kind).join(","), "simulator,simulator",
-        `2d ${name}: …counted on the daily counter, kind simulator`);
+      t.eq(mod.calls.rpc.filter(c => c.name === "increment_ai_usage_daily").length, 0,
+        `2d ${name}: …and nothing is counted on the daily counter`);
       for (const who of ["trial", "founder", "paid"]) {
         const m = load(HOUSEHOLDS[who]);
         const codes = [];
@@ -167,20 +168,20 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
       }
     }
 
-    // ── 3. the counter down or not applied yet (0024): free accounts fail closed, nobody else is touched ──
+    // ── 3. the counter down or not applied yet (0024): no plan is refused before any counter, nobody else is touched ──
     for (const counter of ["missing", "errors"]) {
       const mod = load(HOUSEHOLDS.ended, { counter });
       const before = anthropicCalls();
       const res = await coachCall(mod, IOS, "simulator");
-      t.eq([res.statusCode, JSON.parse(res.body).error], [429, "rate_limited"], `3a counter ${counter}: a free account's What-If explanation is refused`);
+      t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_required"], `3a counter ${counter}: an account with no plan is refused for its plan, before the counter`);
       t.eq(anthropicCalls(), before, `3b counter ${counter}: …and costs nothing`);
       for (const who of ["trial", "founder", "paid"]) {
         t.eq((await coachCall(load(HOUSEHOLDS[who], { counter }), IOS, "simulator")).statusCode, 200, `3c counter ${counter}: ${who} is unaffected`);
       }
     }
-    t.ok(errors.some(l => /daily simulator counter unavailable, free accounts fail closed/.test(l)), "3d …and the failure is logged where the rollout can be seen");
+    t.ok(!errors.some(l => /daily simulator counter unavailable/.test(l)), "3d …and the counter is never reached for an account with no plan, so nothing about it is logged");
 
-    // ── 4. the one-bank cap: the free plan connects one bank, for any app ─────────────────────────
+    // ── 4. a bank link: none with no plan (2026-10-23; until then the free plan connected one), for any app ──
     for (const [origin, name] of ORIGINS) {
       for (const [who, h] of Object.entries(HOUSEHOLDS)) {
         const mod = load(h);
@@ -189,7 +190,7 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
           body: JSON.stringify({ action: "exchange_token", public_token: "public-sandbox-1" }) });
         const toPlaid = outside.slice(before).some(u => /\/item\/public_token\/exchange$/.test(u));
         note(origin, who, "secondBank", toPlaid ? "plaid" : res.statusCode);
-        if (who === "ended") t.eq([res.statusCode, toPlaid], [402, false], `4a ${name}: trial over, not paying, one bank already: a second is refused before Plaid`);
+        if (who === "ended") t.eq([res.statusCode, JSON.parse(res.body).error, toPlaid], [402, "plan_required", false], `4a ${name}: trial over, not paying: a bank link is refused before Plaid, plan required`);
         else t.eq([res.statusCode !== 402, toPlaid], [true, true], `4b ${name}: ${who}: a second bank goes on to Plaid`);
       }
     }
@@ -202,8 +203,8 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
         t.eq((outcomes[origin][who] || []).join(" "), web, `5b ${who}: ${name} gets exactly the web's outcomes`);
       }
     }
-    t.eq((outcomes[WEB].ended || []).join(" "), "facilitator=402 whatIf=200,429 secondBank=402",
-      "5c (not vacuous: the free plan's outcomes on the web are the limits themselves)");
+    t.eq((outcomes[WEB].ended || []).join(" "), "facilitator=402 whatIf=402,402 secondBank=402",
+      "5c (not vacuous: with no plan, the outcomes on the web are the refusals themselves)");
   } finally {
     console.log = quiet; console.error = quietErr;
     global.fetch = realFetch;

@@ -125,7 +125,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
         },
       };
       const fn = new Function(
-        "getUserPlan", "getAdminClient", "ENFORCE_PLAN_LIMITS", "CHAT_DAILY_CEILING", "FREE_CHAT_WEEKLY",
+        "planAnswer", "getAdminClient", "ENFORCE_PLAN_LIMITS", "CHAT_DAILY_CEILING", "FREE_CHAT_WEEKLY",
         "countFreeWeek", "decideChatLimit", "corsHeaders", "user_id", "ipCount", "EMERGENCY_IP_DAILY", "console",
         "isNativeRequest", "isStoreBillingRequest", "event",
         `return (async () => {\n${block}\n  return { allowedThrough: true };\n})();`
@@ -137,7 +137,7 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
       let out;
       try {
         out = await fn(
-          async (_u, opts) => { calls.planOpts.push(opts); return { unlimited }; }, () => admin, enforce, CEILING, FREE_CHAT_WEEKLY,
+          { known: true, unlimited }, () => admin, enforce, CEILING, FREE_CHAT_WEEKLY,
           countFreeWeek, decideChatLimit, CORS, "user-1", 1, 10, { error: (...a) => logs.push(a.map(String).join(" ")) },
           isNativeRequest, isStoreBillingRequest, { headers: { origin }, ...(query ? { queryStringParameters: query } : {}) }
         );
@@ -149,12 +149,11 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
     // One plan for every app (2026-10-20): the plan is asked the same way whatever the request's origin,
     // so a store app is held to the web's rules and gets a web subscription's entitlement too
     // (_lib/planRules.js deriveEntitlement; tests/nativeTrialLimits.test.cjs).
-    t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false })).calls.planOpts), "[null]",
-      "7a2 the coach asks getUserPlan with no platform option for a web request");
-    for (const origin of ["capacitor://localhost", "https://localhost"]) {
-      t.eq(JSON.stringify((await run({ mode: "errors", unlimited: false, origin })).calls.planOpts), "[null]",
-        `7a3 …and exactly the same for a request from a store app (${origin})`);
-    }
+    // Since 2026-10-23 (no free plan) the plan is read once per request, by the plan gate ahead of every coach type
+    // (_lib/planGate.js), and this block takes that same answer: one call, the user id only, no platform option.
+    t.eq(coach.match(/getUserPlan\(/g).length, 1, "7a2 the coach asks getUserPlan once per request");
+    t.ok(/const planAnswer = await getUserPlan\(user_id\);/.test(coach), "7a3 …with the user id only: no platform option, so a store app gets the web's answer");
+    t.ok(!/getUserPlan/.test(block) && /= planAnswer;/.test(block), "7a4 …and this block takes that answer rather than asking again");
 
     for (const mode of Object.keys(MODES)) {
       // A free account is refused, with the ordinary free-limit message.

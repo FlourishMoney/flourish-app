@@ -141,7 +141,8 @@ function load(db) {
       for (const [origin, name] of [[IOS, "iOS"], [ANDROID, "Android"], [WEB, "the web"]]) {
         const before = plaidCalls.length;
         const res = await exchange(origin);
-        t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_limit"], `4c ${name}: with no subscription and the trial over, a second bank is refused`);
+        // No free plan since 2026-10-23: with the trial over and nothing paid, no bank link at all (plan required).
+        t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_required"], `4c ${name}: with no subscription and the trial over, a bank link is refused, plan required`);
         t.eq(plaidCalls.length, before, `4d ${name}: …before Plaid is asked`);
       }
     } finally {
