@@ -115,8 +115,9 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
 
   // ── 6. The screen ────────────────────────────────────────────────────────────────────────────
   {
-    t.eq((APP.match(/<StorePaywall /g) || []).length, 1, "6a one render site for the store paywall (item 3 places it)");
-    const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
+    // Two since 2026-10-23: the on-request overlay (item 3) and the no-plan paywall, which has no Close.
+    t.eq((APP.match(/<StorePaywall /g) || []).length, 2, "6a two render sites for the store paywall: item 3's overlay and the no-plan paywall");
+    const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function NoPlanScreen("));
     for (const [what, rx] of [["restore", /onClick=\{doRestore\}/], ["terms", /onViewLegal\("terms"\)/], ["privacy", /onViewLegal\("privacy"\)/], ["a close button", /onClose&&<div[^\n]*aria-label="Close" onClick=\{onClose\}/]]) {
       t.ok(rx.test(comp), `6b the paywall always offers ${what}`);
     }

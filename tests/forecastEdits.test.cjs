@@ -325,8 +325,11 @@ const { create } = require("./_runner.cjs");
     t.ok(a.forecastEdits && a.forecastEdits.dailySpend === 40 && a.forecastEdits.expected.length === 1 && a.depositDecisions.x && a.depositRules.jamie,
          "the synced blob carries forecastEdits, depositDecisions and depositRules in the household's appData");
     const app = fs.readFileSync(path.join(__dirname, "../src/App.jsx"), "utf8");
-    const exp = app.slice(app.indexOf("const exportMyData"), app.indexOf("const exportMyData") + 2500);
-    t.ok(/forecastEdits: data\.forecastEdits/.test(exp) && /depositDecisions: data\.depositDecisions/.test(exp) && /depositRules: data\.depositRules/.test(exp),
+    // The export is built in lib/paywallGate.js exportPayload (2026-10-23), shared by Settings and the no-plan paywall.
+    const lib = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "paywallGate.js"), "utf8");
+    const exp = lib.slice(lib.indexOf("export function exportPayload"), lib.indexOf("export function exportPayload") + 2500);
+    t.ok(/forecastEdits: d\.forecastEdits/.test(exp) && /depositDecisions: d\.depositDecisions/.test(exp) && /depositRules: d\.depositRules/.test(exp)
+         && /const exportMyData = \(\) => downloadExport\(data\);/.test(app) && /const payload = exportPayload\(data, _ls\);/.test(app),
          "the data export includes the corrections");
   }
 

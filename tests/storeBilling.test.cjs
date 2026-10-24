@@ -240,7 +240,8 @@ function fakeAdmin(db = {}, users = {}) {
     const r1 = reads.splice(0);
     const g2 = await A2.getUserPlan("u1", { native: true, storeBilling: true });
     const r2 = reads.splice(0);
-    t.eq([g1.unlimited, r1, g2.unlimited, r2], [true, ["profiles", "subscriptions"], true, ["profiles", "subscriptions"]], "5f getUserPlan reads and counts the subscription for every request, whatever app asks (2026-10-20)");
+    // The third read (2026-10-23) is the 30 days' own column (migration 0029), read apart so a database without it never fails the plan.
+    t.eq([g1.unlimited, r1, g2.unlimited, r2], [true, ["profiles", "subscriptions", "profiles"], true, ["profiles", "subscriptions", "profiles"]], "5f getUserPlan reads and counts the subscription for every request, whatever app asks (2026-10-20)");
     delete require.cache[supa]; delete require.cache[AUTH_PATH]; void A; void authMod;
     restoreEnv();
   }

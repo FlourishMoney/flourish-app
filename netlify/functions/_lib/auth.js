@@ -104,6 +104,11 @@ const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
 // auth still gates access; worst case a paid user is briefly treated as free on a transient DB error.
 // The same answer whichever app asks: every request reads the subscription row, so a household paying
 // on the web or in a store keeps full access in every app (_lib/planRules.js deriveEntitlement).
+//
+// NO FREE PLAN (2026-10-23): `unlimited` false now means no plan at all, and every paid call is refused
+// (_lib/planGate.js). So the answer also says whether it is KNOWN. A read that failed is known: false, which
+// the gate answers with "try again" (503), never "plan required": a paying household must not be refused as
+// unpaid because the database blinked. A read that worked and found no row is a known answer: no plan.
 async function getUserPlan(user_id) {
   try {
     const admin = getAdminClient();
@@ -112,7 +117,11 @@ async function getUserPlan(user_id) {
       .select("plan, trial_started_at, trial_ends_at, founder_flag")
       .eq("user_id", user_id)
       .maybeSingle();
-    if (error || !data) return { plan: "free", founder_flag: false, unlimited: false, paid: false };
+    if (error) {
+      console.error("[auth] profile read failed (plan unknown):", error.message);
+      return { plan: "free", founder_flag: false, unlimited: false, paid: false, known: false };
+    }
+    if (!data) return { plan: "free", founder_flag: false, unlimited: false, paid: false, known: true };
     const plan = data.plan || "free";
     const founder = !!data.founder_flag;
 
@@ -121,7 +130,9 @@ async function getUserPlan(user_id) {
     // this code ships) must leave the profile answer exactly as it was, never throw, and never
     // upgrade anyone. Same failure posture as the rest of this function — worst case a paying user
     // is briefly treated as free, never the reverse.
+    // A table that is not there holds no subscription (a known "none"); any other failure is not an answer.
     let sub = null;
+    let subKnown = true;
     try {
       const { data: subRow, error: subErr } = await admin
         .from("subscriptions")
@@ -129,25 +140,60 @@ async function getUserPlan(user_id) {
         .eq("user_id", user_id)
         .maybeSingle();
       if (!subErr) sub = subRow || null;
+      else if (!missingRelation(subErr)) {
+        subKnown = false;
+        console.error("[auth] subscription read failed (plan unknown unless the profile entitles):", subErr.message);
+      }
     } catch (e) {
-      console.error("[auth] subscription read failed (treating as unpaid):", e.message);
+      subKnown = false;
+      console.error("[auth] subscription read failed (plan unknown unless the profile entitles):", e.message);
     }
 
-    const ent = deriveEntitlement(data, sub, Date.now());
+    // The 30 days from go-live of no free plan (migration 0029), read on their own like the subscription: before
+    // 0029 the column does not exist, which is a known "no 30 days", never a failed plan read for everyone else.
+    let graceEndsAt = null;
+    let graceKnown = true;
+    try {
+      const { data: g, error: gErr } = await admin.from("profiles").select("grace_ends_at").eq("user_id", user_id).maybeSingle();
+      if (!gErr) graceEndsAt = (g && g.grace_ends_at) || null;
+      else if (!missingColumn(gErr)) {
+        graceKnown = false;
+        console.error("[auth] grace read failed (plan unknown unless the profile or a subscription entitles):", gErr.message);
+      }
+    } catch (e) {
+      graceKnown = false;
+      console.error("[auth] grace read failed (plan unknown unless the profile or a subscription entitles):", e.message);
+    }
+
+    const ent = deriveEntitlement({ ...data, grace_ends_at: graceEndsAt }, sub, Date.now());
     return {
       // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
       // existing tests read this shape. The derived answer is added beside it, not in place of it.
       plan,
-      entitlement: ent.plan,          // "beta_founder" | "premium" | "trial" | "free"
+      entitlement: ent.plan,          // "beta_founder" | "premium" | "trial" | "grace" | "free"
       founder_flag: founder,
       unlimited: ent.unlimited,
       paid: ent.paidSubscription,
       subscription_status: sub ? sub.status : null,
+      // The profile alone entitles a founder, a paid profile or a live trial; otherwise the answer rests on the
+      // subscription read, and is only known if that read worked.
+      known: ent.unlimited || (subKnown && graceKnown),
+      grace_ends_at: ent.plan === "grace" ? graceEndsAt : null,
     };
   } catch (e) {
-    console.error("[auth] getUserPlan failed (defaulting to free):", e.message);
-    return { plan: "free", founder_flag: false, unlimited: false };
+    console.error("[auth] getUserPlan failed (plan unknown):", e.message);
+    return { plan: "free", founder_flag: false, unlimited: false, paid: false, known: false };
   }
+}
+
+// Postgres "undefined_column" and PostgREST's "column not found".
+function missingColumn(e) {
+  return !!e && (e.code === "42703" || e.code === "PGRST204" || /column .*does not exist|could not find the .* column/i.test(String(e.message || "")));
+}
+
+// Postgres "undefined_table" and PostgREST's "table not in the schema cache".
+function missingRelation(e) {
+  return !!e && (e.code === "42P01" || e.code === "PGRST205" || /relation .* does not exist|could not find the table/i.test(String(e.message || "")));
 }
 
 // Returns a Netlify Functions-style 401 response

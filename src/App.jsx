@@ -67,6 +67,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
+import { accessFromStatus, rememberAccess, recalledAccess, paywallShows, graceNoticeEnds, graceNotice, NO_PLAN_COPY, exportPayload } from "./lib/paywallGate.js";
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
@@ -84,7 +85,7 @@ import { demoCoachExchanges, demoFacilitatorLine, demoCheckInInsight } from "./l
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { derivePlan, webPlan, planEntitled } from "./lib/planFromProfile.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -12212,40 +12213,8 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
   // everything the user has entered as a timestamped JSON file. Client-side blob
   // download — works on web; Capacitor iOS (WKWebView) will need a Share/Filesystem
   // follow-up since a blob <a download> often won't trigger a save there.
-  const exportMyData = () => {
-    try {
-      const _ls = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || fb); } catch { return JSON.parse(fb); } };
-      const payload = {
-        _meta: { app: "Flourish Money", schema: 1, exportedAt: new Date().toISOString(),
-                 note: "Your Flourish data, exported for your records / portability." },
-        profile: data.profile || null,
-        incomes: data.incomes || [],
-        bills: data.bills || [],
-        debts: data.debts || [],
-        goals: data.goals || [],
-        budgets: data.budgets || {},
-        accounts: data.accounts || [],
-        transactions: data.transactions || [],
-        household: data.household || null,
-        // The household's forecast corrections: edited or skipped deposits and bills, "from this date on"
-        // changes, expected money in or out, their daily spend figure, and which deposits are not income.
-        forecastEdits: data.forecastEdits || {},
-        depositDecisions: data.depositDecisions || {},
-        depositRules: data.depositRules || {},
-        customCategories: _ls("flourish_custom_cats", "[]"),
-        categoryOverrides: _ls("flourish_cat_overrides", "{}"),
-        coachHistory: _ls("flourish_coach_history", "null"),
-      };
-      const d = new Date();
-      const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `flourish-export-${stamp}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch { alertModal({message:"Could not export your data. Please try again."}); }
-  };
+  // The payload is built in one place (lib/paywallGate.js exportPayload), so the no-plan paywall exports the same.
+  const exportMyData = () => downloadExport(data);
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:GAP.textToControl,alignItems:"center",marginBottom:20}}>
       <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
@@ -13621,6 +13590,24 @@ function TermsOfService({onBack}){
   );
 }
 
+// ─── EXPORT MY DATA ──────────────────────────────────────────────────────────
+// Settings → Your Data and the no-plan paywall: the household's data as a JSON download (lib/paywallGate.js
+// exportPayload builds it). Reads only; nothing is changed.
+function downloadExport(data) {
+  try {
+    const _ls = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || fb); } catch { return JSON.parse(fb); } };
+    const payload = exportPayload(data, _ls);
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `flourish-export-${stamp}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch { alertModal({message:"Could not export your data. Please try again."}); }
+}
+
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
 // A store app's end-of-trial banner, where the web shows "Your free trial has ended" and an upgrade button:
 // the founder's line (lib/freePlan.js TRIAL_ENDED_BANNER) and a way to put it away. Nothing to buy, no link.
@@ -13629,6 +13616,17 @@ function NativeTrialEndedLine({onDismiss}){
     <div role="status" style={{background:C.cardAlt,borderBottom:`1px solid ${C.border}`,padding:`${SPACE.xs}px ${SPACE.xs}px ${SPACE.xs}px ${SPACE.lg}px`,display:"flex",alignItems:"center",gap:SPACE.sm,flexShrink:0}}>
       <span style={{color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,lineHeight:1.5,flex:1}}>{TRIAL_ENDED_BANNER}</span>
       <button onClick={onDismiss} aria-label="Dismiss" style={{background:"none",border:"none",color:C.muted,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap,fontSize:18,fontFamily:"inherit",flexShrink:0}}>×</button>
+    </div>
+  );
+}
+
+// The 30 days from go-live of no free plan (2026-10-23): a small notice with the server's end date, in every app
+// (lib/paywallGate.js graceNotice; its words are a placeholder until the founder's are in). No button, no link.
+function GraceNotice({endsAt}){
+  const label = new Date(endsAt).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" });
+  return(
+    <div data-grace-notice="" style={{display:"flex",justifyContent:"center",padding:`${SPACE.xs}px ${SPACE.lg}px`,flexShrink:0}}>
+      <span role="status" style={{background:C.cardAlt,border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:`${SPACE.xs}px ${SPACE.md}px`,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,textAlign:"center"}}>{graceNotice(label)}</span>
     </div>
   );
 }
@@ -13816,7 +13814,9 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 // approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
 // purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
 // whose one ModalHost sits above it.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose}){
+// `title` and `lead` (no free plan, 2026-10-23): the no-plan paywall (NoPlanScreen) puts its own heading and line in
+// place of the approved ones, whose lead describes the free plan. Unset, the approved lines show, as before.
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, title=PAYWALL_COPY.title, lead=PAYWALL_COPY.lead}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
   const [loadFailed,setLoadFailed]=useState(false);
   const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
@@ -13875,8 +13875,8 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         {onClose&&<div style={{display:"flex",justifyContent:"flex-end"}}><button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.mutedHi,fontSize:20,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap}}>✕</button></div>}
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
-        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
-        <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{title}</h1>
+        <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{lead}</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
         {held && (
           <div data-founding-switch="" style={{background:C.card,border:`2px solid ${C.gold}77`,borderRadius:16,padding:"16px 18px",marginBottom:LAYOUT.cardGap}}>
@@ -13913,6 +13913,52 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
             : <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>}
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── NO PLAN (founder's decision, 2026-10-23) ────────────────────────────────────────────────────────
+// The one screen for a household whose trial has ended, or whose subscription has lapsed: there is no free
+// plan. App draws it OVER the app (noPlanOverlay), so everything underneath stays mounted with its state and
+// comes back the moment the household subscribes; nothing here writes, clears or replaces the household's data.
+// From it a household can always: subscribe (Stripe on the website; the store's own purchase in a store build
+// that sells, never a web price or link there), restore purchases (store builds), check again, manage its
+// subscription, sign out, export its data, delete its account, and read the Privacy Policy, Terms and Support.
+// It cannot be closed: it goes when the server's answer says the household has a plan (lib/paywallGate.js).
+// Words: lib/paywallGate.js NO_PLAN_COPY (approved lines reused; new ones are [WORDS: …] placeholders).
+function NoPlanScreen({web, store, onCheckAgain, checking=false, onManage, onSignOut, onExport, onDelete, onViewLegal, platform}){
+  const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
+  const quiet = {width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"};
+  return(
+    <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
+        {/* A store build that sells: the store's own paywall (plans at the store's prices, the disclosure, Terms of Use,
+            Privacy Policy, Restore purchases), with no Close. Everything else: this screen's heading and lines. */}
+        {store ? store : <>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
+          <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{NO_PLAN_COPY.heading}</h1>
+          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{NO_PLAN_COPY.body}</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{NO_PLAN_COPY.dataSafe}</div>
+          {web
+            ? <button onClick={web.onSeePlans} style={{width:"100%",minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>{NO_PLAN_COPY.seePlans}</button>
+            : <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center"}}>{NO_PLAN_COPY.noStorePurchase}</div>}
+        </>}
+        <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,marginTop:SPACE.lg}}>
+          {onCheckAgain&&<button onClick={onCheckAgain} disabled={checking} style={quiet}>{NO_PLAN_COPY.checkAgain}</button>}
+          {onManage&&<button onClick={onManage} style={quiet}>{NO_PLAN_COPY.manage}</button>}
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
+          <button onClick={onExport} style={link}>{NO_PLAN_COPY.exportData}</button>
+          <button onClick={onSignOut} style={link}>{NO_PLAN_COPY.signOut}</button>
+          <button onClick={onDelete} style={{...link,color:C.redInk}}>{NO_PLAN_COPY.deleteAccount}</button>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md}}>
+          {/* A store build that sells already shows its approved Terms of Use and Privacy Policy above. */}
+          {!store&&<button onClick={()=>onViewLegal("privacy")} style={link}>{NO_PLAN_COPY.privacy}</button>}
+          {!store&&<button onClick={()=>onViewLegal("terms")} style={link}>{NO_PLAN_COPY.terms}</button>}
+          <button onClick={()=>onViewLegal("support")} style={link}>{NO_PLAN_COPY.support}</button>
         </div>
       </div>
     </div>
@@ -16866,6 +16912,12 @@ export default function FlourishApp(){
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
+  // NO FREE PLAN (2026-10-23): asks the billing status again (the no-plan paywall's Check again, or the page
+  // coming back into view after a checkout or the billing portal), and what the paywall is showing inside itself:
+  // null (the paywall), "plans" (the website's checkout screen), "privacy", "terms" or "support".
+  const [billingRecheck,setBillingRecheck]=useState(0);
+  const [noPlanView,setNoPlanView]=useState(null);
+  const [noPlanChecking,setNoPlanChecking]=useState(false);
   // VERSION 1.1, IN-APP PURCHASE (lib/storeBilling.js). Only a store build with VITE_IAP_ENABLED "true" sells;
   // everywhere else storeBilling is false and none of this runs. storeStatus is the server's store_status
   // answer for this account ({ paid, provider, plan_key, founding }), storeAskedFor the account it finished for,
@@ -16944,7 +16996,7 @@ export default function FlourishApp(){
     // read that would have corrected it never runs without a network. Derive both ways: the cached
     // plan is what the server last said, and refreshPlanFromProfile overrides it the moment one
     // arrives.
-    setIsPremium(isPremiumOrFounder() || isTrialActive());
+    setIsPremium(isUnlimited());
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
@@ -16990,11 +17042,19 @@ export default function FlourishApp(){
         .eq("user_id", userId)
         .maybeSingle();
       if (!prof) return null;
-      const cp = derivePlan(prof);
+      // The 30 days from go-live of no free plan (migration 0029), read on their own: before 0029 the column is not
+      // there, and that must not fail the plan read above.
+      let graceEndsAt = null;
+      try {
+        const { data: g, error: gErr } = await supabase.from("profiles").select("grace_ends_at").eq("user_id", userId).maybeSingle();
+        if (!gErr && g && g.grace_ends_at) graceEndsAt = g.grace_ends_at;
+      } catch { /* no column yet, or offline: no 30 days */ }
+      const cp = derivePlan({ ...prof, grace_ends_at: graceEndsAt });
+      if (graceEndsAt) { try { localStorage.setItem("flourish_grace_ends_at", graceEndsAt); } catch {} }
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
-      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
+      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial" || cp === "grace");
       // The web paid-subscription effect (after openUpgrade) applies the server's `paid` on top of this.
       setProfilePlan(cp);
       return cp;
@@ -17029,6 +17089,7 @@ export default function FlourishApp(){
   useEffect(()=>{
     let cancelled = false, timer = null;
     if(!storeBilling || !user?.id){ setStoreStatus(null); return; }
+    if(storeAskedFor && storeAskedFor!==user.id) setStoreStatus(null);     // another account: not its answer
     // No answer yet (offline, the server not reached): asked again after 5, 20 and 60 seconds, and whenever the
     // network comes back, so a household is never left on an unknown answer for the whole session.
     const ask = async (attempt)=>{
@@ -17069,6 +17130,9 @@ export default function FlourishApp(){
   useEffect(()=>{
     let cancelled = false;
     if(!user?.id){ setBillingStatus(null); return; }
+    // Another account on this device: the last one's answer must not stand in while this one's is asked
+    // (it would show, or hide, the no-plan paywall for the wrong household).
+    if(billingAskedFor && billingAskedFor!==user.id) setBillingStatus(null);
     (async ()=>{
       try{
         const jwt = await getJwt();
@@ -17080,12 +17144,22 @@ export default function FlourishApp(){
         });
         if(!res.ok) return;                       // 404 while billing is off: stay hidden
         const body = await res.json();
-        if(!cancelled) setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+        // A store app keeps only whether billing is on, whether the household pays on the web, and (no free plan,
+        // 2026-10-23) whether it has a plan at all: no price, offer or link.
+        if(!cancelled) setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true, access: body?.access ?? null } : body);
       }catch{ /* offline or blocked: stay hidden */ }
       finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
     return ()=>{ cancelled = true; };
-  },[user?.id, nativeApp]);
+  },[user?.id, nativeApp, billingRecheck]);
+  // Coming back into view (another tab finished a checkout, the billing portal, a store's own screen): ask again,
+  // so a household that has just subscribed is not left looking at the no-plan paywall.
+  useEffect(()=>{
+    if(!user?.id) return;
+    const onVisible = ()=>{ if(document.visibilityState==="visible") setBillingRecheck(n=>n+1); };
+    document.addEventListener("visibilitychange", onVisible);
+    return ()=>document.removeEventListener("visibilitychange", onVisible);
+  },[user?.id]);
 
   const billingUi = billingUiState({status:billingStatus, native:nativeApp, paid:!!billingStatus?.paid});
   // The two entry points call this. While billing is off it opens the existing feature paywall,
@@ -17103,7 +17177,7 @@ export default function FlourishApp(){
     if(profilePlan===null) return;
     const plan = webPlan(profilePlan, { paid: webPaidRef.current });
     setPlan(plan);
-    setIsPremium(plan === "premium" || plan === "beta_founder" || plan === "trial");
+    setIsPremium(planEntitled(plan));
   },[billingStatus, billingAskedFor, user?.id, profilePlan, nativeApp]);
   // Version 1.1: a store app that sells takes the server's store_status answer, whichever provider the
   // household pays through (lib/planFromProfile.js storePlan). Declared after the effect above so that, when
@@ -17113,7 +17187,7 @@ export default function FlourishApp(){
     if(!storeBilling || profilePlan===null) return;
     const sp = storePlan(profilePlan, { paid: !!user?.id && storeAskedFor===user.id && storeStatus?.paid === true });
     setPlan(sp);
-    setIsPremium(sp === "premium" || sp === "beta_founder" || sp === "trial");
+    setIsPremium(planEntitled(sp));
   },[storeBilling, storeStatus, storeAskedFor, user?.id, profilePlan]);
   // VERSION 1.1, ITEM 3: NOBODY IS CUT OFF MID TASK. The store paywall is drawn OVER the app, never in place of
   // it: whatever screen, sheet or half-typed form was open stays mounted underneath with its state, and once the
@@ -17134,6 +17208,21 @@ export default function FlourishApp(){
     if(storeEntitledNow===null || !user?.id) return;
     rememberGate(deviceStorage(), user.id, storeEntitledNow, storeStatus?.period_end || null);
   },[storeEntitledNow, user?.id, storeStatus]);
+  // NO FREE PLAN (founder's decision, 2026-10-23): the server's answer to "does this household have a plan at all",
+  // from this account's own status call (lib/paywallGate.js). A store build that sells takes store_status first,
+  // which is read after a purchase is synced; every other build takes the billing status. No answer is never "no
+  // plan": the last definite one for this account stands in, and with none the app opens as it is.
+  const serverAccess = !user?.id ? null
+    : ((storeBilling && storeAskedFor===user.id && accessFromStatus(storeStatus)) || (billingAskedFor===user.id && accessFromStatus(billingStatus)) || null);
+  useEffect(()=>{
+    if(serverAccess && user?.id) rememberAccess(deviceStorage(), user.id, serverAccess);
+  },[serverAccess?.entitled, user?.id]); // eslint-disable-line
+  const noPlan = paywallShows({ signedIn: !!user?.id, demo: !!appData?.demo, access: serverAccess,
+    recalled: user?.id ? recalledAccess(deviceStorage(), user.id) : null });
+  // The 30 days from go-live (migration 0029): the server's end date while they last, for the small notice.
+  const graceEnds = graceNoticeEnds(serverAccess);
+  // The paywall's own views reset whenever it goes, so it always opens on itself.
+  useEffect(()=>{ if(!noPlan){ setNoPlanView(null); setNoPlanChecking(false); } },[noPlan]);
   // THE PAYWALL OPENS ONLY WHEN THE HOUSEHOLD ASKS (2026-10-20): a locked screen's "See plans", Settings. The store
   // apps follow the web's rules, the 14-day account trial and then the free plan, so nothing is ever shut behind it.
   // A confirmed subscription closes it.
@@ -17200,6 +17289,12 @@ export default function FlourishApp(){
       BILLING_RETURN_PARAMS.forEach(k=>url.searchParams.delete(k));
       window.history.replaceState({},"",url.pathname+url.search+url.hash);
     }catch{}
+    // No free plan (2026-10-23): the status asked on load usually came before Stripe's webhook wrote the
+    // subscription, and said "no plan". Ask again over the next half minute, so a household that has just paid is
+    // not left on the no-plan paywall (each answer replaces the last; Check again stays for a slower webhook).
+    if(notice.kind!=="success") return;
+    const timers = [2000, 6000, 15000, 30000].map(ms=>setTimeout(()=>setBillingRecheck(n=>n+1), ms));
+    return ()=>timers.forEach(clearTimeout);
   },[user?.id]);
 
   const hydratedUidRef = useRef(null);    // the user id we've COMPLETED hydrate/decide for. DB save is gated on this === user.id (POSITIVE gate — structurally impossible to write before hydrate finishes for this user, so no empty pre-hydrate overwrite).
@@ -17288,7 +17383,7 @@ export default function FlourishApp(){
     // AFTER writeSideKeys, which restores flourish_plan: derive from the plan the blob just brought
     // in, not the one this device happened to be holding. The blob's own isPremium flag is written
     // by the client, so trusting it would let a stale device re-grant itself premium on restore.
-    setIsPremium(isPremiumOrFounder() || isTrialActive());
+    setIsPremium(isUnlimited());
     // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
     try {
       setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
@@ -18109,16 +18204,137 @@ export default function FlourishApp(){
   // only the ambiguous empty-cache case (where onboarded=false might just mean "not hydrated yet") waits.
   if(user && !hydrated && !onboarded)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
 
+  // NO FREE PLAN (founder's decision, 2026-10-23). Deleting the account and signing out are defined here, above
+  // the screens below, because the no-plan paywall offers both on every one of them.
+  const deleteAllData = async ()=>{
+    // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
+    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
+      : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
+    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone."+(storeNote?` ${storeNote}`:""),confirmLabel:"Delete account",destructive:true}))) return;
+
+    // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
+    // the account was actually deleted. Any failure leaves the session + local data intact
+    // and surfaces the error to the user (Apple 5.1.1(v) — delete must actually delete).
+    const jwt = await getJwt();
+    if (!jwt) {
+      alertModal({message:"You need to be signed in to delete your account. Please sign in and try again."});
+      return;
+    }
+
+    // Phase D2: backend revokes all Plaid items + deletes plaid_items rows + deletes the Supabase auth user.
+    let resp;
+    try {
+      resp = await callPlaid("delete_account", {}, { jwt });
+    } catch (err) {
+      console.error("[deleteAllData] backend wipe failed:", err?.message);
+      alertModal({message:"We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app."});
+      return; // FAIL CLOSED — keep session + local data
+    }
+
+    // 2a: fail closed on any step that means the account/data was NOT removed. plaid_remove
+    // is documented best-effort (a transient Plaid hiccup must not trap a user in an account
+    // they can't delete), so it is non-blocking — logged, not fatal.
+    const errs = Array.isArray(resp?.errors) ? resp.errors : [];
+    const criticalErrors = errs.filter(e => e && e.step !== "plaid_remove");
+    if (criticalErrors.length || resp?.deleted === false) {
+      console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
+      // Round-3: "nothing was changed" only when the server stopped before touching anything (it
+      // could not load the bank links). A later stop has already removed some data, so say that.
+      // KNOWN-DEFECTS 23: the subscription is cancelled before anything is erased; if it could not be, nothing was.
+      if (criticalErrors.some(e => e.step === "billing_cancel")) {
+        alertModal({message:"We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."});
+        return; // FAIL CLOSED
+      }
+      const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
+      alertModal({message: untouched
+        ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."
+        : "Your account deletion did not finish. Some of your data may already be removed, and your account still exists so you can try again to finish it, or contact privacy@flourishmoney.app."});
+      return; // FAIL CLOSED
+    }
+    if (errs.length) {
+      // account IS deleted; only best-effort Plaid bank revocation was incomplete
+      console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
+    }
+
+    // Confirmed deleted server-side — now sign out + sweep ALL flourish_* keys + reload.
+    try { await supabase.auth.signOut(); } catch {}
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_")).forEach(k => localStorage.removeItem(k));
+    } catch {}
+    window.location.reload();
+  };
+
+  // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
+  // family devices). Keeps the appData blob (STORAGE_KEY) so re-login restores the user's data,
+  // AND keeps STAMP_KEY (flourish_uid) — the shared-device OWNER stamp. Sprint Z3 (the documented
+  // fast-follow): preserving the stamp lets the NEXT login detect a DIFFERENT user and wipe
+  // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
+  // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
+  const signOut = async ()=>{
+    if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
+    try { await supabase.auth.signOut(); } catch {}
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY).forEach(k => localStorage.removeItem(k));
+    } catch {}
+    window.location.reload();
+  };
+
+  // THE NO-PLAN PAYWALL (lib/paywallGate.js decides when; NoPlanScreen is what it says). Drawn OVER whatever is on
+  // screen, never in place of it, at the store paywall's level (9998: above every screen and the tab bar, below the
+  // sheets, dialogs and the one ModalHost), so nothing underneath unmounts and nothing half done is lost; it goes the
+  // moment the server's answer says the household has a plan. Privacy, Terms, Support and the website's plans open
+  // inside it. A store build that sells shows its own paywall here (the store's prices, Restore purchases), with no
+  // Close and no web price or link; the website shows its checkout.
+  const checkAccessAgain = async ()=>{
+    setNoPlanChecking(true);
+    try{
+      if(storeBilling){ const st = await askStore("store_status").catch(()=>null); if(st) setStoreStatus(st); }
+      setBillingRecheck(n=>n+1);
+    } finally { setNoPlanChecking(false); }
+  };
+  const openBillingPortal = async ()=>{
+    try{
+      const jwt = await getJwt();
+      if(!jwt) throw new Error("signed_out");
+      const res = await fetch(`${API_BASE}/api/billing`,{ method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`}, body: JSON.stringify({action:"create_portal_session"}) });
+      const body = await res.json().catch(()=>({}));
+      if(!res.ok || !body.url) throw new Error(body.error||"unavailable");
+      window.location.assign(body.url);      // Stripe's billing portal, hosted by Stripe
+    }catch(e){ alertModal({ message: checkoutErrorText({ error: e.message }) }); }
+  };
+  const noPlanManage = storeBilling
+    ? ((storeStatus?.provider==="app_store" || storeStatus?.provider==="play_store") ? manageStoreSubscription : null)
+    : (!nativeApp && billingStatus?.manageable ? openBillingPortal : null);
+  const noPlanOverlay = noPlan ? (
+    <div data-no-plan="" role="dialog" aria-modal="true" aria-label={NO_PLAN_COPY.heading} style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+      {noPlanView==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setNoPlanView(null)}/></div>
+        : noPlanView==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setNoPlanView(null)}/></div>
+        : noPlanView==="support" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><SupportPage onBack={()=>setNoPlanView(null)} country={appData?.profile?.country||"CA"}/></div>
+        : (noPlanView==="plans" && !nativeApp && billingUi.show) ? <UpgradeScreen status={billingStatus} mode="plans" notice={billingNotice} onClose={()=>{setNoPlanView(null);setBillingNotice(null);}}/>
+        : <NoPlanScreen
+            web={!nativeApp && billingUi.show ? { onSeePlans: ()=>setNoPlanView("plans") } : null}
+            store={storeBilling ? <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+              onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setNoPlanView(which)} onManage={manageStoreSubscription}
+              title={NO_PLAN_COPY.heading} lead={NO_PLAN_COPY.body}/> : null}
+            onCheckAgain={checkAccessAgain} checking={noPlanChecking} onManage={noPlanManage}
+            onSignOut={signOut} onExport={()=>downloadExport(appData)} onDelete={deleteAllData} onViewLegal={(which)=>setNoPlanView(which)}/>}
+    </div>
+  ) : null;
+  // Every screen from here on is drawn with the overlay beside it, inside one fragment whose first child is the
+  // screen itself, so the paywall arriving or going never remounts the screen. These screens have no ModalHost of
+  // their own (the app's one is in the shell), so the paywall brings it for its Sign out and Delete confirmations.
+  const covered = (el)=> <>{el}{noPlanOverlay}{noPlanOverlay&&<ModalHost/>}</>;
+
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   // demo-clarity: the demo opens straight on Today. No demo feature sends anything to the AI (the coach chat
   // is scripted, Meet's facilitator and the What-If and Check-In explanations make no request in the demo),
   // so the disclosure is shown where a real account first meets the AI, and the coach screen keeps its own gate.
-  if(!aiDisclosureSeen && !appData?.demo)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
+  if(!aiDisclosureSeen && !appData?.demo)return covered(<AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>);
 
-  if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding
+  if(showWrapped)return covered(<MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>);
+  if(showWhatIf)return covered(<WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>);
+  if(showCheckIn)return covered(<WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>);
+  if(!onboarded)return covered(<Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
     onComplete={d=>{
@@ -18136,13 +18352,13 @@ export default function FlourishApp(){
       });
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}
-    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>;
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>);
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
-  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
-    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
-  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
-  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
+  if(!firstVisitDone&&appData&&!appData.demo)return covered(<FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
+    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>);
+  if(showUpgrade && billingUi.show)return covered(<UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>);
+  if(showPaywall && !isNativeApp())return covered(<Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>);
 
   const unread = (() => {
     try {
@@ -18232,79 +18448,6 @@ export default function FlourishApp(){
     }
     setNeedsReconnect(false);
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
-  };
-
-  const deleteAllData = async ()=>{
-    // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
-    const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
-      : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
-    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone."+(storeNote?` ${storeNote}`:""),confirmLabel:"Delete account",destructive:true}))) return;
-
-    // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
-    // the account was actually deleted. Any failure leaves the session + local data intact
-    // and surfaces the error to the user (Apple 5.1.1(v) — delete must actually delete).
-    const jwt = await getJwt();
-    if (!jwt) {
-      alertModal({message:"You need to be signed in to delete your account. Please sign in and try again."});
-      return;
-    }
-
-    // Phase D2: backend revokes all Plaid items + deletes plaid_items rows + deletes the Supabase auth user.
-    let resp;
-    try {
-      resp = await callPlaid("delete_account", {}, { jwt });
-    } catch (err) {
-      console.error("[deleteAllData] backend wipe failed:", err?.message);
-      alertModal({message:"We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED — keep session + local data
-    }
-
-    // 2a: fail closed on any step that means the account/data was NOT removed. plaid_remove
-    // is documented best-effort (a transient Plaid hiccup must not trap a user in an account
-    // they can't delete), so it is non-blocking — logged, not fatal.
-    const errs = Array.isArray(resp?.errors) ? resp.errors : [];
-    const criticalErrors = errs.filter(e => e && e.step !== "plaid_remove");
-    if (criticalErrors.length || resp?.deleted === false) {
-      console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
-      // Round-3: "nothing was changed" only when the server stopped before touching anything (it
-      // could not load the bank links). A later stop has already removed some data, so say that.
-      // KNOWN-DEFECTS 23: the subscription is cancelled before anything is erased; if it could not be, nothing was.
-      if (criticalErrors.some(e => e.step === "billing_cancel")) {
-        alertModal({message:"We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."});
-        return; // FAIL CLOSED
-      }
-      const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
-      alertModal({message: untouched
-        ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."
-        : "Your account deletion did not finish. Some of your data may already be removed, and your account still exists so you can try again to finish it, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED
-    }
-    if (errs.length) {
-      // account IS deleted; only best-effort Plaid bank revocation was incomplete
-      console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
-    }
-
-    // Confirmed deleted server-side — now sign out + sweep ALL flourish_* keys + reload.
-    try { await supabase.auth.signOut(); } catch {}
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_")).forEach(k => localStorage.removeItem(k));
-    } catch {}
-    window.location.reload();
-  };
-
-  // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
-  // family devices). Keeps the appData blob (STORAGE_KEY) so re-login restores the user's data,
-  // AND keeps STAMP_KEY (flourish_uid) — the shared-device OWNER stamp. Sprint Z3 (the documented
-  // fast-follow): preserving the stamp lets the NEXT login detect a DIFFERENT user and wipe
-  // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
-  // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
-  const signOut = async ()=>{
-    if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
-    try { await supabase.auth.signOut(); } catch {}
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY).forEach(k => localStorage.removeItem(k));
-    } catch {}
-    window.location.reload();
   };
 
   // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
@@ -18477,7 +18620,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}{noPlanOverlay}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overflowX:"hidden",overscrollBehavior:"contain",flexShrink:0}}>
@@ -18510,6 +18653,7 @@ input,button,select,textarea { font-family:inherit; }
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
           {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<div style={{marginBottom:SPACE.sm,borderRadius:12,overflow:"hidden"}}><NativeTrialEndedLine onDismiss={hideTrialEndNote}/></div>}
           {isNativeApp()&&trialActive&&trialDaysLeft>0&&<div style={{marginBottom:SPACE.sm}}><NativeTrialChip daysLeft={trialDaysLeft}/></div>}
+          {graceEnds&&<div style={{marginBottom:SPACE.sm}}><GraceNotice endsAt={graceEnds}/></div>}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={openUpgrade} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
@@ -18582,7 +18726,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",...safeX(0)}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>{storePaywallOverlay}{noPlanOverlay}
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
@@ -18628,6 +18772,7 @@ input,button,select,textarea { font-family:inherit; }
             Above it, with the demo banner hidden, both sat in the strip. */}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
+        {graceEnds&&<GraceNotice endsAt={graceEnds}/>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

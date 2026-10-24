@@ -14,6 +14,7 @@
 "use strict";
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { PLAID_PLAN_ACTIONS, decidePlanAccess, planRefusal } = require("./_lib/planGate");
 
 // Sprint Z2 #15: reject absurdly large bodies (cheap DoS guard). Larger than coach.js's 100KB because
 // enrich_transactions / migrate_items legitimately carry up to ~500 transactions or several item tokens.
@@ -96,6 +97,17 @@ exports.handler = async (event) => {
   const { action } = body;
 
   try {
+    // NO FREE PLAN (founder's decision, 2026-10-23). Linking a bank and reading it are paid features, so a
+    // household with no plan is refused before Plaid is asked, whatever app it calls from (_lib/planGate.js).
+    // Listing and disconnecting banks, and deleting the account, stay open. Every one of these actions needs a
+    // session anyway, so one this check cannot verify is refused here (401), never let past the plan check.
+    if (PLAID_PLAN_ACTIONS.includes(action)) {
+      const { user_id, error: gateAuthError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: gateAuthError || "unauthorized" }) };
+      const verdict = decidePlanAccess({ enforce: ENFORCE_PLAN_LIMITS, plan: await getUserPlan(user_id) });
+      if (!verdict.allowed) return planRefusal(verdict, CORS);
+    }
+
     // 1. create_link_token — auth-required (Tier 1.3). Every mint (new or
     // update-mode) happens after login, so the whole action is gated. The Plaid
     // client_user_id is the authenticated user_id (stable per-user, improves
