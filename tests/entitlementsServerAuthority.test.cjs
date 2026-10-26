@@ -159,34 +159,44 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
     }
     const handler = app.slice(i + 1, end);
 
-    const calls = { setPlan: [], setIsPremium: [], note: [] };
-    const store = new Map([["flourish_plan", "free"]]);
-    let ran = null;
-    try {
-      new Function("setUpgradeNote", "setPlan", "setIsPremium", "localStorage",
-        `return (${handler});`)(
-          (v) => calls.note.push(v),
-          (v) => { calls.setPlan.push(v); store.set("flourish_plan", v); },
-          (v) => calls.setIsPremium.push(v),
-          { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) }
-        )();
-      ran = "ok";
-    } catch (e) { ran = `threw: ${e.message}`; }
+    // B4 (audit 2026-10-26): the button asks for the billing status again (onRetry) and opens the real checkout when
+    // that works. Run with the status still unreadable, then readable.
+    const runWith = async (retryOk) => {
+      const calls = { setPlan: [], setIsPremium: [], note: [], retries: 0 };
+      const store = new Map([["flourish_plan", "free"]]);
+      let ran = null;
+      try {
+        await new Function("setUpgradeNote", "setPlan", "setIsPremium", "localStorage", "onRetry",
+          `return (${handler});`)(
+            (v) => calls.note.push(v),
+            (v) => { calls.setPlan.push(v); store.set("flourish_plan", v); },
+            (v) => calls.setIsPremium.push(v),
+            { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
+            async () => { calls.retries++; return retryOk; }
+          )();
+        ran = "ok";
+      } catch (e) { ran = `threw: ${e.message}`; }
+      return { calls, store, ran };
+    };
+    const { calls, store, ran } = await runWith(false);
+    const okRun = await runWith(true);
 
     t.eq(ran, "ok", "5c the real handler runs (anything it reaches beyond the stubs would show here)");
     t.eq(calls.setPlan.length, 0, "5d clicking Upgrade sets NO plan");
     t.eq(calls.setIsPremium.length, 0, "5e …and no premium flag");
     t.eq(store.get("flourish_plan"), "free", "5f …so a free account is still free after the click");
-    t.eq(calls.note.length, 1, "5g …and it says something instead of doing nothing");
-    const note = calls.note[0] || "";
-    t.ok(/aren't open yet|open soon/i.test(note), "5h …that paid plans are not open yet");
-    t.ok(/hasn't changed|not changed/i.test(note) && /charged/i.test(note),
-      "5i …and that nothing was charged and nothing changed, which is the true part");
+    const note = calls.note.filter(Boolean).pop() || "";
+    t.eq([calls.retries, note], [1, "Couldn't reach the server. Try again in a moment."], "5g …it asks for the plans again, and says so when it still cannot reach them");
+    t.ok(!/aren't open/i.test(note), "5h …never that paid plans are not open (B4)");
+    t.eq([okRun.ran, okRun.calls.retries, okRun.calls.note.filter(Boolean), okRun.calls.setPlan, okRun.store.get("flourish_plan")], ["ok", 1, [], [], "free"],
+      "5i …and when the plans can be read it leaves the opening of the real checkout to the caller, setting no plan");
 
     // And the wiring that made the grant possible is gone, so it cannot come back by prop.
     t.ok(!/setPlan\("premium"\)/.test(app), "5j nothing in App.jsx sets the plan to premium in the browser");
     // province (2026-10-23): Trillium is named only to Ontario; still no upgrade handler.
-    t.ok(/function Paywall\(\{onClose,onPromoValid,country,province=""\}\)/.test(app), "5k Paywall takes no upgrade handler at all");
+    t.ok(/function Paywall\(\{onClose,onPromoValid,onRetry,country,province=""\}\)/.test(app), "5k Paywall takes no upgrade handler: only onRetry, which asks for the billing status again");
+    t.ok(/<Paywall onRetry=\{async \(\)=>\{ if\(await recheckBilling\(\)\)\{ setShowPaywall\(false\); setShowUpgrade\(true\); return true; \} return false; \}\}/.test(app),
+      "5k3 …and onRetry only re-reads the status and opens the real checkout");
     // The gate widened from iOS to every native shell (Play requires its own billing too), so the
     // anchor moved with it. Asserted rather than assumed: indexOf returning -1 would slice from the
     // END of the file and make 5l and 5m pass on an empty string.

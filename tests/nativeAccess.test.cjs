@@ -53,7 +53,7 @@ function weekKey(d = new Date()) {
   t.eq([A.getPlan(), A.isTrialActive()], ["free", false], "0 (the household: 30 days after signup, free plan, trial over)");
 
   const made = new Date(now - 30 * DAY);
-  const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(made, "CA"),
+  const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", made), incomes: D.buildDemoIncomes(made, "CA"),
     bills: D.buildDemoBills(made, "CA"), transactions: D.buildDemoTxns(made, "CA"), profile: D.demoProfileFor("CA"), bankConnected: true };
   const noop = () => {};
 

@@ -17,6 +17,7 @@
 // function actually sends, in the order it sends it. No network, no Supabase, no Resend.
 // -----------------------------------------------------------------------------
 "use strict";
+require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");

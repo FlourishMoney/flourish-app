@@ -62,7 +62,7 @@ function loadBilling({ user_id = "u1", state, stripePost }) {
     getAdminClient: () => fakeAdmin(state),
   };
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true,
-    exports: { stripePost: stripePost || (async () => ({ id: "cs_1", url: "https://stripe.test/pay" })) } };
+    exports: { stripeGet: async () => ({ data: [] }), stripePost: stripePost || (async () => ({ id: "cs_1", url: "https://stripe.test/pay" })) } };
   const mod = require(BILLING_PATH);
   delete require.cache[BILLING_PATH];
   return mod;

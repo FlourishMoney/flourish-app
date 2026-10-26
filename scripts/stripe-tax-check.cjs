@@ -14,6 +14,11 @@
 // specified as either inclusive or exclusive, it cannot be changed"). So a tax-INCLUSIVE price needs a new,
 // exclusive price, and that price's id in its STRIPE_PRICE_*_CAD variable, before D1.
 //
+//   4. (H6, audit 2026-10-26) the price EACH STRIPE_PRICE_*_CAD variable names is the one it should be: active,
+//      live, CAD, recurring every 1 month or 1 year, the right amount, and tax-exclusive. Swapped or stale ids
+//      would charge the wrong amount, and 3 only proves such prices exist somewhere. The ids are passed in the
+//      environment (they are not secrets); a variable that is missing is NOT OK.
+//
 // Run it the way docs/ops/BILLING-DAY-OCT-26.md shows (section 3, step 1): the key is typed hidden into
 // STRIPE_READ_KEY for one command. GET requests only; the key goes only in the Authorization header and is
 // never printed. OK (exit 0) or NOT OK (exit 1); a test-mode key or an unreadable answer is NOT OK.
@@ -77,6 +82,42 @@ function taxVerdict({ settings, registrations, prices } = {}) {
   return { ok, lines };
 }
 
+/**
+ * H6: the price each STRIPE_PRICE_*_CAD variable names. Pure.
+ * @param {{settings: object|null, ids: Object<string,string>, byId: Object<string,object|null>}} a
+ *   ids: the variable's value for each plan env name; byId: Stripe's answer for each id (null: unreadable)
+ */
+function envPriceVerdict({ settings, ids = {}, byId = {} } = {}) {
+  const lines = [];
+  let ok = true;
+  const bad = (l) => { ok = false; lines.push(`NOT OK: ${l}`); };
+  const fallback = settings && settings.defaults && settings.defaults.tax_behavior;
+  const seen = new Map();
+  for (const plan of PLANS) {
+    const id = String(ids[plan.env] || "").trim();
+    if (!id) { bad(`${plan.env} is not set (Production).`); continue; }
+    if (seen.has(id)) bad(`${plan.env} names the same price as ${seen.get(id)}.`);
+    seen.set(id, plan.env);
+    const p = byId[id];
+    if (!p) { bad(`${plan.env}: Stripe has no readable price ${id} (a test-mode id, or a typo).`); continue; }
+    const problems = [];
+    if (p.livemode !== true) problems.push("not live mode");
+    if (p.active !== true) problems.push("archived");
+    if (String(p.currency).toLowerCase() !== "cad") problems.push(`currency ${String(p.currency).toUpperCase()}, not CAD`);
+    if (p.type !== "recurring" || !p.recurring) problems.push("not a recurring price");
+    else {
+      if (p.recurring.interval !== plan.interval) problems.push(`every ${p.recurring.interval}, not every ${plan.interval}`);
+      if ((p.recurring.interval_count || 1) !== 1) problems.push(`every ${p.recurring.interval_count} ${p.recurring.interval}s, not every 1`);
+    }
+    if (p.unit_amount !== plan.amount) problems.push(`$${((p.unit_amount || 0) / 100).toFixed(2)}, not $${(plan.amount / 100).toFixed(2)}`);
+    const effective = p.tax_behavior === "unspecified" || !p.tax_behavior ? fallback : p.tax_behavior;
+    if (effective !== "exclusive") problems.push(`tax behavior ${p.tax_behavior || "unspecified"}${effective && effective !== p.tax_behavior ? ` (default ${effective})` : ""}, not exclusive`);
+    if (problems.length) bad(`${plan.env} (${plan.name}), ${id}: ${problems.join("; ")}.`);
+    else lines.push(`OK: ${plan.env} is ${plan.name}, live, CAD, tax-exclusive (${id}).`);
+  }
+  return { ok, lines };
+}
+
 async function get(path, key) {
   const res = await fetch(`${API}${path}`, { method: "GET", headers: { Authorization: `Bearer ${key}` } });
   const body = await res.json().catch(() => ({}));
@@ -98,9 +139,15 @@ async function main() {
   };
   const v = taxVerdict(answers);
   for (const l of v.lines) console.log(l);
-  return v.ok ? 0 : 1;
+  // H6: each variable's own price, fetched by id.
+  const ids = Object.fromEntries(PLANS.map((p) => [p.env, (process.env[p.env] || "").trim()]));
+  const byId = {};
+  for (const id of new Set(Object.values(ids).filter(Boolean))) byId[id] = /^price_[A-Za-z0-9]+$/.test(id) ? await read(`/prices/${encodeURIComponent(id)}`) : null;
+  const e = envPriceVerdict({ settings: answers.settings, ids, byId });
+  for (const l of e.lines) console.log(l);
+  return v.ok && e.ok ? 0 : 1;
 }
 
 if (require.main === module) main().then(code => process.exit(code));
 
-module.exports = { taxVerdict, PLANS };
+module.exports = { taxVerdict, envPriceVerdict, PLANS };

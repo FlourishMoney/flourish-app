@@ -297,7 +297,7 @@ function fakeAdmin(db = {}, users = {}) {
     const real = require(AUTH_PATH);
     const admin = fakeAdmin(db, { u1: { email: "someone@example.test" }, [U1]: { email: "someone@example.test" } });
     require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: U1, error: null }), getAdminClient: () => admin };
-    require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => { if (onStripe) onStripe(); return { id: "cs", url: "https://stripe.test/x" }; } } };
+    require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripeGet: async () => ({ data: [] }), stripePost: async () => { if (onStripe) onStripe(); return { id: "cs", url: "https://stripe.test/x" }; } } };
     process.env.STRIPE_PRICE_MONTHLY_CAD = process.env.STRIPE_PRICE_MONTHLY_CAD || "price_monthly_test";
     const mod = require(BILLING_PATH); delete require.cache[BILLING_PATH]; return mod;
   }

@@ -169,7 +169,9 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
                    ["2026-10-09", "NO FRILLS", 160, "Groceries"], ["2026-10-12", "WINNERS", 100, "Shopping"]]
       .map(([date, name, amount, cat], i) => ({ id: `t${i}`, date, name, amount, cat, pending: false, account_id: chqId })),
   });
-  const student = { id: "d-student", name: "Student loan", balance: "12000", rate: "5", min: "150", dueDay: 25 };
+  // Due the 20th, before the 23rd payday, so the hand-worked figure below carries its $150 minimum: since the audit's
+  // H1 fix (2026-10-26) only minimums due before the next deposit are reserved (it was due the 25th, after payday).
+  const student = { id: "d-student", name: "Student loan", balance: "12000", rate: "5", min: "150", dueDay: 20 };
   // LINKED, as the app stores it: onPlaidSuccess's mapping, promoteAccounts, then the balance sync's debt rows.
   const plaid = [
     { id: "pl_chq", mask: "4521", type: "depository", subtype: "checking", balance: { available: 2150, current: 2175 } },
@@ -216,7 +218,8 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     t.eq(L.safe, [5150, 60, 150, 270, 156, 4514, "$5,150", "$4,514"], "4a LINKED, hand-worked: $5,150 − $60 − $150 − $270 − $156 = $4,514 safe to spend");
     t.eq(L.pace, ["$322", 14], "4b LINKED: pace $322 a day ($4,514 / 14 = $322.43, rounded down)");
     t.eq(L.netWorth, [5150, 22440, -17290, -17290], "4c LINKED: net worth $5,150 − $22,440 = −$17,290");
-    t.eq(L.watch[0], "7d $5,150.00 + $0.00 − $60.00 − $210.00 = $4,880.00 low $4,880", "4d LINKED: Watch, 7 days: $5,150.00 + $0.00 − $60.00 − $210.00 = $4,880.00");
+    // The student loan's $150 now falls on the 20th, inside these 7 days, beside the $60 phone bill (see `student`).
+    t.eq(L.watch[0], "7d $5,150.00 + $0.00 − $210.00 − $210.00 = $4,730.00 low $4,730", "4d LINKED: Watch, 7 days: $5,150.00 + $0.00 − $210.00 − $210.00 = $4,730.00");
     for (const k of Object.keys(L)) t.eq(E[k], L[k], `4e ENTERED = LINKED: ${k}`);
     t.eq(E.safe[7], "$4,514", "4f the no-bank household reaches a real safe to spend: $4,514, not $0");
     // No bank, no statement: chequing typed in during onboarding, nothing else.
@@ -228,7 +231,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
 
   // ── 5. Linked households and both demos are unchanged ───────────────────────────────────────────
   {
-    const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(today, c),
+    const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, today), incomes: D.buildDemoIncomes(today, c),
       bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true });
     const ca = figures(demo("CA")), us = figures(demo("US"));
     t.eq([ca.safe[6], ca.safe[7], ca.pace[0]], ["$3,083", "$1,944", "$138"], "5a CA demo: $3,083 in accounts, $1,944 safe to spend, $138 pace");
@@ -337,7 +340,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     t.ok(!/Debt free!|Amazing!/.test(SRC), "7m2 \"Debt free!\" and \"Amazing!\" appear nowhere in src");
     t.ok(!BANNED.test("All entered debts are at $0.") && !adviceProblems("All entered debts are at $0.").length, "7m3 the new sentence passes both copy rules");
     for (const c of D.DEMO_COUNTRIES) {
-      const d = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(today, c),
+      const d = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, today), incomes: D.buildDemoIncomes(today, c),
         bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true };
       const txt = home(d);
       t.ok(/Total debt/.test(txt) && !/No debts entered|From the balance you entered|From your bank and the balances/.test(txt), `7n ${c} demo Today: Total debt as before, no source line`);

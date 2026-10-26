@@ -197,7 +197,7 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     const now = new Date();
     const data = {
       profile: demo.demoProfileFor("CA"), incomes: demo.buildDemoIncomes(now, "CA"),
-      bills: demo.buildDemoBills(now, "CA"), debts: demo.demoDebtsFor("CA"),
+      bills: demo.buildDemoBills(now, "CA"), debts: demo.demoDebtsFor("CA", now),
       accounts: demo.demoAccountsFor("CA"), transactions: demo.buildDemoTxns(now, "CA"),
       bankConnected: true, demo: true,
     };
@@ -226,7 +226,7 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
       const m = await import(${JSON.stringify(url("src/lib/meetSnapshot.js"))});
       const now = new Date();
       const a = m.meetAgendaFor({ profile: d.demoProfileFor("CA"), incomes: d.buildDemoIncomes(now, "CA"),
-        bills: d.buildDemoBills(now, "CA"), debts: d.demoDebtsFor("CA"), accounts: d.demoAccountsFor("CA"),
+        bills: d.buildDemoBills(now, "CA"), debts: d.demoDebtsFor("CA", now), accounts: d.demoAccountsFor("CA"),
         transactions: d.buildDemoTxns(now, "CA"), bankConnected: true, demo: true });
       process.stdout.write(JSON.stringify([...a.wins, ...a.changes].map(x => x.text)));
     })()`;
@@ -245,7 +245,7 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     const now = new Date();
     const data = {
       profile: demo.demoProfileFor("CA"), incomes: demo.buildDemoIncomes(now, "CA"),
-      bills: demo.buildDemoBills(now, "CA"), debts: demo.demoDebtsFor("CA"),
+      bills: demo.buildDemoBills(now, "CA"), debts: demo.demoDebtsFor("CA", now),
       accounts: demo.demoAccountsFor("CA"), transactions: demo.buildDemoTxns(now, "CA"),
     };
     const full = meetAgendaFor(data);

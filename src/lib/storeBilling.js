@@ -156,20 +156,23 @@ export async function restore(deps) {
  * period is not known). Anything else is unknown, which never puts the paywall up.
  */
 export const STORE_GATE_KEY = "flourish_store_gate";
+// The same, for the web billing status (code audit of e94b112, item 16): a status read that fails leaves a web
+// payer paid until the paid period it last confirmed ends, instead of free.
+export const WEB_PAID_KEY = "flourish_web_paid";
 /** The phone's storage, or null where even reading window.localStorage throws (storage blocked). */
 export function deviceStorage(win = typeof window === "undefined" ? undefined : window) {
   try { return win ? win.localStorage : null; } catch { return null; }
 }
 const GATE_GRACE_MS = 3 * 86400000;
-export function rememberGate(storage, userId, entitled, periodEnd = null, now = Date.now()) {
+export function rememberGate(storage, userId, entitled, periodEnd = null, now = Date.now(), key = STORE_GATE_KEY) {
   if (!storage || !userId || typeof entitled !== "boolean") return;
   const until = entitled ? (Date.parse(periodEnd || "") || now + GATE_GRACE_MS) : null;
-  try { storage.setItem(STORE_GATE_KEY, JSON.stringify({ uid: userId, entitled, until })); } catch { /* storage full or blocked */ }
+  try { storage.setItem(key, JSON.stringify({ uid: userId, entitled, until })); } catch { /* storage full or blocked */ }
 }
-export function recalledGate(storage, userId, now = Date.now()) {
+export function recalledGate(storage, userId, now = Date.now(), key = STORE_GATE_KEY) {
   if (!storage || !userId) return null;
   let rec = null;
-  try { rec = JSON.parse(storage.getItem(STORE_GATE_KEY) || "null"); } catch { rec = null; }
+  try { rec = JSON.parse(storage.getItem(key) || "null"); } catch { rec = null; }
   if (!rec || rec.uid !== userId || typeof rec.entitled !== "boolean") return null;
   if (rec.entitled === false) return false;
   return Number.isFinite(rec.until) && now < rec.until ? true : null;

@@ -25,7 +25,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
   const t = create();
   const D = await import("../src/lib/demoFixture.js");
   const now = new Date();
-  const demo = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"),
+  const demo = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"),
     bills: D.buildDemoBills(now, "CA"), transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA") };
   let A = {};
   try { A = loadApp(["FirstVisitScreen", "MeetAgenda", "TermsOfService", "PremiumGate", "PlanAhead"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }

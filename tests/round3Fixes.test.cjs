@@ -52,7 +52,7 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     const DE = await import("../src/lib/decisionEngine.js");
     const D = await import("../src/lib/demoFixture.js");
     const TODAY = new Date("2026-09-29T12:00:00");
-    const d = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(TODAY, "CA"),
+    const d = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", TODAY), incomes: D.buildDemoIncomes(TODAY, "CA"),
       bills: D.buildDemoBills(TODAY, "CA"), transactions: D.buildDemoTxns(TODAY, "CA"), profile: D.demoProfileFor("CA") };
     t.eq(DE.coachPurchaseLine(d, "Can I afford a $600 phone?", TODAY),
       "- Purchase in the user's latest message: $600 | Safe to spend after it (computed by Flourish): $1,344",
@@ -119,7 +119,7 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     const D = await import("../src/lib/demoFixture.js");
     const { demoCoachExchanges } = await import("../src/lib/demoCoach.js");
     const T = new Date("2026-09-29T12:00:00");
-    const all = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(T, "CA"),
+    const all = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", T), incomes: D.buildDemoIncomes(T, "CA"),
       bills: D.buildDemoBills(T, "CA"), transactions: D.buildDemoTxns(T, "CA"), profile: D.demoProfileFor("CA") }, T).map((x) => x.a).join(" ");
     t.ok(!/worth attacking/.test(all) && /is up to you/.test(all), "5d the scripted demo coach compares the debt options and leaves the choice to the user");
     // The answers depend on the day the demo is built for, never on the real clock: with the clock
@@ -133,7 +133,7 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     let moved = "";
     globalThis.Date = later;
     try {
-      moved = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(T, "CA"),
+      moved = demoCoachExchanges({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", T), incomes: D.buildDemoIncomes(T, "CA"),
         bills: D.buildDemoBills(T, "CA"), transactions: D.buildDemoTxns(T, "CA"), profile: D.demoProfileFor("CA") }, T).map((x) => x.a).join(" ");
     } finally { globalThis.Date = RealDate; }
     t.eq(moved, all, "5e the scripted demo coach answers the same with the real clock 90 days on: one day for every figure");

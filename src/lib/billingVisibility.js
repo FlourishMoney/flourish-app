@@ -50,7 +50,9 @@ export function billingIsOn(status) {
 export function billingUiState({ status, native, paid } = {}) {
   if (native) return { show: false, reason: "native" };
   if (!billingIsOn(status)) return { show: false, reason: "off" };
-  return { show: true, mode: paid ? "manage" : "plans", reason: "on" };
+  // H4 (audit 2026-10-26): a web renewal that failed (past_due, status.web_attention) is fixed in the billing
+  // portal, not by buying again: checkout refuses it (409) and would charge twice once the card worked.
+  return { show: true, mode: paid || status.web_attention === true ? "manage" : "plans", reason: "on" };
 }
 
 /**

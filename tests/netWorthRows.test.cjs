@@ -77,7 +77,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   try { A = loadApp(["Goals"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   for (const c of D.DEMO_COUNTRIES) {
     const now = new Date();
-    const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c),
+    const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c),
       transactions: D.buildDemoTxns(now, c), goals: [], bankConnected: true, demo: true };
     let txt = "";
     try { txt = textOf(A.render(A.h(A.Goals, { data, initialTab: "worth", setScreen: () => {}, setAppData: () => {} }))); } catch (e) { t.ok(false, `3d ${c} Worth renders: ${describe(e)}`); continue; }

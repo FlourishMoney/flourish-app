@@ -27,7 +27,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
   const noop = () => {};
   const settingsText = () => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
     bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop })));
-  const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c),
+  const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now),
     incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), bankConnected: true, ...extra }; };
 
   // ── 1. The walkthrough and the setup checklist ───────────────────────────────────────────────
@@ -265,15 +265,15 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
-    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.1", "1.1.1", ["1.1.1"], "1.1.1"], "7a one version, 1.1.1, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526904, [526904], 19, 19], "7b the builds in whatsNew.json are the ones the projects build: iOS 526904, Android 19");
+    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.2", "1.1.2", ["1.1.2"], "1.1.2"], "7a one version, 1.1.2, in whatsNew.json, package.json, Xcode and Gradle");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526905, [526905], 20, 20], "7b the builds in whatsNew.json are the ones the projects build: iOS 526905, Android 20");
     t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", [W.intro, ...W.notes, ...(W.notesAndroid || [])].join(" "));
     // The intro (approved 2026-10-23) opens "Get your first Safe to spend number", which the scan's imperative
     // check reads as an instruction; it is not money advice, and the notes themselves are scanned in full.
     noAdvice("7e release notes", [...W.notes, ...(W.notesAndroid || [])]);
     const st = settingsText();
-    t.ok(st.includes("What's new") && st.includes("Version 1.1.1") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
+    t.ok(st.includes("What's new") && st.includes("Version 1.1.2") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
     t.ok(/\{whatsNewNotes\(\)\.map\(\(n,i\)=><li key=\{i\}/.test(APP) && /\{WHATS_NEW\.intro&&<p /.test(APP), "7f2 …the intro and the notes from whatsNew.json");
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
@@ -305,7 +305,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(g.risks.length === 0 && g.progress[0].text === MS.MEET_SETUP_LINE, "1z6 an account with a goal but no balance gets the same line, and no low-balance days");
     // A real balance still gets its risks: the CA demo with $0 in its cash accounts and its pay.
     const now = new Date();
-    const broke = { profile: D.demoProfileFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+    const broke = { profile: D.demoProfileFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
       transactions: D.buildDemoTxns(now, "CA"), accounts: D.demoAccountsFor("CA").map(a => (a.type === "checking" || a.type === "savings") ? { ...a, balance: 0 } : a) };
     t.ok(MS.meetAgendaFor(broke).risks.length > 0 && !MS.meetSetupState(broke).needsSetup, "1z7 a household with a real (if empty) bank account and a payday still hears about its low days");
   }

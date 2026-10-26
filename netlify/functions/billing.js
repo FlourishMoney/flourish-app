@@ -19,13 +19,14 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, unauthorized, readWithRetry } = require("./_lib/auth");
 const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
 const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = require("./_lib/foundingCohort");
 const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost } = require("./_lib/stripeApi");
+const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
@@ -135,8 +136,11 @@ exports.handler = async (event) => {
     // paying, and whether the founding price is available to THEM. No price ids, no amounts (those
     // come from src/lib/pricing.js), and no count of how many slots are gone.
     if (action === "status") {
-      const { data: row } = await admin
-        .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle();
+      // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
+      // shown the plans because the database blinked. Retried first, as getUserPlan does.
+      const { data: row, error: rowErr } = await readWithRetry(() => admin
+        .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle());
+      if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
 
       // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
@@ -160,7 +164,14 @@ exports.handler = async (event) => {
         // webPlan), so a subscription cancelled at period end stops counting when that period ends, even if
         // the webhook that says so is late. A store app never asks.
         paid: isPaidSubscription(row),
+        // When the paid period ends (only while paid): the app keeps this answer until then if a later status read
+        // fails (item 16), as the store apps do with store_status.
+        period_end: isPaidSubscription(row) && row && row.current_period_end ? row.current_period_end : null,
         manageable: !!row?.provider_customer_id,
+        // H4 (audit 2026-10-26): a web subscription Stripe is still collecting (a renewal that failed, past_due):
+        // not paid, so no access, but the fix is the card, in the billing portal, never a second checkout.
+        // Not "incomplete": a first payment that failed is retried through checkout, which allows it.
+        web_attention: !isPaidSubscription(row) && holdsHousehold(row, isPaidSubscription) && !!row.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
       });
     }
@@ -250,6 +261,19 @@ exports.handler = async (event) => {
       }
 
       const customerId = await ensureCustomer(admin, user_id, user?.email);
+
+      // B3 (audit 2026-10-26): Stripe itself is asked, not only the row. A subscription the row does not show
+      // (a second tab that completed, a webhook still on its way) is a 409 like any other; if Stripe cannot be
+      // asked, nothing is created (503, the person tries again) rather than risking a second charge. Then the
+      // customer's other open checkouts are expired, so an older tab cannot complete a second subscription.
+      try {
+        const live = await liveSubscriptionsFor(customerId);
+        if (live.length) return json(409, CORS, { error: "already_subscribed", provider: "stripe" });
+        await expireOpenCheckouts(customerId);
+      } catch (e) {
+        console.error("[billing] checkout live check:", e && e.statusCode ? e.statusCode : "no_status");
+        return json(503, CORS, { error: "unavailable" });
+      }
 
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",

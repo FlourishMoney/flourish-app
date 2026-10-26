@@ -34,6 +34,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
   const VIEW = new Date(2026, 8, 29, 12);
   const demoMadeOn = (made) => ({
+    // A demo SAVED before 2026-10-26 (the tester's): its debts carry no due day, so each minimum is due the 1st.
     profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"),
     incomes: D.buildDemoIncomes(made), bills: D.buildDemoBills(made), transactions: D.buildDemoTxns(made), demo: true,
   });
@@ -106,8 +107,13 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     const { buildMeetSnapshot } = await import("../src/lib/meetSnapshot.js");
     const now2 = new Date(); const made = new Date(now2); made.setDate(made.getDate() - 25);
     const aged = demoMadeOn(made);
-    t.eq(typeof DE.cashIsTight === "function" && DE.cashIsTight(aged).tight, true, "2i (a 25-day-old demo, today: cash is tight)");
-    t.eq((buildMeetSnapshot(aged).decisions || []).length, 0, "2j …and Meet does not offer to move money to debt or savings either");
+    // The QA's own demo on the QA's day (made Sep 4, seen Sep 29), not the real clock: since the audit's H1 fix
+    // (2026-10-26) a minimum counts only when it is due before the next deposit, so an aged demo on an arbitrary day
+    // need not be tight. buildMeetSnapshot takes the date.
+    t.eq(typeof DE.cashIsTight === "function" && DE.cashIsTight(QA, VIEW).tight, true, "2i (the QA's 25-day-old demo, on the QA's day: cash is tight)");
+    t.eq((buildMeetSnapshot(QA, VIEW).decisions || []).length, 0, "2j …and Meet does not offer to move money to debt or savings either");
+    // And on the real clock, the rule itself: whenever the aged demo is tight, Meet offers no decision.
+    t.ok(!DE.cashIsTight(aged).tight || (buildMeetSnapshot(aged).decisions || []).length === 0, "2j2 (today: a tight aged demo is never offered a move to debt or savings)");
     t.eq((buildMeetSnapshot(demoMadeOn(now2)).decisions || []).length, 1, "2k (a fresh demo still gets its Meet decision)");
 
     // 4. The daily card's wording.

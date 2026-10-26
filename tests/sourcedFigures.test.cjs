@@ -325,7 +325,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     // The Today tile shows the label beside the score
     const D = await import("../src/lib/demoFixture.js");
     const now = new Date();
-    const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+    const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
       transactions: D.buildDemoTxns(now, "CA"), bankConnected: true };
     const noop = () => {};
     const today = (profile) => textOf(A.render(A.h(A.Dashboard, { data: { ...data, profile }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
@@ -416,7 +416,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // The Google Play badge's own name, its required alt text (lib/storeLinks.js; Google's badge guidelines): it
       // names the store, it is not an instruction about money. ("Download on the App Store" does not start with a verb on the list.)
       "Get it on Google Play",
-      ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
+"Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",
     ]);
@@ -455,7 +455,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const DC = await import("../src/lib/demoCoach.js");
     const { formatMoney } = await import("../src/lib/format.js");
     const VIEW = new Date(2026, 8, 29, 12);
-    const demoOn = (c, made, extra = {}) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(made, c),
+    const demoOn = (c, made, extra = {}) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, made), incomes: D.buildDemoIncomes(made, c),
       bills: D.buildDemoBills(made, c), transactions: D.buildDemoTxns(made, c), demo: true, ...extra });
     // a. The figure is unchanged on both demos, and every surface reads the one figure
     for (const [c, safe, spare] of [["CA", 1944, 486], ["US", 2415, 603]]) {

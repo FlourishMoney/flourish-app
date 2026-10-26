@@ -33,7 +33,7 @@ function load(sent) {
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true,
-    exports: { stripePost: async (p, params) => { sent.push({ path: p, params }); return p === "/customers" ? { id: "cus_1" } : { id: "cs_1", url: "https://stripe.test/pay" }; } } };
+    exports: { stripeGet: async () => ({ data: [] }), stripePost: async (p, params) => { sent.push({ path: p, params }); return p === "/customers" ? { id: "cus_1" } : { id: "cs_1", url: "https://stripe.test/pay" }; } } };
   const mod = require(BILLING_PATH);
   for (const p of [BILLING_PATH, AUTH_PATH, API_PATH]) delete require.cache[p];
   return mod;

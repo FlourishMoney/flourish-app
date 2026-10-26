@@ -97,42 +97,77 @@ function getPublicClient() {
 const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
 
 // Sprint Q item 11: server-authoritative plan/entitlement from the profiles table (never trust a
-// client-sent plan). Returns { plan, founder_flag, unlimited }. A trial counts as unlimited only
-// until it ends: trial_ends_at when the row has one (migration 0007), otherwise trial_started_at
+// client-sent plan). Returns { plan, founder_flag, unlimited, paid, status_unavailable }. A trial counts as
+// unlimited only until it ends: trial_ends_at when the row has one (migration 0007), otherwise trial_started_at
 // + 14 days, so trials created before that migration do not move. The rule itself lives in
-// _lib/planRules.js and is parity-tested against the client's copy. Defaults to free on any error —
-// auth still gates access; worst case a paid user is briefly treated as free on a transient DB error.
+// _lib/planRules.js and is parity-tested against the client's copy.
 // The same answer whichever app asks: every request reads the subscription row, so a household paying
 // on the web or in a store keeps full access in every app (_lib/planRules.js deriveEntitlement).
-async function getUserPlan(user_id) {
+//
+// A READ THAT FAILS IS NOT "UNPAID" (code audit of e94b112, item 16). Each read is retried (PLAN_READ_DELAYS_MS);
+// if it still fails, the answer says so: status_unavailable is true and unlimited is false. Access is never
+// granted on an answer that was not read (unlimited only from rows actually read: a founder or an unexpired
+// trial on the profile stays unlimited when only the subscription read failed), and a caller that would refuse
+// a free household answers 503 "status_unavailable" instead (statusUnavailable below), so a paying household is
+// never shown the paywall or the free limit because the database blinked; the app retries.
+const PLAN_READ_DELAYS_MS = [150, 400];
+const _sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+async function readWithRetry(read, delays = PLAN_READ_DELAYS_MS) {
+  let last = null;
+  for (let i = 0; i <= delays.length; i++) {
+    if (i) await _sleep(delays[i - 1]);
+    try {
+      const r = await read();
+      if (!r.error) return { data: r.data || null, error: null };
+      last = r.error;
+    } catch (e) { last = e; }
+  }
+  return { data: null, error: last || new Error("read failed") };
+}
+
+const UNAVAILABLE = Object.freeze({ plan: "free", entitlement: null, founder_flag: false, unlimited: false, paid: false, subscription_status: null, status_unavailable: true });
+
+async function getUserPlan(user_id, { delays = PLAN_READ_DELAYS_MS } = {}) {
+  // Nothing here may throw (a table not applied yet, a client that cannot be built): any failure is "unavailable".
   try {
-    const admin = getAdminClient();
-    const { data, error } = await admin
+    let admin;
+    try { admin = getAdminClient(); }
+    catch (e) { console.error("[auth] getUserPlan: no admin client:", e.message); return { ...UNAVAILABLE }; }
+
+    const prof = await readWithRetry(() => admin
       .from("profiles")
       .select("plan, trial_started_at, trial_ends_at, founder_flag")
       .eq("user_id", user_id)
-      .maybeSingle();
-    if (error || !data) return { plan: "free", founder_flag: false, unlimited: false, paid: false };
+      .maybeSingle(), delays);
+    if (prof.error) {
+      console.error("[auth] profile read failed (status unavailable):", prof.error.message || prof.error);
+      return { ...UNAVAILABLE };
+    }
+    const data = prof.data;
+    if (!data) return { plan: "free", entitlement: "free", founder_flag: false, unlimited: false, paid: false, subscription_status: null, status_unavailable: false };
     const plan = data.plan || "free";
     const founder = !!data.founder_flag;
 
-    // From 2026-10-26 the subscription row, not the profile, is what makes a household paid. Read
-    // it second and separately: a missing or unreadable subscriptions table (it is applied after
-    // this code ships) must leave the profile answer exactly as it was, never throw, and never
-    // upgrade anyone. Same failure posture as the rest of this function — worst case a paying user
-    // is briefly treated as free, never the reverse.
-    let sub = null;
+    // From 2026-10-26 the subscription row, not the profile, is what makes a household paid.
+    // A subscriptions table that is not readable (not applied, or down) cannot throw out of here or break sign-in.
+    let subRead;
     try {
-      const { data: subRow, error: subErr } = await admin
+      subRead = await readWithRetry(() => admin
         .from("subscriptions")
         .select("provider, status, current_period_end, plan_key, cancel_at_period_end")
         .eq("user_id", user_id)
-        .maybeSingle();
-      if (!subErr) sub = subRow || null;
-    } catch (e) {
-      console.error("[auth] subscription read failed (treating as unpaid):", e.message);
+        .maybeSingle(), delays);
+    } catch (e) { subRead = { data: null, error: e }; }
+    if (subRead.error) {
+      console.error("[auth] subscription read failed (status unavailable):", subRead.error.message || subRead.error);
+      // What the profile alone verifies (a founder, an unexpired trial) still stands; nothing more is granted.
+      const fromProfile = deriveEntitlement(data, null, Date.now());
+      if (fromProfile.unlimited) {
+        return { plan, entitlement: fromProfile.plan, founder_flag: founder, unlimited: true, paid: false, subscription_status: null, status_unavailable: false };
+      }
+      return { ...UNAVAILABLE, plan, founder_flag: founder };
     }
-
+    const sub = subRead.data;
     const ent = deriveEntitlement(data, sub, Date.now());
     return {
       // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
@@ -143,11 +178,19 @@ async function getUserPlan(user_id) {
       unlimited: ent.unlimited,
       paid: ent.paidSubscription,
       subscription_status: sub ? sub.status : null,
+      status_unavailable: false,
     };
+
   } catch (e) {
-    console.error("[auth] getUserPlan failed (defaulting to free):", e.message);
-    return { plan: "free", founder_flag: false, unlimited: false };
+    console.error("[auth] getUserPlan failed (status unavailable):", e.message);
+    return { ...UNAVAILABLE };
   }
+}
+
+// The answer for a request that a free household would be refused, when the plan could not be read: 503, so
+// the app retries, never the free limit or the paywall.
+function statusUnavailable(corsHeaders) {
+  return { statusCode: 503, headers: corsHeaders, body: JSON.stringify({ error: "status_unavailable" }) };
 }
 
 // Returns a Netlify Functions-style 401 response
@@ -163,6 +206,8 @@ module.exports = {
   getAdminClient,
   getUserFromRequest,
   getUserPlan,
+  statusUnavailable,
+  readWithRetry,
   ENFORCE_PLAN_LIMITS,
   unauthorized,
   isEmailConfirmed,

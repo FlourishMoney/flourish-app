@@ -18,7 +18,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   let A = {};
   try { A = loadApp(["SpendScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const now = new Date();
-  const data = { demo: true, profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"),
+  const data = { demo: true, profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"),
     bills: D.buildDemoBills(now, "CA"), transactions: D.buildDemoTxns(now, "CA"), bankConnected: true };
   if (A.SpendScreen) {
     let txt = "";

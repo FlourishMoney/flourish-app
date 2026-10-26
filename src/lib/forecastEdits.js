@@ -199,25 +199,67 @@ function arrivedDeposit(idx, freq, orig, eff, anchorTx, owner, claimed, today) {
   return hit;
 }
 const _normBill = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-function billArrived(b, orig, eff, txns, today) {
+// The bill's occurrence one cycle before `orig` (null for a one-off).
+function prevBillOccurrence(b, orig) {
+  if (!b || b.type === "one_off") return null;
   const freq = b.freq || "monthly";
-  const W = freq === "weekly" ? 2 : (freq === "biweekly" || freq === "semimonthly") ? 4 : 5;
-  const start = addDays(orig < eff ? orig : eff, -W);
+  if (freq === "weekly") return addDays(orig, -7);
+  if (freq === "biweekly") return addDays(orig, -14);
+  if (freq === "semimonthly") {
+    for (let i = 1; i <= 20; i++) { const x = addDays(orig, -i); if (billOccursOnDate(b, x, x)) return x; }
+    return addDays(orig, -15);
+  }
+  const stepM = freq === "quarterly" ? 3 : (freq === "annual" || freq === "annually" || freq === "yearly") ? 12 : 1;
+  const anchor = b.nextDueDate ? fromIso(b.nextDueDate) : null;
+  const dueDay = (anchor ? anchor.getDate() : 0) || parseInt(b.date) || noon(orig).getDate();
+  const m = new Date(noon(orig).getFullYear(), noon(orig).getMonth() - stepM, 1, 12);
+  return new Date(m.getFullYear(), m.getMonth(), clampDayToMonth(dueDay, m.getFullYear(), m.getMonth()), 12);
+}
+// HAS THIS OCCURRENCE BEEN PAID? The one "already paid" rule (audit 2026-10-26, B1): Today, the first number and
+// Watch all read it (safe-to-spend through billOccurrences, which used to keep its own "any payment this calendar
+// month" rule, and so dropped a bill due early next month whenever last month's payment had posted this month).
+// A matching payment (name, and amount within 5% or $2 unless the bill varies) marks the occurrence it is NEAREST
+// to: it must fall after the midpoint between this occurrence and the one before it, and on or before today. So
+// rent paid Oct 1 marks the Oct 1 rent, never Nov 1's; a bill paid ten days early marks the coming one; and one
+// payment marks one occurrence. Exactly halfway belongs to the earlier one, so that occurrence is still reserved.
+// A one-off has no occurrence before it: a payment in the 5 days before it counts.
+const NOT_A_PAYMENT_RX = /\b(refund(ed)?|revers(al|ed|e)|return(ed)?|charge ?back)\b/i;
+// How early a payment may count for an occurrence when the one before it has no payment of its own (review of
+// 2026-10-26): rent due the 1st and paid Oct 20 may be October's, paid late, so November's is still reserved.
+const EARLY_DAYS = 10;
+function billArrived(b, orig, eff, txns, today) {
+  const at = orig < eff ? orig : eff;
+  const prev = prevBillOccurrence(b, orig);
   const t0 = noon(today);
-  if (start > t0) return false;
   const billName = _normBill(b.vendorPattern || b.name);
   const billAmt = num(b.amount);
   if (billName.length < 3 || !(billAmt > 0)) return false;
   const variable = b.type === "variable" || b.variable === true;
-  return txns.some(t => {
-    if (!(Number(t.amount) > 0) || t.pending) return false;
+  const payIn = (fromMs, toMs) => txns.some(t => {
+    // Only a payment out pays a bill: never money in (a refund of the same amount and merchant), a move between
+    // the household's own accounts (a transfer markTransfers paired: transferPairId), or a refund, reversal or
+    // return (audit 2026-10-26, item 15). A card payment or an e-transfer to a landlord is a payment.
+    if (!(Number(t.amount) > 0) || t.pending || t.transferPairId || NOT_A_PAYMENT_RX.test(String(t.name || ""))) return false;
     const d = fromIso(t.date);
-    if (!d || d < start || d > t0) return false;
+    if (!d || !(d.getTime() > fromMs) || d.getTime() > toMs) return false;
     const name = _normBill(t.name);
     const nameMatch = name && (name.includes(billName) || billName.includes(name));
     const amtMatch = variable || Math.abs(Math.abs(Number(t.amount)) - billAmt) <= Math.max(2, billAmt * 0.05);
     return nameMatch && amtMatch;
   });
+  const early = addDays(at, -EARLY_DAYS).getTime() - 1;
+  if (!(prev && noon(prev) < noon(at))) {
+    const startMs = addDays(at, -5).getTime() - 1;
+    return startMs < t0.getTime() && payIn(startMs, t0.getTime());
+  }
+  const mid = (noon(prev).getTime() + noon(at).getTime()) / 2;
+  if (mid >= t0.getTime()) return false;
+  // Within EARLY_DAYS of its date: this occurrence's. Further back (but past the midpoint) only when the occurrence
+  // before already has a payment of its own, so the earlier payment cannot be that one paid late.
+  if (payIn(Math.max(mid, early), t0.getTime())) return true;
+  if (early <= mid) return false;
+  const prevMid = (() => { const pp = prevBillOccurrence(b, prev); return pp && noon(pp) < noon(prev) ? (noon(pp).getTime() + noon(prev).getTime()) / 2 : addDays(prev, -5).getTime() - 1; })();
+  return payIn(mid, early) && payIn(prevMid, mid);
 }
 
 // ── Expected items: their own schedule ──────────────────────────────────────────────────────────

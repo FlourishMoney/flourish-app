@@ -13,7 +13,7 @@
 
 "use strict";
 
-const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, statusUnavailable, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 
 // Sprint Z2 #15: reject absurdly large bodies (cheap DoS guard). Larger than coach.js's 100KB because
 // enrich_transactions / migrate_items legitimately carry up to ~500 transactions or several item tokens.
@@ -27,6 +27,8 @@ const PLAID_BASE = {
 
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
+const { liveSubscriptionsFor } = require("./_lib/stripeLive");
+const { emailKey, emailRef } = require("./_lib/logSafe");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -166,7 +168,8 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
-      const { unlimited } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
@@ -567,7 +570,8 @@ exports.handler = async (event) => {
       const failures = [];
       // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
-      const { unlimited } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
@@ -662,7 +666,7 @@ exports.handler = async (event) => {
       const ENDED = ["canceled", "incomplete_expired"];
       const { data: subRows, error: subErr } = await admin
         .from("subscriptions")
-        .select("provider, provider_subscription_id, status, plan_key")
+        .select("provider, provider_subscription_id, provider_customer_id, status, plan_key")
         .eq("user_id", user_id);
       if (subErr && !missingTable(subErr)) {
         console.error("[delete_account] subscriptions read:", subErr.message);
@@ -673,6 +677,23 @@ exports.handler = async (event) => {
       // stamped below all the same.
       const allSubs = Array.isArray(subRows) ? subRows : [];
       const subs = allSubs.filter(r => r && r.provider_subscription_id && (r.provider || "stripe") === "stripe");
+      // B3 (audit 2026-10-26): EVERY live subscription Stripe has for the customer, not only the one on the row. A
+      // second checkout that completed (two tabs) left a subscription the row never showed, still charging. If Stripe
+      // cannot be asked, nothing is deleted.
+      const customers = [...new Set(allSubs.filter(r => r && r.provider_customer_id && (r.provider || "stripe") === "stripe").map(r => r.provider_customer_id))];
+      for (const cus of customers) {
+        let listed;
+        try { listed = await liveSubscriptionsFor(cus, {}, { includeIncomplete: true }); }
+        catch (e) {
+          console.error("[delete_account] stripe list failed:", e && e.statusCode ? e.statusCode : "no_status");
+          return stop("billing_cancel"); // nothing deleted yet
+        }
+        for (const s of listed) {
+          if (subs.some(r => r.provider_subscription_id === s.id)) continue;
+          subs.push({ provider: "stripe", provider_subscription_id: s.id, status: s.status, plan_key: (s.metadata && s.metadata.plan_key) || null });
+          allSubs.push(subs[subs.length - 1]);
+        }
+      }
       for (const r of subs) {
         if (ENDED.includes(r.status)) continue;
         const id = encodeURIComponent(r.provider_subscription_id);
@@ -765,7 +786,7 @@ exports.handler = async (event) => {
         const email = (u?.user?.email || "").trim().toLowerCase();
         if (email) {
           const { error: bsErr } = await admin.from("beta_signups").delete().eq("email", email);
-          if (bsErr) console.error(`[delete_account] beta_signups delete FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, bsErr.message);
+          if (bsErr) console.error(`[delete_account] beta_signups delete FAILED for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, bsErr.message);
           // Also erase any waitlist PII for this email (email-keyed, no FK → doesn't cascade). Best-effort:
           // residual marketing PII shouldn't survive an account deletion (Apple 5.1.1(v) / privacy).
           const { error: wlErr } = await admin.from("waitlist").delete().eq("email", email);

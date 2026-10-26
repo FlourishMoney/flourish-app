@@ -31,7 +31,7 @@ const { create } = require("./_runner.cjs");
   const t = create();
 
   const snapFor = (d, cc) => ({
-    profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc),
+    profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc, d),
     incomes: F.buildDemoIncomes(d, cc), bills: F.buildDemoBills(d, cc),
     transactions: F.buildDemoTxns(d, cc), bankConnected: true, demo: true,
   });
@@ -55,13 +55,13 @@ const { create } = require("./_runner.cjs");
   // ── 1. Phase stability ─────────────────────────────────────────────────────────────────────────
   const usSigs = new Set(DATES.map(s => sigFor(new Date(`${s}T12:00:00`), "US")));
   t.eq(usSigs.size, 1, `1a the US fixture yields IDENTICAL figures on all ${DATES.length} dates`);
-  t.eq([...usSigs][0], "$2,415|$172|2465|Full-time Job|13|142|565|250|$3,672",
+  t.eq([...usSigs][0], "$2,415|$172|2465|Full-time Job|13|142|564.75|249.67|$3,672",
     "1b …and that signature is the published US demo: $2,415 safe, $172/day, a $2,465 paycheck 13 days out, $3,672 balance, $142 of committed bills");
 
   // The Canadian one must be unaffected by the refactor that made the fixture country-keyed.
   const caSigs = new Set(DATES.map(s => sigFor(new Date(`${s}T12:00:00`), "CA")));
   t.eq(caSigs.size, 1, "1c the CA fixture is still stable across the same twelve dates");
-  t.eq([...caSigs][0], "$1,944|$138|2840|Full-time Job|13|65|435|291|$3,083",
+  t.eq([...caSigs][0], "$1,944|$138|2840|Full-time Job|13|65|435|290.95|$3,083",
     "1d …and its published signature is UNCHANGED by the country-keying");
 
   // ── 2. The five-row breakdown, and a populated "one thing to know" ────────────────────────────
@@ -136,7 +136,7 @@ const { create } = require("./_runner.cjs");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     t.ok(/function buildDemoState\(country = "CA"\)/.test(app),
       "5a buildDemoState takes a country");
-    t.ok(/demoProfileFor\(cc\)/.test(app) && /demoAccountsFor\(cc\)/.test(app) && /demoDebtsFor\(cc\)/.test(app),
+    t.ok(/demoProfileFor\(cc\)/.test(app) && /demoAccountsFor\(cc\)/.test(app) && /demoDebtsFor\(cc, new Date\(\)\)/.test(app),
       "5b …and builds the profile, accounts and debts from the selected fixture, not from a hard-coded Canadian literal");
     t.ok(/buildDemoIncomes\(new Date\(\), cc\)/.test(app) && /buildDemoBills\(new Date\(\), cc\)/.test(app) && /buildDemoTxns\(new Date\(\), cc\)/.test(app),
       "5c …and passes the country to every builder");

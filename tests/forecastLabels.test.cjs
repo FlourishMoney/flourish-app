@@ -31,7 +31,7 @@ const INTERNAL = /\((dup|dupe|copy|tmp|temp|test|draft|internal|auto|clone|\d+)\
   try { A = loadApp(["PlanAhead"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const now = new Date();
   for (const c of D.DEMO_COUNTRIES) {
-    const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c),
+    const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now), incomes: D.buildDemoIncomes(now, c),
       bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), bankConnected: true, demo: true };
     const incomeNames = new Set(data.incomes.map(i => String(i.label).trim()));
     for (const r of W.WATCH_RANGES) {

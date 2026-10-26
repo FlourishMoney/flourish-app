@@ -23,6 +23,8 @@
 const { getAdminClient } = require("./_lib/auth");
 const { verifyStripeSignature } = require("./_lib/stripeSignature");
 const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
+const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
+const { alertSupport } = require("./_lib/supportAlert");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -208,6 +210,39 @@ exports.handler = async (event) => {
     return reply(200, { received: true, conflict: true });
   };
 
+  // TWO STRIPE SUBSCRIPTIONS FOR ONE HOUSEHOLD (audit 2026-10-26, B3). The row holds one subscription. An event
+  // for a DIFFERENT Stripe subscription, while the row's own is still live, is never written over it: both would
+  // charge, and cancelling one would mark the row cancelled while the other kept billing. It is recorded on the
+  // row (support_flag, as the store's double subscriptions are) and support is told once, to cancel and refund the
+  // extra one. Checkout asks Stripe first (billing.js), so this is the backstop.
+  const otherLiveStripe = async (user_id, subId) => {
+    if (!user_id || !subId) return null;
+    const { data, error } = await admin
+      .from("subscriptions").select("provider, provider_subscription_id, status, current_period_end, support_flag")
+      .eq("user_id", user_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data || (data.provider || "stripe") !== "stripe" || !data.provider_subscription_id) return null;
+    return data.provider_subscription_id !== subId && holdsHousehold(data, isPaidSubscription) ? data : null;
+  };
+  const acknowledgeDuplicate = async (user_id, row, incomingLive) => {
+    const FLAG = "two_stripe_subscriptions";
+    if (incomingLive && row.support_flag !== FLAG) {
+      const { error } = await admin.from("subscriptions")
+        .update({ support_flag: FLAG, support_flag_at: new Date().toISOString() }).eq("user_id", user_id);
+      if (error) console.error("[stripe-webhook] support flag:", error.message);
+      await alertSupport({ flag: FLAG, userId: user_id, provider: "stripe" });
+    }
+    console.error("[stripe-webhook] duplicate: an event for a second Stripe subscription while the household's is live");
+    await admin.from("billing_events").update({
+      status: "ignored",
+      processed_at: new Date().toISOString(),
+      error: incomingLive
+        ? "duplicate: the household already holds a live Stripe subscription; cancel and refund the extra one"
+        : "duplicate: an extra Stripe subscription ended; the household's own is unchanged",
+    }).eq("event_id", evt.id);
+    return reply(200, { received: true, duplicate: true });
+  };
+
   try {
     if (evt.type === "checkout.session.completed") {
       const user_id = userIdFrom(object);
@@ -229,6 +264,7 @@ exports.handler = async (event) => {
         return await acknowledgeStale();
       }
       if (await storePaidRow(user_id)) return await acknowledgeConflict();
+      { const other = await otherLiveStripe(user_id, sessionSubId); if (other) return await acknowledgeDuplicate(user_id, other, true); }
       const patch = {
         user_id,
         provider: "stripe",
@@ -266,6 +302,10 @@ exports.handler = async (event) => {
       // id still be on it).
       if (existing && isStoreRow(existing) && isPaidSubscription(existing)) return await acknowledgeConflict();
       if (!existing && await storePaidRow(user_id)) return await acknowledgeConflict();
+      if (!existing) {
+        const other = await otherLiveStripe(user_id, object.id);
+        if (other) return await acknowledgeDuplicate(user_id, other, evt.type !== "customer.subscription.deleted" && isLiveStripeStatus(object.status));
+      }
       if (eventAtIso) patch.last_event_at = eventAtIso;
       const accountId = existing?.user_id || user_id;
       if (foundingEnded && accountId) {

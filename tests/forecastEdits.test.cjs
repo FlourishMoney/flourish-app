@@ -182,7 +182,7 @@ const { create } = require("./_runner.cjs");
     t.eq(E.nextDepositFor(d, TODAY).amount, 950, "the next deposit is quoted at the low end");
     const ss = SafeSpendEngine.calculate(d, TODAY);
     const horizon = E.daysToNextDepositFor(d, TODAY);
-    t.eq(ss.savingsAlloc, Math.round(toMonthly(950, "biweekly") * 0.10 / 30 * horizon), "safe-to-spend's savings set-aside uses the low end");
+    t.eq(ss.savingsAlloc, Math.round(toMonthly(950, "biweekly") * 0.10 / 30 * horizon * 100) / 100, "safe-to-spend's savings set-aside uses the low end");
     t.approx(FinancialCalcEngine.cashFlow(d, {}, TODAY).monthlyIncome, toMonthly(950, "biweekly"), 0.01, "monthly income (health score, coach) uses the low end");
 
     const few = shifts(); few.transactions = few.transactions.slice(0, 2);

@@ -47,7 +47,7 @@ const path = require("path");
   // Meet, in the demo exactly as it renders: the extra is 25% of the displayed $1,944.
   const now = new Date();
   const demo = {
-    profile: { name: "Alex", country: "CA" }, accounts: demoAccountsFor("CA"), debts: demoDebtsFor("CA"),
+    profile: { name: "Alex", country: "CA" }, accounts: demoAccountsFor("CA"), debts: demoDebtsFor("CA", now),
     incomes: buildDemoIncomes(now), bills: buildDemoBills(now), transactions: buildDemoTxns(now), demo: true,
   };
   const dec = (buildMeetSnapshot(demo).decisions || [])[0];

@@ -295,7 +295,7 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
   // ── 7. the demo is unchanged ─────────────────────────────────────────────────────────────────
   {
     const today = new Date();
-    const demo = { profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(today, "CA"),
+    const demo = { profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", today), incomes: D.buildDemoIncomes(today, "CA"),
       bills: D.buildDemoBills(today, "CA"), transactions: D.buildDemoTxns(today, "CA"), bankConnected: true, demo: true };
     t.eq(LA.splitLoanActivity(demo.transactions, demo.accounts).loanActivity.length, 0, "7a the demo has no loan activity: the rule leaves it alone");
     const ss = SafeSpendEngine.calculate(demo, today); const v = safeToSpendView(ss);

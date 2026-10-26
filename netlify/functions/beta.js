@@ -30,6 +30,7 @@
 const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
+const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
@@ -397,6 +398,16 @@ async function handle(event) {
       };
     }
 
+    // H3 (audit 2026-10-26): METERED LIKE SIGNUP. Every insert takes a founding number at once, so an unmetered
+    // form let one script take every remaining spot for good. The same gate as signup (_lib/signupLimit.js): 5 an
+    // hour per IP, counted after the cheap checks above so a typo does not burn an attempt, and 3 welcome emails a
+    // day per inbox. Fails closed, as signup does. The form shows its existing error line for a 429.
+    const wLimit = await rateLimit(event, emailAddr);
+    if (!wLimit.allowed) {
+      console.error(`[waitlist] refused: ${wLimit.reason}`);
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: wLimit.message }) };
+    }
+
     // THE LAST SPOT WENT WHILE THE FOUNDING FORM WAS OPEN (approved by ChatGPT and Grok, 2026-10-15). A signup
     // under the founding spot line asks for one thing, the founding price link; with every spot taken there
     // is no number to give and no email to send, so nothing is stored and the page says the spots just
@@ -508,6 +519,7 @@ async function handle(event) {
     const rowForGuard = { consent_version: currentVersion, unsubscribed_at: null, ...(insertedRow || {}) };
     if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, welcomePositionFor({ email: emailAddr, ...(insertedRow || {}) }))) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
+      await recordEmailSent({ store: signupLimitStore(), email: emailAddr });
     }
 
     // The last spot went between the count and the insert: the row came back with no founding number. It
@@ -620,9 +632,9 @@ async function handle(event) {
       if (!gate.usedCode) return; // a self-serve signup reserved nothing
       try {
         const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
-        if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);
+        if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, delErr.message);
       } catch (de) {
-        console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release THREW for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, de.message);
+        console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release THREW for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, de.message);
       }
     };
 

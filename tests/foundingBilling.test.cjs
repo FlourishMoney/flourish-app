@@ -64,12 +64,15 @@ function lookup(state, email) {
 function fakeAdmin(state) {
   const from = (table) => {
     const q = {
-      _f: [],
-      select() { return q; },
+      _f: [], _cols: "",
+      select(cols) { q._cols = String(cols || ""); return q; },
       eq(col, val) { q._f.push(r => r[col] === val); return q; },
       _rows() { return (state.rows[table] = state.rows[table] || []).filter(r => q._f.every(fn => fn(r))); },
       async maybeSingle() {
-        if (state.readError && state.readError[table]) return { data: null, error: { message: state.readError[table] } };
+        // A missing column fails only the reads that name it ("column subscriptions.founding_ended_at does not exist").
+        const missing = state.readError && state.readError[table];
+        const col = missing && (/column \w+\.(\w+) does not exist/.exec(missing) || [])[1];
+        if (missing && (!col || q._cols.includes(col))) return { data: null, error: { message: missing } };
         return { data: q._rows()[0] || null, error: null };
       },
       insert(row) {
@@ -128,6 +131,7 @@ function load(modPath, state, stripeLog = []) {
     getAdminClient: () => fakeAdmin(state),
   };
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: {
+    stripeGet: async () => ({ data: [] }),   // B3: checkout asks Stripe for live subscriptions and open sessions first
     stripePost: async (p, params) => {
       stripeLog.push({ p, params });
       return p === "/customers" ? { id: "cus_1" } : { id: "cs_1", url: "https://stripe.test/pay" };

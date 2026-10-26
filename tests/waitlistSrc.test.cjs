@@ -9,6 +9,7 @@
 // Runs the REAL beta.js handler with fetch stubbed, and the real browser helper with a fake sessionStorage.
 // -----------------------------------------------------------------------------
 "use strict";
+require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");

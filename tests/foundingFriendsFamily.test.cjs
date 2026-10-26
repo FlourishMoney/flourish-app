@@ -19,6 +19,7 @@
 //   6  the server still needs a confirmed address and a ledger number before the founding price (unchanged)
 // -----------------------------------------------------------------------------
 "use strict";
+require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const path = require("path");
 const fs = require("fs");
