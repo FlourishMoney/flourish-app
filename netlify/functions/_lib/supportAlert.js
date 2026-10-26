@@ -21,6 +21,7 @@ const TIMEOUT_MS = 5000;
 const WHAT = Object.freeze({
   two_store_subscriptions: "two live store subscriptions at once (for example a regular plan and the founding annual, which Apple bills as separate groups)",
   founding_not_eligible: "the founding price bought in a store by a household the server did not offer it to",
+  two_stripe_subscriptions: "two live Stripe subscriptions at once (two checkouts completed); the row keeps the first",
 });
 
 // The message, exactly as sent. No address, no amount: the account id is how support finds it.
@@ -32,7 +33,9 @@ function supportAlertMessage({ flag, userId, provider }) {
       `The server flagged a household: ${what}.`,
       `Account: ${userId}`,
       `Store: ${provider || "unknown"}`,
-      "The household keeps its access. Check the account in RevenueCat, refund or cancel the extra subscription in the store if it is a double charge, then clear support_flag on its subscriptions row.",
+      provider === "stripe"
+        ? "The household keeps its access. Find the customer in Stripe by the account id (subscription metadata user_id), cancel and refund the extra subscription, then clear support_flag on its subscriptions row."
+        : "The household keeps its access. Check the account in RevenueCat, refund or cancel the extra subscription in the store if it is a double charge, then clear support_flag on its subscriptions row.",
     ].join("\n"),
   };
 }

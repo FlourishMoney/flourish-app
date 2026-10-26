@@ -26,6 +26,7 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost } = require("./_lib/stripeApi");
+const { liveSubscriptionsFor, expireOpenCheckouts } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
@@ -256,6 +257,19 @@ exports.handler = async (event) => {
       }
 
       const customerId = await ensureCustomer(admin, user_id, user?.email);
+
+      // B3 (audit 2026-10-26): Stripe itself is asked, not only the row. A subscription the row does not show
+      // (a second tab that completed, a webhook still on its way) is a 409 like any other; if Stripe cannot be
+      // asked, nothing is created (503, the person tries again) rather than risking a second charge. Then the
+      // customer's other open checkouts are expired, so an older tab cannot complete a second subscription.
+      try {
+        const live = await liveSubscriptionsFor(customerId);
+        if (live.length) return json(409, CORS, { error: "already_subscribed", provider: "stripe" });
+        await expireOpenCheckouts(customerId);
+      } catch (e) {
+        console.error("[billing] checkout live check:", e && e.statusCode ? e.statusCode : "no_status");
+        return json(503, CORS, { error: "unavailable" });
+      }
 
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",

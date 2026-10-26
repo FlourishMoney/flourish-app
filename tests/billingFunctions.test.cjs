@@ -78,7 +78,7 @@ function loadWithStubs(modPath, { user_id = null, authError = null, state, strip
     getAdminClient: () => fakeAdmin(state),
   };
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true,
-    exports: { stripePost: stripe.stripePost || (async () => ({ id: "cs_1", url: "https://stripe.test/x" })),
+    exports: { stripeGet: async () => ({ data: [] }), stripePost: stripe.stripePost || (async () => ({ id: "cs_1", url: "https://stripe.test/x" })),
                formEncode: real.formEncode } };
   const mod = require(modPath);
   delete require.cache[modPath];

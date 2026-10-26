@@ -27,6 +27,7 @@ const PLAID_BASE = {
 
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
+const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -664,7 +665,7 @@ exports.handler = async (event) => {
       const ENDED = ["canceled", "incomplete_expired"];
       const { data: subRows, error: subErr } = await admin
         .from("subscriptions")
-        .select("provider, provider_subscription_id, status, plan_key")
+        .select("provider, provider_subscription_id, provider_customer_id, status, plan_key")
         .eq("user_id", user_id);
       if (subErr && !missingTable(subErr)) {
         console.error("[delete_account] subscriptions read:", subErr.message);
@@ -675,6 +676,23 @@ exports.handler = async (event) => {
       // stamped below all the same.
       const allSubs = Array.isArray(subRows) ? subRows : [];
       const subs = allSubs.filter(r => r && r.provider_subscription_id && (r.provider || "stripe") === "stripe");
+      // B3 (audit 2026-10-26): EVERY live subscription Stripe has for the customer, not only the one on the row. A
+      // second checkout that completed (two tabs) left a subscription the row never showed, still charging. If Stripe
+      // cannot be asked, nothing is deleted.
+      const customers = [...new Set(allSubs.filter(r => r && r.provider_customer_id && (r.provider || "stripe") === "stripe").map(r => r.provider_customer_id))];
+      for (const cus of customers) {
+        let listed;
+        try { listed = await liveSubscriptionsFor(cus, {}, { includeIncomplete: true }); }
+        catch (e) {
+          console.error("[delete_account] stripe list failed:", e && e.statusCode ? e.statusCode : "no_status");
+          return stop("billing_cancel"); // nothing deleted yet
+        }
+        for (const s of listed) {
+          if (subs.some(r => r.provider_subscription_id === s.id)) continue;
+          subs.push({ provider: "stripe", provider_subscription_id: s.id, status: s.status, plan_key: (s.metadata && s.metadata.plan_key) || null });
+          allSubs.push(subs[subs.length - 1]);
+        }
+      }
       for (const r of subs) {
         if (ENDED.includes(r.status)) continue;
         const id = encodeURIComponent(r.provider_subscription_id);

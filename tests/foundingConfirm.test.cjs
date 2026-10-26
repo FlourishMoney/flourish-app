@@ -52,7 +52,7 @@ function load(modPath, state, { blobs = memStore() } = {}) {
   for (const p of [modPath, AUTH_PATH, API_PATH, BLOBS_PATH]) delete require.cache[p];
   const real = require("../netlify/functions/_lib/auth.js");
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: UID, error: null }), getAdminClient: () => fakeAdmin(state) };
-  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => ({ id: "x", url: "https://stripe.test/pay" }) } };
+  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripeGet: async () => ({ data: [] }), stripePost: async () => ({ id: "x", url: "https://stripe.test/pay" }) } };
   require.cache[BLOBS_PATH] = { id: BLOBS_PATH, filename: BLOBS_PATH, loaded: true,
     exports: { getStore: () => { if (!blobs) throw new Error("no blobs here"); return blobs; } } };
   const mod = require(modPath);

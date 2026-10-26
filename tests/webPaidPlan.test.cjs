@@ -77,7 +77,7 @@ function loadWithStubs(modPath, { user_id = "u1", state }) {
   delete require.cache[API_PATH];
   const real = require("../netlify/functions/_lib/auth.js");
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id, error: null }), getAdminClient: () => fakeAdmin(state) };
-  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => ({ id: "cs_1", url: "https://stripe.test/x" }) } };
+  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripeGet: async () => ({ data: [] }), stripePost: async () => ({ id: "cs_1", url: "https://stripe.test/x" }) } };
   const mod = require(modPath);
   delete require.cache[modPath];
   return mod;

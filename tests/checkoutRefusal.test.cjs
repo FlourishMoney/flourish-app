@@ -30,7 +30,7 @@ function loadBilling(state) {
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "someone@example.test", email_confirmed_at: "2026-10-01T00:00:00Z" } } }) } },
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };
-  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => ({ id: "cs", url: "https://stripe.test/x" }) } };
+  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripeGet: async () => ({ data: [] }), stripePost: async () => ({ id: "cs", url: "https://stripe.test/x" }) } };
   const mod = require(BILLING_PATH); delete require.cache[BILLING_PATH]; return mod;
 }
 

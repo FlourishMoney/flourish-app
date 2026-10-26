@@ -147,7 +147,7 @@ function fakeAdmin(db = {}, { readError = null } = {}) {
     t.ok(!!lapsed.db.subscriptions[0].founding_ended_at && lapsed.calls.rpcs.some((c) => c.fn === "waitlist_founding_mark_ended"),
       "M2 a store founding subscription whose period ended before the sync is still marked ended, on the account and the waitlist number");
     const plaid = read("netlify", "functions", "plaid.js");
-    t.ok(/\.select\("provider, provider_subscription_id, status, plan_key"\)/.test(plaid) && /if \(allSubs\.some\(r => r && r\.plan_key === "founding_annual"/.test(plaid),
+    t.ok(/\.select\("provider, provider_subscription_id, (provider_customer_id, )?status, plan_key"\)/.test(plaid) && /if \(allSubs\.some\(r => r && r\.plan_key === "founding_annual"/.test(plaid),
       "M2b account deletion marks a store founding subscription ended too (only Stripe ones are cancelled there)");
   }
 
@@ -200,7 +200,7 @@ function fakeAdmin(db = {}, { readError = null } = {}) {
     const real = require(AUTH_PATH);
     const admin = fakeAdmin(db, opts);
     require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: U1, error: null }), getAdminClient: () => admin };
-    require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => ({ id: "cs", url: "https://stripe.test/x" }) } };
+    require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripeGet: async () => ({ data: [] }), stripePost: async () => ({ id: "cs", url: "https://stripe.test/x" }) } };
     const mod = require(BILLING_PATH); delete require.cache[BILLING_PATH]; return mod;
   }
   function loadStripeWebhook(admin) {

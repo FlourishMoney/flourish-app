@@ -77,7 +77,9 @@ async function billingFor(user, { founder = false, billing = true } = {}) {
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };
   let checkout = 0;
-  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => { checkout++; return { id: "x", url: "https://stripe.test/pay" }; } } };
+  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => { checkout++; return { id: "x", url: "https://stripe.test/pay" }; },
+    // Checkout asks Stripe for the customer's live subscriptions and open sessions first (B3, 2026-10-26): none here.
+    stripeGet: async () => ({ data: [] }) } };
   try {
     if (billing) process.env.BILLING_ENABLED = "true"; else delete process.env.BILLING_ENABLED;
     process.env.STRIPE_PRICE_FOUNDING_ANNUAL_CAD = "price_founding_test";
