@@ -223,6 +223,7 @@ function prevBillOccurrence(b, orig) {
 // rent paid Oct 1 marks the Oct 1 rent, never Nov 1's; a bill paid ten days early marks the coming one; and one
 // payment marks one occurrence. Exactly halfway belongs to the earlier one, so that occurrence is still reserved.
 // A one-off has no occurrence before it: a payment in the 5 days before it counts.
+const NOT_A_PAYMENT_RX = /\b(refund(ed)?|revers(al|ed|e)|return(ed)?|charge ?back)\b/i;
 function billArrived(b, orig, eff, txns, today) {
   const at = orig < eff ? orig : eff;
   const prev = prevBillOccurrence(b, orig);
@@ -234,7 +235,9 @@ function billArrived(b, orig, eff, txns, today) {
   if (billName.length < 3 || !(billAmt > 0)) return false;
   const variable = b.type === "variable" || b.variable === true;
   return txns.some(t => {
-    if (!(Number(t.amount) > 0) || t.pending) return false;
+    // Only a payment out pays a bill: never money in (a refund of the same amount and merchant), a transfer
+    // between the household's own accounts, or a refund, reversal or return (audit 2026-10-26, item 15).
+    if (!(Number(t.amount) > 0) || t.pending || t.isTransfer || NOT_A_PAYMENT_RX.test(String(t.name || ""))) return false;
     const d = fromIso(t.date);
     if (!d || !(d.getTime() > startMs) || d > t0) return false;
     const name = _normBill(t.name);
