@@ -7,6 +7,7 @@
 //   1  the landing, opened from a link carrying an email, a checkout id and a token: one pageview, its URL clean
 //   2  "Try free" and "Store badge" fire once per click, store the only property; "Demo open" once, then /demo
 //   3  a signed-in household: plausible.io is never asked for anything
+//   4  /privacy, signed out: its pageview, and the approved website-analytics line (2026-10-26) in the policy
 // (Which pages, the native build and the CSP: tests/webAnalytics.)
 // -----------------------------------------------------------------------------
 "use strict";
@@ -19,6 +20,7 @@ const { execFileSync } = require("child_process");
 const MOCK = require("./_mockSupabase.cjs");
 
 const ROOT = path.join(__dirname, "..");
+const LINE = "on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.";
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
 const STUB = `(function(){var w=window,o=(w.plausible&&w.plausible.o)||{},q=(w.plausible&&w.plausible.q)||[];w.__sent=w.__sent||[];
 function send(n,a){var p={n:n,u:location.href,r:document.referrer||null};if(a&&a.props)p.p=a.props;var out=o.transformRequest?o.transformRequest(p):p;if(out)w.__sent.push(out);}
@@ -116,6 +118,17 @@ function household() {
       await page.goto(base + "/privacy", { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(1500);
       t.eq(asked, [], "3a a signed-in household (Today, then privacy): plausible.io is never asked for anything");
+      await ctx.close();
+    }
+    // ── 4. The privacy page, signed out ───────────────────────────────────────────────────────────
+    {
+      const { ctx, page, asked } = await open(false);
+      await page.goto(base + "/privacy", { waitUntil: "domcontentloaded" });
+      await page.getByText("Website analytics", { exact: false }).first().waitFor({ timeout: 40000 });
+      await page.waitForFunction(() => (window.__sent || []).length > 0, null, { timeout: 15000 }).catch(() => {});
+      const body = await page.locator("body").innerText();
+      t.eq([asked.length, (await sent(page)).map((x) => [x.n, x.u])], [1, [["pageview", base + "/privacy"]]], "4a /privacy: the script once, one pageview for /privacy");
+      t.ok(body.includes("Website analytics: " + LINE), "4b the policy carries the approved website-analytics line, word for word");
       await ctx.close();
     }
   } catch (e) {

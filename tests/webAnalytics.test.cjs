@@ -108,6 +108,8 @@ function fakeWindow(origin = "https://flourishmoney.app", opts = {}) {
     t.ok(/mentions plausible\.io/.test(chk), "5c and its artifact check refuses a native dist/ that mentions plausible.io (run for real in tests/nativeLandingMedia 3c)");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/analyticsPage\(\{ native: isNativeApp\(\), signedIn: !!user, authLoading, screen, demo: !!appData\?\.demo, recovery: recoveryMode \}\)/.test(app), "5d App: the page passed is the root screen, sign-in state and native flag");
+    t.ok(app.includes('{!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.</div>}'),
+      "5f the Privacy Policy's approved website-analytics line (2026-10-26) is shown on the website only, never in a store app");
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const csp = (toml.match(/Content-Security-Policy = "([^"]+)"/) || [])[1] || "";
     const dir = (n) => (csp.split(";").map((s) => s.trim()).find((s) => s.startsWith(n + " ")) || "");

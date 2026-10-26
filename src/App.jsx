@@ -13399,7 +13399,7 @@ function PrivacyPolicy({onBack}){
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: sends account and waitlist emails</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}
-      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Plausible</strong>: [WORDS: privacy website analytics]</div>}
+      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.</div>}
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
 
       <div style={h2}>7. Your Rights</div>
