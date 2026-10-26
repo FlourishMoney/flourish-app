@@ -132,6 +132,20 @@ export function enteredNextPayDate(inc) {
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
   return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3]) ? d : null;
 }
+// The next payday after `today` that this income's own deposits show (findAnchor stepped a whole cycle at a
+// time), as "YYYY-MM-DD", for weekly and every-two-weeks pay; null for any other cadence or with no chain of
+// deposits. The bank path saves it as inc.nextPayDate (audit 2026-10-26, H2): the saved household keeps manual
+// transactions only (persistence.js buildDbBlob), so until the bank's transactions are fetched again the cycle
+// had nothing to phase from and was counted from today (Nov 9 for deposits on Oct 9 and 23; Nov 6 is right).
+export function nextPayDateFromDeposits(inc, incAmt, transactions, today = new Date()) {
+  const F = _freqDays((inc && inc.freq) || "biweekly");
+  const anchor = F ? findAnchor(inc, incAmt, transactions) : null;
+  if (!anchor) return null;
+  const next = new Date(anchor);
+  while (_dayGap(today, next) <= 0) next.setDate(next.getDate() + F);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+}
+
 // The first payday of an entered weekly or every-two-weeks cycle that is after `today`.
 function _enteredNextAfter(inc, freqDays, today) {
   const d = enteredNextPayDate(inc);
@@ -283,4 +297,12 @@ export function isDepositToday(incomes, transactions, today = new Date()) {
     }
   }
   return false;
+}
+
+// The bank path's detected income (detectIncomeFromTxns) as the fields that phase it: { nextPayDate } from its
+// deposits, or {} when they show none. Spread into the income the bank path saves.
+export function withDepositPhase(found, transactions, today = new Date()) {
+  if (!found) return {};
+  const iso = nextPayDateFromDeposits({ label: found.label, freq: found.freq, isVariable: found.isVariable }, Number(found.perDeposit), transactions, today);
+  return iso ? { nextPayDate: iso } : {};
 }

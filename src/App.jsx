@@ -75,7 +75,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
-import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate } from "./lib/incomeSchedule.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
@@ -4289,7 +4289,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         if (found && Number(found.perDeposit) > 0) setIncomes(prev => prev.some(i => i.amount) ? prev : [{
           id:1, label:found.label||"", amount:String(found.perDeposit), freq:found.freq||"monthly", type:"employment", sourceTypes:["employment"],
           isVariable:!!found.isVariable, typicalAmount:String(found.perDeposit), owner:"self",
-          ...(found.anchorDay?{anchorDay:found.anchorDay}:{}), autoDetected:true }]);
+          ...(found.anchorDay?{anchorDay:found.anchorDay}:{}), ...withDepositPhase(found, marked), autoDetected:true }]);
         const billRows = foundBills.map(b => ({ name:b.name, amount:String(b.amount), date:String(b.date||""), type:b.type||"fixed", freq:b.freq||"monthly", auto:true, origin:"observed" }));
         if (billRows.length) setBills(prev => prev.some(b => b.name || b.amount) ? prev : billRows);
         setDetectedBills(billRows);
@@ -17697,7 +17697,7 @@ export default function FlourishApp(){
               // while an over-forecast invites overspending.
               // anchorDay is the modal observed deposit day — carried through so a monthly/semimonthly
               // cadence projects on the real pay day instead of silently defaulting to the 1st.
-              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:detectedIncome.freq||"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
+              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:detectedIncome.freq||"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),...withDepositPhase(detectedIncome, markedTxns),autoDetected:true}];
             })(),
             // Sprint D Fix (Bug 3): incomeSuggestion is NO LONGER computed here. This sync is gated on
             // `transactions.length === 0`, so once the reconcile populated transactions it early-
