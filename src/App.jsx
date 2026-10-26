@@ -38,6 +38,7 @@ import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLin
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
+import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
@@ -2383,7 +2384,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
-        body: JSON.stringify({ type:"simulator", payload:{ prompt } })
+        body: coachRequestBody({ type:"simulator", payload:{ prompt } })
       });
       // Item 6: without this the || "{}" below swallowed every HTTP error, so prose came back empty
       // and the neutral fallback in the catch — which exists for exactly this — never ran.
@@ -3537,7 +3538,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
-        body: JSON.stringify({ type:"checkin", payload:{ context, prompt } })
+        body: coachRequestBody({ type:"checkin", payload:{ context, prompt } })
       });
       // Item 6: check r.ok BEFORE reading. Without it a 429, a 401 or a 500 all parsed to an empty
       // body and the || below printed a specific piece of coaching advice — pause a subscription —
@@ -3786,7 +3787,8 @@ async function parseStatementWithAI(rawText) {
     if (c < 32 || (c >= 127 && c <= 159)) { safeText += " "; continue; }
     safeText += ch;
   }
-  safeText = safeText.replace(/UNTRUSTED_USER_DATA/gi, "UNTRUSTED-USER-DATA").slice(0, 7000);
+  // Audit 2026-10-26 B2: no email address, full account number or household name leaves in the statement text.
+  safeText = redactStatementText(safeText.replace(/UNTRUSTED_USER_DATA/gi, "UNTRUSTED-USER-DATA")).slice(0, 7000);
   // Step 2b: the model TRANSCRIBES only. It returns each amount with the verbatim `source` substring
   // it read, plus any statement anchors actually printed. JS (validateStatementImport) then validates
   // every row and the user confirms before anything is written — nothing is coerced or mapped here.
@@ -3806,7 +3808,7 @@ ${safeText}
   const _jwt = await getJwt();
   const r = await fetch(`${API_BASE}/api/coach`, {
     method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${_jwt}`},
-    body: JSON.stringify({ type:'document', payload:{ prompt } })
+    body: coachRequestBody({ type:'document', payload:{ prompt } })
   });
   // Item 6: a refusal used to parse to '{}' and return zero rows, which reads to the person as
   // "your statement had nothing in it" rather than "we could not read it". Fail loudly; the caller
@@ -10306,7 +10308,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
       const jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${jwt}` },
-        body: JSON.stringify({ type:"facilitator", payload:{ context: agendaToText(agenda),
+        body: coachRequestBody({ type:"facilitator", payload:{ context: agendaToText(agenda),
           messages: history.length ? history : [{ role:"user", content:"Start the money meeting." }] } }),
       });
       if (!r.ok) {
@@ -12848,7 +12850,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const age = birthYear>0 ? new Date().getFullYear()-birthYear : null;
     const kidsArr = profile.kids||[];
     const kidsInfo = kidsArr.length>0
-      ? kidsArr.map(k=>`${sanitizeField(k.name||"Child",40)} (born ${parseInt(k.birthYear)||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
+      ? kidsArr.map((k,i)=>`child ${i+1} (born ${parseInt(k.birthYear)||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
       : profile.hasKids?"yes (ages unknown)":"none";
     const PRIMARY_TYPES = ["t4","w2","selfemployed","incorporated","student","retired"];
     const empType = (profile?.lifeStages||[]).find(s=>PRIMARY_TYPES.includes(s)) || "t4";
@@ -12866,9 +12868,9 @@ The user's profile and financial data appear between <UNTRUSTED_USER_DATA> tags 
 <UNTRUSTED_USER_DATA>
 User profile:
 - Today's date: ${new Date().toLocaleDateString("en-CA", {year:"numeric",month:"long",day:"numeric"})}
-- Name: ${sanitizeField(profile.name||"User",80)} | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
+- Name: not shared; call them "you" | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
 - Location: ${country==="CA"?"Canada":"United States"}, ${prov||"unknown"}
-- Status: ${sanitizeField(profile.status||"single",40)}${profile.partnerName?` (partner: ${sanitizeField(profile.partnerName,80)})`:""}
+- Status: ${sanitizeField(profile.status||"single",40)}${profile.partnerName?` (has a partner; call them "your partner")`:""}
 - Employment: ${empLabel}${partnerEmpLabel ? ` | Partner: ${partnerEmpLabel}` : ""} | Homeowner: ${profile.isHomeowner?"Yes":"No"}
 - Children: ${kidsInfo}
 
@@ -12974,7 +12976,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         return fetch(`${API_BASE}/api/coach`, {
           method:"POST",
           headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
-          body: JSON.stringify({
+          body: coachRequestBody({
             type: "chat",
             payload: {
               context: buildContext(text),
@@ -16694,7 +16696,7 @@ export default function FlourishApp(){
     try {
       const jwt = await getJwt();
       if (!jwt) return { ok:false, hadJwt:false };
-      const res = await fetch(`${API_BASE}/api/coach`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: JSON.stringify({ action: consentAction }) });
+      const res = await fetch(`${API_BASE}/api/coach`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: coachRequestBody({ action: consentAction }) });
       if (!res.ok) console.error(`[consent] server ${consentAction} failed:`, res.status);
       return { ok: res.ok, hadJwt:true };
     } catch (e) { console.error(`[consent] server ${consentAction} threw:`, e?.message || e); return { ok:false, hadJwt:true }; }
@@ -16761,6 +16763,8 @@ export default function FlourishApp(){
   // A device that synced a loan's own entries before lib/loanActivity.js existed has them in its saved
   // transactions: they move to the loan-activity store once, here, before anything reads them.
   const [appData,setAppData]=useState(()=>moveSavedLoanActivity(saved)?.appData||null);
+  // Audit 2026-10-26 B2: every request to /api/coach replaces the household's names with roles (coachPrivacy.js).
+  setCoachNames(appData?.profile);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
   // annual bills so their cadence phase persists (monthly uses day-of-month, no anchor needed).
   useEffect(() => {
