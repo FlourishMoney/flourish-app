@@ -40,6 +40,7 @@ import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlist
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { confirmLinkResult } from "./lib/confirmLink.js";
+import { analyticsPage, setAnalyticsPage, track, EVENT } from "./lib/webAnalytics.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
@@ -13397,6 +13398,8 @@ function PrivacyPolicy({onBack}){
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: sends account and waitlist emails</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
+      {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}
+      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.</div>}
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
 
       <div style={h2}>7. Your Rights</div>
@@ -14917,7 +14920,7 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
       const data = await res.json();
       // The last founding spot went while this form was open: no number, no email (beta.js join_waitlist).
       if (data.spotsFull === true) setStatus("full");
-      else if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
+      else if (data.joined) { setStatus(data.alreadyJoined ? "already" : "success"); if (!data.alreadyJoined) track(EVENT.foundingJoin); }
       else setStatus(res.status === 400 && data.error === "Consent required" ? "stale" : "error");
     } catch {
       setStatus("error");
@@ -15124,7 +15127,7 @@ function TrialButton({ onClick }) {
     <>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       <button type="button" className="fll-btn fll-main"
-        onClick={() => { countLanding("main_tap", { base: API_BASE }); onClick(); }}>Try flourish free for 14 days</button>
+        onClick={() => { countLanding("main_tap", { base: API_BASE }); track(EVENT.tryFree); onClick(); }}>Try flourish free for 14 days</button>
     </>
   );
 }
@@ -15164,7 +15167,8 @@ function StoreBadges(){
   return (
     <div className="fll-stores">
       {STORE_BADGES.map((b) => (
-        <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer">
+        <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer"
+          onClick={() => track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" })}>
           <img src={b.src} alt={b.alt} width={b.width} height={b.height} />
         </a>
       ))}
@@ -16853,6 +16857,10 @@ export default function FlourishApp(){
   // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
   // before the event resolves. Overrides the normal app render until the user sets a new password.
   const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
+  // Cookieless website analytics (lib/webAnalytics.js): only while a public page is showing to someone not signed in,
+  // never in the store apps. Signing in, onboarding, checkout, /confirmed or a reset link stops it.
+  const _analyticsPage = analyticsPage({ native: isNativeApp(), signedIn: !!user, authLoading, screen, demo: !!appData?.demo, recovery: recoveryMode });
+  useEffect(()=>{ setAnalyticsPage(_analyticsPage); },[_analyticsPage]);
   // The confirmation link signed a web signup in: on into the app, with "/" in the address bar (2026-10-23).
   useEffect(()=>{
     if(screen!=="confirmed" || authLoading || !user || confirmedFromApp(user)) return;
@@ -18187,7 +18195,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,

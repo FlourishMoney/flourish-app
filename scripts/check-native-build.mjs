@@ -60,6 +60,17 @@ if (mode === "artifact") {
     die(`dist/ still holds landing-only media (${shipped.join(", ")}), which would ship inside the iOS and ` +
         `Android apps.\n    build:native runs scripts/strip-landing-media.mjs after vite build; run that, then this check.`);
   }
+  // Website analytics never ship inside the store apps (src/lib/webAnalytics.js): a native build is compiled with
+  // VITE_NATIVE_BUILD=true, which removes the Plausible address. The App Store and Play privacy labels rely on it.
+  const assetsDir = path.join(root, "dist", "assets");
+  const withPlausible = fs.existsSync(assetsDir)
+    ? fs.readdirSync(assetsDir).filter((f) => /\.(js|html)$/.test(f) && fs.readFileSync(path.join(assetsDir, f), "utf8").includes("plausible.io"))
+    : [];
+  if (withPlausible.length || (fs.existsSync(path.join(root, "dist", "index.html")) && fs.readFileSync(path.join(root, "dist", "index.html"), "utf8").includes("plausible.io"))) {
+    die(`dist/ mentions plausible.io (${withPlausible.join(", ") || "index.html"}): website analytics would ship inside the iOS and Android apps.\n` +
+        `    Build the store bundle with npm run build:native (it sets VITE_NATIVE_BUILD=true).`);
+  }
+
   const indexHtml = path.join(root, "dist", "index.html");
   if (fs.existsSync(indexHtml) && fs.readFileSync(indexHtml, "utf8").includes("LANDING-META")) {
     die(`dist/index.html still holds the landing's link-preview tags, which name the website.\n` +

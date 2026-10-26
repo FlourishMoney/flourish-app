@@ -28,6 +28,7 @@ export { createElement as __h } from "react";
       "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(""),
       "import.meta.env.VITE_BUILD_SHA": JSON.stringify("test"),
       "import.meta.env.MODE": JSON.stringify("test"),
+      "import.meta.env.VITE_NATIVE_BUILD": JSON.stringify(native ? "true" : ""),
     },
   });
   const store = new Map();

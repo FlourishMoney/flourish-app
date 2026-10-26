@@ -83,7 +83,12 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   const app = read("src", "App.jsx");
   t.ok(/useEffect\(\(\) => \{ if \(!isNativeApp\(\)\) countLandingViewOnce\(\{ base: API_BASE \}\); \}, \[\]\);/.test(app), "3d the landing counts its view, on the web only");
   t.ok(/body: JSON\.stringify\(\{ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc\(\) \}\)/.test(app), "3e the signup carries the visit's src");
-  t.ok(!/googletagmanager|google-analytics|gtag\(|fbq\(|plausible\.io|clarity\.ms|hotjar|segment\.com|mixpanel/i.test(app + read("index.html")), "3f no third-party tracker");
+  t.ok(!/googletagmanager|google-analytics|gtag\(|fbq\(|plausible\.io|clarity\.ms|hotjar|segment\.com|mixpanel/i.test(app + read("index.html")), "3f no third-party tracker in the app or the page");
+  // 2026-10-26: cookieless website analytics (Plausible) on the public pages only, and only through one module
+  // (tests/webAnalytics*). No other file in src names it, and nothing else is added.
+  const libs = fs.readdirSync(path.join(REPO, "src", "lib")).filter((f) => f.endsWith(".js"));
+  t.eq(libs.filter((f) => /plausible\.io/.test(read("src", "lib", f))), ["webAnalytics.js"], "3f2 plausible.io is named only in src/lib/webAnalytics.js");
+  t.ok(libs.every((f) => !/googletagmanager|google-analytics|gtag\(|fbq\(|clarity\.ms|hotjar|segment\.com|mixpanel/i.test(read("src", "lib", f))), "3f3 …and no other tracker anywhere in src/lib");
 
   // ── 4. migration 0027 ────────────────────────────────────────────────────────────────────────
   const m = read("supabase", "migrations", "0027_landing_counts.sql");
