@@ -44,4 +44,14 @@ async function expireOpenCheckouts(customerId, deps = {}) {
   return n;
 }
 
-module.exports = { ENDED_STATUSES, isLiveStripeStatus, liveSubscriptionsFor, expireOpenCheckouts };
+// THE ROW'S OWN SUBSCRIPTION, still holding the household (review of 2026-10-26): paid, or Stripe still collecting
+// a renewal (past_due, unpaid, paused). Not "incomplete": a first payment that never went through holds no one, and
+// the household's paid retry (which checkout allows) must be written, not flagged as a second subscription.
+const HOLDING_UNPAID = Object.freeze(["past_due", "unpaid", "paused"]);
+function holdsHousehold(row, isPaid) {
+  if (!row) return false;
+  if (isPaid(row)) return true;
+  return (row.provider || "stripe") === "stripe" && HOLDING_UNPAID.includes(row.status);
+}
+
+module.exports = { ENDED_STATUSES, HOLDING_UNPAID, isLiveStripeStatus, liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold };

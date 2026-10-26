@@ -23,8 +23,7 @@
 const { getAdminClient } = require("./_lib/auth");
 const { verifyStripeSignature } = require("./_lib/stripeSignature");
 const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
-const { isLiveRow } = require("./_lib/storeSubscriptions");
-const { isLiveStripeStatus } = require("./_lib/stripeLive");
+const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
 
 const HANDLED = Object.freeze([
@@ -223,7 +222,7 @@ exports.handler = async (event) => {
       .eq("user_id", user_id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data || (data.provider || "stripe") !== "stripe" || !data.provider_subscription_id) return null;
-    return data.provider_subscription_id !== subId && isLiveRow(data) ? data : null;
+    return data.provider_subscription_id !== subId && holdsHousehold(data, isPaidSubscription) ? data : null;
   };
   const acknowledgeDuplicate = async (user_id, row, incomingLive) => {
     const FLAG = "two_stripe_subscriptions";

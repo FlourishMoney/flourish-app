@@ -26,7 +26,7 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost } = require("./_lib/stripeApi");
-const { liveSubscriptionsFor, expireOpenCheckouts } = require("./_lib/stripeLive");
+const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
@@ -170,7 +170,8 @@ exports.handler = async (event) => {
         manageable: !!row?.provider_customer_id,
         // H4 (audit 2026-10-26): a web subscription Stripe is still collecting (a renewal that failed, past_due):
         // not paid, so no access, but the fix is the card, in the billing portal, never a second checkout.
-        web_attention: !isPaidSubscription(row) && isLiveRow(row) && (row.provider || "stripe") === "stripe" && !!row.provider_customer_id,
+        // Not "incomplete": a first payment that failed is retried through checkout, which allows it.
+        web_attention: !isPaidSubscription(row) && holdsHousehold(row, isPaidSubscription) && !!row.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
       });
     }

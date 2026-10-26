@@ -1170,37 +1170,67 @@ export function debtMinimumDueDay(debt) {
 // clamped to the month. [{ debt, amount, day, date }]. The forecast, Due soon and safe to spend all read this,
 // so they list and reserve the same minimums on the same days (audit 2026-10-26, H1: safe to spend used to
 // deduct every minimum every pay period, due or not, paid or not).
-// ALREADY PAID: the bills' rule (forecastEdits.js billArrived). A payment that looks like this debt's payment
-// (paysADebtMinimum: a card or loan payment, a transfer or a card issuer, within $2 or 5% of the minimum) marks
-// the due date it is nearest to: after the midpoint since last month's due date, and on or before today.
+// ALREADY PAID (review of 2026-10-26). A payment marks one minimum, of the debt it pays:
+//   - it must look like a debt payment (paysADebtMinimum's card, loan or card-issuer signals) and never be a
+//     transfer between the household's own accounts (markTransfers paired it: transferPairId). A bare transfer
+//     flag is not enough: "Transfer to savings" for $25 paid no Visa minimum;
+//   - a payment that names a debt ("VISA PAYMENT") pays only that debt; one that names none ("PAYMENT - THANK
+//     YOU") may pay any debt whose minimum it matches;
+//   - each transaction marks at most one minimum (the earliest due it fits);
+//   - it falls after the midpoint since last month's due date and no more than 10 days before the due date (the
+//     bills' cap, forecastEdits.js EARLY_DAYS), and on or before today.
+const DEBT_EARLY_DAYS = 10;
+const GENERIC_DEBT_WORDS = new Set(["card", "credit", "loan", "line", "of", "the", "bank", "payment", "student", "federal", "personal", "auto", "car", "my", "account", "debt", "minimum", "and", "loc"]);
+function debtNameWords(debt) {
+  return String((debt && debt.name) || "").toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GENERIC_DEBT_WORDS.has(w));
+}
 export function debtMinimumDates(data, today = new Date(), days = 90, { includeToday = false } = {}) {
   const out = [];
-  const txns = (data && data.transactions) || [];
+  const txns = ((data && data.transactions) || []).filter(Boolean);
   const debts = (data && data.debts) || [];
   const noonOf = (x) => { const y = new Date(x); y.setHours(12, 0, 0, 0); return y; };
   const t0 = noonOf(today);
-  const paid = (amount, dueDay, due) => {
-    const prevMonth = new Date(due.getFullYear(), due.getMonth() - 1, 1, 12);
-    const prev = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), clampDayToMonth(dueDay, prevMonth.getFullYear(), prevMonth.getMonth()), 12);
-    const startMs = (prev.getTime() + noonOf(due).getTime()) / 2;
-    if (startMs >= t0.getTime()) return false;
-    return txns.some(t => {
-      if (!t || t.pending) return false;
-      const d = new Date(String(t.date) + "T12:00:00");
-      if (isNaN(d.getTime()) || !(d.getTime() > startMs) || d > t0) return false;
-      return paysADebtMinimum(t, [amount], debts);
-    });
-  };
-  for (const { debt, amount } of unbilledDebtMinimums(data && data.debts, data && data.bills)) {
+  const mins = unbilledDebtMinimums(data && data.debts, data && data.bills);
+  const wordsOf = new Map(mins.map(({ debt }) => [debt, debtNameWords(debt)]));
+  const named = (t, debt) => { const n = String(t.name || "").toLowerCase(); return (wordsOf.get(debt) || []).some(w => n.includes(w)); };
+  const namesAnyDebt = (t) => mins.some(({ debt }) => named(t, debt));
+  const used = new Set();
+  // Every due date in the window, earliest first, so a payment goes to the earliest minimum it fits.
+  const occ = [];
+  for (const { debt, amount } of mins) {
     const dueDay = debtMinimumDueDay(debt);
     for (let i = includeToday ? 0 : 1; i <= days; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i);
       if (d.getDate() !== clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) continue;
-      if (paid(amount, dueDay, d)) continue;
-      out.push({ debt, amount, day: i, date: d });
+      occ.push({ debt, amount, dueDay, day: i, date: d });
     }
   }
-  return out;
+  occ.sort((a, b) => a.day - b.day);
+  const payer = (o) => {
+    const due = noonOf(o.date);
+    const prevMonth = new Date(due.getFullYear(), due.getMonth() - 1, 1, 12);
+    const prev = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), clampDayToMonth(o.dueDay, prevMonth.getFullYear(), prevMonth.getMonth()), 12);
+    const startMs = Math.max((prev.getTime() + due.getTime()) / 2, due.getTime() - DEBT_EARLY_DAYS * 86400000 - 1);
+    if (startMs >= t0.getTime()) return -1;
+    let generic = -1;
+    for (let k = 0; k < txns.length; k++) {
+      const t = txns[k];
+      if (used.has(k) || t.pending || t.transferPairId) continue;
+      const d = new Date(String(t.date) + "T12:00:00");
+      if (isNaN(d.getTime()) || !(d.getTime() > startMs) || d > t0) continue;
+      if (!paysADebtMinimum({ ...t, isTransfer: false }, [o.amount], debts)) continue;
+      if (named(t, o.debt)) return k;
+      if (generic < 0 && !namesAnyDebt(t)) generic = k;
+    }
+    return generic;
+  };
+  for (const o of occ) {
+    const k = payer(o);
+    if (k >= 0) { used.add(k); continue; }
+    out.push({ debt: o.debt, amount: o.amount, day: o.day, date: o.date });
+  }
+  // Each debt's rows in date order, debts in their own order, as before.
+  return out.sort((a, b) => mins.findIndex(m => m.debt === a.debt) - mins.findIndex(m => m.debt === b.debt) || a.day - b.day);
 }
 
 export function isCashAdvance(txn) {

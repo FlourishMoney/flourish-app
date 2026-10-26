@@ -112,7 +112,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     // need not be tight. buildMeetSnapshot takes the date.
     t.eq(typeof DE.cashIsTight === "function" && DE.cashIsTight(QA, VIEW).tight, true, "2i (the QA's 25-day-old demo, on the QA's day: cash is tight)");
     t.eq((buildMeetSnapshot(QA, VIEW).decisions || []).length, 0, "2j …and Meet does not offer to move money to debt or savings either");
-    void aged;
+    // And on the real clock, the rule itself: whenever the aged demo is tight, Meet offers no decision.
+    t.ok(!DE.cashIsTight(aged).tight || (buildMeetSnapshot(aged).decisions || []).length === 0, "2j2 (today: a tight aged demo is never offered a move to debt or savings)");
     t.eq((buildMeetSnapshot(demoMadeOn(now2)).decisions || []).length, 1, "2k (a fresh demo still gets its Meet decision)");
 
     // 4. The daily card's wording.

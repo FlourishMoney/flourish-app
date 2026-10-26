@@ -52,6 +52,20 @@ const { create } = require("./_runner.cjs");
     t.eq(SafeSpendEngine.calculate(dinner, at(2026, 10, 20)).debtPayments, 348, "2e a $348 dinner is not the Visa payment (it must look like a debt payment)");
   }
 
+  // ── 2f. Which payment pays which minimum (review of 2026-10-26) ────────────────────────────────
+  {
+    const two = (transactions) => ({ accounts: [{ id: "a", type: "depository", subtype: "checking", balance: 2000 }],
+      incomes: [{ id: "i", label: "Job", amount: 2000, freq: "biweekly", nextPayDate: "2026-11-06" }], bills: [],
+      debts: [{ id: "v", name: "Visa card", balance: "900", rate: "20", min: "25", dueDay: 30 }, { id: "m", name: "Mastercard", balance: "900", rate: "20", min: "26", dueDay: 30 }], transactions });
+    const day = at(2026, 10, 26);
+    const left = (d) => SafeSpendEngine.calculate(d, day).minimumsDueSoon.map((m) => m.name).sort();
+    t.eq(left(two([{ id: "s", name: "Transfer to savings", amount: 25, date: "2026-10-24", isTransfer: true, transferPairId: "s+s2" }])), ["Mastercard minimum payment", "Visa card minimum payment"],
+      "2f a $25 transfer to savings pays no minimum (was: both dropped)");
+    t.eq(left(two([{ id: "p", name: "VISA PAYMENT", amount: 25, date: "2026-10-24" }])), ["Mastercard minimum payment"], "2g one VISA PAYMENT pays the Visa minimum only (was: both dropped)");
+    t.eq(left(two([{ id: "g", name: "CREDIT CARD PAYMENT", amount: 25, date: "2026-10-24" }])).length, 1, "2h one payment that names no debt pays one minimum, never two");
+    t.eq(left(two([{ id: "p", name: "VISA PAYMENT", amount: 25, date: "2026-10-12" }])), ["Mastercard minimum payment", "Visa card minimum payment"], "2i 18 days early (past the 10-day cap): still reserved");
+  }
+
   // ── 3. Due soon adds up; Watch agrees ───────────────────────────────────────────────────────────
   {
     let s = 26102026 >>> 0;
@@ -64,7 +78,7 @@ const { create } = require("./_runner.cjs");
       for (let i = 0; i < 1 + Math.floor(r() * 3); i++) {
         const min = Math.round((20 + r() * 400) * 100) / 100;
         debts.push({ id: "d" + i, name: ["Visa", "Mastercard", "Car loan"][i], balance: "5000", rate: "10", min: String(min), dueDay: 1 + Math.floor(r() * 31) });
-        if (r() < 0.5) transactions.push({ id: "p" + i, name: "PAYMENT - THANK YOU", amount: min, date: FE.isoOf(addD(-Math.floor(r() * 35))), isTransfer: true });
+        if (r() < 0.5) transactions.push({ id: "p" + i, name: "CREDIT CARD PAYMENT", amount: min, date: FE.isoOf(addD(-Math.floor(r() * 35))) });
       }
       const data = { accounts: [{ id: "a", type: "depository", subtype: "checking", balance: 3000 }], bills: [], debts, transactions,
         incomes: [{ id: "i", label: "Job", amount: 2500, freq: "biweekly", nextPayDate: FE.isoOf(addD(1 + Math.floor(r() * 14))) }] };

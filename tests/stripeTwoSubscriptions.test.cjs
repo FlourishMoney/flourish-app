@@ -136,6 +136,17 @@ function loadWith(db, stripeMock, alerts) {
       t.eq([JSON.parse(again.body).duplicate, row(db).provider_subscription_id, row(db).status], [undefined, "sub_C", "active"], "2c once it has ended, subscribing again is written as usual");
     }
 
+    // ── 2d. A first payment that never went through (incomplete) holds no one (review of 2026-10-26) ──
+    {
+      const db = makeDb(); const sm = makeStripe(); const alerts = [];
+      const { hook } = loadWith(db, sm, alerts);
+      await send(hook, "checkout.session.completed", { customer: "cus_1", subscription: "sub_A", metadata: { user_id: U, plan_key: "monthly" }, client_reference_id: U });
+      await send(hook, "customer.subscription.updated", sub("sub_A", "incomplete"));
+      const retry = await send(hook, "checkout.session.completed", { customer: "cus_1", subscription: "sub_B", metadata: { user_id: U, plan_key: "annual" }, client_reference_id: U });
+      t.eq([JSON.parse(retry.body).duplicate, row(db).provider_subscription_id, row(db).status, alerts.length], [undefined, "sub_B", "active", 0],
+        "2d an incomplete first attempt, then a paid retry: the retry is written (paid, access), not flagged as a second subscription");
+    }
+
     // ── 3. Two tabs ───────────────────────────────────────────────────────────────────────────────
     {
       const checkout = (billing) => billing.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app" }, body: JSON.stringify({ action: "create_checkout_session", plan_key: "annual" }) });

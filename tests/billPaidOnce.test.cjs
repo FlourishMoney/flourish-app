@@ -54,7 +54,17 @@ async function main() {
   t.eq(reserved("2026-10-20", at(2026, 10, 21)), 0, `2b [${tz}] paid on its day: nothing more reserved until the next one (outside the window)`);
   t.eq(reserved("2026-09-22", at(2026, 10, 12)), 1500, `2c [${tz}] last month's payment, posted late (Sep 22 for Sep 20): the Oct 20 rent is still reserved`);
   t.eq(reserved("2026-10-05", at(2026, 10, 12)), 1500, `2d [${tz}] exactly halfway between Sep 20 and Oct 20: it belongs to the earlier one, so Oct 20 is still reserved (cautious)`);
-  t.eq(reserved("2026-10-06", at(2026, 10, 12)), 0, `2e [${tz}] a day past halfway: it pays Oct 20`);
+  // Review of 2026-10-26: past halfway but more than 10 days early, a payment may be the one before paid late.
+  t.eq(reserved("2026-10-06", at(2026, 10, 12)), 1500, `2e [${tz}] a day past halfway, 14 days early, and Sep 20 has no payment: it may be Sep 20's paid late, so Oct 20 is still reserved`);
+  {
+    const data = { ...rentHousehold(null), bills: [{ id: "b1", name: "Rent", amount: 1500, date: "20", freq: "monthly" }], incomes: [{ id: "i1", label: "Job", amount: 2000, freq: "monthly", anchorDay: 28 }],
+      transactions: [{ id: "p0", name: "Rent", amount: 1500, date: "2026-09-19" }, { id: "p1", name: "Rent", amount: 1500, date: "2026-10-06" }] };
+    t.eq(SafeSpendEngine.calculate(data, at(2026, 10, 12)).upcomingBills, 0, `2e2 [${tz}] …but with Sep 20 paid (Sep 19), the Oct 6 payment is Oct 20's, 14 days early`);
+    const late = { ...rentHousehold("2026-10-20") };
+    t.eq(SafeSpendEngine.calculate(late, at(2026, 10, 26)).upcomingBills, 1500, `2e3 [${tz}] rent due the 1st, paid Oct 20 (October's, late): Nov 1 is still reserved`);
+    const et = { ...rentHousehold(null), transactions: [{ id: "e", name: "INTERAC E-TRANSFER RENT", amount: 1500, date: "2026-10-30", isTransfer: true }] };
+    t.eq(SafeSpendEngine.calculate(et, at(2026, 10, 31)).upcomingBills, 0, `2e4 [${tz}] rent paid by Interac e-transfer (flagged a transfer, not paired with another account) pays Nov 1`);
+  }
   {
     // One payment, a weekly bill: it marks only the occurrence it is nearest to, never two.
     const today = at(2026, 10, 12);

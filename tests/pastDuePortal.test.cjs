@@ -47,6 +47,8 @@ function statusFor(row) {
     t.eq([pastDue.paid, pastDue.web_attention, pastDue.manageable], [false, true, true], "1a past_due: not paid, web_attention, and a portal to go to");
     const active = await statusFor({ provider: "stripe", status: "active", provider_customer_id: "cus_1", current_period_end: LATER });
     t.eq([active.paid, active.web_attention], [true, false], "1b paid: no attention needed");
+    const incomplete = await statusFor({ provider: "stripe", status: "incomplete", provider_customer_id: "cus_1", current_period_end: null });
+    t.eq([incomplete.paid, incomplete.web_attention], [false, false], "1b2 a first payment that never went through (incomplete): not the portal");
     const ended = await statusFor({ provider: "stripe", status: "canceled", provider_customer_id: "cus_1", current_period_end: EARLIER });
     t.eq([ended.paid, ended.web_attention], [false, false], "1c ended: the plans again (it can subscribe anew)");
     const none = await statusFor(null);

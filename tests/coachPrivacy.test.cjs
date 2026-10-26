@@ -45,6 +45,11 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
     t.eq(JSON.parse(P.coachRequestBody({ c: "Recent: TFR TO 0051234567 $500.00, Rent $1,500.00 on 2026-10-01" }, names)).c,
       "Recent: TFR TO ••••4567 $500.00, Rent $1,500.00 on 2026-10-01", "1f2 an account number in a transaction's description keeps only its last 4; amounts and dates stay");
     t.eq(P.coachRequestBody({ type: "x", payload: { prompt: "hi" } }, P.householdNames({})), JSON.stringify({ type: "x", payload: { prompt: "hi" } }), "1f no names entered: the body is unchanged");
+    // Review of 2026-10-26: dates and everyday words survive; emails never go.
+    const n2 = P.householdNames({ name: "Sarah Day", partnerName: "May Chen", kids: [{ name: "Penny" }] });
+    t.eq(P.redactNames("Rent due May 1, a 30 day window. Sarah and May went out; SARAH DAY paid.", n2),
+      "Rent due May 1, a 30 day window. you and partner went out; you paid.", "1h a month's name before a day stays a date, a surname that is a word stays a word unless written as a name");
+    t.eq(JSON.parse(P.coachRequestBody({ m: "Email me at someone.else@example.com about it" }, n2)).m, "Email me at [email] about it", "1i an email address in any request string is masked, not only in statements");
     P.setCoachNames(profile);
     t.ok(!NAME_RX.test(P.coachRequestBody(body)), "1g the register App keeps from the profile is what coachRequestBody uses by default");
     P.setCoachNames(null);

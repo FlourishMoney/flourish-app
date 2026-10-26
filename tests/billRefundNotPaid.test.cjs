@@ -44,7 +44,8 @@ const { create } = require("./_runner.cjs");
   {
     const tx = (o) => [{ id: "p", name: "Rent", amount: 500, date: "2026-10-25", ...o }];
     t.eq(rent(house(tx({}))), 0, "2a a real $500 rent payment out three days early pays the Oct 28 rent: nothing reserved");
-    t.eq(rent(house(tx({ isTransfer: true }))), 500, "2b a transfer between the household's own accounts does not pay it");
+    t.eq(rent(house(tx({ isTransfer: true, transferPairId: "p+q" }))), 500, "2b a transfer between the household's own accounts (paired with its other leg) does not pay it");
+    t.eq(rent(house(tx({ name: "INTERAC E-TRANSFER RENT", isTransfer: true }))), 0, "2b2 an e-transfer to the landlord (flagged a transfer, paired with nothing) is a payment: it pays it");
     t.eq(rent(house(tx({ name: "RENT REFUND" }))), 500, "2c a refund recorded as money out does not pay it");
     t.eq(rent(house(tx({ name: "Rent reversal" }))), 500, "2d a reversal does not pay it");
     t.eq(rent(house(tx({ name: "RETURNED PAYMENT RENT" }))), 500, "2e a returned payment does not pay it");
