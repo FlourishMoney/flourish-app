@@ -31,7 +31,7 @@ global.Date = PinnedDate;
   const { dueSoonList } = await import("../src/lib/dueSoon.js");
   const FMT = await import("../src/lib/format.js");
   const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-  const demo = (made) => ({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(made, "CA"),
+  const demo = (made) => ({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", made), incomes: D.buildDemoIncomes(made, "CA"),
     bills: D.buildDemoBills(made, "CA"), transactions: D.buildDemoTxns(made, "CA"), profile: D.demoProfileFor("CA"), demo: true });
 
   let W = {}, N = {};

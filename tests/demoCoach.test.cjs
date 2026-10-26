@@ -23,7 +23,7 @@ const { create } = require("./_runner.cjs");
   const { selectHighestRateDebt } = await import("../src/lib/decisionEngine.js");
   const { meetAgendaFor } = await import("../src/lib/meetSnapshot.js");
   const { formatMoney } = await import("../src/lib/format.js");
-  const { DEMO, buildDemoIncomes, buildDemoBills, buildDemoTxns } = await import("../src/lib/demoFixture.js");
+  const { DEMO, buildDemoIncomes, buildDemoBills, buildDemoTxns, demoDebtsFor } = await import("../src/lib/demoFixture.js");
   const { demoCoachExchanges, demoFacilitatorLine } = await import("../src/lib/demoCoach.js");
   const t = create();
 
@@ -37,7 +37,8 @@ const { create } = require("./_runner.cjs");
                   { name: "Car Loan", balance: "8200", rate: "6.99", min: "280" } ];
   const snapFor = (d) => ({
     profile: { name: "Alex", country: "CA" }, accounts: ACCOUNTS,
-    incomes: buildDemoIncomes(d), bills: buildDemoBills(d), debts: DEBTS,
+    // Each debt's due day phase-anchored as buildDemoState now anchors it (demoFixture.js demoDebtsFor, audit H1).
+    incomes: buildDemoIncomes(d), bills: buildDemoBills(d), debts: DEBTS.map((x, i) => ({ ...x, dueDay: demoDebtsFor("CA", d)[i].dueDay })),
     transactions: buildDemoTxns(d), bankConnected: true, demo: true,
   });
 

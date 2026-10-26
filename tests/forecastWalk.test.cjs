@@ -45,7 +45,7 @@ const { create } = require("./_runner.cjs");
     for (const s of DATES) {
       const d = new Date(`${s}T12:00:00`);
       const snap = {
-        profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc),
+        profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc, d),
         incomes: F.buildDemoIncomes(d, cc), bills: F.buildDemoBills(d, cc),
         transactions: F.buildDemoTxns(d, cc), bankConnected: true, demo: true,
       };

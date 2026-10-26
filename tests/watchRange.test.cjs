@@ -29,7 +29,7 @@ const NOW = new Date("2026-09-24T12:00:00Z");
     accounts: demo.demoAccountsFor("CA"),
     bills: demo.buildDemoBills(NOW, "CA"),
     incomes: demo.buildDemoIncomes(NOW, "CA"),
-    debts: demo.demoDebtsFor("CA"),
+    debts: demo.demoDebtsFor("CA", NOW),
     transactions: demo.buildDemoTxns(NOW, "CA"),
     profile: demo.demoProfileFor("CA"),
   };

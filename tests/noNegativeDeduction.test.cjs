@@ -20,7 +20,7 @@ const { create } = require("./_runner.cjs");
   const { FinancialCalcEngine } = await import("../src/lib/financialCalculations.js");
   const D = await import("../src/lib/demoFixture.js");
   const T = new Date("2026-09-29T12:00:00");
-  const demo = () => ({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(T, "CA"),
+  const demo = () => ({ accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", T), incomes: D.buildDemoIncomes(T, "CA"),
     bills: D.buildDemoBills(T, "CA"), transactions: D.buildDemoTxns(T, "CA"), profile: D.demoProfileFor("CA") });
   const parts = (v) => v.deductions.map(d => d.display);
 

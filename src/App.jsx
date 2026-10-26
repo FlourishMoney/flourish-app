@@ -1049,7 +1049,7 @@ function buildDemoState(country = "CA") {
     // Phase-anchored so a visitor always lands at the same point in the pay cycle (see demoFixture.js).
     incomes:buildDemoIncomes(new Date(), cc),
     bills:buildDemoBills(new Date(), cc),
-    debts:demoDebtsFor(cc),
+    debts:demoDebtsFor(cc, new Date()),
     accounts:demoAccountsFor(cc),
     transactions:buildDemoTxns(new Date(), cc),
     bankConnected:true,

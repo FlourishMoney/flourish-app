@@ -49,7 +49,7 @@ function untappedFigures(html) {
   const M = await import("../src/lib/meetSnapshot.js");
   const D = await import("../src/lib/demoFixture.js");
   const now = new Date();
-  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c),
+  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now), incomes: D.buildDemoIncomes(now, c),
     bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), bankConnected: true, demo: true });
 
   let A = {};

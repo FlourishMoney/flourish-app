@@ -31,7 +31,7 @@ const { create } = require("./_runner.cjs");
   const t = create();
 
   const snapFor = (d, cc) => ({
-    profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc),
+    profile: F.demoProfileFor(cc), accounts: F.demoAccountsFor(cc), debts: F.demoDebtsFor(cc, d),
     incomes: F.buildDemoIncomes(d, cc), bills: F.buildDemoBills(d, cc),
     transactions: F.buildDemoTxns(d, cc), bankConnected: true, demo: true,
   });
@@ -136,7 +136,7 @@ const { create } = require("./_runner.cjs");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     t.ok(/function buildDemoState\(country = "CA"\)/.test(app),
       "5a buildDemoState takes a country");
-    t.ok(/demoProfileFor\(cc\)/.test(app) && /demoAccountsFor\(cc\)/.test(app) && /demoDebtsFor\(cc\)/.test(app),
+    t.ok(/demoProfileFor\(cc\)/.test(app) && /demoAccountsFor\(cc\)/.test(app) && /demoDebtsFor\(cc, new Date\(\)\)/.test(app),
       "5b …and builds the profile, accounts and debts from the selected fixture, not from a hard-coded Canadian literal");
     t.ok(/buildDemoIncomes\(new Date\(\), cc\)/.test(app) && /buildDemoBills\(new Date\(\), cc\)/.test(app) && /buildDemoTxns\(new Date\(\), cc\)/.test(app),
       "5c …and passes the country to every builder");

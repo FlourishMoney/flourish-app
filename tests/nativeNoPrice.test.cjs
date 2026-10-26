@@ -67,7 +67,7 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
   const as = (platform, fn) => { setPlatform(platform); try { return fn(); } finally { setPlatform("web"); } };
 
   const now = new Date();
-  const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"),
+  const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"),
     bills: D.buildDemoBills(now, "CA"), transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA"), bankConnected: true };
   const noop = () => {};
   const props = {

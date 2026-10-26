@@ -306,5 +306,11 @@ export function buildDemoTxns(now = new Date(), country = "CA") {
 }
 
 export function demoAccountsFor(country = "CA") { return demoFixtureFor(country).accounts.map(a => ({ ...a })); }
-export function demoDebtsFor(country = "CA")    { return demoFixtureFor(country).debts.map(d => ({ ...d })); }
+// Debts phase-anchored like the bills (audit 2026-10-26, H1): safe to spend now reserves only the minimums due
+// before the next deposit, so each demo debt's due day sits inside the 13-day window (days 9 and 11), and every
+// visitor sees the same published figures on any date. `now` omitted: the fixture's debts as written (no due day).
+const DEBT_PHASES = [9, 11];
+export function demoDebtsFor(country = "CA", now = null) {
+  return demoFixtureFor(country).debts.map((d, i) => (now ? { ...d, dueDay: String(_addDays(now, DEBT_PHASES[i % DEBT_PHASES.length]).getDate()) } : { ...d }));
+}
 export function demoProfileFor(country = "CA")  { return { ...demoFixtureFor(country).profile }; }

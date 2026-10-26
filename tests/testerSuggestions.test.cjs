@@ -27,7 +27,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
   const noop = () => {};
   const settingsText = () => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
     bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop })));
-  const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c),
+  const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now),
     incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), bankConnected: true, ...extra }; };
 
   // ── 1. The walkthrough and the setup checklist ───────────────────────────────────────────────
@@ -305,7 +305,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(g.risks.length === 0 && g.progress[0].text === MS.MEET_SETUP_LINE, "1z6 an account with a goal but no balance gets the same line, and no low-balance days");
     // A real balance still gets its risks: the CA demo with $0 in its cash accounts and its pay.
     const now = new Date();
-    const broke = { profile: D.demoProfileFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+    const broke = { profile: D.demoProfileFor("CA"), debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
       transactions: D.buildDemoTxns(now, "CA"), accounts: D.demoAccountsFor("CA").map(a => (a.type === "checking" || a.type === "savings") ? { ...a, balance: 0 } : a) };
     t.ok(MS.meetAgendaFor(broke).risks.length > 0 && !MS.meetSetupState(broke).needsSetup, "1z7 a household with a real (if empty) bank account and a payday still hears about its low days");
   }

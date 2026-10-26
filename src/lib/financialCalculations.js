@@ -1165,17 +1165,39 @@ export function debtMinimumDueDay(debt) {
   return d >= 1 && d <= 31 ? d : 1;
 }
 
-// Every debt minimum paid in days 1..days after `today` (today, day 0, is never included, as
-// recurring bills are not: today's balance already reflects anything paid today), each on its due
-// day clamped to the month. [{ debt, amount, day, date }]. The forecast and Today's "Due soon" both
-// read this, so they list the same minimums on the same days.
-export function debtMinimumDates(data, today = new Date(), days = 90) {
+// Every debt minimum still to pay in days 1..days after `today` (day 0 too with includeToday, which safe to
+// spend and Today's "Due soon" pass: today's minimum is still owed until it is paid), each on its due day
+// clamped to the month. [{ debt, amount, day, date }]. The forecast, Due soon and safe to spend all read this,
+// so they list and reserve the same minimums on the same days (audit 2026-10-26, H1: safe to spend used to
+// deduct every minimum every pay period, due or not, paid or not).
+// ALREADY PAID: the bills' rule (forecastEdits.js billArrived). A payment that looks like this debt's payment
+// (paysADebtMinimum: a card or loan payment, a transfer or a card issuer, within $2 or 5% of the minimum) marks
+// the due date it is nearest to: after the midpoint since last month's due date, and on or before today.
+export function debtMinimumDates(data, today = new Date(), days = 90, { includeToday = false } = {}) {
   const out = [];
+  const txns = (data && data.transactions) || [];
+  const debts = (data && data.debts) || [];
+  const noonOf = (x) => { const y = new Date(x); y.setHours(12, 0, 0, 0); return y; };
+  const t0 = noonOf(today);
+  const paid = (amount, dueDay, due) => {
+    const prevMonth = new Date(due.getFullYear(), due.getMonth() - 1, 1, 12);
+    const prev = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), clampDayToMonth(dueDay, prevMonth.getFullYear(), prevMonth.getMonth()), 12);
+    const startMs = (prev.getTime() + noonOf(due).getTime()) / 2;
+    if (startMs >= t0.getTime()) return false;
+    return txns.some(t => {
+      if (!t || t.pending) return false;
+      const d = new Date(String(t.date) + "T12:00:00");
+      if (isNaN(d.getTime()) || !(d.getTime() > startMs) || d > t0) return false;
+      return paysADebtMinimum(t, [amount], debts);
+    });
+  };
   for (const { debt, amount } of unbilledDebtMinimums(data && data.debts, data && data.bills)) {
     const dueDay = debtMinimumDueDay(debt);
-    for (let i = 1; i <= days; i++) {
+    for (let i = includeToday ? 0 : 1; i <= days; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i);
-      if (d.getDate() === clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) out.push({ debt, amount, day: i, date: d });
+      if (d.getDate() !== clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) continue;
+      if (paid(amount, dueDay, d)) continue;
+      out.push({ debt, amount, day: i, date: d });
     }
   }
   return out;

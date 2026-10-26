@@ -47,7 +47,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
       { name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }]),
   });
   const link = (d) => F.linkDebtToAccount(d, F.likelyDebtAccountMatches(d)[0]);
-  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(T, c),
+  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, T), incomes: D.buildDemoIncomes(T, c),
     bills: D.buildDemoBills(T, c), transactions: D.buildDemoTxns(T, c), goals: [], bankConnected: true, demo: true });
   const H = household(""), HL = link(H), V = household("40"), VL = link(V);
   const feed = { credit: [{ account_id: "v1", name: "Visa ••1111", balance: 1287.42, apr: null, minPayment: 40 }], mortgage: [], student: [] };
@@ -101,7 +101,10 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
   const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
   const mins = (d) => F.unbilledDebtMinimums(d.debts, d.bills).map(m => [m.debt.fromBank ? "bank row" : m.debt.name, m.amount]);
-  const held = (d) => SafeSpendEngine.calculate(d, T).debtPayments;
+  // "Held back" is read on Oct 30, when the Nov 1 minimum is due before the next payday (Nov 12): since the audit's
+  // H1 fix (2026-10-26) safe to spend reserves only the minimums due in its window, and on Oct 2 Nov 1 is not.
+  const T30 = new Date("2026-10-30T12:00:00");
+  const held = (d) => SafeSpendEngine.calculate(d, T30).debtPayments;
   const ninety = (d) => F.debtMinimumDates(d, T, 90).reduce((n, m) => n + m.amount, 0);
   t.eq([mins(HL), held(HL), ninety(HL)], [[["Credit Card", 40]], 40, 80], "2a linked: one minimum, the debt's: $40 held back, $80 over 90 days (Nov 1, Dec 1)");
   t.eq([mins(VL), held(VL), ninety(VL)], [[["Credit Card", 40]], 40, 80], "2b linked, the bank's row with its own $40: still one minimum, never the sum");
@@ -120,7 +123,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     "2g Meet's week ahead and Today's Due soon (Oct 28): linked, one $40; unlinked variant, both");
   // Linking moves nothing else. In the household as synced, every figure is identical; in the variant,
   // exactly the bank row's minimum leaves: $40 more safe to spend, $80 more on day 90.
-  const figs = (d) => ({ safe: SafeSpendEngine.calculate(d, T), shown: DE.displayedSafeToSpend(d, T), spare: DE.spareUntilDeposit(d, T),
+  const figs = (d) => ({ safe: SafeSpendEngine.calculate(d, T30), shown: DE.displayedSafeToSpend(d, T), spare: DE.spareUntilDeposit(d, T),
     forecast: ForecastEngine.generate(d, 90, null, T).forecast.map(f => [f.day, Math.round(f.balance * 100), Math.round(f.income * 100), Math.round(f.expenses * 100)]),
     flow: F.FinancialCalcEngine.cashFlow(d, {}, T), daily: F.FinancialCalcEngine.avgDailySpend(d), assets: F.FinancialCalcEngine.netWorth(d).assets });
   t.eq(JSON.stringify(figs(HL)), JSON.stringify(figs(H)), "2h as synced: safe to spend, the spare amount, the 90-day forecast, cash flow, daily spending and assets are identical before and after linking");
@@ -192,8 +195,10 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   t.eq(demoSim(demo("CA")), [["Visa card", 3420, 19.99, 68, "manual", null, false], ["Car Loan", 8200, 6.99, 280, "manual", null, false]], "9a CA demo: the simulator's list is unchanged");
   t.eq(demoSim(demo("US")), [["Chase Sapphire", 4180, 24.99, 105, "manual", null, false], ["Federal Student Loan", 18400, 5.5, 195, "manual", null, false]], "9b US demo: unchanged");
   const demoMins = (d) => [mins(d), F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount]), SafeSpendEngine.calculate(d, T).debtPayments, Math.round(SafeSpendEngine.calculate(d, T).safeAmount * 100), DE.displayedSafeToSpend(d, T)];
-  t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[30, 68], [60, 68], [30, 280], [60, 280]], 348, 194488, 1944], "9c CA demo: minimums, their dates and safe to spend unchanged");
-  t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[30, 105], [60, 105], [30, 195], [60, 195]], 300, 241555, 2415], "9d US demo: unchanged");
+  // Since 2026-10-26 (audit H1) the demo's debts are due on phase-anchored days inside the pay window (days 9 and 11,
+  // then a month on), so their minimums fall there rather than on the 1st; the amounts and safe to spend are unchanged.
+  t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[9, 68], [40, 68], [70, 68], [11, 280], [42, 280], [72, 280]], 348, 194488, 1944], "9c CA demo: minimums on their anchored days, and safe to spend unchanged");
+  t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[9, 105], [40, 105], [70, 105], [11, 195], [42, 195], [72, 195]], 300, 241555, 2415], "9d US demo: unchanged");
   const demoNowC = (c) => ({ ...demo(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) });
   t.eq(has(doTab(demoNowC("CA")), ["Visa card $3,420 19.99% interest · $68/mo minimum", "3y 4m", "Time saved 5y 11m", "Interest saved $2,778", "All Debts (2)", "Visa card $3,420 · 19.99%", "Car Loan $8,200 · 6.99%"]), [],
     "9e CA demo Do tab unchanged: Visa card $3,420 at 19.99%, $68: 3y 4m with +$50, 5y 11m and $2,778 saved");

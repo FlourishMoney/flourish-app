@@ -142,7 +142,7 @@ const FORBIDDEN = [
     const lines = TOUR_STEPS.map(st => `tour ${st.title}: ${st.body}`);
     for (const c of D.DEMO_COUNTRIES) {
       const now = new Date();
-      const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), goals: [], demo: true };
+      const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), goals: [], demo: true };
       DC.demoCoachExchanges(data, now).forEach(x => lines.push(`coach ${c}: ${x.q} ${x.a}`));
       const fl = DC.demoFacilitatorLine(data, now); if (fl) lines.push(`facilitator ${c}: ${fl}`);
     }

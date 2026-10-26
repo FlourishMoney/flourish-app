@@ -58,7 +58,7 @@ const path = require("path");
     const D = await import("../src/lib/demoFixture.js");
     const now = new Date();
     const broke = { accounts: D.demoAccountsFor("CA").map(a => (a.type === "checking" || a.type === "savings") ? { ...a, balance: 0 } : a),
-      debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+      debts: D.demoDebtsFor("CA", now), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
       transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA") };
     const gg = ForecastEngine.generate(broke, 30, null, now);
     const lp = forecastLow(gg.forecast);

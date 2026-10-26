@@ -26,7 +26,7 @@ const path = require("path");
   const { demoAccountsFor, demoDebtsFor, buildDemoIncomes, buildDemoBills, buildDemoTxns } = await import("../src/lib/demoFixture.js");
 
   const demoAt = (now) => ({
-    profile: { name: "Alex", country: "CA" }, accounts: demoAccountsFor("CA"), debts: demoDebtsFor("CA"),
+    profile: { name: "Alex", country: "CA" }, accounts: demoAccountsFor("CA"), debts: demoDebtsFor("CA", now),
     incomes: buildDemoIncomes(now), bills: buildDemoBills(now), transactions: buildDemoTxns(now), demo: true,
   });
   // Today's figure, computed exactly the way the Today card computes it.

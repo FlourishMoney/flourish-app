@@ -38,7 +38,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq(SD.paceSentence(p, 1944), "Today's pace is $138 a day, rounded down so 14 days stay within $1,944 safe to spend.", "10b the sentence says it is rounded down ($1,944 / 14 = $138.86)");
     for (const c of D.DEMO_COUNTRIES) {
       const now = new Date();
-      const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) };
+      const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, now), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) };
       const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
       const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
       const head = safeToSpendView(SafeSpendEngine.calculate(data)).headline;
