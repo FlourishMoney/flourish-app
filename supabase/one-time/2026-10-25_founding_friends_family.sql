@@ -20,7 +20,8 @@
 --
 -- EXACTLY 11, OR NOTHING. If the count is not 11 (someone unsubscribed, a row
 -- changed, it already ran), the whole file stops with an error and nothing is
--- written. Run the dry run, and ask before changing the 11.
+-- written. Run the dry run and the ledger check below, and ask before changing
+-- the 11.
 --
 -- ORDER: after the code that reads it is deployed, and before FOUNDING_LINK_EMAIL
 -- is set to true. Run before the deploy, it changes nothing anyone sees. If the
@@ -77,6 +78,20 @@ commit;
 --      and not (coalesce(w.metadata, '{}'::jsonb) ? 'consent_basis')
 --      and not (coalesce(w.metadata, '{}'::jsonb) ? 'founding_link');
 -- Expected: 11.
+
+-- ============================================================================
+-- LEDGER CHECK (read-only, with the dry run; the count only): how many of the
+-- rows in scope billing itself still honours (the same lookup the sweep and the
+-- checkout use, migration 0025). The sweep sends a founding link email only to
+-- those; a row in scope that is not honoured gets no email at all.
+-- ============================================================================
+--   select count(*) filter (where public.waitlist_founding_number_for_email(w.email) = w.founding_position) as honoured_by_billing
+--     from public.waitlist w
+--    where w.is_test = false and w.unsubscribed_at is null
+--      and w.consent_version = 'pre-2026-10-01' and w.founding_position is not null
+--      and not (coalesce(w.metadata, '{}'::jsonb) ? 'consent_basis')
+--      and not (coalesce(w.metadata, '{}'::jsonb) ? 'founding_link');
+-- Expected: 11, the same as the dry run. Fewer: stop and ask.
 
 -- ============================================================================
 -- CHECK AFTERWARDS (read-only; counts only):

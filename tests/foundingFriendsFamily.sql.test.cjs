@@ -104,6 +104,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     const dry = write("dry.sql", footer(SRC, "-- DRY RUN (run first; changes nothing; the count only, no email, no id):"));
     t.ok(/select count\(\*\) as friends_and_family/.test(fs.readFileSync(dry, "utf8")), "1a (the dry run is read out of the file's own footer)");
     t.eq(file(dry), "11", "1b the dry run counts 11");
+    // The ledger check runs, read-only, against 0025's own lookup (the stand-in has no ledger entries, so it reads 0 here).
+    const ledgerSql = SRC.slice(SRC.indexOf("--   select count(*) filter (where public.waitlist_founding_number_for_email")).split("\n").filter((l) => l.startsWith("--   ")).slice(0, 6).map((l) => l.slice(5)).join("\n");
+    t.ok(/honoured_by_billing/.test(ledgerSql) && /^\d+$/.test(psql(["-c", ledgerSql])), "1b2 the ledger check runs read-only and gives one count");
     file(ONE);
     t.eq(sql("select count(*) from public.waitlist where metadata->'consent_basis'->>'type' = 'personal_relationship'"), "11", "1c the basis is on 11 rows");
     t.eq(sql("select metadata::text from public.waitlist where email = 'friend3@example.test'"),
