@@ -77,8 +77,31 @@ const FOUNDING_LINK_CONSENT_VERSIONS = Object.freeze(Object.keys(CONSENT_COVERS)
 // THE WELCOME EMAIL (waitlistWelcome.js) only for the versions whose words promised the launch email; never
 // the legacy rows (their one email is the Canada launch email), never the founding spot form's version.
 const WELCOME_CONSENT_VERSIONS = Object.freeze(Object.keys(CONSENT_VERSIONS).filter(v => (CONSENT_COVERS[v] || []).includes("launch")));
+// A PERSONAL RELATIONSHIP (Amanda, 2026-10-25: "It's okay to send those ones before Oct 1 the link. They are my
+// friends and family."). CASL exempts a message to someone the sender has a personal or family relationship with, so
+// a pre-2026-10-01 row that holds a founding number, and on which that basis is RECORDED, gets the founding link
+// email instead of the Canada launch email. The original consent_version is never changed: the basis sits beside it
+// in metadata.consent_basis, written only by the one-time SQL in supabase/one-time/ (never by a signup, beta.js strips
+// the key), with who stated it and when:
+//   { type: "personal_relationship", stated_by: "Amanda Holt", stated_at: "2026-10-25", note: "friends and family, per founder" }
+// It opens the founding link email and nothing else: no welcome, no update, no launch email, before or after launch.
+const PERSONAL_RELATIONSHIP_BASIS = "personal_relationship";
+function consentBasisOf(row) {
+  const m = row && row.metadata;
+  const b = m && typeof m === "object" && !Array.isArray(m) ? m.consent_basis : null;
+  if (!b || typeof b !== "object" || Array.isArray(b)) return null;
+  if (b.type !== PERSONAL_RELATIONSHIP_BASIS) return null;
+  if (typeof b.stated_by !== "string" || !b.stated_by.trim()) return null;
+  if (typeof b.stated_at !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.stated_at)) return null;
+  return b.type;
+}
+function foundingLinkByRelationship(row) {
+  return !!row && row.consent_version === LEGACY_CONSENT_VERSION
+    && Number.isInteger(row.founding_position) && row.founding_position >= 1
+    && consentBasisOf(row) === PERSONAL_RELATIONSHIP_BASIS;
+}
 function mayEmailFoundingLink(row) {
-  return !!row && !row.unsubscribed_at && FOUNDING_LINK_CONSENT_VERSIONS.includes(row.consent_version);
+  return !!row && !row.unsubscribed_at && (FOUNDING_LINK_CONSENT_VERSIONS.includes(row.consent_version) || foundingLinkByRelationship(row));
 }
 
 // THE CANADA LAUNCH EMAIL, for the pre-2026-10-01 rows only. Amanda's decision (2026-10-14): October 26,
@@ -106,7 +129,7 @@ const POST_LAUNCH_CONSENT_VERSIONS = Object.freeze([]);
 function foundingEmailKindFor(row, { launched = false } = {}) {
   if (!row || row.unsubscribed_at) return null;
   if (mayEmailFoundingLink(row)) return "founding_link";
-  if (launched === true && LAUNCH_EMAIL_CONSENT_VERSIONS.includes(row.consent_version)
+  if (launched === true && LAUNCH_EMAIL_CONSENT_VERSIONS.includes(row.consent_version) && !foundingLinkByRelationship(row)
       && (CONSENT_COVERS[row.consent_version] || []).includes("launch") && !billingDayEmailSent(row)) return CANADA_LAUNCH_KIND;
   return null;
 }
@@ -136,7 +159,9 @@ const WAITLIST_COUNTRY = "CA";
 //   - After the launch (signup open), a row gets only those launch emails, unless its consent version was
 //     reviewed for more (POST_LAUNCH_CONSENT_VERSIONS, empty): no welcome, no update, no reminder, nothing.
 //     The flag is read here, so no caller can leave it out; a caller can add `launched: true`, never remove it.
-//   - A pre-2026-10-01 row (consent was launch news only) gets EXACTLY ONE email, ever: the Canada launch
+//   - A pre-2026-10-01 row with a recorded personal relationship and a founding number (Amanda, 2026-10-25) gets
+//     EXACTLY ONE email, ever: the founding link email, once. Never the Canada launch email, never anything else.
+//   - Any other pre-2026-10-01 row (consent was launch news only) gets EXACTLY ONE email, ever: the Canada launch
 //     email (kind "canada_launch"), once. Every other kind says no, now and later: a welcome, an update, a
 //     founding reminder, a store release-day email, a generic "launch", anything (round 5, CASL).
 //   - A row with no consent version on record gets nothing (fails closed; 0012 gave every older row one).
@@ -148,6 +173,9 @@ function mayEmailWaitlistRow(row, kind, opts = {}) {
   if (!row || row.unsubscribed_at) return false;
   if (billingDayEmailSent(row)) return false;
   const v = row.consent_version;
+  // A pre-2026-10-01 row with a recorded personal relationship and a founding number: the founding link email, and
+  // never the launch email (whose "we won't send you anything else" must not reach them). Nothing else.
+  if (foundingLinkByRelationship(row)) return kind === "founding_link";
   if (kind === CANADA_LAUNCH_KIND) return v === LEGACY_CONSENT_VERSION;
   if (!v || v === LEGACY_CONSENT_VERSION) return false;
   if (!Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v)) return false;
@@ -158,4 +186,4 @@ function mayEmailWaitlistRow(row, kind, opts = {}) {
   return true;
 }
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, waitlistConsentVersionFor, WELCOME_CONSENT_VERSIONS, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND, billingDayEmailSent, foundingEmailKindFor, LAUNCH_EMAIL_KINDS, POST_LAUNCH_CONSENT_VERSIONS, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };
+module.exports = { PERSONAL_RELATIONSHIP_BASIS, consentBasisOf, foundingLinkByRelationship, CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, waitlistConsentVersionFor, WELCOME_CONSENT_VERSIONS, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, CONSENT_COVERS, FOUNDING_LINK_CONSENT_VERSIONS, mayEmailFoundingLink, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND, billingDayEmailSent, foundingEmailKindFor, LAUNCH_EMAIL_KINDS, POST_LAUNCH_CONSENT_VERSIONS, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };
