@@ -425,7 +425,7 @@ async function handle(event) {
           country: WAITLIST_COUNTRY, // launch is Canada only: stored as Canada whatever the client sent
           source,
           // utm_* and referrer exactly as the form captured them, plus where the form sat.
-          metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
+          metadata: { ...withoutServerKeys(metadata), placement },
           consent_version: currentVersion,
           consented_at: new Date().toISOString(),
           // Flourish's own test addresses are stored as test rows, never households (2026-10-14), so the
@@ -728,6 +728,17 @@ function logLine(event, res) {
   const action = event.httpMethod !== "POST" ? event.httpMethod : (body.action || "count");
   const placement = typeof body.placement === "string" ? body.placement : body.source;
   return `[beta] action=${tok(action)} status=${res.statusCode} reason=${reasonFor(res.statusCode, res.body)} src=${tok(body.src)} placement=${tok(placement)} consentVersion=${tok(body.consentVersion)}`;
+}
+
+// The metadata keys a signup may never set (2026-10-25): the server's own records. consent_basis is a recorded
+// personal relationship, written only by supabase/one-time/; founding_link is the record of a billing-day send.
+// join_waitlist drops both from what a form sends, so no form can grant itself a basis or mark itself as already
+// emailed. Everything else in the bag (utm_*, referrer) is stored as before.
+const SERVER_METADATA_KEYS = Object.freeze(["consent_basis", "founding_link"]);
+function withoutServerKeys(metadata) {
+  const m = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? { ...metadata } : {};
+  for (const k of SERVER_METADATA_KEYS) delete m[k];
+  return m;
 }
 
 exports.handler = async (event) => {

@@ -197,5 +197,31 @@ async function sweepUntilDone(rows, { open }) {
       "6a the founding price still needs an address confirmed by our link and a ledger number; the basis plays no part in it");
   }
 
+  // ── 7. No signup can grant itself a basis, or mark itself as already emailed ─────────────────────
+  {
+    Object.assign(process.env, { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SECRET_KEY: "test-service-role" });
+    delete process.env.OPEN_SIGNUP;
+    const BETA = path.join(REPO, "netlify", "functions", "beta.js");
+    for (const k of Object.keys(require.cache)) if (k.includes(path.join("netlify", "functions"))) delete require.cache[k];
+    const beta = require(BETA);
+    const calls = [], realFetch = global.fetch, quiet = { e: console.error, l: console.log, w: console.warn };
+    console.error = console.log = console.warn = () => {};
+    global.fetch = async (url, o = {}) => {
+      calls.push({ url: String(url), method: o.method || "GET", body: o.body });
+      const ok = (status, body) => ({ ok: status < 300, status, headers: { get: () => null }, json: async () => body, text: async () => JSON.stringify(body) });
+      if (String(url).endsWith("/rest/v1/waitlist") && o.method === "POST") return ok(201, [{ id: "row-1", founding_position: null }]);
+      return ok(200, []);
+    };
+    let res;
+    try {
+      res = await beta.handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "join_waitlist", email: "someone@example.test", country: "CA", placement: "hero",
+        consentVersion: C.CONSENT_VERSION, metadata: { utm_source: "ig", consent_basis: { ...BASIS }, founding_link: { sent_at: "2026-10-26T00:00:00Z" } } }) });
+    } finally { global.fetch = realFetch; Object.assign(console, { error: quiet.e, log: quiet.l, warn: quiet.w }); }
+    const ins = calls.find((c) => c.method === "POST" && c.url.endsWith("/rest/v1/waitlist"));
+    const meta = ins ? JSON.parse(ins.body).metadata : null;
+    t.eq([res && res.statusCode, meta && meta.utm_source, meta && meta.placement], [200, "ig", "hero"], "7a a signup still stores its own metadata (utm, placement)");
+    t.ok(meta && !("consent_basis" in meta) && !("founding_link" in meta), "7b …but never consent_basis or founding_link: no form can grant itself a basis or mark itself as already emailed");
+  }
+
   t.summary("foundingFriendsFamily");
 })();
