@@ -36,15 +36,16 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       ["the coach's gate", /<PremiumGate billingOn=\{billingUi\.show\} storeOn=\{storeBilling\} feature="AI Coach" [^\n]*onUpgrade=\{openUpgrade\}/],
       ["Today (the default screen)", /\n    return <Dashboard [^\n]*onUpgrade=\{openUpgrade\}/],
     ]) t.ok(rx.test(APP), `1c ${name} opens checkout through openUpgrade`);
-    t.ok(/const openUpgrade = \(\)=>\{ if\(storeBilling\)\{ setPaywallUp\(true\); return; \} if\(billingUi\.show\) setShowUpgrade\(true\); else setShowPaywall\(true\); \};/.test(APP),
-      "1d openUpgrade: a selling store build (1.1), the store's own paywall; otherwise billing on, the real checkout; billing off, the old Paywall, as today");
-    t.ok(APP.includes("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live."),
-      "1e the old Paywall's words are unchanged (billing off)");
+    // B4 (audit 2026-10-26): with no billing answer, openUpgrade asks the status again before the old Paywall.
+    t.ok(/const openUpgrade = async \(\)=>\{ if\(storeBilling\)\{ setPaywallUp\(true\); return; \} if\(billingUi\.show\)\{ setShowUpgrade\(true\); return; \} if\(await recheckBilling\(\)\) setShowUpgrade\(true\); else setShowPaywall\(true\); \};/.test(APP),
+      "1d openUpgrade: a selling store build (1.1), the store's own paywall; otherwise billing on, the real checkout; no answer, the status is asked again, and only then the old Paywall");
+    t.ok(!APP.includes("Paid plans aren't open yet") && !APP.includes("Free for 14 days, then"),
+      "1e the old Paywall never says plans aren't open, and never offers a free trial (B4)");
     t.eq((APP.match(/isDesktop=\{isDesktop\} onUpgrade=\{openUpgrade\} billingOn=\{billingUi\.show\}/g) || []).length, 2, "1f both Today renders know whether billing is on");
     // Round 5: not only onUpgrade props. The one place left that opens the old Paywall is openUpgrade itself.
     const opens = [...APP.matchAll(/setShowPaywall\(true\)/g)].map(m => APP.slice(APP.lastIndexOf("\n", m.index) + 1, APP.indexOf("\n", m.index)).trim());
-    t.eq(opens, ["const openUpgrade = ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };"],
-      "1g nothing opens the old Paywall directly (onClick included): only openUpgrade, with billing off");
+    t.eq(opens, ["const openUpgrade = async ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show){ setShowUpgrade(true); return; } if(await recheckBilling()) setShowUpgrade(true); else setShowPaywall(true); };"],
+      "1g nothing opens the old Paywall directly (onClick included): only openUpgrade, once the status has been asked again");
     for (const [name, rx] of [
       ["the sidebar trial card", /<div onClick=\{openUpgrade\} [^\n]*\n(?:[^\n]*\n){1,4}[^\n]*>Upgrade to Flourish Plus →<\/div>/],
       ["the \"N days left\" banner", /trialActive&&trialDaysLeft<=7&&\([\s\S]{0,1200}?<button onClick=\{openUpgrade\} [^\n]*>\n\s*Upgrade →\n/],

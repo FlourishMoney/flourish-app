@@ -13921,7 +13921,11 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   );
 }
 
-function Paywall({onClose,onPromoValid,country,province=""}){
+// THE FALLBACK (audit 2026-10-26, B4): shown only when the billing status could not be read (or billing is off).
+// It takes no payment, so it never offers a free trial (every account's trial starts at signup), never says plans
+// aren't open, and prices in CAD whatever the profile says, the only prices the server can charge (as
+// billingVisibility.js offeredPlans). Its button asks for the billing status again and opens the real checkout.
+function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
@@ -13930,7 +13934,7 @@ function Paywall({onClose,onPromoValid,country,province=""}){
   const isCA=country==="CA";
   // Step 3: all prices come from src/lib/pricing.js. Only the two prices and their billing periods: no
   // saving, no percentage, no monthly equivalent (billing day, approved 2026-10-15; tests/planCopy.test.cjs).
-  const _pr = getPricing(country);
+  const _pr = getPricing("CA");
   const plans={
     annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,badge:"Billed yearly"},
     monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,badge:null},
@@ -14012,13 +14016,13 @@ function Paywall({onClose,onPromoValid,country,province=""}){
         {promoError&&<div style={{color:C.red,fontSize:13,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
         {promoNote&&<div style={{color:C.muted,fontSize:13,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
 
-        {/* CTA — says what is true. It changes no plan and charges nothing. */}
-        <button onClick={()=>setUpgradeNote("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live.")} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
-          Start 14 days free →
+        {/* CTA — says what is true. It changes no plan and charges nothing: it asks for the plans again. */}
+        <button onClick={async ()=>{ setUpgradeNote(""); let ok = false; try{ ok = !!(await onRetry?.()); }catch{ ok = false; } if(!ok) setUpgradeNote("Couldn't reach the server. Try again in a moment."); }} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
+          Try again
         </button>
         {upgradeNote&&<div style={{color:C.purpleBright,fontSize:13,marginBottom:12,textAlign:"center",lineHeight:1.6}}>{upgradeNote}</div>}
         <div style={{textAlign:"center",color:C.muted,fontSize:13,lineHeight:1.7}}>
-          Free for 14 days, then {plans[selected].price}. Cancel any time from Settings.
+          {_pr.currency} plus tax
         </div>
 
         {/* Trust footer */}
@@ -17070,35 +17074,62 @@ export default function FlourishApp(){
     })();
     return ()=>{ cancelled = true; };
   },[storeBilling, user?.id]);
-  useEffect(()=>{
-    let cancelled = false;
-    if(!user?.id){ setBillingStatus(null); return; }
-    (async ()=>{
-      try{
-        const jwt = await getJwt();
-        if(!jwt) return;
-        const res = await fetch(`${API_BASE}/api/billing`,{
-          method:"POST",
-          headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
-          body: JSON.stringify({action:"status"}),
-        });
-        if(!res.ok) return;                       // 404 while billing is off: stay hidden
-        const body = await res.json();
-        if(cancelled) return;
-        setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
-        // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
-        if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
-      }catch{ /* offline or blocked: stay hidden */ }
-      finally{ if(!cancelled) setBillingAskedFor(user.id); }
-    })();
-    return ()=>{ cancelled = true; };
+  // The web billing status. null: no answer (404 while billing is off, offline, a 503 while the server cannot read
+  // the subscription).
+  const askBilling = useCallback(async ()=>{
+    const jwt = await getJwt();
+    if(!jwt) return null;
+    const res = await fetch(`${API_BASE}/api/billing`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+      body: JSON.stringify({action:"status"}),
+    });
+    if(!res.ok) return null;                      // 404 while billing is off: stay hidden
+    return res.json();
+  },[]);
+  const takeBilling = useCallback((body)=>{
+    if(!user?.id) return;
+    if(body){
+      setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+      // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
+      if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
+    }
+    setBillingAskedFor(user.id);
   },[user?.id, nativeApp]);
+  useEffect(()=>{
+    let cancelled = false, timer = null;
+    if(!user?.id){ setBillingStatus(null); return; }
+    // B4 (audit 2026-10-26): no answer yet (offline, the server busy): asked again after 5, 20 and 60 seconds, and
+    // whenever the network comes back, as the store apps' status is, so one failed call no longer leaves the whole
+    // session unable to pay.
+    const ask = async (attempt)=>{
+      let body = null;
+      try{ body = await askBilling(); }catch{ body = null; }
+      if(cancelled) return;
+      takeBilling(body);
+      if(body) return;
+      const wait = [5000, 20000, 60000][attempt];
+      if(wait) timer = setTimeout(()=>ask(attempt + 1), wait);
+    };
+    ask(0);
+    const onOnline = ()=>{ if(timer) clearTimeout(timer); ask(2); };
+    window.addEventListener("online", onOnline);
+    return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
+  },[user?.id, askBilling, takeBilling]);
+  // Ask once more, now: openUpgrade and the old Paywall's "Try again". Returns whether the real checkout can open.
+  const recheckBilling = async ()=>{
+    let body = null;
+    try{ body = await askBilling(); }catch{ body = null; }
+    takeBilling(body);
+    return !!body && billingUiState({status: nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body, native:nativeApp, paid:body?.paid === true}).show;
+  };
 
   const billingUi = billingUiState({status:billingStatus, native:nativeApp, paid:!!billingStatus?.paid});
   // The two entry points call this. While billing is off it opens the existing feature paywall,
   // exactly as it did before, so nothing about today's app changes.
   // A store build that sells (version 1.1) opens its own paywall: prices from the store, nothing to pay on the web.
-  const openUpgrade = ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+  // B4: with no billing answer yet, the status is asked again before the old Paywall is the fallback.
+  const openUpgrade = async ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show){ setShowUpgrade(true); return; } if(await recheckBilling()) setShowUpgrade(true); else setShowPaywall(true); };
   // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
   // the paid period, planRules.isPaidSubscription): it lifts a free household to premium, and it ends
   // when the paid period does. The same in a store app (2026-10-20), which the server holds to the same
@@ -18153,7 +18184,7 @@ export default function FlourishApp(){
   if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
-  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
+  if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
     try {

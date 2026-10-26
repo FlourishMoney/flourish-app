@@ -416,7 +416,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // The Google Play badge's own name, its required alt text (lib/storeLinks.js; Google's badge guidelines): it
       // names the store, it is not an instruction about money. ("Download on the App Store" does not start with a verb on the list.)
       "Get it on Google Play",
-      ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
+"Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",
     ]);
