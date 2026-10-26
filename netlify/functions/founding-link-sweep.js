@@ -12,7 +12,8 @@
  * Either one unset: the run reads nothing, sends nothing and writes nothing.
  *
  * WHO. A waitlist row holding a founding number (from 1 up; 0025 can issue numbers past 50), not a test row, not unsubscribed, not sent before,
- * with a consent version that covers one of the two founding emails (foundingEmailKindFor,
+ * with a consent version that covers one of the two founding emails, or a recorded personal relationship (a
+ * pre-2026-10-01 founding holder, 2026-10-25: the founding link email, never the launch email) (foundingEmailKindFor,
  * _lib/waitlistConsent.js): the founding link email for versions that asked for updates (founding number 1
  * to 50); the CANADA LAUNCH email for pre-2026-10-01 rows (any number, or none: it names no number, price or
  * link), and only while OPEN_SIGNUP is also exactly "true" (Amanda's decision: October 26 with signup open is
@@ -39,7 +40,7 @@
 "use strict";
 
 const { sendFoundingLinkEmail } = require("./_lib/foundingLinkEmail");
-const { mayEmailWaitlistRow, foundingEmailKindFor, FOUNDING_LINK_CONSENT_VERSIONS, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND } = require("./_lib/waitlistConsent");
+const { mayEmailWaitlistRow, foundingEmailKindFor, consentBasisOf, FOUNDING_LINK_CONSENT_VERSIONS, LAUNCH_EMAIL_CONSENT_VERSIONS, CANADA_LAUNCH_KIND } = require("./_lib/waitlistConsent");
 const { normalizeEmail, isFoundingPosition, FOUNDING_COHORT_LIMIT } = require("./_lib/foundingCohort");
 
 const PER_RUN_CAP = 10;
@@ -79,8 +80,10 @@ async function countSentSince(supabaseUrl, key, sinceIso) {
 }
 
 // The rows still owed their email, lowest founding number first, or null.
-// The consent versions asked for: the founding link email's, plus the launch email's once signup is open.
-const versionsFor = (launched) => [...FOUNDING_LINK_CONSENT_VERSIONS, ...(launched ? LAUNCH_EMAIL_CONSENT_VERSIONS : [])];
+// The consent versions asked for: the founding link email's, plus the pre-2026-10-01 version, always: those rows
+// can hold the founding link email by a recorded personal relationship (2026-10-25), with or without signup open,
+// and their launch email still needs signup open. Every row is decided again on its own (foundingEmailKindFor).
+const versionsFor = () => [...FOUNDING_LINK_CONSENT_VERSIONS, ...LAUNCH_EMAIL_CONSENT_VERSIONS];
 
 async function selectOwed(supabaseUrl, key, limit, launched = false) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
@@ -92,7 +95,7 @@ async function selectOwed(supabaseUrl, key, limit, launched = false) {
     + `&is_test=is.false`
     + `&unsubscribed_at=is.null`
     // Only the consent versions whose words asked for updates (waitlistConsent.js). Checked again per row.
-    + `&consent_version=in.(${versionsFor(launched).map(encodeURIComponent).join(",")})`
+    + `&consent_version=in.(${versionsFor().map(encodeURIComponent).join(",")})`
     + `&metadata->founding_link=is.null`
     + `&order=founding_position.asc.nullslast`
     + `&limit=${limit}`;
@@ -130,7 +133,9 @@ async function honouredNumber(supabaseUrl, key, email) {
 // The record of the send, on the row. Only where none is there yet.
 async function recordSent(supabaseUrl, key, row, sentAtIso, kind) {
   const metadata = { ...(row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {}),
-    founding_link: { sent_at: sentAtIso, consent_version: row.consent_version, position: row.founding_position, kind } };
+    founding_link: { sent_at: sentAtIso, consent_version: row.consent_version, position: row.founding_position, kind,
+      // The basis it went out under, when it is not the consent version's own words (a personal relationship).
+      ...(consentBasisOf(row) ? { consent_basis: consentBasisOf(row) } : {}) } };
   const res = await fetchWithDeadline(`${supabaseUrl}/rest/v1/waitlist?id=eq.${encodeURIComponent(row.id)}&metadata->founding_link=is.null`, {
     method: "PATCH",
     headers: { ...authHeaders(key), "Content-Type": "application/json", "Prefer": "return=minimal" },

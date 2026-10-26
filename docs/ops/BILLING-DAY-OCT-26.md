@@ -26,7 +26,8 @@ Before Monday: section 1 (including Stripe Tax: the GST/HST registration, settin
 7. `BILLING_ENABLED=true` and `STRIPE_TAX_ENABLED=true`, both Production, one Trigger deploy (**D1**); the curl answers 401 (section 3).
 8. Smoke purchase: Monthly on Amanda's own card; the receipt shows tax; the read-only checks, refund, cancel (section 4).
 9. `OPEN_SIGNUP=true`, Production, Trigger deploy (**D2**); the curl answers `true`; after the first new accounts the marker check says `link` (section 5).
-10. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**): the founding link emails, and the launch email for the `pre-2026-10-01` rows (section 6).
+9b. Friends and family (Amanda, 2026-10-25), BEFORE D3. The PR `founding-friends-family` must be merged and live (merge it before Monday: no merges on Monday). Then, in the SQL editor: the dry run in `supabase/one-time/2026-10-25_founding_friends_family.sql` (expect 11) and its ledger check (expect 11), the whole file, then its check afterwards (expect `11|0`). If D3 goes first, the first sweep sends those 11 the launch email and they never get their founding link.
+10. `FOUNDING_LINK_EMAIL=true`, Production, Trigger deploy (**D3**): the founding link emails, to the 4 newer holders and the 11 friends and family; the launch email only to `pre-2026-10-01` rows with no recorded basis (none on 2026-10-25) (section 6).
 11. Watch the first hour (section 7). Stop if section 8 says so.
 
 Not `waitlist_founding_start()`, and not `founding_accounts_start()` by hand (0025 runs it once itself). No merges to `main` on Monday.

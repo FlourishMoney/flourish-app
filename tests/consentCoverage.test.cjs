@@ -67,8 +67,10 @@ const E = require("../netlify/functions/_lib/foundingLinkEmail.js");
 
   // ── 4. the sweep asks for exactly those versions ────────────────────────────────────────────────
   const sweep = fs.readFileSync(path.join(REPO, "netlify", "functions", "founding-link-sweep.js"), "utf8");
-  t.ok(/const versionsFor = \(launched\) => \[\.\.\.FOUNDING_LINK_CONSENT_VERSIONS, \.\.\.\(launched \? LAUNCH_EMAIL_CONSENT_VERSIONS : \[\]\)\];/.test(sweep)
-    && /&consent_version=in\.\(\$\{versionsFor\(launched\)\.map\(encodeURIComponent\)\.join\(","\)\}\)/.test(sweep), "4a the sweep's query names exactly those versions (the legacy one only with signup open)");
+  // Since 2026-10-25 the legacy version is always asked for (a recorded personal relationship gives a founding holder
+  // there the founding link email); its launch email still needs signup open, decided per row (4b).
+  t.ok(/const versionsFor = \(\) => \[\.\.\.FOUNDING_LINK_CONSENT_VERSIONS, \.\.\.LAUNCH_EMAIL_CONSENT_VERSIONS\];/.test(sweep)
+    && /&consent_version=in\.\(\$\{versionsFor\(\)\.map\(encodeURIComponent\)\.join\(","\)\}\)/.test(sweep), "4a the sweep's query names exactly those versions");
   t.ok(/const launched = flagOn\("OPEN_SIGNUP"\);/.test(sweep) && /const kind = foundingEmailKindFor\(row, \{ launched \}\);\s*\n\s*if \(!kind \|\| !mayEmailWaitlistRow\(row, kind\)\)/.test(sweep),
     "4b …reads signup from OPEN_SIGNUP, and checks each row again for the email it gets");
   const doc = fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8");
