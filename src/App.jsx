@@ -13787,7 +13787,8 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         setError(checkoutErrorText({ status: res.status, error: body.error }));
         setBusy(null); return;
       }
-      if(!res.ok || !body.url) throw new Error(body.error||"unavailable");
+      // H4: a refusal keeps its reason (409 "already_subscribed" is not a connection error).
+      if(!res.ok || !body.url){ setError(checkoutErrorText({ status: res.status, error: body.error||"unavailable" })); setBusy(null); return; }
       window.location.assign(body.url);      // Stripe Checkout, hosted by Stripe
     }catch(e){
       setError(checkoutErrorText({ error: e.message }));
@@ -13811,7 +13812,8 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
-            <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>
+            {/* H4: a renewal that failed (past_due) is not on Plus until the card is fixed: the portal line only. */}
+            {status?.paid!==false&&<div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>}
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card or cancel in Stripe's billing portal.</div>
             <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {busy==="__portal__"?"Opening…":"Manage subscription"}

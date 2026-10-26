@@ -168,6 +168,9 @@ exports.handler = async (event) => {
         // fails (item 16), as the store apps do with store_status.
         period_end: isPaidSubscription(row) && row && row.current_period_end ? row.current_period_end : null,
         manageable: !!row?.provider_customer_id,
+        // H4 (audit 2026-10-26): a web subscription Stripe is still collecting (a renewal that failed, past_due):
+        // not paid, so no access, but the fix is the card, in the billing portal, never a second checkout.
+        web_attention: !isPaidSubscription(row) && isLiveRow(row) && (row.provider || "stripe") === "stripe" && !!row.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
       });
     }
