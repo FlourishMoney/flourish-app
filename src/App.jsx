@@ -39,6 +39,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
+import { confirmLinkResult } from "./lib/confirmLink.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
@@ -13432,13 +13433,55 @@ function PrivacyPolicy({onBack}){
 // so this page sends the person back to the app instead of signing the browser into onboarding.
 function confirmedFromApp(user){ return !!(user && user.user_metadata && user.user_metadata.signup_platform === "app"); }
 
-function ConfirmedPage(){
+// B5 (audit 2026-10-26): "You're confirmed" only when the address was confirmed (a store-app signup, signed in by
+// the link). A link Supabase refused (lib/confirmLink.js), or a visit with no session, gets Supabase's own words
+// for what went wrong, a way to send the confirmation email again (the existing resend_confirmation) and, always,
+// a Log In button. Every word here is an approved string already in the app.
+// [WORDS: a headline for the expired or failed link, such as "This link has expired"; none is approved yet]
+function ConfirmedPage({confirmed=false, onSignIn}){
+  const link = confirmLinkResult(typeof window === "undefined" ? null : window.location);
+  const ok = confirmed && !link.failed;
+  const [email,setEmail]=useState("");
+  const [note,setNote]=useState("");
+  const [error,setError]=useState("");
+  const [cooldown,setCooldown]=useState(0);
+  useEffect(()=>{ if(cooldown<=0) return; const t=setTimeout(()=>setCooldown(c=>c-1),1000); return ()=>clearTimeout(t); },[cooldown]);
+  const resend = async ()=>{
+    if(!email || cooldown>0) return;
+    setError(""); setNote(""); setCooldown(60);
+    try{
+      const res = await fetch(`${API_BASE}/api/beta`,{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"resend_confirmation", email }) });
+      const out = await res.json().catch(()=>({}));
+      if(out.error === "rate_limited"){ setError(out.message || "Too many attempts. Try again in an hour."); return; }
+      if(out.error){ setError("Couldn't send that email. Try again in a moment."); return; }
+      setNote("Check your email to confirm your address.");
+    }catch{ setError("Couldn't reach the server. Try again in a moment."); }
+  };
+  const btn = {width:"100%",minHeight:LAYOUT.minTap,borderRadius:14,padding:"13px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:15,cursor:"pointer"};
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-      <div style={{maxWidth:420,textAlign:"center"}}>
-        <div style={{fontSize:40,marginBottom:16}}>✓</div>
-        <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
-        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Open Flourish and sign in.</p>
+      <div style={{maxWidth:420,width:"100%",textAlign:"center"}}>
+        {ok ? (
+          <>
+            <div style={{fontSize:40,marginBottom:16}}>✓</div>
+            <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
+            <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Open Flourish and sign in.</p>
+          </>
+        ) : (
+          <div data-confirm-failed="">
+            {link.description&&<p style={{color:C.cream,fontSize:15,lineHeight:1.6,margin:"0 0 16px"}}>{link.description}</p>}
+            <div style={{color:C.mutedHi,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
+            <input type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+              onChange={e=>setEmail(stripEmailSpaces(e.target.value))} autoComplete="email" name="email"
+              style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",marginBottom:10,outline:"none"}}/>
+            <button onClick={resend} disabled={!email || cooldown>0} style={{...btn,background:"transparent",color:C.greenBright,border:`1.5px solid ${C.green}66`,opacity:(!email||cooldown>0)?0.6:1}}>
+              {cooldown > 0 ? `Send again in ${cooldown}s` : "Send it again"}
+            </button>
+            {note&&<div style={{color:C.greenBright,fontSize:13,marginTop:10}}>{note}</div>}
+            {error&&<div style={{color:C.red,fontSize:13,marginTop:10}}>{error}</div>}
+          </div>
+        )}
+        <button onClick={onSignIn} style={{...btn,marginTop:20,background:C.green,color:textOn(C.green),border:"none"}}>Log In</button>
       </div>
     </div>
   );
@@ -15126,7 +15169,7 @@ function StoreBadges(){
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
+function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15153,6 +15196,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote }) {
   // page for people who cannot use the product yet; someone who has installed the app already can.
   // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
   const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
+  // /confirmed's Log In button (B5) opens the card too, on the login tab.
+  useEffect(() => { if (startOnLogin) { setMode("login"); setShowAuth(true); } }, [startOnLogin]);
   // THE LANDING'S WAITLIST AREA (signupUi.js landingWaitlistArea): today's waitlist form while signup is shut;
   // the founding spot form while it is open and founding spots remain; "Create your account" once they are
   // all taken. Read from the one /api/founding answer the founding card and block already share, so the
@@ -16767,6 +16812,7 @@ export default function FlourishApp(){
   // A device that synced a loan's own entries before lib/loanActivity.js existed has them in its saved
   // transactions: they move to the loan-activity store once, here, before anything reads them.
   const [appData,setAppData]=useState(()=>moveSavedLoanActivity(saved)?.appData||null);
+  const [loginFromConfirm,setLoginFromConfirm]=useState(false);
   // Audit 2026-10-26 B2: every request to /api/coach replaces the household's names with roles (coachPrivacy.js).
   setCoachNames(appData?.profile);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
@@ -18127,7 +18173,7 @@ export default function FlourishApp(){
   // because the link opens in a browser and there is no way back into the app from here yet.
   if(screen==="confirmed"){
     if(authLoading || (user && !confirmedFromApp(user)))return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
-    return <ConfirmedPage/>;
+    return <ConfirmedPage confirmed={!!user && confirmedFromApp(user)} onSignIn={()=>{ window.history.replaceState(null,"","/"); setLoginFromConfirm(true); setScreen("home"); }}/>;
   }
 
   // ── Auth gate ───────────────────────────────────────────────────
@@ -18138,7 +18184,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,

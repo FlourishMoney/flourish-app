@@ -213,10 +213,13 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.ok(/if \(path === "\/confirmed"\) return "confirmed";/.test(app), "/confirmed is a route");
     // 2026-10-23 (the first number): a web signup's link signs them in and goes on into the app; the page is for a
     // signup made in a store app (and for anyone the link did not sign in).
-    t.ok(/if\(screen==="confirmed"\)\{\s*if\(authLoading \|\| \(user && !confirmedFromApp\(user\)\)\)return <div[^\n]*\n\s*return <ConfirmedPage\/>;\s*\}/.test(app), "…rendering the page");
-    const page = app.slice(app.indexOf("function ConfirmedPage()"), app.indexOf("function DeleteAccount("));
-    t.ok(/You're confirmed\./.test(page) && /Open Flourish and sign in\./.test(page), "…which reads \"You're confirmed. Open Flourish and sign in.\"");
-    t.ok(!/useState|useEffect|fetch\(|supabase/.test(page), "…and it is a plain page: no state, no request, nothing to fail for a store user");
+    // B5 (audit 2026-10-26): "You're confirmed" only for a link that confirmed (a store-app signup it signed in);
+    // otherwise the way forward (tests/confirmedLink.browser), and always a Log In button.
+    t.ok(/if\(screen==="confirmed"\)\{\s*if\(authLoading \|\| \(user && !confirmedFromApp\(user\)\)\)return <div[^\n]*\n\s*return <ConfirmedPage confirmed=\{!!user && confirmedFromApp\(user\)\} onSignIn=\{/.test(app), "…rendering the page");
+    const page = app.slice(app.indexOf("function ConfirmedPage("), app.indexOf("function DeleteAccount("));
+    t.ok(/You're confirmed\./.test(page) && /Open Flourish and sign in\./.test(page), "…which reads \"You're confirmed. Open Flourish and sign in.\" when the link worked");
+    t.ok((page.match(/fetch\(/g) || []).length === 1 && /action:"resend_confirmation"/.test(page) && !/supabase/.test(page),
+      "…and its one request is the confirmation email again (resend_confirmation): nothing else to fail for a store user");
   }
 
   // ── 7. The app itself refuses an unconfirmed session ──────────────────────────────────────────
