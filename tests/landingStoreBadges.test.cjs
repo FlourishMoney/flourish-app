@@ -52,7 +52,7 @@ const OFFICIAL = {
 
   // ── 4. Where they show ────────────────────────────────────────────────────────────────────────
   const comp = APP.slice(APP.indexOf("function StoreBadges("), APP.indexOf("function AuthScreen("));
-  t.ok(/<a key=\{b\.store\} className="fll-store" href=\{b\.href\} target="_blank" rel="noopener noreferrer">\s*<img src=\{b\.src\} alt=\{b\.alt\} width=\{b\.width\} height=\{b\.height\} \/>/.test(comp),
+  t.ok(/<a key=\{b\.store\} className="fll-store" href=\{b\.href\} target="_blank" rel="noopener noreferrer"\s*onClick=\{\(\) => track\(EVENT\.storeBadge, \{ store: b\.store === "app_store" \? "App Store" : "Google Play" \}\)\}>\s*<img src=\{b\.src\} alt=\{b\.alt\} width=\{b\.width\} height=\{b\.height\} \/>/.test(comp),
     "4a each badge is a link to its store that opens in a new tab");
   const auth = APP.slice(APP.indexOf("function AuthScreen("), APP.indexOf("\n}\n", APP.indexOf("function AuthScreen(")));
   t.eq((auth.match(/<StoreBadges\/>/g) || []).length, 1, "4b one place on the landing: one App Store badge per layout, as Apple asks");

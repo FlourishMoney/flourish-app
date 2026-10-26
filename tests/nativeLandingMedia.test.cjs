@@ -39,8 +39,9 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   t.ok(["og-image.png", "og-image-ca.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))), "1e …and both link-preview images");
 
   // ── 2. the native strip removes them, and only them ─────────────────────────────────────────
+  // Built as build:native builds it (VITE_NATIVE_BUILD=true, so no website analytics), then stripped.
   const nat = tempDir("landing-media-native");
-  fs.cpSync(path.join(web, "dist"), path.join(nat, "dist"), { recursive: true });
+  execFileSync("npx", ["vite", "build", "--outDir", path.join(nat, "dist"), "--emptyOutDir", "--logLevel", "error"], { cwd: ROOT, env: { ...ENV, VITE_NATIVE_BUILD: "true" }, stdio: "inherit" });
   const before = list(path.join(nat, "dist"));
   const out = execFileSync(process.execPath, [path.join(ROOT, "scripts", "strip-landing-media.mjs"), "--dir", path.join(nat, "dist")], { encoding: "utf8" });
   const after = list(path.join(nat, "dist"));
@@ -59,11 +60,17 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
     "3a check-native-build --artifact refuses a dist/ that still holds the landing media");
   const good = check(nat);
   t.ok(good.status === 0 && /native build check passed \(artifact\)/.test(good.stdout), "3b …and passes the stripped one");
+  // 2026-10-26: a web build stripped of its media still carries the website analytics, so it is no store bundle.
+  const webStripped = tempDir("landing-media-webstripped");
+  fs.cpSync(path.join(web, "dist"), path.join(webStripped, "dist"), { recursive: true });
+  execFileSync(process.execPath, [path.join(ROOT, "scripts", "strip-landing-media.mjs"), "--dir", path.join(webStripped, "dist")], { encoding: "utf8" });
+  const analytics = check(webStripped);
+  t.ok(analytics.status !== 0 && /mentions plausible\.io/.test(analytics.stderr + analytics.stdout), "3c …and refuses a web build, which carries the website analytics");
 
   // ── 4. the wiring ───────────────────────────────────────────────────────────────────────────
   const pkg = require(path.join(ROOT, "package.json")).scripts;
-  t.eq(pkg["build:native"], "node scripts/check-native-build.mjs --env && vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact",
-    "4a build:native strips the landing media after vite build and before its artifact check");
+  t.eq(pkg["build:native"], "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact",
+    "4a build:native builds without website analytics, strips the landing media after vite build and before its artifact check");
   t.eq(pkg.build, "vite build", "4b the web build does not strip anything");
   t.ok(/command\s*=\s*"npm run build"/.test(fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8")), "4c Netlify builds the site with npm run build");
   t.ok(/npm run build:native/.test(fs.readFileSync(path.join(ROOT, "scripts", "ship-ios.sh"), "utf8")), "4d ship-ios.sh builds with build:native");
