@@ -93,5 +93,37 @@ const list = (data) => ({ object: "list", data });
     t.eq(Math.round(1199 * 0.13), 156, "3g (the worked figure: 13% of $11.99 is $1.56)");
   }
 
+  // ── 4. H6 (audit 2026-10-26): each STRIPE_PRICE_*_CAD variable's own price ─────────────────────
+  {
+    const { envPriceVerdict } = require(SCRIPT);
+    const settings = { livemode: true, status: "active", defaults: { tax_behavior: "exclusive" } };
+    const price = (id, amount, interval, over = {}) => ({ id, livemode: true, active: true, currency: "cad", type: "recurring", recurring: { interval, interval_count: 1 }, unit_amount: amount, tax_behavior: "exclusive", ...over });
+    const ids = { STRIPE_PRICE_MONTHLY_CAD: "price_m", STRIPE_PRICE_ANNUAL_CAD: "price_a", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_f" };
+    const good = { price_m: price("price_m", 1199, "month"), price_a: price("price_a", 9999, "year"), price_f: price("price_f", 7999, "year") };
+    const v = envPriceVerdict({ settings, ids, byId: good });
+    t.eq([v.ok, v.lines.length, v.lines.every((l) => l.startsWith("OK:"))], [true, 3, true], "4a the right price behind each variable: OK, three lines");
+    const swapped = envPriceVerdict({ settings, ids: { ...ids, STRIPE_PRICE_ANNUAL_CAD: "price_f", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_a" }, byId: good });
+    t.ok(!swapped.ok && swapped.lines.some((l) => /STRIPE_PRICE_ANNUAL_CAD.*\$79\.99, not \$99\.99/.test(l)) && swapped.lines.some((l) => /FOUNDING.*\$99\.99, not \$79\.99/.test(l)), "4b swapped annual and founding ids: NOT OK, and it says which amounts");
+    const cases = [
+      ["4c a missing variable", { ids: { ...ids, STRIPE_PRICE_MONTHLY_CAD: "" } }, /STRIPE_PRICE_MONTHLY_CAD is not set/],
+      ["4d an id Stripe cannot find (a test-mode id)", { byId: { ...good, price_m: null } }, /no readable price price_m/],
+      ["4e USD", { byId: { ...good, price_m: price("price_m", 1199, "month", { currency: "usd" }) } }, /currency USD, not CAD/],
+      ["4f yearly where monthly is meant", { byId: { ...good, price_m: price("price_m", 1199, "year") } }, /every year, not every month/],
+      ["4g every 3 months", { byId: { ...good, price_m: price("price_m", 1199, "month", { recurring: { interval: "month", interval_count: 3 } }) } }, /every 3 months, not every 1/],
+      ["4h tax-inclusive", { byId: { ...good, price_a: price("price_a", 9999, "year", { tax_behavior: "inclusive" }) } }, /tax behavior inclusive, not exclusive/],
+      ["4i archived", { byId: { ...good, price_f: price("price_f", 7999, "year", { active: false }) } }, /archived/],
+      ["4j a test-mode price", { byId: { ...good, price_f: price("price_f", 7999, "year", { livemode: false }) } }, /not live mode/],
+      ["4k two variables, one price", { ids: { ...ids, STRIPE_PRICE_ANNUAL_CAD: "price_m" } }, /names the same price as STRIPE_PRICE_MONTHLY_CAD/],
+    ];
+    for (const [name, o, rx] of cases) {
+      const r = envPriceVerdict({ settings, ids: o.ids || ids, byId: o.byId || good });
+      t.ok(!r.ok && r.lines.some((l) => rx.test(l)), `${name}: NOT OK (${r.lines.find((l) => rx.test(l)) || r.lines.join(" | ")})`);
+    }
+    const unspecified = envPriceVerdict({ settings, ids, byId: { ...good, price_m: price("price_m", 1199, "month", { tax_behavior: "unspecified" }) } });
+    t.ok(unspecified.ok, "4l unspecified on the price with an exclusive default in Tax settings: OK, as section 1 rules");
+    const src = fs.readFileSync(SCRIPT, "utf8");
+    t.ok(/await read\(`\/prices\/\$\{encodeURIComponent\(id\)\}`\)/.test(src) && /process\.env\[p\.env\]/.test(src), "4m the script reads each variable's price by id, with the same GET-only reader");
+  }
+
   t.summary("stripeTaxCheck.test");
 })();
