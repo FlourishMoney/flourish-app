@@ -73,25 +73,10 @@ export const SafeSpendEngine = {
     const _daysToDeposit = daysToNextDepositFor(data, todayDate);
     const horizonDays = (_daysToDeposit != null && _daysToDeposit > 0) ? _daysToDeposit : 10;
 
-    // Detect bills already paid this month by matching transactions (current month per todayDate).
-    const _normName = s => (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
-    const txnList = (data.transactions||[])
-      .filter(t => { try { const d=new Date(t.date+"T12:00:00"); return d.getMonth()===todayDate.getMonth()&&d.getFullYear()===todayDate.getFullYear(); } catch{return false;} })
-      .map(t => ({ name: _normName(t.name), amount: Math.abs(num(t.amount)) }));
-    // Bug 3: match on full normalized-name containment AND amount tolerance (±5% / ±$2),
-    // so loose prefixes ("Rent"↔"Rentals", "Bell"↔"Bell Media") no longer false-positive.
-    const isBillPaid = (bill) => {
-      const billName = _normName(bill.vendorPattern||bill.name);
-      const billAmt  = num(bill.amount);
-      if(billName.length < 3) return false;
-      // Sprint 4 (item 6): a $0 placeholder bill is "not applicable" — we can't confirm payment.
-      if(billAmt <= 0) return false;
-      return txnList.some(t => {
-        const nameMatch = t.name && (t.name.includes(billName) || billName.includes(t.name));
-        const amtMatch  = Math.abs(t.amount - billAmt) <= Math.max(2, billAmt*0.05);
-        return nameMatch && amtMatch;
-      });
-    };
+    // A bill already paid is not reserved again. Which occurrence a payment paid is decided by ONE rule, the
+    // forecast's (forecastEdits.js billArrived, inside billOccurrences): a payment marks the occurrence it is
+    // nearest to. The calendar-month rule that lived here dropped a bill due early next month, before payday,
+    // whenever last month's payment had posted this month (audit 2026-10-26, B1).
     // Tier 5: each bill's occurrences in the window, from the ONE occurrence list (forecastEdits), so a
     // bill the household skipped, moved or re-priced is reserved exactly as the forecast shows it.
     // Window: days 0..horizonDays inclusive (Truth-fix item 3: runs to the next deposit, not 10 days).
@@ -111,10 +96,6 @@ export const SafeSpendEngine = {
       // forecastEdits arrival rule, which already removed it from the list.
       const editedOnly = all.filter(o => o.edited);
       if (isBillArchived(b, todayDate)) return editedOnly;
-      // Sprint Q items 1 & 3: a monthly+ bill already paid this month is done; sub-monthly bills recur
-      // multiple times a month, so the anchor (not "paid this month") governs them.
-      const subMonthly = b.freq === "weekly" || b.freq === "biweekly" || b.freq === "semimonthly";
-      if (b.type !== "one_off" && !subMonthly && isBillPaid(b)) return editedOnly;
       return all;
     };
     const occurrencesInWindow = (b) => occurrencesFor(b).length;
