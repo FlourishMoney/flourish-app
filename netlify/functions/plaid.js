@@ -28,6 +28,7 @@ const PLAID_BASE = {
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
+const { emailKey, emailRef } = require("./_lib/logSafe");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -785,7 +786,7 @@ exports.handler = async (event) => {
         const email = (u?.user?.email || "").trim().toLowerCase();
         if (email) {
           const { error: bsErr } = await admin.from("beta_signups").delete().eq("email", email);
-          if (bsErr) console.error(`[delete_account] beta_signups delete FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, bsErr.message);
+          if (bsErr) console.error(`[delete_account] beta_signups delete FAILED for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, bsErr.message);
           // Also erase any waitlist PII for this email (email-keyed, no FK → doesn't cascade). Best-effort:
           // residual marketing PII shouldn't survive an account deletion (Apple 5.1.1(v) / privacy).
           const { error: wlErr } = await admin.from("waitlist").delete().eq("email", email);

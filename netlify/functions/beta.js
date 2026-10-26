@@ -30,6 +30,7 @@
 const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
+const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
@@ -631,9 +632,9 @@ async function handle(event) {
       if (!gate.usedCode) return; // a self-serve signup reserved nothing
       try {
         const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
-        if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);
+        if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, delErr.message);
       } catch (de) {
-        console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release THREW for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, de.message);
+        console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release THREW for ${emailRef(email)}; manual cleanup: delete from public.beta_signups where public.waitlist_email_key(email) = '${emailKey(email)}';`, de.message);
       }
     };
 
