@@ -13,7 +13,7 @@
 
 "use strict";
 
-const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, statusUnavailable, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 
 // Sprint Z2 #15: reject absurdly large bodies (cheap DoS guard). Larger than coach.js's 100KB because
 // enrich_transactions / migrate_items legitimately carry up to ~500 transactions or several item tokens.
@@ -166,7 +166,8 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
-      const { unlimited } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
@@ -567,7 +568,8 @@ exports.handler = async (event) => {
       const failures = [];
       // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
-      const { unlimited } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {

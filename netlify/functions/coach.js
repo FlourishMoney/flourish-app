@@ -19,7 +19,7 @@
 // embeds inside a server-controlled prompt + TRUST_RULES.
 // -----------------------------------------------------------------------------
 
-const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, statusUnavailable, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSimulatorLimit, decideFacilitator } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
@@ -285,7 +285,9 @@ exports.handler = async (event) => {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
           // client-sent). Free → FREE_CHAT_WEEKLY a week; trial/plus/pro/founder → the abuse ceiling only.
           // The same answer for the web and the store apps (_lib/planRules.js deriveEntitlement).
-          const { unlimited } = await getUserPlan(user_id);
+          const { unlimited, status_unavailable } = await getUserPlan(user_id);
+          // Item 16: an unread plan is never the free limit; the app retries.
+          if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(corsHeaders);
           const admin = getAdminClient();
           // The abuse ceiling, unchanged: every account is counted per day by the existing
           // day-keyed counter, and CHAT_DAILY_CEILING still applies to all of them.
@@ -356,7 +358,8 @@ exports.handler = async (event) => {
       // run more (a store install from before 2026-10-20) is held to it too (_lib/coachLimits.js). Only an
       // account the limit can apply to is counted. A refusal costs nothing: the app shows its figures with
       // its own explanation, which is what it does for any error from this call.
-      const { unlimited } = await getUserPlan(user_id);
+      const { unlimited, status_unavailable } = await getUserPlan(user_id);
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(corsHeaders); // item 16
       let usedToday = null, counterOk = true;
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         let admin = null;
@@ -390,7 +393,8 @@ exports.handler = async (event) => {
       // is engine output; it facilitates and NEVER produces a number.
       // Not on the free plan, for any app (_lib/coachLimits.js decideFacilitator). The web never offers it
       // to a free household; a store install from before 2026-10-20 does, and this is what stops it.
-      const { unlimited } = await getUserPlan(user_id);
+      const { unlimited, status_unavailable } = await getUserPlan(user_id);
+      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(corsHeaders); // item 16
       const verdict = decideFacilitator({ enforce: ENFORCE_PLAN_LIMITS, unlimited });
       if (!verdict.allowed) {
         return { statusCode: verdict.status, headers: corsHeaders, body: JSON.stringify({ error: verdict.error, message: verdict.message }) };

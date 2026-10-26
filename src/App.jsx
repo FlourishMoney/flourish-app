@@ -91,7 +91,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
-import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch } from "./lib/storeBilling.js";
+import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
 import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
@@ -17084,7 +17084,10 @@ export default function FlourishApp(){
         });
         if(!res.ok) return;                       // 404 while billing is off: stay hidden
         const body = await res.json();
-        if(!cancelled) setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+        if(cancelled) return;
+        setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+        // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
+        if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
       }catch{ /* offline or blocked: stay hidden */ }
       finally{ if(!cancelled) setBillingAskedFor(user.id); }
     })();
@@ -17103,7 +17106,11 @@ export default function FlourishApp(){
   // the profile's, exactly as before.
   useEffect(()=>{
     // Only this account's own answer counts: billingAskedFor is the account the status call finished for.
+    // Item 16: with no answer for this account (the status read failed), the last definite one stands until its paid
+    // period ends (lib/storeBilling.js recalledGate), so a payer is never dropped to free by a read error.
     webPaidRef.current = !!user?.id && billingAskedFor===user.id && billingIsOn(billingStatus) && billingStatus.paid === true;
+    if (!webPaidRef.current && !!user?.id && !(billingAskedFor===user.id && billingStatus))
+      webPaidRef.current = recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY) === true;
     if(profilePlan===null) return;
     const plan = webPlan(profilePlan, { paid: webPaidRef.current });
     setPlan(plan);
