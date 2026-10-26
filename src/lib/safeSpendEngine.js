@@ -45,6 +45,9 @@ export function lowBalanceThreshold(ss) {
   return Math.max(bal * 0.12, floor);
 }
 
+// An amount in integer cents.
+const _cents = (n) => Math.round(num(n) * 100);
+
 export const SafeSpendEngine = {
   calculate(data, todayDate = new Date()) {
     const accounts = data.accounts || [];
@@ -58,9 +61,12 @@ export const SafeSpendEngine = {
     // single-currency user sees an IDENTICAL balance to before — every account is in-base.
     const base = baseCurrencyOf(data);
     const isBaseCurrency = a => accountCurrencyOf(a, data) === base;
+    // Every amount below is summed in integer cents and only the final figures are dollars again (audit
+    // 2026-10-26, M1): float sums drifted ($11,640.00 of balances summed to 11639.999…, shown as $11,639).
+    // The one rounding to whole dollars is safeToSpendView's, on the final figures.
     const cashAccounts = accounts.filter(a => isCashAccount(a));
-    const balance  = cashAccounts.filter(isBaseCurrency).reduce((s,a) => s + num(a.balance), 0) || 0;
-    const excludedForeignCash = cashAccounts.filter(a => !isBaseCurrency(a)).reduce((s,a) => s + num(a.balance), 0);
+    const balanceC = cashAccounts.filter(isBaseCurrency).reduce((s,a) => s + _cents(a.balance), 0) || 0;
+    const excludedForeignCash = cashAccounts.filter(a => !isBaseCurrency(a)).reduce((s,a) => s + _cents(a.balance), 0) / 100;
     const mixedCurrencyDetected = cashAccounts.some(a => !isBaseCurrency(a));
 
     // Truth-fix item 3 (Option A): the reservation horizon is DYNAMIC — the days until the next FUTURE
@@ -100,29 +106,31 @@ export const SafeSpendEngine = {
     const occurrencesInWindow = (b) => occurrencesFor(b).length;
     // Money the household told us is going out (Watch "Add expected money in or out") is reserved too.
     const expectedOut = occ.filter(o => o.kind === "expected");
-    const upcomingBills = Math.max(0, bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
-                        + expectedOut.reduce((s,o) => s + num(o.amount), 0));
+    const upcomingBillsC = Math.max(0, bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + _cents(o.amount), 0), 0)
+                         + expectedOut.reduce((s,o) => s + _cents(o.amount), 0));
 
     // Minimum debt payments: only those due in the window (today through the next deposit) and not already
     // paid, exactly the ones Due soon lists and the forecast takes out (debtMinimumDates; audit 2026-10-26, H1).
     // A debt a bill already pays (billPaysDebt, by identity only) is left out there: the bill is reserved above.
     const minimumsInWindow = debtMinimumDates(data, todayDate, horizonDays, { includeToday: true });
-    const debtPayments = Math.max(0, minimumsInWindow.reduce((s,x) => s + x.amount, 0));
+    const debtPaymentsC = Math.max(0, minimumsInWindow.reduce((s,x) => s + _cents(x.amount), 0));
 
     // Safety buffer: `horizonDays` of average daily spend (Truth-fix item 3: scales to the next deposit,
     // not a fixed 10; Sprint Q item 3: NaN-guarded).
     const avgDaily   = FinancialCalcEngine.avgDailySpend(data);
     // Never negative: a deduction is money committed (prelaunch-copy round 2, item 4).
-    const safetyBuf  = Math.max(0, Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * horizonDays));
+    const safetyBufC = Math.max(0, Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * horizonDays * 100));
 
     // Savings allocation: 10% of monthly income. cashFlow's catOverrides omitted: only monthlyIncome
     // is read here and it's override-independent (verified Group B). todayDate threaded for consistency.
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, {}, todayDate);
     const mIncome    = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
-    const savingsAlloc = Math.max(0, Math.round(mIncome * 0.10 / 30 * horizonDays)); // Truth-fix item 3: horizonDays' worth, not 10
+    const savingsAllocC = Math.max(0, Math.round(mIncome * 0.10 / 30 * horizonDays * 100)); // Truth-fix item 3: horizonDays' worth, not 10
     const noIncome   = !(mIncome > 0); // Sprint Q item 3: signal "set up income" instead of a misleading number
 
-    const safeAmount = Math.max(0, balance - upcomingBills - debtPayments - safetyBuf - savingsAlloc);
+    const safeC = Math.max(0, balanceC - upcomingBillsC - debtPaymentsC - safetyBufC - savingsAllocC);
+    const balance = balanceC / 100, upcomingBills = upcomingBillsC / 100, debtPayments = debtPaymentsC / 100;
+    const safetyBuf = safetyBufC / 100, savingsAlloc = savingsAllocC / 100, safeAmount = safeC / 100;
     const riskLevel  = safeAmount <= 0 ? "critical" :
                        safeAmount < balance * 0.15 ? "high" :
                        safeAmount < balance * 0.30 ? "medium" : "low";

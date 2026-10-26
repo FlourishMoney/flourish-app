@@ -168,7 +168,7 @@ const { create } = require("./_runner.cjs");
     // The reservation scales to the real horizon: buffer + savings both reflect ~16 days, not 10.
     const ten = SafeSpendEngine.calculate({ ...monthly, incomes: [] }, date); // no income => 10-day fallback
     t.ok(f.ss.safetyBuf > ten.safetyBuf, "deposit-14plus: safety buffer reserves MORE than the 10-day fallback (scales to the 16-day horizon)");
-    t.ok(f.ss.savingsAlloc > 0 && f.ss.savingsAlloc === Math.round(4000 * 0.10 / 30 * f.days), "deposit-14plus: savings allocation scales to the real horizon");
+    t.ok(f.ss.savingsAlloc > 0 && f.ss.savingsAlloc === Math.round(4000 * 0.10 / 30 * f.days * 100) / 100, "deposit-14plus: savings allocation scales to the real horizon");
   }
 
   // ── Edge case: two income streams — the earliest future deposit wins, consistently ──────────────

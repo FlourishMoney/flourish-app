@@ -115,7 +115,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
   // ── 6. Today's figure is unchanged ───────────────────────────────────────────────────────────
   {
-    const want = { "CA 2026-09-29 0": 1944, "CA 2026-09-29 25": 973, "US 2026-09-29 0": 2415, "US 2026-09-29 25": 1422 };
+    // US 25 days old was $1,422 until the engine summed in cents (audit 2026-10-26, M1): its buffer and savings
+    // were rounded to the nearest dollar inside the engine, and one rounded down; now each is rounded up once, in the view.
+    const want = { "CA 2026-09-29 0": 1944, "CA 2026-09-29 25": 973, "US 2026-09-29 0": 2415, "US 2026-09-29 25": 1421 };
     for (const [k, v] of Object.entries(want)) {
       const [c, iso, age] = k.split(" ");
       const now = new Date(iso + "T12:00:00"); const made = new Date(now); made.setDate(made.getDate() - Number(age));

@@ -197,8 +197,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const demoMins = (d) => [mins(d), F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount]), SafeSpendEngine.calculate(d, T).debtPayments, Math.round(SafeSpendEngine.calculate(d, T).safeAmount * 100), DE.displayedSafeToSpend(d, T)];
   // Since 2026-10-26 (audit H1) the demo's debts are due on phase-anchored days inside the pay window (days 9 and 11,
   // then a month on), so their minimums fall there rather than on the 1st; the amounts and safe to spend are unchanged.
-  t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[9, 68], [40, 68], [70, 68], [11, 280], [42, 280], [72, 280]], 348, 194488, 1944], "9c CA demo: minimums on their anchored days, and safe to spend unchanged");
-  t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[9, 105], [40, 105], [70, 105], [11, 195], [42, 195], [72, 195]], 300, 241555, 2415], "9d US demo: unchanged");
+  t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[9, 68], [40, 68], [70, 68], [11, 280], [42, 280], [72, 280]], 348, 194493, 1944], "9c CA demo: minimums on their anchored days, and safe to spend unchanged");
+  t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[9, 105], [40, 105], [70, 105], [11, 195], [42, 195], [72, 195]], 300, 241613, 2415], "9d US demo: unchanged");
   const demoNowC = (c) => ({ ...demo(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) });
   t.eq(has(doTab(demoNowC("CA")), ["Visa card $3,420 19.99% interest · $68/mo minimum", "3y 4m", "Time saved 5y 11m", "Interest saved $2,778", "All Debts (2)", "Visa card $3,420 · 19.99%", "Car Loan $8,200 · 6.99%"]), [],
     "9e CA demo Do tab unchanged: Visa card $3,420 at 19.99%, $68: 3y 4m with +$50, 5y 11m and $2,778 saved");
