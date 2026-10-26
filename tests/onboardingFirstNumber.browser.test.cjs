@@ -167,7 +167,11 @@ function buildApp(supabaseUrl) {
     const cont = page.getByRole("button", { name: "Continue →", exact: true }).last();
     await page.getByPlaceholder("e.g. 2100").first().fill("2100"); taps.push("field: pay amount");
     t.ok(await cont.isDisabled(), "1f Continue waits for the next payday");
-    const payday = iso(addDays(new Date(), 5));
+    // The bill falls 3 days out (or on the 1st when that would pass the 28th, the field's limit) and payday 2 days
+    // after it, so the bill is always strictly before payday. Payday was today + 5, which on the 27th to the 31st put
+    // it on the same day as a bill moved to the 1st, and the bill dropped out of the number (failed 2026-10-27).
+    const billOn = (() => { const d = addDays(new Date(), 3); return d.getDate() > 28 ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : d; })();
+    const payday = iso(addDays(billOn, 2));
     await page.locator('input[type="date"]').first().fill(payday); taps.push("field: next payday");
     t.ok(await cont.isEnabled(), "1g …and goes once it is entered");
     await shot(page, "manual-paycheques");
@@ -179,7 +183,7 @@ function buildApp(supabaseUrl) {
     t.ok(/Your bills/.test(await text(page)), "1i then the bills");
     await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent"); taps.push("field: bill name");
     await page.locator('input[type="number"]').first().fill("1400"); taps.push("field: bill amount");
-    await page.getByPlaceholder("1 to 28").first().fill(String(addDays(new Date(), 3).getDate() > 28 ? 1 : addDays(new Date(), 3).getDate())); taps.push("field: bill day");
+    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate())); taps.push("field: bill day");
     await shot(page, "manual-bills");
     await tap(page, "Continue →", "Continue (bills)");
     const debts = await text(page);
