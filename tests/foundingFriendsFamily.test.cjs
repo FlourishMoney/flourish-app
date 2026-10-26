@@ -174,7 +174,9 @@ async function sweepUntilDone(rows, { open }) {
 
     // ── 5. CASL on every email ────────────────────────────────────────────────────────────────────
     for (const s of sends) {
-      const ok = s.text.includes(E.WHY_LINE) && /Consent on record: version [^\n]+\./.test(s.text) && E.CONTACT_BLOCK.every((l) => s.text.includes(l))
+      const r = rows.find((x) => x.email === s.to[0]);
+      const line = r.metadata.consent_basis ? "Consent on record: personal relationship (joined the waitlist before Oct 1, 2026)." : `Consent on record: version ${r.consent_version}.`;
+      const ok = s.text.includes(E.WHY_LINE) && s.text.split("\n\n").includes(line) && E.CONTACT_BLOCK.every((l) => s.text.includes(l))
         && /Unsubscribe with one click: https:\/\/flourishmoney\.app\/api\/unsubscribe\?id=[^&]+&t=/.test(s.text)
         && s.headers && /<https:\/\/flourishmoney\.app\/api\/unsubscribe\?id=/.test(s.headers["List-Unsubscribe"]) && s.headers["List-Unsubscribe-Post"] === "List-Unsubscribe=One-Click"
         && /^founding-link\/[0-9a-f-]+$/.test(s._headers["Idempotency-Key"]);
@@ -195,6 +197,27 @@ async function sweepUntilDone(rows, { open }) {
     const cohort = fs.readFileSync(path.join(REPO, "netlify", "functions", "_lib", "foundingCohort.js"), "utf8");
     t.ok(/if \(!user \|\| !user\.email \|\| !emailVerifiedByLink\(user\)\) return false;\s*\n\s*return \(await foundingPositionForEmail\(admin, user\.email\)\) !== null;/.test(cohort) && !/consent_basis|personal_relationship/.test(cohort),
       "6a the founding price still needs an address confirmed by our link and a ledger number; the basis plays no part in it");
+  }
+
+  // ── 8. The consent line (Amanda, 2026-10-26) ─────────────────────────────────────────────────────
+  {
+    process.env.SUPABASE_SECRET_KEY = "test-secret-not-real";
+    const friend = { id: "00000000-0000-4000-8000-000000000003", is_test: false, consent_version: LEGACY, founding_position: 3, unsubscribed_at: null, metadata: { consent_basis: { ...BASIS } } };
+    const newer = { id: "00000000-0000-4000-8000-000000000012", is_test: false, consent_version: "2026-10-01", founding_position: 12, unsubscribed_at: null, metadata: {} };
+    const legacy = { id: "00000000-0000-4000-8000-000000000020", is_test: false, consent_version: LEGACY, founding_position: null, unsubscribed_at: null, metadata: {} };
+    const LINE = "Consent on record: personal relationship (joined the waitlist before Oct 1, 2026).";
+    const f = E.foundingLinkEmailPayload("friend3@example.test", friend, { launched: true });
+    const n = E.foundingLinkEmailPayload("newer12@example.test", newer, { launched: true });
+    const l = E.foundingLinkEmailPayload("legacy@example.test", legacy, { launched: true });
+    t.ok(f.text.split("\n\n").includes(LINE) && f.html.includes(`>${LINE}</p>`) && !/Consent on record: version/.test(f.text + f.html),
+      "8a a personal-relationship row: the consent line reads exactly as Amanda wrote it, in the text and the HTML, and the version line is gone");
+    t.ok(n.text.split("\n\n").includes("Consent on record: version 2026-10-01.") && !n.text.includes(LINE), "8b a newer holder keeps its version line");
+    t.ok(l.text.split("\n\n").includes(`Consent on record: version ${LEGACY}.`) && !l.text.includes(LINE), "8c the launch email for a row with no basis keeps its version line");
+    // Not another word changes: the friend's email is the newer holder's with only the number, the line and the link differing.
+    const norm = (p) => p.text.replace(/#\d+ of 50/, "#N of 50").replace(/Consent on record: [^\n]+/, "LINE").replace(/https:\/\/flourishmoney\.app\/api\/unsubscribe\S+/, "URL");
+    t.eq(norm(f), norm(n), "8d no other word of the founding email changes");
+    t.eq([f.subject, n.subject, l.subject], [E.SUBJECT, E.SUBJECT, E.LAUNCH_SUBJECT], "8e the subjects are unchanged");
+    t.eq(l.text.split("\n\n").slice(0, 5), E.launchParagraphs(), "8f the launch email's body is unchanged");
   }
 
   // ── 7. No signup can grant itself a basis, or mark itself as already emailed ─────────────────────

@@ -84,12 +84,20 @@ const paragraphsFor = (kind, position) => (kind === LAUNCH_KIND ? launchParagrap
 const subjectFor = (kind) => (kind === LAUNCH_KIND ? LAUNCH_SUBJECT : SUBJECT);
 
 const consentLine = (version) => `Consent on record: version ${version}.`;
-const footerLines = (url, version) => [WHY_LINE, consentLine(version), ...CONTACT_BLOCK, `Unsubscribe with one click: ${url}`];
+// Amanda, 2026-10-26: a row sent under a recorded personal relationship (metadata.consent_basis.type, written by the
+// one-time SQL of 2026-10-25) says so, in these words exactly; every other row keeps the version line.
+const PERSONAL_RELATIONSHIP_CONSENT_LINE = "Consent on record: personal relationship (joined the waitlist before Oct 1, 2026).";
+function consentLineFor(row) {
+  const m = row && row.metadata;
+  const basis = m && typeof m === "object" && !Array.isArray(m) && m.consent_basis && typeof m.consent_basis === "object" ? m.consent_basis : null;
+  return basis && basis.type === "personal_relationship" ? PERSONAL_RELATIONSHIP_CONSENT_LINE : consentLine(row && row.consent_version);
+}
+const footerLines = (url, line) => [WHY_LINE, line, ...CONTACT_BLOCK, `Unsubscribe with one click: ${url}`];
 
 const _esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const _para = (html, extra) => `<p style="margin:0 0 16px;${extra || ""}">${html}</p>`;
 const _small = "font-size:13px;color:rgba(26,32,53,0.66);";
-function foundingLinkHtml(position, url, version, kind = FOUNDING_LINK_KIND) {
+function foundingLinkHtml(position, url, line, kind = FOUNDING_LINK_KIND) {
   const body = paragraphsFor(kind, position).map(t => t.startsWith("Your link: ")
     ? _para(`<a href="${FOUNDING_LINK_URL}" style="color:#1A2035;font-weight:700;">Open your founding price link</a>`)
     : _para(_esc(t)));
@@ -101,7 +109,7 @@ function foundingLinkHtml(position, url, version, kind = FOUNDING_LINK_KIND) {
     'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
     body.join(""),
     _para(_esc(WHY_LINE), "margin-top:24px;" + _small),
-    _para(_esc(consentLine(version)), _small),
+    _para(_esc(line), _small),
     ...CONTACT_BLOCK.map(l => _para(_esc(l), _small)),
     _para(`<a href="${url}" style="color:#1A2035;">Unsubscribe with one click</a>`, _small),
     '</div></body></html>',
@@ -129,8 +137,8 @@ function foundingLinkEmailPayload(to, row, opts = {}) {
     reply_to: REPLY_TO,
     to: [to],
     subject: subjectFor(kind),
-    text: [...paragraphsFor(kind, row.founding_position), ...footerLines(url, version)].join("\n\n"),
-    html: foundingLinkHtml(row.founding_position, url, version, kind),
+    text: [...paragraphsFor(kind, row.founding_position), ...footerLines(url, consentLineFor(row))].join("\n\n"),
+    html: foundingLinkHtml(row.founding_position, url, consentLineFor(row), kind),
     headers,
     // Resend keeps these with the message: which email this was, and the consent it was sent under.
     tags: [{ name: "kind", value: kind }, { name: "consent_version", value: version }],
@@ -171,5 +179,5 @@ async function sendFoundingLinkEmail(to, row, opts = {}) {
 
 module.exports = {
   FOUNDING_LINK_KIND, LAUNCH_KIND, FOUNDING_LINK_URL, SUBJECT, LAUNCH_SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
-  consentLine, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
+  consentLine, consentLineFor, PERSONAL_RELATIONSHIP_CONSENT_LINE, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
 };
