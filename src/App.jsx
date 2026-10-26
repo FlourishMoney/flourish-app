@@ -13436,8 +13436,8 @@ function confirmedFromApp(user){ return !!(user && user.user_metadata && user.us
 // B5 (audit 2026-10-26): "You're confirmed" only when the address was confirmed (a store-app signup, signed in by
 // the link). A link Supabase refused (lib/confirmLink.js), or a visit with no session, gets Supabase's own words
 // for what went wrong, a way to send the confirmation email again (the existing resend_confirmation) and, always,
-// a Log In button. Every word here is an approved string already in the app.
-// [WORDS: a headline for the expired or failed link, such as "This link has expired"; none is approved yet]
+// a Log In button. A link Supabase refused (expired, already used, or failed) is headed "This link no longer works."
+// (approved 2026-10-26); every other word here is an approved string already in the app.
 function ConfirmedPage({confirmed=false, onSignIn}){
   const link = confirmLinkResult(typeof window === "undefined" ? null : window.location);
   const ok = confirmed && !link.failed;
@@ -13469,6 +13469,7 @@ function ConfirmedPage({confirmed=false, onSignIn}){
           </>
         ) : (
           <div data-confirm-failed="">
+            {link.failed&&<h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>This link no longer works.</h1>}
             {link.description&&<p style={{color:C.cream,fontSize:15,lineHeight:1.6,margin:"0 0 16px"}}>{link.description}</p>}
             <div style={{color:C.mutedHi,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
             <input type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}

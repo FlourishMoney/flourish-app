@@ -8,6 +8,8 @@
 //      again (the existing resend_confirmation) to the address typed; and a Log In button
 //   2  no token at all: no "You're confirmed", and the same way forward
 //   3  Log In opens the sign-in card
+//   4  a link Supabase refused (expired, already used, or failed) is headed "This link no longer works." (approved
+//      2026-10-26), in the hash or the query, with the error text, the send-again form and Log In kept
 // (A store-app signup whose link worked keeps "You're confirmed": tests/onboardingFirstNumber.browser 5b.)
 // -----------------------------------------------------------------------------
 "use strict";
@@ -64,6 +66,7 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       const body = await page.locator("body").innerText();
       t.ok(!/You're confirmed/.test(body), "1a an expired link no longer says \"You're confirmed\"");
       t.ok(/Email link is invalid or has expired/.test(body), "1b …it says what Supabase said");
+      t.eq(await page.getByRole("heading", { level: 1 }).allInnerTexts(), ["This link no longer works."], "4a an expired link is headed \"This link no longer works.\"");
       await page.getByPlaceholder("Email address").fill("someone@example.invalid");
       await page.getByRole("button", { name: "Send it again" }).click();
       await page.getByText("Check your email to confirm your address.").waitFor({ timeout: 10000 }).catch(() => {});
@@ -81,6 +84,16 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       const { ctx, page } = await visit("");
       const body = await page.locator("body").innerText();
       t.ok(!/You're confirmed/.test(body) && /Send it again/.test(body) && /Log In/.test(body), "2a no token: not \"You're confirmed\", and the same way forward (send again, Log In)");
+      t.ok(!/This link no longer works/.test(body), "2b …and no expired-link headline: no link was refused");
+      await ctx.close();
+    }
+    // ── 4. A failed link, in the query (PKCE) ─────────────────────────────────────────────────────
+    {
+      const { ctx, page } = await visit("?error=server_error&error_code=unexpected_failure&error_description=Error+confirming+user");
+      const body = await page.locator("body").innerText();
+      t.eq(await page.getByRole("heading", { level: 1 }).allInnerTexts(), ["This link no longer works."], "4b a failed link (in the query) has the same headline");
+      t.ok(/Error confirming user/.test(body) && (await page.getByPlaceholder("Email address").count()) === 1 && /Send it again/.test(body) && /Log In/.test(body) && !/You're confirmed/.test(body),
+        "4c …and keeps Supabase's error text, the send-again form and the Log In button");
       await ctx.close();
     }
   } catch (e) {
