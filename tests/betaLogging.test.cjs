@@ -24,6 +24,8 @@ const IP = "203.0.113.77";
     if (u.includes("/rest/v1/waitlist") && opts.method === "POST") return insertStatus === 201 ? json(201, [{ id: 1 }]) : json(insertStatus, { code: insertStatus === 409 ? "23505" : "XX000" });
     return json(200, []);
   };
+  // join_waitlist is metered like signup since 2026-10-26 (H3): a stateless store lets it through here.
+  const blobs = require("./_blobsStub.cjs").install();
   const { handler } = require("../netlify/functions/beta.js");
   const { CONSENT_VERSION } = require("../netlify/functions/_lib/waitlistConsent.js");
 
@@ -45,16 +47,19 @@ const IP = "203.0.113.77";
     ["consent mismatch", join({ consentVersion: "2026-01-01" }), 400, "Consent_required"],
     ["bad email", join({ email: "not-an-email" }), 400, "Valid_email_required"],
     ["unknown placement", join({ placement: "nowhere" }), 400, "Unknown_placement"],
-    // No Blobs store in tests, so the limiter refuses: this is the rate-limit path.
-    ["validate (rate limited)", { action: "validate", code: "TESTCODE" }, 429, "rate_limited"],
+    // No Blobs store for this one call, so the limiter refuses (it fails closed): this is the rate-limit path.
+    ["validate (rate limited)", { action: "validate", code: "TESTCODE" }, 429, "rate_limited", () => { blobsDown(); }],
     ["resend bad email", { action: "resend_confirmation", email: "x" }, 400, "invalid_email"],
     ["signup weak password", { action: "signup", email: EMAIL, password: "x", code: "TESTCODE" }, 200, "weak_password"],
     ["signup_status", { action: "signup_status" }, 200, "ok"],
     ["count", { action: "count" }, 200, "ok"],
   ];
+  const blobsDown = () => { insertStatus = 201; blobs.setDown(true); };
+  const putBack = () => blobs.setDown(false);
   for (const [name, body, status, reason, before] of cases) {
     if (before) before(); else insertStatus = 201;
     const { res, mine } = await call(body);
+    putBack();
     t.eq(res.statusCode, status, `${name}: response status unchanged`);
     t.eq(mine.length, 1, `${name}: exactly one [beta] line`);
     t.ok(mine[0] && mine[0].includes(`status=${status} reason=${reason}`), `${name}: line names status and reason (${mine[0]})`);
