@@ -99,8 +99,8 @@ const footerLines = (url, line) => [WHY_LINE, line, ...CONTACT_BLOCK, `Unsubscri
 // plain-text part, in the same order: the body paragraphs, then the footer. The one thing it adds is the button's
 // label on the founding link email; the "Your link: …" line follows the button as a text link, so the link still
 // works with buttons or images blocked. The launch email has no link and no button.
-// NOT APPROVED: the button label is a placeholder until the founder's words are in.
-const FOUNDING_BUTTON_LABEL = "[WORDS: founding button]";
+// The button label, as approved 2026-10-27.
+const FOUNDING_BUTTON_LABEL = "Get my founding price";
 function foundingLinkHtml(position, url, line, kind = FOUNDING_LINK_KIND) {
   return emailHtml({
     title: subjectFor(kind),

@@ -3,7 +3,7 @@
 // THE BRANDED HTML EMAIL (2026-10-26): the founding link email (and the unused launch email) in the shared flourish
 // layout, _lib/emailLayout.js. The words do not change; only how they look.
 //   1  the HTML part carries exactly the plain-text part's words, in order; the one addition is the button's label
-//      (a [WORDS: …] placeholder until approved), and the text link under it is the text part's own "Your link:" line
+//      ("Get my founding price", approved 2026-10-27), and the text link under it is the text part's own "Your link:" line
 //   2  the CASL footer, the consent line (both kinds, the personal-relationship one included) and the one-click
 //      unsubscribe link are in both parts, the same
 //   3  no tracking: the only image is the logo, from flourishmoney.app; the only links are the founding link and the
@@ -51,8 +51,9 @@ const invert = (hex) => "#" + hex.replace("#", "").match(/../g).map((x) => (255 
     const expected = words(p.text);
     t.eq(founding ? html.replace(` ${E.FOUNDING_BUTTON_LABEL} `, " ") : html, expected, `1a ${who}: the HTML shows exactly the plain-text part's words, in order${founding ? ", plus the button" : ""}`);
     if (founding) {
-      t.eq((html.match(new RegExp(E.FOUNDING_BUTTON_LABEL.replace(/[[\]]/g, "\\$&"), "g")) || []).length, 1, `1b ${who}: one button, labelled with the placeholder`);
-      t.ok(/^\[WORDS: [^\]]+\]$/.test(E.FOUNDING_BUTTON_LABEL), "1c the button label is a [WORDS: …] placeholder until approved");
+      t.eq((html.match(new RegExp(E.FOUNDING_BUTTON_LABEL.replace(/[[\]]/g, "\\$&"), "g")) || []).length, 1, `1b ${who}: one button, with its label`);
+      t.eq(E.FOUNDING_BUTTON_LABEL, "Get my founding price", "1c the button label is exactly the approved words");
+      t.ok(!/\[WORDS:/.test(p.html + p.text), `1c2 ${who}: no [WORDS: placeholder in either part`);
       t.ok(p.html.includes(`Your link: <a href="${E.FOUNDING_LINK_URL}"`) && p.text.split("\n\n").includes(`Your link: ${E.FOUNDING_LINK_URL}`), `1d ${who}: under the button, the text part's own "Your link:" line, as a text link`);
     } else {
       t.ok(!p.html.includes(E.FOUNDING_BUTTON_LABEL) && !/checkout=founding/.test(p.html + p.text), `1e ${who}: no button and no founding link`);
