@@ -295,51 +295,62 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       process.env.SUPABASE_URL = saved.url; process.env.SUPABASE_SECRET_KEY = saved.key;
     }
 
-    // Reading that answer. Anything that is not a clear yes is a no.
+    // Reading that answer (audit H12, 2026-10-26). Three answers: a well-formed yes, a well-formed no, and
+    // "unavailable" for everything else. A failed check is NOT invite-only.
+    const { SIGNUP_STATUS_UNAVAILABLE, SIGNUP_STATUS_RETRY_MS } = await import("../src/lib/signupUi.js");
+    t.eq(SIGNUP_STATUS_UNAVAILABLE, "unavailable", "the third answer is \"unavailable\"");
     t.eq(statusFromResponse({ openSignup: true }), true, "a clear yes is a yes");
-    for (const bad of [{ openSignup: false }, {}, null, undefined, { openSignup: "true" }, { openSignup: 1 }, "not json"]) {
-      t.eq(statusFromResponse(bad), false, `${JSON.stringify(bad)} is not a yes`);
+    t.eq(statusFromResponse({ openSignup: false }), false, "a clear no (a 200 saying invite-only) is a no");
+    for (const bad of [{}, null, undefined, { openSignup: "true" }, { openSignup: 1 }, "not json", { error: "Missing SUPABASE_URL" }]) {
+      t.eq(statusFromResponse(bad), "unavailable", `${JSON.stringify(bad)} is neither: unavailable`);
     }
+    t.eq(statusFromResponse({ openSignup: true }, { ok: false }), "unavailable", "a body that says yes on a non-OK answer is still unavailable");
+    t.eq(statusFromResponse({ openSignup: false }, { ok: false }), "unavailable", "…and so is a no on a 5xx: only a 200 can close the door");
+    t.eq([...SIGNUP_STATUS_RETRY_MS], [0, 2000, 5000], "asked at once and twice more before the screen says the check failed");
 
-    // The screen. `null` is the state a store app is in for the first moments after launch, and the
-    // state it stays in if the call never lands.
-    t.eq(signupCodeState({ openSignup: null }), { codeRequired: true, showField: true, showLink: false }, "before the server answers: the code field, as today");
-    t.eq(signupCodeState({ openSignup: false }), { codeRequired: true, showField: true, showLink: false }, "server says invite-only: the code field, as today");
-    t.eq(signupCodeState({ openSignup: true }), { codeRequired: false, showField: false, showLink: true }, "server says open: no field, a quiet link instead");
-    t.eq(signupCodeState({ openSignup: true, showCodeField: true }), { codeRequired: false, showField: true, showLink: false }, "…and the link reveals the field for someone holding a code");
-    t.eq(signupCodeState({ openSignup: false, showCodeField: true }), { codeRequired: true, showField: true, showLink: false }, "invite-only never shows the link");
-    t.eq(signupCodeState(), { codeRequired: true, showField: true, showLink: false }, "called with nothing at all: still the code field");
+    // The screen. `null` is the state a store app is in for the first moments after launch.
+    t.eq(signupCodeState({ openSignup: null }), { codeRequired: false, showField: false, showLink: false, unavailable: false }, "while asking: no code field and no invite link");
+    t.eq(signupCodeState({ openSignup: false }), { codeRequired: true, showField: true, showLink: false, unavailable: false }, "server says invite-only: the code field, as before");
+    t.eq(signupCodeState({ openSignup: true }), { codeRequired: false, showField: false, showLink: false, unavailable: false }, "server says open: no field, and no invite link (H11)");
+    t.eq(signupCodeState({ openSignup: "unavailable" }), { codeRequired: false, showField: false, showLink: false, unavailable: true }, "the check failed: no code field, and the unavailable line (H12)");
+    t.eq(signupCodeState(), { codeRequired: false, showField: false, showLink: false, unavailable: false }, "called with nothing at all: no code asked for");
 
-    // Item 9: the native sign-up screen shows the code field when the status call fails. The catch
-    // sets false, which is the same state as a server that answered "invite-only".
+    // Item 9, as amended by H12: the native sign-up screen does NOT show the code field when the status call fails.
     const failed = statusFromResponse(await (async () => { try { throw new Error("offline"); } catch { return null; } })());
-    t.eq(failed, false, "a failed status call reads as invite-only");
-    t.eq(signupCodeState({ openSignup: failed }).showField, true, "…so the code field is shown, exactly as it is today");
+    t.eq(failed, "unavailable", "a failed status call reads as unavailable, not as invite-only");
+    t.eq(signupCodeState({ openSignup: failed }).showField, false, "…so no beta code is asked for on an error");
 
     // The button.
-    t.eq(signupSubmittable({ openSignup: null, code: "" }), false, "before the answer lands, Create Account still needs a code");
+    t.eq(signupSubmittable({ openSignup: null, code: "" }), true, "while asking, Create Account needs no code (the server decides)");
+    t.eq(signupSubmittable({ openSignup: "unavailable", code: "" }), true, "…nor when the check failed");
     t.eq(signupSubmittable({ openSignup: false, code: "" }), false, "invite-only: a code is required");
     t.eq(signupSubmittable({ openSignup: false, code: "  " }), false, "…and whitespace is not a code");
     t.eq(signupSubmittable({ openSignup: false, code: "BETA100" }), true, "invite-only: with a code it submits");
     t.eq(signupSubmittable({ openSignup: true, code: "" }), true, "open: no code needed");
-    t.eq(signupSubmittable({ openSignup: true, code: "BETA100" }), true, "open: a code is still allowed");
 
     // Wiring: one screen serves web, iOS and Android, so there is no per-platform branch to check.
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\nfunction ", app.indexOf("function AuthScreen(") + 10));
-    t.ok(/signupCodeState\(\{ openSignup, showCodeField \}\)/.test(auth), "AuthScreen renders from signupCodeState");
+    t.ok(/signupCodeState\(\{ openSignup \}\)/.test(auth), "AuthScreen renders from signupCodeState");
     t.ok(/action: "signup_status"/.test(auth), "…after asking the server");
-    t.ok(/useState\(null\)/.test(auth) && /setOpenSignup\(statusFromResponse\(out\)\)/.test(auth), "…starting at null and reading the answer defensively");
+    t.ok(/useState\(null\)/.test(auth) && /statusFromResponse\(out, \{ ok: res\.ok \}\)/.test(auth), "…starting at null and reading the answer, with the HTTP status, defensively");
+    t.ok(/for \(const wait of SIGNUP_STATUS_RETRY_MS\)/.test(auth), "…asking again on the retry schedule");
+    t.ok(/if \(authMounted\.current\) setOpenSignup\("unavailable"\);/.test(auth) && !/setOpenSignup\(false\)/.test(auth),
+         "…and, when every try fails, setting \"unavailable\", never false");
     // Once, and not on the marketing landing: that page is the most visited on the site, has no
     // sign-up form, and would otherwise spend a function invocation per visitor.
     t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "…only when the auth card is on screen, and only once");
     t.ok(/\}, \[showAuth\]\);/.test(auth), "…so the effect watches showAuth, not every render");
-    t.ok(/catch \{[^}]*setOpenSignup\(false\)/s.test(auth), "…and treating a failed call as invite-only");
-    t.ok(/mode==="signup"&&showCodeInput&&\(/.test(auth) && /mode==="signup"&&showCodeLink&&\(/.test(auth), "…the field and the link are the two states");
-    t.ok(/Have an invite code\?/.test(auth), "…the link says \"Have an invite code?\"");
+    t.ok(/mode === "signup" && statusUnavailable && \(/.test(auth) && /onClick=\{retrySignupStatus\}/.test(auth) && /\{SIGNUP_COPY\.statusUnavailable\}/.test(auth),
+         "the check failed: the unavailable line and a Try again that asks again");
+    t.ok(/const retrySignupStatus = \(\) => \{ setOpenSignup\(null\); askSignupStatus\(\); \};/.test(auth), "…Try again goes back to asking, so the line goes while it does");
+    t.ok(/mode==="signup"&&showCodeInput&&\(/.test(auth), "the code field shows only from signupCodeState");
+    t.ok(!/Have an invite code\?/.test(auth) && !/showCodeLink|setShowCodeField/.test(auth), "the invite-code link is gone (H11: hidden while signup is open)");
     t.ok(/const codeOk = mode === "login" \|\| signupSubmittable\(\{ openSignup, code: betaCode \}\)/.test(auth),
          "…and Create Account asks signupSubmittable, the same helper the tests check, rather than restating the rule inline");
-    t.ok(/disabled=\{loading \|\| !email \|\| password\.length < 8 \|\| !codeOk\}/.test(auth), "…so the button and the field cannot drift apart");
+    t.ok(/const canSubmit = !loading && !!email && password\.length >= 8 && codeOk;/.test(auth) && /aria-disabled=\{!canSubmit\}/.test(auth)
+         && /if \(!canSubmit\) \{ if \(!loading\) setTouched\(\{ email: true, password: true \}\); return; \}/.test(auth),
+         "…so the button and the field cannot drift apart, and a tap while a field is wrong shows its error");
     t.ok(!/OPEN_SIGNUP/.test(auth), "the flag's value is never in the screen, only the server's answer");
   }
 
@@ -411,7 +422,7 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     const statusCall = auth.slice(Math.max(0, auth.indexOf('action: "signup_status"') - 500), auth.indexOf('action: "signup_status"') + 200);
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(statusCall), "the status call is not branched by platform");
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeInput")), "the code field is not branched by platform");
-    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeLink")), "the invite-code link is not branched by platform");
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("statusUnavailable &&")), "the status-unavailable line is not branched by platform");
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("const codeOk = mode")), "the Create Account button is not branched by platform");
     // The two things that ARE platform-specific stay that way, so this is not just matching nothing.
     t.ok(/!isNativeApp\(\) && <button onClick=\{handleMagicLink\}/.test(auth), "sanity: the magic-link button is still web-only");
@@ -443,6 +454,53 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       return runBeta(state, { OPEN_SIGNUP: "true" }, { action: "signup_status" });
     })();
     t.ok(!!preflight.headers["Access-Control-Allow-Origin"], "beta.js sets the header on every answer");
+  }
+
+  // ── 11. The card is in the landing's brand, with inline errors (audit H11, 2026-10-26) ───────────
+  {
+    const { AUTH_C } = await import("../src/lib/authTheme.js");
+    const { fieldErrors, SIGNUP_COPY } = await import("../src/lib/signupUi.js");
+    const lum = (hex) => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+    const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const over = (rgba, bg) => { const m = rgba.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/); const a = Number(m[4]);
+      return "#" + [1, 2, 3].map((k, i) => Math.round(Number(m[k]) * a + parseInt(bg.slice(1 + 2 * i, 3 + 2 * i), 16) * (1 - a)).toString(16).padStart(2, "0")).join(""); };
+    for (const [fg, bg, min, label] of [
+      [AUTH_C.ink, AUTH_C.card, 4.5, "body text on the card"], [AUTH_C.heading, AUTH_C.page, 4.5, "headings on the page"],
+      [AUTH_C.muted, AUTH_C.card, 4.5, "secondary text on the card"], [AUTH_C.muted, AUTH_C.page, 4.5, "secondary text on the page"],
+      [AUTH_C.placeholder, AUTH_C.card, 4.5, "placeholders in a field"], [AUTH_C.link, AUTH_C.card, 4.5, "links on the card"], [AUTH_C.link, AUTH_C.page, 4.5, "links on the page"],
+      [AUTH_C.error, AUTH_C.card, 4.5, "errors on the card"], [AUTH_C.error, over(AUTH_C.errorBg, AUTH_C.card), 4.5, "errors on their tint"],
+      [AUTH_C.success, over(AUTH_C.successBg, AUTH_C.card), 4.5, "success lines on their tint"], [AUTH_C.muted, over(AUTH_C.tabBg, AUTH_C.card), 4.5, "the unselected tab"],
+      [AUTH_C.ink, over(AUTH_C.tabBg, AUTH_C.card), 4.5, "the unavailable line on its tint"],
+      [AUTH_C.btnInk, AUTH_C.btnFrom, 4.5, "button text on the button's lighter end"], [AUTH_C.btnInk, AUTH_C.btnTo, 4.5, "…and its darker end"],
+      [AUTH_C.inputBorder, AUTH_C.card, 3, "a field's edge (a control, 3:1)"],
+    ]) t.ok(ratio(fg, bg) >= min, `11a ${label}: ${ratio(fg, bg).toFixed(2)}:1 (at least ${min}:1)`);
+
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\nfunction ", app.indexOf("function AuthScreen(") + 10));
+    const form = auth.slice(auth.indexOf("AUTH FORM"));
+    t.ok(form.length > 1000 && !/#050D09|#0D1F12|#00D68F|#021208|#6B7A6E|#EDE9E2|rgba\(0,214,143/i.test(form), "11b the card has none of the old dark brand's colours");
+    t.ok(/background: AUTH_C\.page/.test(form) && /background: AUTH_C\.card/.test(form) && /<FlourishLockup size=\{60\} color=\{AUTH_C\.heading\} \/>/.test(form),
+      "11c the landing's page, card and heading colours (lib/authTheme.js)");
+    t.ok(/showAuth \? AUTH_C\.page : "#FDF6EC"/.test(auth), "11d the page behind the card is the landing's cream too");
+    t.ok(/const authLinkStyle = \{[^}]*minHeight: LAYOUT\.minTap/.test(auth) && /textDecoration: "underline"/.test(auth), "11e text buttons are 44 px targets, underlined");
+    t.eq((form.match(/style=\{authLinkStyle\}|\.\.\.authLinkStyle/g) || []).length >= 5, true, "11f …Back, Wrong email, Back to log in, Forgot password and Try again all use it");
+
+    // Inline errors: shown once a field is left, never while the person types their first go at it.
+    t.eq(fieldErrors({ mode: "signup", email: "sam@", password: "12345", touched: {} }), { email: false, password: false }, "11g nothing before a field is left");
+    t.eq(fieldErrors({ mode: "signup", email: "sam@", password: "12345", touched: { email: true, password: true } }), { email: true, password: true }, "11h \"sam@\" and a 5-character password, once left: both errors");
+    t.eq(fieldErrors({ mode: "signup", email: "sam@example.ca", password: "a-long-password", touched: { email: true, password: true } }), { email: false, password: false }, "11i a full address and 8+ characters: none");
+    t.eq(fieldErrors({ mode: "login", email: "sam@example.ca", password: "short", touched: { email: true, password: true } }).password, false, "11j Log In does not lecture an existing password");
+    t.eq(fieldErrors({ mode: "login", email: "nope", touched: { email: true } }).email, true, "11k …but an incomplete address is flagged on Log In too");
+    t.ok(/onBlur=\{\(\) => email && setTouched\(t => \(\{ \.\.\.t, email: true \}\)\)\}/.test(form) && /onBlur=\{\(\) => password && setTouched\(t => \(\{ \.\.\.t, password: true \}\)\)\}/.test(form),
+      "11l a field counts as left on blur, once something is typed");
+    t.ok(/aria-invalid=\{fieldErr\.email \|\| undefined\} aria-describedby=\{fieldErr\.email \? "auth-email-error" : undefined\}/.test(form)
+      && /<div id="auth-email-error" data-field-error="email" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.emailError\}<\/div>/.test(form),
+      "11m the email error is tied to its field for a screen reader");
+    t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{fieldErr\.password \? "auth-password-error" : undefined\}/.test(form)
+      && /<div id="auth-password-error" data-field-error="password" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.passwordError\}<\/div>/.test(form),
+      "11n …and so is the password error");
+    t.eq([SIGNUP_COPY.emailError, SIGNUP_COPY.passwordError], ["Enter a valid email address.", "Choose a password of at least 8 characters."],
+      "11o the approved inline errors, word for word (2026-10-27, docs/product/SIGNUP-PATH-WORDS.md)");
   }
 
   t.summary("openSignup.test");

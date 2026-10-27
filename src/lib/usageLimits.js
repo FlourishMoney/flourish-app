@@ -238,7 +238,8 @@ export function getTrialStartedAt() {
 // trial_ends_at if the profile has one, otherwise trial_started_at + 14 days. The explicit date is
 // what Decision P18 moves if billing is late — migration 0007 pushes every unexpired trial forward
 // — so ignoring it here would cap a cohort the SERVER is still treating as unlimited.
-function trialEndsAtMs() {
+// Exported for the upgrade screen's trial line (lib/upgradeFlow.js), which names the same end date.
+export function trialEndsAtMs() {
   try {
     const explicit = localStorage.getItem("flourish_trial_ends_at");
     if (explicit) {

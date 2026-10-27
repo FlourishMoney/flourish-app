@@ -29,7 +29,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
   // ── 1. the call sites ────────────────────────────────────────────────────────────────────────────
   {
     t.eq((APP.match(/onUpgrade=\{\(\)=>setShowPaywall\(true\)\}/g) || []).length, 0, "1a no screen opens the old Paywall directly any more");
-    t.eq((APP.match(/onUpgrade=\{openUpgrade\}/g) || []).length, 7, "1b all seven upgrade props go through openUpgrade (the six, and the coach's own)");
+    t.eq((APP.match(/onUpgrade=\{openUpgrade\}/g) || []).length, 9, "1b all nine upgrade props go through openUpgrade (the six, the coach's own, and the two trial countdowns, H13)");
     for (const [name, rx] of [
       ["What-If", /<WhatIfSimulator [^\n]*onUpgrade=\{openUpgrade\}/], ["Today", /if\(screen==="home"\)return <Dashboard [^\n]*onUpgrade=\{openUpgrade\}/],
       ["Goals", /<Goals [^\n]*onUpgrade=\{openUpgrade\}/], ["the Credit gate", /<PremiumGate billingOn=\{billingUi\.show\} storeOn=\{storeBilling\} feature="Credit Coaching" [^\n]*onUpgrade=\{openUpgrade\}/],
@@ -48,7 +48,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "1g nothing opens the old Paywall directly (onClick included): only openUpgrade, once the status has been asked again");
     for (const [name, rx] of [
       ["the sidebar trial card", /<div onClick=\{openUpgrade\} [^\n]*\n(?:[^\n]*\n){1,4}[^\n]*>Upgrade to Flourish Plus →<\/div>/],
-      ["the \"N days left\" banner", /trialActive&&trialDaysLeft<=7&&\([\s\S]{0,1200}?<button onClick=\{openUpgrade\} [^\n]*>\n\s*Upgrade →\n/],
+      // H13 (audit 2026-10-26): the countdown is TrialCountdown, on the phone layout and in the desktop sidebar.
+      ["the \"N days left\" banner", /\{countdown&&<TrialCountdown countdown=\{countdown\} onUpgrade=\{openUpgrade\}\/>\}/],
+      ["the sidebar's trial countdown", /\{countdown&&<TrialCountdown countdown=\{countdown\} onUpgrade=\{openUpgrade\} sidebar\/>\}/],
       ["\"Your free trial has ended\"", />Your free trial has ended<\/span>\n\s*<button onClick=\{openUpgrade\} [^\n]*>\n\s*Upgrade Now\n/],
     ]) t.ok(rx.test(APP), `1h ${name} opens checkout through openUpgrade`);
   }
@@ -113,6 +115,37 @@ setImmediate(() => process.exit(0));`;
     t.ok(txt.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda."), "4a (the gate rendered as a store app: the founder's locked-screen line)");
     t.ok(!/See plans|Flourish Plus|days free|Cancel any time/.test(txt), "4b in a store app the gate shows no way to pay, even told billing is on");
     t.ok(/!data\.isPremium&&!isNativeApp\(\)&&onUpgrade&&\(/.test(APP), "4c the Today card is still hidden in a store app");
+  }
+
+  // ── 5. the trial countdown (audit H13, 2026-10-26) ──────────────────────────────────────────────
+  {
+    const U = await import("../src/lib/upgradeFlow.js");
+    const { trialChip } = await import("../src/lib/freePlan.js");
+    t.eq(U.trialCountdown({ trialActive: true, daysLeft: 13 }), { daysLeft: 13, label: trialChip(13), urgent: false },
+      "5a on the trial with 13 days left: a countdown, in the store apps' approved words (\"13 days left in your trial\")");
+    t.eq(trialChip(13), "13 days left in your trial", "5b …which names the trial, not Plus");
+    t.eq(U.trialCountdown({ trialActive: true, daysLeft: 2 }).urgent, true, "5c the last two days are urgent");
+    t.eq(U.trialCountdown({ trialActive: true, daysLeft: 1 }).label, "1 day left in your trial", "5d one day, singular");
+    t.eq(U.trialCountdown({ trialActive: true, daysLeft: 13, paid: true }), null, "5e a household the server says pays sees no countdown");
+    t.eq(U.trialCountdown({ trialActive: true, daysLeft: 13, native: true }), null, "5f nor does a store app (it has NativeTrialChip)");
+    t.eq(U.trialCountdown({ trialActive: false, daysLeft: 13 }), null, "5g nor anyone off the trial");
+    for (const d of [0, -1, null, NaN]) t.eq(U.trialCountdown({ trialActive: true, daysLeft: d }), null, `5h no countdown for ${d} days left`);
+    // The wiring: the countdown is gated on the trial, never on isPremium, which the trial sets.
+    t.ok(/const countdown = trialCountdown\(\{ trialActive, daysLeft: trialDaysLeft, native: isNativeApp\(\),\s*paid: billingStatus\?\.paid === true \|\| storeStatus\?\.paid === true \}\);/.test(APP),
+      "5i the app asks trialCountdown with the trial, the days left, the store-app test and the server's paid answer");
+    t.ok(!/!isPremium&&!isNativeApp\(\)&&trialActive&&trialDaysLeft<=7/.test(APP), "5j the old banner, gated on !isPremium (so it never showed), is gone");
+    t.ok(/isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^\n]*>✦ Flourish Plus<\/div>/.test(APP), "5k the sidebar does not call a trial household \"Flourish Plus\"");
+    let A2 = {};
+    try { A2 = loadApp(["TrialCountdown"]); } catch (e) { t.ok(false, `5l App.jsx bundles: ${describe(e)}`); }
+    if (A2.TrialCountdown) {
+      for (const sidebar of [false, true]) {
+        const html = A2.render(A2.h(A2.TrialCountdown, { countdown: U.trialCountdown({ trialActive: true, daysLeft: 9 }), onUpgrade: () => {}, sidebar }));
+        const txt = textOf(html);
+        t.ok(txt.includes("9 days left in your trial") && txt.includes("Upgrade →") && !/Flourish Plus/.test(txt),
+          `5l the ${sidebar ? "sidebar card" : "phone bar"} says the days left in the trial and offers Upgrade → (${JSON.stringify(txt)})`);
+        t.ok(/role="status"/.test(html) && /min-height:44px/.test(html), `5m …as a status line, with a 44 px button (${sidebar ? "sidebar" : "bar"})`);
+      }
+    }
   }
 
   t.summary("upgradeEntryPoints.test");

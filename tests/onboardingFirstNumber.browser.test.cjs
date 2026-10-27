@@ -18,6 +18,11 @@
 //             US; else Canada), and it is what Plaid's institution search is asked for.
 // And the counts: each step once, the bank link's outcomes, safe_view and first_number_shown on the first number,
 // and no meeting_opened from the tour's Meet step. ONBOARDING_SHOTS=<dir> saves a screenshot of every screen.
+//   founding  (audit H10 to H14, 2026-10-26) the whole founding path at 390 px and at 1440 px: the sign-up card in
+//             the landing's brand with inline errors and no invite link, Create Account, the check-your-email state
+//             (the address, the resend cooldown, Wrong email?), the confirmation link, the first number, the trial
+//             countdown, and the upgrade screen with the founding price first and selected, a review step, and only
+//             then checkout. And a signup_status check that fails: no beta code, a Try again that works.
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -91,8 +96,9 @@ function buildApp(supabaseUrl) {
 
   // A new account (signed in, no saved data), or, with signedIn false, nobody yet (the confirmation link).
   // A Canadian device unless a test says otherwise (Playwright's own default is en-US, which is the US).
-  const open = async ({ token = "ok", signedIn = true, user = null, locale = "en-CA", timezoneId = "America/Toronto" } = {}) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1, isMobile: true, hasTouch: true, colorScheme: "light", locale, timezoneId });
+  const open = async ({ token = "ok", signedIn = true, user = null, locale = "en-CA", timezoneId = "America/Toronto", desktop = false } = {}) => {
+    const ctx = await browser.newContext({ viewport: desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1,
+      isMobile: !desktop, hasTouch: !desktop, colorScheme: "light", locale, timezoneId });
     await ctx.addInitScript(([key, session, signedIn]) => { try {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
@@ -358,6 +364,175 @@ function buildApp(supabaseUrl) {
     await app.page.getByText("Open Flourish and sign in.").waitFor({ timeout: 40000 });
     t.ok(true, "5b a signup made in a store app keeps \"You're confirmed. Open Flourish and sign in.\"");
     await app.ctx.close();
+  }
+
+
+  // ── the founding path (audit H10 to H14) ────────────────────────────────────────────────────────
+  for (const desktop of [false, true]) {
+    const w = desktop ? "1440" : "390";
+    const s0 = MOCK.makeSession();
+    const { ctx, page, errs } = await open({ signedIn: false, desktop, user: { ...s0.user, user_metadata: { signup_platform: "web" } } });
+    const beta = [], billing = [];
+    let statusFails = 0;
+    await ctx.route("**/api/beta", async (r) => {
+      let body = {}; try { body = JSON.parse(r.request().postData() || "{}"); } catch {}
+      beta.push(body);
+      const json = (status, b) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
+      if (body.action === "signup_status") return statusFails-- > 0 ? r.fulfill({ status: 503, contentType: "text/html", body: "<html>busy</html>" }) : json(200, { openSignup: true });
+      if (body.action === "signup") return json(200, { ok: true, source: "self_serve", needsConfirmation: true, sent: true });
+      if (body.action === "resend_confirmation") return json(200, { ok: true });
+      return json(200, {});
+    });
+    await ctx.route("**/api/billing", async (r) => {
+      let body = {}; try { body = JSON.parse(r.request().postData() || "{}"); } catch {}
+      billing.push(body);
+      const json = (status, b) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
+      if (body.action === "status") return json(200, { enabled: true, paid: false, founding: { available: true, cohortLimit: 50 } });
+      if (body.action === "create_checkout_session") return json(200, { url: base + "/__checkout_stub" });
+      return json(200, {});
+    });
+    await ctx.route("**/__checkout_stub", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "<html><body>checkout stub</body></html>" }));
+
+    // The landing, then Try free: the card is the landing's cream and white, on the Sign Up tab, with no invite link.
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Try flourish free for 14 days" }).first().click({ timeout: 40000 });
+    await page.locator("[data-auth-card]").waitFor();
+    await page.waitForTimeout(600);
+    const card = await page.locator("[data-auth-card]").evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, page: getComputedStyle(el.parentElement.parentElement).backgroundColor }));
+    t.eq(card, { bg: "rgb(255, 255, 255)", page: "rgb(253, 246, 236)" }, `F1a ${w}: the sign-up card is white on the landing's cream (H11)`);
+    const signupTxt = await text(page);
+    t.ok(!/invite code|Beta access code/i.test(signupTxt) && beta.some((b) => b.action === "signup_status"), `F1b ${w}: signup is open: no invite link and no code field (H11)`);
+    // Inline errors once a field is left.
+    await page.getByPlaceholder("Email address").fill("sam@");
+    await page.getByPlaceholder("Password (min 8 characters)").fill("12345");
+    await page.getByPlaceholder("Email address").click();
+    await page.waitForTimeout(200);
+    const errsShown = await page.locator("[data-field-error]").evaluateAll((els) => els.map((e) => e.getAttribute("data-field-error")));
+    t.eq(errsShown.sort(), ["email", "password"], `F1c ${w}: "sam@" and a 5-character password, once left: an error under each (H11)`);
+    t.eq(await page.getByPlaceholder("Email address").getAttribute("aria-invalid"), "true", `F1d ${w}: …and the field says it is invalid`);
+    await shot(page, `founding-${w}-signup-errors`);
+    // A tap on Create Account while a field is wrong submits nothing. (It is aria-disabled, not disabled, so the tap
+    // still lands and shows the errors; Playwright treats aria-disabled as disabled, hence force.)
+    await btn(page, "Create Account").click({ force: true });
+    t.ok(!beta.some((b) => b.action === "signup"), `F1e ${w}: Create Account with a wrong field sends nothing`);
+    await page.getByPlaceholder("Email address").fill("sam@example.invalid");
+    await page.getByPlaceholder("Password (min 8 characters)").fill("a-long-enough-password");
+    await page.getByPlaceholder("Email address").click();
+    await page.waitForTimeout(200);
+    t.eq(await page.locator("[data-field-error]").count(), 0, `F1f ${w}: corrected, the errors go`);
+    await shot(page, `founding-${w}-signup-filled`);
+
+    // Create Account: the check-your-email state, not Log In (H10).
+    await btn(page, "Create Account").click();
+    await page.locator("[data-check-email]").waitFor();
+    const ce = await page.locator("[data-auth-card]").innerText();
+    t.ok(ce.includes("Check your email") && (await page.locator("[data-check-email-address]").innerText()) === "sam@example.invalid",
+      `F2a ${w}: "Check your email", naming the address the mail went to (H10)`);
+    t.ok(!/Welcome back/.test(await text(page)) && await page.getByRole("button", { name: "Log In", exact: true }).count() === 0,
+      `F2b ${w}: no "Welcome back" and no Log In button`);
+    const resend = page.getByRole("button", { name: /^Resend in \d+s$/ });
+    t.ok(await resend.count() === 1 && await resend.isDisabled(), `F2c ${w}: the resend waits out its cooldown ("${await resend.innerText().catch(() => "")}")`);
+    t.ok(await page.getByRole("button", { name: "Wrong email? Start over" }).count() === 1, `F2d ${w}: and "Wrong email? Start over" is there`);
+    await shot(page, `founding-${w}-check-email`);
+    await page.getByRole("button", { name: "Wrong email? Start over" }).click();
+    t.eq(await page.getByPlaceholder("Email address").inputValue(), "sam@example.invalid", `F2e ${w}: Wrong email? goes back to the form, with the address there to fix`);
+    await page.getByPlaceholder("Email address").fill("sam@example.org");
+    await btn(page, "Create Account").click();
+    await page.locator("[data-check-email]").waitFor();
+    t.eq(await page.locator("[data-check-email-address]").innerText(), "sam@example.org", `F2f ${w}: the corrected address is the one named`);
+    t.eq(beta.filter((b) => b.action === "signup").map((b) => b.email), ["sam@example.invalid", "sam@example.org"], `F2g ${w}: one signup per Create Account`);
+
+    // The confirmation link: into the app, then onboarding to the first number.
+    const hash = `#access_token=${s0.access_token}&expires_at=${s0.expires_at}&expires_in=${s0.expires_in}&refresh_token=${s0.refresh_token}&token_type=bearer&type=signup`;
+    await page.goto(base + "/confirmed" + hash, { waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    await btn(page, "Get Started →").click();
+    await page.getByRole("button", { name: "Enter it myself", exact: true }).last().click();
+    await page.getByPlaceholder("0.00").first().fill("2500");
+    await btn(page, "Continue →").click();
+    const billOn = (() => { const d = addDays(new Date(), 3); return d.getDate() > 28 ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : d; })();
+    await page.getByPlaceholder("e.g. 2100").first().fill("2100");
+    await page.locator('input[type="date"]').first().fill(iso(addDays(billOn, 2)));
+    await btn(page, "Continue →").click();
+    await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent");
+    await page.locator('input[type="number"]').first().fill("1400");
+    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate()));
+    await btn(page, "Continue →").click();
+    await btn(page, "No debt, skip").click();
+    await page.getByText(W6).first().waitFor();
+    t.ok(true, `F3a ${w}: the first number`);
+    await shot(page, `founding-${w}-first-number`);
+
+    // Today: the trial countdown (H13), in the trial's words, and not "Flourish Plus".
+    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
+    const dash = page.getByRole("button", { name: /Take me to my dashboard/ });
+    if (await dash.count()) await dash.first().click();
+    await page.locator("[data-trial-countdown]").first().waitFor({ timeout: 15000 });
+    const cd = await page.locator("[data-trial-countdown]").first().innerText();
+    t.ok(/^13 days left in your trial\s*Upgrade →$/.test(cd.replace(/\n/g, " ").trim()) || /13 days left in your trial/.test(cd), `F4a ${w}: the countdown: "13 days left in your trial" with Upgrade → (H13) ("${cd.replace(/\n/g, " ")}")`);
+    t.eq(await page.locator("[data-trial-countdown]").count(), 1, `F4b ${w}: one countdown`);
+    t.ok(!/✦ Flourish Plus/.test(await text(page)), `F4c ${w}: the trial household is not called "Flourish Plus"`);
+    await page.getByText("Step 1 of 5").first().waitFor({ timeout: 8000 }).catch(() => {});
+    const skip = page.getByRole("button", { name: "Skip", exact: true });
+    if (await skip.count()) { await skip.last().click(); await page.waitForTimeout(500); }
+    await page.getByText("Safe until next payday").first().waitFor({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(1200);       // the cards fade in
+    await shot(page, `founding-${w}-today-countdown`);
+
+    // Upgrade: the founding price first and selected; Continue; the review; only then checkout (H14).
+    await page.locator("[data-trial-countdown]").first().getByRole("button", { name: "Upgrade →" }).click();
+    await page.locator("[data-plan-choice]").first().waitFor();
+    const rows = await page.locator("[data-plan-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-plan-choice") + (e.querySelector("input").checked ? "*" : "")));
+    t.eq(rows, ["founding_annual*", "monthly", "annual"], `F5a ${w}: founding first, and selected`);
+    t.ok(await page.locator("[data-upgrade-trial]").count() === 1 && /^Your trial ends on [A-Z][a-z]+ \d{1,2}, \d{4}\.$/.test(await page.locator("[data-upgrade-trial]").innerText()), `F5b ${w}: the trial line, with its end date`);
+    await shot(page, `founding-${w}-upgrade-plans`);
+    await page.locator('[data-plan-choice="monthly"]').click();
+    t.eq(await page.locator('[data-plan-choice="monthly"] input').isChecked(), true, `F5c ${w}: a tap on a row selects it`);
+    t.ok(!billing.some((b) => b.action === "create_checkout_session"), `F5d ${w}: …and starts no checkout`);
+    await page.locator('[data-plan-choice="founding_annual"]').click();
+    await page.locator("[data-upgrade-continue]").click();
+    await page.locator("[data-upgrade-review]").waitFor();
+    t.eq(await page.locator("[data-review-plan]").getAttribute("data-review-plan"), "founding_annual", `F5e ${w}: Continue opens the review, for the chosen plan`);
+    t.ok(!billing.some((b) => b.action === "create_checkout_session"), `F5f ${w}: still no checkout`);
+    await shot(page, `founding-${w}-upgrade-review`);
+    await page.getByRole("button", { name: "← Back", exact: true }).click();
+    await page.locator("[data-plan-choice]").first().waitFor();
+    t.eq(await page.locator('[data-plan-choice="founding_annual"] input').isChecked(), true, `F5g ${w}: Back keeps the choice`);
+    await page.locator("[data-upgrade-continue]").click();
+    await page.locator("[data-review-confirm]").click();
+    await page.waitForURL(/__checkout_stub/, { timeout: 15000 });
+    t.eq(billing.filter((b) => b.action === "create_checkout_session").map((b) => b.plan_key), ["founding_annual"], `F5h ${w}: the review's confirm starts one checkout, posting only the plan key`);
+    t.eq(errs, [], `F6 ${w}: no page errors`);
+    await ctx.close();
+  }
+
+  // ── signup_status cannot be checked (audit H12) ─────────────────────────────────────────────────
+  {
+    const { ctx, page, errs } = await open({ signedIn: false });
+    let fails = 99, asks = 0;
+    await ctx.route("**/api/beta", async (r) => {
+      let body = {}; try { body = JSON.parse(r.request().postData() || "{}"); } catch {}
+      if (body.action === "signup_status") { asks++; return fails-- > 0 ? r.fulfill({ status: 503, contentType: "text/html", body: "<html>busy</html>" }) : r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ openSignup: true }) }); }
+      return r.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Try flourish free for 14 days" }).first().click({ timeout: 40000 });
+    await page.locator('[data-signup-status="unavailable"]').waitFor({ timeout: 20000 });
+    t.eq(asks, 3, "U1a the check is tried three times before the screen says it failed");
+    const u = await text(page);
+    t.ok(!/Beta access code|invite code/i.test(u), "U1b no beta code is asked for on an error");
+    t.ok(u.includes("We couldn't check sign-up just now. You can still create your account.") && await page.getByRole("button", { name: "Try again", exact: true }).count() === 1, "U1c the line, and Try again");
+    await page.getByPlaceholder("Email address").fill("sam@example.org");
+    await page.getByPlaceholder("Password (min 8 characters)").fill("a-long-enough-password");
+    t.eq(await btn(page, "Create Account").getAttribute("aria-disabled"), "false", "U1d Create Account still works (the server decides)");
+    await shot(page, "founding-390-signup-status-unavailable");
+    fails = 0;
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
+    await page.locator('[data-signup-status="unavailable"]').waitFor({ state: "detached", timeout: 10000 });
+    t.ok(asks === 4 && !/Beta access code|invite code/i.test(await text(page)), "U1e Try again asks again; answered open, the line goes and still no code");
+    t.eq(errs, [], "U1f no page errors");
+    await ctx.close();
   }
 
   await browser.close(); server.close();

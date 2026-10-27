@@ -116,7 +116,8 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   t.eq(vis.billingUiState({ status: on, native: false, paid: false }).show, true,
     "5c …while the web still shows it, so this is a platform rule and not a dead feature");
   t.eq((APP.match(/!isNativeApp\(\)&&trialExpired/g) || []).length, 1, "5d the expired-trial upgrade bar is native-gated");
-  t.ok(/!isPremium&&!isNativeApp\(\)&&trialActive/.test(APP), "5e so is the trial countdown with its Upgrade button");
+  // H13 (audit 2026-10-26): the countdown is decided by lib/upgradeFlow.js trialCountdown, which is null in a store app.
+  t.ok(/const countdown = trialCountdown\(\{ trialActive, daysLeft: trialDaysLeft, native: isNativeApp\(\),/.test(APP), "5e so is the trial countdown with its Upgrade button");
 
   // ── 6. what native says at the limit, and what it does not say ───────────────────────────────
   t.eq(limits.FREE_TIER_LIMITS.coachMessagesPerWeek, 2, "6a the free tier is 2 coach messages a week");

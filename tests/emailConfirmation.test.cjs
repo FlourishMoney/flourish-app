@@ -253,5 +253,32 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.ok(/out\.sent === false/.test(app), "a signup whose confirmation could not be sent says so, instead of \"check your email\"");
   }
 
+  // ── After Create Account: the check-your-email state (audit H10, 2026-10-26) ─────────────────────
+  // The card used to flip to the Log In tab ("Welcome back", a big Log In button) with a small success line, and
+  // a new person tapped Log In and was refused. A self-serve signup now goes to the check-email state.
+  {
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\nfunction ", app.indexOf("function AuthScreen(") + 10));
+    const signup = auth.slice(auth.indexOf("const handleSignup = async () => {"), auth.indexOf("const handleForgotPassword"));
+    const needs = signup.slice(signup.indexOf("if (out.needsConfirmation) {"), signup.indexOf("setPendingConfirm(\"\");"));
+    t.ok(needs.length > 100 && /setMode\("check_email"\);\s*setLoading\(false\);\s*return;/.test(needs) && !/setMode\("login"\)/.test(needs),
+      "H10a a signup that must confirm its address goes to the check-email state, never to Log In");
+    t.ok(/setMailSent\(true\);\s*setResendCooldown\(60\);/.test(needs), "H10b the mail has just gone: the resend waits the same 60 s as any resend");
+    t.ok(/setMailSent\(false\);\s*setError\(SIGNUP_COPY\.mailNotSent\);\s*setResendCooldown\(0\);/.test(needs),
+      "H10c no mail went out: it says so, and the resend is ready at once");
+    t.ok(/setPendingConfirm\(""\);\s*setSuccess\("Account created\. You can log in now\."\);\s*setMode\("login"\);/.test(signup),
+      "H10d a coded signup (confirmed on creation) still goes to Log In, with its line");
+    const ce = auth.slice(auth.indexOf('{mode === "check_email" && ('), auth.indexOf('{(mode === "login" || mode === "signup") && ('));
+    t.ok(ce.length > 200, "H10e found the check-email state");
+    t.ok(/\{mailSent && <div[^>]*>\s*We sent a confirmation link to <span data-check-email-address=""[^>]*>\{email \|\| "your email"\}<\/span>\. Click it to activate your account, then come back and log in\./.test(ce),
+      "H10f it names the address the mail went to (the approved line), and only when the mail went");
+    t.ok(/onClick=\{handleResend\} disabled=\{loading \|\| resendCooldown > 0 \|\| !email\}/.test(ce) && /`Resend in \$\{resendCooldown\}s` : "Resend confirmation email"/.test(ce),
+      "H10g \"Resend confirmation email\", with its cooldown");
+    t.ok(/setMode\("signup"\);[^\n]*setTouched\(\{\}\);[^\n]*\n\s*style=\{authLinkStyle\}>\s*Wrong email\? Start over/.test(ce), "H10h \"Wrong email? Start over\" goes back to the form, with the address in it to fix");
+    t.ok(!/>\s*Log In\s*</.test(ce) && !/handleLogin/.test(ce), "H10i no Log In button in the check-email state (only the small \"Back to log in\" link)");
+    t.ok(/setMailSent\(true\);\s*setCheckEmailNote\("Confirmation email re-sent ✓\. Check your inbox \(and spam\)\."\);/.test(auth),
+      "H10j a resend that worked brings back the \"We sent a confirmation link\" line");
+  }
+
   t.summary("emailConfirmation.test");
 })();
