@@ -5,8 +5,11 @@
 //
 // It carries the email's words exactly as given: it adds no sentence of its own. The only words it can add are a
 // button's label, passed in by the caller. Everything about how it looks:
-//   - the flourish app icon at the top, from an absolute https://flourishmoney.app URL (never an attachment), with
-//     alt text; the icon has its own dark tile, so it is never lost on a white card or in a client's dark mode;
+//   - the lowercase flourish wordmark (the brand lockup, public/email/flourish-wordmark.png) at the top, from an
+//     absolute https://flourishmoney.app URL (never an attachment). The PNG carries its own cream tile in the page's
+//     colour, so in light mode it reads as the bare wordmark and in a client's forced dark mode as a cream badge (the
+//     dark green word is never lost on a dark page). Images blocked: the alt text "flourish" is styled as the
+//     wordmark (bold brand green on the page), so the header still reads;
 //   - a white card, max 560px wide, on the app's soft background (#F4F1EB), centred;
 //   - the app's light-theme ink (#1A2035) and brand green (#007048: white text on it is 6.4:1, AA at any size);
 //   - the app's font, Plus Jakarta Sans, with system fallbacks (Apple, Segoe UI, Helvetica, Arial);
@@ -22,7 +25,8 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const LOGO_URL = "https://flourishmoney.app/flourish-adult-app-icon-180.png";
+const LOGO_URL = "https://flourishmoney.app/email/flourish-wordmark.png";
+const LOGO_SIZE = Object.freeze({ width: 132, height: 48 });   // the PNG is 3x: 396 x 144
 const LOGO_ALT = "flourish";
 const COLORS = Object.freeze({
   page: "#F4F1EB",     // the app's light background
@@ -78,8 +82,8 @@ function emailHtml({ title, paragraphs, link = null, footer, unsubscribeUrl }) {
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COLORS.page}" style="background-color:${COLORS.page};">`,
     `<tr><td align="center" style="padding:24px 12px;">`,
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">`,
-    // The logo, above the card.
-    `<tr><td align="left" style="padding:0 4px 16px;"><img src="${LOGO_URL}" width="44" height="44" alt="${LOGO_ALT}" style="display:block;width:44px;height:44px;border:0;border-radius:10px;"></td></tr>`,
+    // The wordmark, above the card. Its alt text is styled as the wordmark, for clients that block images.
+    `<tr><td align="left" style="padding:0 0 12px;"><img src="${LOGO_URL}" width="${LOGO_SIZE.width}" height="${LOGO_SIZE.height}" alt="${LOGO_ALT}" style="display:block;width:${LOGO_SIZE.width}px;height:${LOGO_SIZE.height}px;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:26px;font-weight:800;line-height:${LOGO_SIZE.height}px;letter-spacing:-0.3px;color:${COLORS.brand};"></td></tr>`,
     // The card: the body.
     `<tr><td bgcolor="${COLORS.card}" style="background-color:${COLORS.card};border-radius:14px;padding:28px 24px 12px;border:1px solid ${COLORS.rule};">`,
     body.join(""),
@@ -92,4 +96,4 @@ function emailHtml({ title, paragraphs, link = null, footer, unsubscribeUrl }) {
   ].join("");
 }
 
-module.exports = { emailHtml, LOGO_URL, LOGO_ALT, COLORS, FONT };
+module.exports = { emailHtml, LOGO_URL, LOGO_ALT, LOGO_SIZE, COLORS, FONT };

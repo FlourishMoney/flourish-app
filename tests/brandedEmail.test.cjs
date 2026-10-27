@@ -6,9 +6,10 @@
 //      ("Get my founding price", approved 2026-10-27), and the text link under it is the text part's own "Your link:" line
 //   2  the CASL footer, the consent line (both kinds, the personal-relationship one included) and the one-click
 //      unsubscribe link are in both parts, the same
-//   3  no tracking: the only image is the logo, from flourishmoney.app; the only links are the founding link and the
+//   3  no tracking: the only image is the wordmark, from flourishmoney.app; the only links are the founding link and the
 //      signed unsubscribe link, exactly; no pixel, no redirect, no utm, no script, no style block
-//   4  email-safe: table layout, inline styles, max width 560, the logo's alt text, light colour scheme declared
+//   4  email-safe: table layout, inline styles, max width 560, light colour scheme declared; the wordmark is the
+//      public/email PNG at 3x its drawn size, with alt text "flourish" styled to read with images blocked
 //   5  readable: every colour pair the layout uses clears 4.5:1 as designed AND inverted (a client's forced dark mode)
 // -----------------------------------------------------------------------------
 "use strict";
@@ -69,8 +70,8 @@ const invert = (hex) => "#" + hex.replace("#", "").match(/../g).map((x) => (255 
 
     // ── 3. No tracking ───────────────────────────────────────────────────────────────────────────
     const imgs = [...p.html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
-    t.eq(imgs.length, 1, `3a ${who}: one image, the logo`);
-    t.ok(imgs[0].includes(`src="${L.LOGO_URL}"`) && /^https:\/\/flourishmoney\.app\//.test(L.LOGO_URL), `3b ${who}: the logo comes from flourishmoney.app`);
+    t.eq(imgs.length, 1, `3a ${who}: one image, the wordmark`);
+    t.ok(imgs[0].includes(`src="${L.LOGO_URL}"`) && /^https:\/\/flourishmoney\.app\//.test(L.LOGO_URL), `3b ${who}: the wordmark comes from flourishmoney.app`);
     const hrefs = [...p.html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
     t.eq([...new Set(hrefs)].sort(), (founding ? [E.FOUNDING_LINK_URL, unsub] : [unsub]).sort(), `3c ${who}: the only links are ${founding ? "the founding link and " : ""}the unsubscribe link, exactly`);
     if (founding) t.ok(hrefs.filter((h) => h === E.FOUNDING_LINK_URL).length === 2 && E.FOUNDING_LINK_URL === "https://flourishmoney.app/?checkout=founding", `3d ${who}: the button and the text link are both exactly /?checkout=founding`);
@@ -79,14 +80,23 @@ const invert = (hex) => "#" + hex.replace("#", "").match(/../g).map((x) => (255 
 
     // ── 4. Email-safe ────────────────────────────────────────────────────────────────────────────
     t.ok(/<table role="presentation"/.test(p.html) && !/<div/.test(p.html) && /max-width:560px/.test(p.html), `4a ${who}: table layout, no divs, max width 560px`);
-    t.ok(new RegExp(`alt="${L.LOGO_ALT}"`).test(imgs[0]) && L.LOGO_ALT.length > 0, `4b ${who}: the logo has alt text`);
+    t.ok(imgs[0].includes(`alt="flourish"`) && L.LOGO_ALT === "flourish", `4b ${who}: the wordmark's alt text is "flourish"`);
+    t.ok(imgs[0].includes(`width="${L.LOGO_SIZE.width}" height="${L.LOGO_SIZE.height}"`) && new RegExp(`font-size:\\d+px;font-weight:800;[^"]*color:${L.COLORS.brand}`).test(imgs[0]),
+      `4b2 ${who}: the wordmark has a fixed size, and its alt text is styled bold brand green (images blocked)`);
     t.ok(/<meta name="color-scheme" content="light">/.test(p.html) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(p.html), `4c ${who}: light colour scheme declared, and a phone viewport`);
     t.ok(p.html.includes(L.FONT) && /Helvetica,Arial,sans-serif/.test(L.FONT), `4d ${who}: the app's font, with safe fallbacks`);
   }
 
+  // ── 4e. The wordmark PNG: served from public/email, 3x its drawn size, an opaque cream tile in the page colour ──
+  const fs = require("fs"), path = require("path");
+  const file = path.join(__dirname, "..", "public", new URL(L.LOGO_URL).pathname);
+  const png = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
+  t.ok(png.length > 0 && png.length < 60000 && png.slice(1, 4).toString() === "PNG", `4e the wordmark is a PNG in public${new URL(L.LOGO_URL).pathname} (${png.length} bytes)`);
+  t.ok(png.length > 24 && png.readUInt32BE(16) === 3 * L.LOGO_SIZE.width && png.readUInt32BE(20) === 3 * L.LOGO_SIZE.height, "4f the wordmark PNG is 3x its drawn size (sharp on retina)");
+
   // ── 5. Readable as designed and inverted ───────────────────────────────────────────────────────
   const K = L.COLORS;
-  for (const [fg, bg, what] of [[K.ink, K.card, "body text on the card"], [K.muted, K.page, "footer text on the page"], [K.onBrand, K.brand, "the button's label"], [K.brand, K.card, "the text link"]]) {
+  for (const [fg, bg, what] of [[K.ink, K.card, "body text on the card"], [K.muted, K.page, "footer text on the page"], [K.onBrand, K.brand, "the button's label"], [K.brand, K.card, "the text link"], [K.brand, K.page, "the wordmark's alt text on the page"]]) {
     t.ok(contrast(fg, bg) >= 4.5, `5a ${what}: ${contrast(fg, bg).toFixed(1)}:1 as designed`);
     t.ok(contrast(invert(fg), invert(bg)) >= 4.5, `5b ${what}: ${contrast(invert(fg), invert(bg)).toFixed(1)}:1 inverted (a forced dark mode)`);
   }
