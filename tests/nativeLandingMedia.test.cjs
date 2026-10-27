@@ -36,8 +36,8 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   const pubShots = path.join(ROOT, "public", "app-screens");
   t.ok(list(pubShots).length > 0 && list(pubShots).every(f => same(path.join(pubShots, f), path.join(web, "dist", "app-screens", f))),
     "1d …and every landing screenshot, and the hero card");
-  t.ok(["get/index.html", "get/get.js", "email/flourish-wordmark.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))),
-    "1f …and the device link's page and script, and the email wordmark");
+  t.ok(["get/index.html", "get/get.js", "email/flourish-wordmark.png", "email/app-store-badge.png", "email/google-play-badge.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))),
+    "1f …and the device link's page and script, and the emails' images");
   t.ok(["og-image.png", "og-image-ca.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))), "1e …and both link-preview images");
 
   // ── 2. the native strip removes them, and only them ─────────────────────────────────────────

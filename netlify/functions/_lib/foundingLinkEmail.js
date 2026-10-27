@@ -7,13 +7,21 @@
 // is sent by netlify/functions/founding-link-sweep.js, once per waitlist row, and only while both
 // BILLING_ENABLED and FOUNDING_LINK_EMAIL are exactly "true".
 //
-// THE LINK carries nothing about the household: https://flourishmoney.app/?checkout=founding. No address,
-// no row id, no token. It opens the checkout screen (src/lib/foundingLink.js); whether the founding price
-// is offered there is the server's answer for the signed-in account's own confirmed email
-// (_lib/foundingCohort.js), so a forwarded link gives nobody a price.
+// THE LINKS carry nothing about the household: no address, no row id, no token (2026-10-27, Amanda: "People won't
+// know how to download it"). The button opens https://flourishmoney.app/get?ref=founding (public/get/), which sends
+// an iPhone or iPad to the App Store and an Android phone to Google Play, and shows anything else both badges and the
+// website. Under the button, the stores' own badges link straight to each store. The website's checkout,
+// https://flourishmoney.app/?checkout=founding (src/lib/foundingLink.js), stays as a small line for a computer.
+// Wherever the household pays, whether the founding price is offered is the server's answer for the signed-in
+// account's own confirmed email (_lib/foundingCohort.js), so a forwarded link gives nobody a price.
 //
-// PRICES. The only price this email states is the landing page's sentence, word for word
-// (src/lib/foundingOffer.js foundingOfferCopy().price; tests/foundingLink.test.cjs holds the two together).
+// WORDS PENDING. The lines that changed for the stores are placeholders (WORDS ids), listed with their facts and
+// limits in docs/product/FOUNDING-STORE-EMAIL-WORDS.md (tests/foundingStoreLink.test.cjs holds the two together).
+// They are replaced before this is merged; the sweep sends nothing unless FOUNDING_LINK_EMAIL is "true".
+//
+// PRICES. The only price this email states is its price line. It was the landing page's sentence, word for word
+// (src/lib/foundingOffer.js foundingOfferCopy().price); that sentence says "Paid on flourishmoney.app", which is
+// no longer the email's main way to pay, so the line is a placeholder until new words are approved.
 //
 // CASL. The footer says why they got it and which consent version is on record for them, carries the
 // landing page's Contact block word for word, and a signed one-click unsubscribe link; the message goes out
@@ -43,6 +51,17 @@ const RESEND_TIMEOUT_MS = 5000;
 const FOUNDING_LINK_KIND = "founding_link";
 const LAUNCH_KIND = "canada_launch";
 const FOUNDING_LINK_URL = "https://flourishmoney.app/?checkout=founding";
+// The device link (public/get/): the App Store on an iPhone or iPad, Google Play on Android, both otherwise.
+const FOUNDING_GET_URL = "https://flourishmoney.app/get?ref=founding";
+// The stores, the same listings as the website's badges (src/lib/storeLinks.js; tests/foundingStoreLink.test.cjs).
+const APP_STORE_URL = "https://apps.apple.com/ca/app/flourish-money-handled/id6792967778";
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.flourishmoney.app";
+// The stores' own badges (public/email/, made from public/store-badges/), Apple's first, one of each. The alt text is
+// the badge's own words.
+const STORE_BADGES = Object.freeze([
+  Object.freeze({ href: APP_STORE_URL, src: "https://flourishmoney.app/email/app-store-badge.png", alt: "Download on the App Store", width: 120, height: 40 }),
+  Object.freeze({ href: PLAY_STORE_URL, src: "https://flourishmoney.app/email/google-play-badge.png", alt: "Get it on Google Play", width: 135, height: 40 }),
+]);
 const FROM = "Flourish <hello@flourishmoney.app>";
 const REPLY_TO = "hello@flourishmoney.app";
 const SUBJECT = "Your founding price is ready";
@@ -54,6 +73,12 @@ const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay 
 const CONTACT_BLOCK = Object.freeze(["flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", "hello@flourishmoney.app"]);
 const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";
 
+// THE STORE LINES (2026-10-27), placeholders until approved: docs/product/FOUNDING-STORE-EMAIL-WORDS.md.
+const FOUNDING_EMAIL_PRICE_LINE = "[WORDS: founding-email-price]";
+const FOUNDING_BUTTON_LABEL = "[WORDS: founding-email-button]";
+const FOUNDING_STORE_STEPS_LINE = "[WORDS: founding-email-store-steps]";
+const FOUNDING_COMPUTER_LINE = "[WORDS: founding-email-computer]";
+
 function foundingLinkParagraphs(position) {
   return [
     "Payments for flourish are open.",
@@ -62,9 +87,11 @@ function foundingLinkParagraphs(position) {
     position <= FOUNDING_COHORT_LIMIT
       ? `You're founding household #${position} of ${FOUNDING_COHORT_LIMIT}, and your founding price is ready:`
       : `You're one of the first ${FOUNDING_COHORT_LIMIT} founding households, and your founding price is ready:`,
-    LANDING_PRICE_SENTENCE,
-    `Your link: ${FOUNDING_LINK_URL}`,
-    "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
+    FOUNDING_EMAIL_PRICE_LINE,
+    `Your link: ${FOUNDING_GET_URL}`,
+    { badges: STORE_BADGES },
+    FOUNDING_STORE_STEPS_LINE,
+    { small: FOUNDING_COMPUTER_LINE, url: FOUNDING_LINK_URL },
     "Questions? Just reply to this email.",
     "Amanda, founder of flourish",
   ];
@@ -82,6 +109,9 @@ function launchParagraphs() {
   ];
 }
 const paragraphsFor = (kind, position) => (kind === LAUNCH_KIND ? launchParagraphs() : foundingLinkParagraphs(position));
+// The plain-text part of the body: the badges' row has no text (the device link above it does their job), and a small
+// line is its words, then its url.
+const textParagraphs = (paras) => paras.flatMap((t) => (typeof t === "string" ? [t] : t && typeof t.small === "string" ? [`${t.small} ${t.url}`] : []));
 const subjectFor = (kind) => (kind === LAUNCH_KIND ? LAUNCH_SUBJECT : SUBJECT);
 
 const consentLine = (version) => `Consent on record: version ${version}.`;
@@ -96,16 +126,14 @@ function consentLineFor(row) {
 const footerLines = (url, line) => [WHY_LINE, line, ...CONTACT_BLOCK, `Unsubscribe with one click: ${url}`];
 
 // THE HTML PART (2026-10-26): the shared flourish layout (_lib/emailLayout.js), carrying exactly the words of the
-// plain-text part, in the same order: the body paragraphs, then the footer. The one thing it adds is the button's
-// label on the founding link email; the "Your link: …" line follows the button as a text link, so the link still
-// works with buttons or images blocked. The launch email has no link and no button.
-// The button label, as approved 2026-10-27.
-const FOUNDING_BUTTON_LABEL = "Get my founding price";
+// plain-text part, in the same order: the body paragraphs, then the footer. What it adds on the founding link email:
+// the button's label, and the stores' badges under it; the "Your link: …" line follows the button as a text link, so
+// the link still works with buttons or images blocked. The launch email has no link, no button and no badges.
 function foundingLinkHtml(position, url, line, kind = FOUNDING_LINK_KIND) {
   return emailHtml({
     title: subjectFor(kind),
     paragraphs: paragraphsFor(kind, position),
-    link: kind === LAUNCH_KIND ? null : { line: `Your link: ${FOUNDING_LINK_URL}`, url: FOUNDING_LINK_URL, button: FOUNDING_BUTTON_LABEL },
+    link: kind === LAUNCH_KIND ? null : { line: `Your link: ${FOUNDING_GET_URL}`, url: FOUNDING_GET_URL, button: FOUNDING_BUTTON_LABEL },
     footer: footerLines(url, line),
     unsubscribeUrl: url,
   });
@@ -132,7 +160,7 @@ function foundingLinkEmailPayload(to, row, opts = {}) {
     reply_to: REPLY_TO,
     to: [to],
     subject: subjectFor(kind),
-    text: [...paragraphsFor(kind, row.founding_position), ...footerLines(url, consentLineFor(row))].join("\n\n"),
+    text: [...textParagraphs(paragraphsFor(kind, row.founding_position)), ...footerLines(url, consentLineFor(row))].join("\n\n"),
     html: foundingLinkHtml(row.founding_position, url, consentLineFor(row), kind),
     headers,
     // Resend keeps these with the message: which email this was, and the consent it was sent under.
@@ -174,5 +202,6 @@ async function sendFoundingLinkEmail(to, row, opts = {}) {
 
 module.exports = {
   FROM, REPLY_TO, FOUNDING_LINK_KIND, LAUNCH_KIND, FOUNDING_LINK_URL, SUBJECT, LAUNCH_SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
-  FOUNDING_BUTTON_LABEL, foundingLinkHtml, footerLines, subjectFor, paragraphsFor, consentLine, consentLineFor, PERSONAL_RELATIONSHIP_CONSENT_LINE, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
+  FOUNDING_BUTTON_LABEL, FOUNDING_GET_URL, APP_STORE_URL, PLAY_STORE_URL, STORE_BADGES, FOUNDING_EMAIL_PRICE_LINE, FOUNDING_STORE_STEPS_LINE,
+  FOUNDING_COMPUTER_LINE, textParagraphs, foundingLinkHtml, footerLines, subjectFor, paragraphsFor, consentLine, consentLineFor, PERSONAL_RELATIONSHIP_CONSENT_LINE, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
 };

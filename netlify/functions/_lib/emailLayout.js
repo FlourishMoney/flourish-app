@@ -15,12 +15,17 @@
 //   - the app's font, Plus Jakarta Sans, with system fallbacks (Apple, Segoe UI, Helvetica, Arial);
 //   - one button (a bulletproof table cell with an <a>, so Outlook draws it), and the plain URL as a text link under
 //     it, so the link works when buttons or images are blocked;
+//   - optionally (the founding email, 2026-10-27), the stores' own badges in a row, Apple's first and one of each
+//     (Apple allows one App Store badge per layout), as PNGs made from public/store-badges/ (public/email/*-badge.png;
+//     an email client draws no SVG), each linking straight to its store. Their alt text is the badge's own words,
+//     styled as a link, so they still read and work with images blocked;
+//   - optionally, a small secondary line with its url as a text link under it;
 //   - the CASL footer and one-click unsubscribe at the bottom, in small grey text, exactly as given.
 // EMAIL-SAFE: table layout, inline styles only (no <style> block, no class), no web font download, no script.
 // DARK MODE: the page declares light only (color-scheme), so Apple Mail and iOS keep it as designed; Gmail and
 // Outlook apps that force their own dark mode invert a dark-ink-on-white design cleanly, and every colour pair here
 // stays readable inverted (tests/brandedEmail.test.cjs checks the contrast both ways).
-// NO TRACKING: no pixel, no image but the logo, no redirect or tracked link; Resend's open and click tracking are
+// NO TRACKING: no pixel, no image but the logo and the store badges, no redirect or tracked link; Resend's open and click tracking are
 // off for these sends (the payload asks for neither, and the domain setting is the account's).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -44,11 +49,20 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 // client opens is byte for byte the one the plain text shows. A url that could break out of the attribute is refused.
 const href = (u) => { const s = String(u); if (/["<>\s]/.test(s) || !/^https:\/\//.test(s)) throw new Error("email link refused"); return s; };
 
+// The stores' badges in one row, in the order given, each a link to its store. Fixed size (the PNGs are 3x); the alt
+// text is the badge's own words, bold and brand green, for a client that blocks images.
+function badgeRow(badges) {
+  const cells = badges.map((b, i) => `<td style="padding:0 ${i < badges.length - 1 ? 12 : 0}px 0 0;"><a href="${href(b.href)}" style="text-decoration:none;"><img src="${href(b.src)}" width="${b.width}" height="${b.height}" alt="${esc(b.alt)}" style="display:block;width:${b.width}px;height:${b.height}px;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:14px;font-weight:700;line-height:${b.height}px;color:${COLORS.brand};"></a></td>`);
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px;border-collapse:collapse;"><tr>${cells.join("")}</tr></table>`;
+}
+
 /**
  * The whole HTML document.
  * @param {object} a
  * @param {string}   a.title       the subject, for <title>
- * @param {string[]} a.paragraphs  the body, in order, exactly as written; one of them may be the link line
+ * @param {Array}    a.paragraphs  the body, in order, exactly as written; one of them may be the link line. An entry may
+ *                                 also be { badges: [{ href, src, alt, width, height }] } (the store badges' row) or
+ *                                 { small, url } (a small line, then its url as a text link)
  * @param {object}  [a.link]       { line, url, button }: `line` is the paragraph that carries the link (it is drawn as
  *                                 the button, then that same line with the url as a text link); `button` the label
  * @param {string[]} a.footer      the CASL footer lines, in order, exactly as written; a line that ends with `unsubscribeUrl`
@@ -58,6 +72,10 @@ const href = (u) => { const s = String(u); if (/["<>\s]/.test(s) || !/^https:\/\
 function emailHtml({ title, paragraphs, link = null, footer, unsubscribeUrl }) {
   const p = (html, extra = "") => `<p style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.6;color:${COLORS.ink};${extra}">${html}</p>`;
   const body = paragraphs.map((t) => {
+    if (t && typeof t === "object" && Array.isArray(t.badges)) return badgeRow(t.badges);
+    if (t && typeof t === "object" && typeof t.small === "string") {
+      return p(`${esc(t.small)} <a href="${href(t.url)}" style="color:${COLORS.brand};text-decoration:underline;word-break:break-all;">${esc(t.url)}</a>`, `font-size:13px;color:${COLORS.muted};`);
+    }
     if (!link || t !== link.line) return p(esc(t));
     const label = t.endsWith(link.url) ? t.slice(0, t.length - link.url.length) : `${t} `;
     return [

@@ -96,7 +96,9 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     }
   }
 
-  // ── 2. the email: one price, the landing page's own words ───────────────────────────────────────
+  // ── 2. the email: its words, and its one price line ─────────────────────────────────────────────
+  // Since 2026-10-27 it leads to the stores first (docs/product/FOUNDING-STORE-EMAIL-WORDS.md): the lines that changed
+  // are placeholders until approved, the price line among them (the landing sentence says "Paid on flourishmoney.app").
   const payload = E.foundingLinkEmailPayload(ADDRESS, ROW);
   {
     t.ok(payload !== null, "2a a founding household with current consent gets the email");
@@ -104,20 +106,23 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.eq(E.foundingLinkParagraphs(7), [
       "Payments for flourish are open.",
       "You're founding household #7 of 50, and your founding price is ready:",
-      "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
-      "Your link: https://flourishmoney.app/?checkout=founding",
-      "Sign in or create your account with the email address this message was sent to, then choose Founding Annual. Your founding price is matched to this address.",
+      "[WORDS: founding-email-price]",
+      "Your link: https://flourishmoney.app/get?ref=founding",
+      { badges: E.STORE_BADGES },
+      "[WORDS: founding-email-store-steps]",
+      { small: "[WORDS: founding-email-computer]", url: "https://flourishmoney.app/?checkout=founding" },
       "Questions? Just reply to this email.",
       "Amanda, founder of flourish",
     ], "2c the words, exactly (changing one is a deliberate edit here)");
-    t.eq(E.LANDING_PRICE_SENTENCE, O.foundingOfferCopy().price, "2d the price sentence IS the landing page's, word for word (src/lib/foundingOffer.js)");
+    t.eq(E.LANDING_PRICE_SENTENCE, O.foundingOfferCopy().price, "2d the landing page keeps its own price sentence, word for word (src/lib/foundingOffer.js)");
     const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     for (const [part, body] of [["text", payload.text], ["html", payload.html]]) {
-      const stripped = body.split(E.LANDING_PRICE_SENTENCE).join("");
-      t.eq(stripped.match(MONEY), null, `2e the ${part} names no price outside the landing sentence`);
-      t.eq((body.match(MONEY) || []).length, 1, `2f the ${part} names exactly one price, the landing page's`);
+      const stripped = body.split(E.FOUNDING_EMAIL_PRICE_LINE).join("");
+      t.eq(stripped.match(MONEY), null, `2e the ${part} names no price outside its price line`);
+      t.ok(body.includes(E.FOUNDING_EMAIL_PRICE_LINE) && !body.includes("Paid on flourishmoney.app"), `2f the ${part} has its price line, and no longer says "Paid on flourishmoney.app"`);
     }
-    t.ok(payload.text.includes(E.FOUNDING_LINK_URL) && payload.html.includes(`href="${E.FOUNDING_LINK_URL}"`), "2g the text and the html both carry the link");
+    t.ok(payload.text.includes(E.FOUNDING_GET_URL) && payload.html.includes(`href="${E.FOUNDING_GET_URL}"`), "2g the text and the html both carry the device link");
+    t.ok(payload.text.includes(E.FOUNDING_LINK_URL) && payload.html.includes(`href="${E.FOUNDING_LINK_URL}"`), "2g2 …and the website's founding link");
     t.eq([payload.text.includes(ADDRESS), payload.html.includes(ADDRESS), JSON.stringify(payload.headers).includes(ADDRESS)], [false, false, false],
       "2h the address is only in `to`: not in the body, the html or the headers");
     t.eq(payload.to, [ADDRESS], "2i one recipient");
