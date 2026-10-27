@@ -255,6 +255,67 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     t.ok(/\? "You can cancel any time\." : "14 days free\. Cancel any time\."/.test(APP_SRC), "5f the web locked screen: \"You can cancel any time.\"");
   }
 
+  // ── 6. The plans, founding first, select then review (audit H14, 2026-10-26) ─────────────────────
+  // Nothing here changes who pays, when or how much: the plans and every amount are still offeredPlans'
+  // (the server's answer and pricing.js), and checkout still posts only a plan key.
+  {
+    const U = await import("../src/lib/upgradeFlow.js");
+    const withFounding = vis.offeredPlans({ status: { enabled: true, founding: { available: true, cohortLimit: 50 } } });
+    const without = vis.offeredPlans({ status: { enabled: true, founding: { available: false, cohortLimit: 50 } } });
+    t.eq(U.upgradeChoices(withFounding).map(p => p.key), ["founding_annual", "monthly", "annual"], "6a the founding price first when the server offers it");
+    t.eq(U.upgradeChoices(without).map(p => p.key), ["monthly", "annual"], "6b …and never when it does not (the client adds no plan)");
+    t.eq(U.upgradeChoices(withFounding).map(p => p.price).sort(), withFounding.map(p => p.price).sort(), "6c the same plans and prices as offeredPlans, only in a different order");
+    t.eq(U.selectedChoice(U.upgradeChoices(withFounding)), "founding_annual", "6d the founding price is selected when the screen opens");
+    t.eq(U.selectedChoice(U.upgradeChoices(without)), "monthly", "6e without it, the first plan is");
+    t.eq(U.selectedChoice(U.upgradeChoices(without), "annual"), "annual", "6f a choice stays chosen");
+    t.eq(U.selectedChoice(U.upgradeChoices(without), "founding_annual"), "monthly", "6g a key that is not offered falls back to the first plan");
+    t.eq(U.selectedChoice([]), null, "6h no plans, nothing selected");
+    t.eq(U.trialEndLabel(Date.UTC(2026, 10, 9, 17), { trialActive: true }), "November 9, 2026", "6i the trial line names the end date");
+    t.eq(U.trialEndLabel(Date.UTC(2026, 10, 9, 17), { trialActive: false }), null, "6j …only on the trial");
+    t.eq(U.upgradeTrialLine(null), null, "6k no date, no trial line");
+    t.eq(U.reviewChargeLine("monthly") !== U.reviewChargeLine("annual") && U.reviewChargeLine("annual") === U.reviewChargeLine("founding_annual"), true,
+      "6l the review's charge line is per billing period: monthly, or yearly for both annual plans");
+
+    const APP_SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const up = APP_SRC.slice(APP_SRC.indexOf("function UpgradeScreen("), APP_SRC.indexOf("\nfunction ", APP_SRC.indexOf("function UpgradeScreen(") + 10));
+    t.ok(/function UpgradeScreen\(\{status, mode, notice, onClose, onManage\}\)\{/.test(up), "6m the screen's props are unchanged, so every caller still opens it the same way");
+    t.ok(/const choices = upgradeChoices\(plans\);/.test(up) && /const plans = offeredPlans\(\{status\}\);/.test(up), "6n the rows are offeredPlans in upgradeChoices' order");
+    t.ok(/<input type="radio" name="upgrade-plan" value=\{plan\.key\} checked=\{on\} onChange=\{\(\)=>setPicked\(plan\.key\)\}/.test(up),
+      "6o a row is a radio button: tapping it selects the plan");
+    t.eq((up.match(/onClick=\{\(\)=>go\(/g) || []).length, 1, "6p exactly one control starts checkout…");
+    t.ok(/<button data-review-confirm="" onClick=\{\(\)=>go\(chosen\.key\)\}/.test(up), "6q …the review step's confirm, for the chosen plan");
+    t.ok(/onClick=\{\(\)=>\{setError\(""\);setStep\("review"\);\}\}/.test(up) && /\(step==="review"&&chosen\) \?/.test(up), "6r Continue goes to the review step, not to Stripe");
+    t.ok(/onClick=\{\(\)=>\{setStep\("choose"\);setError\(""\);\}\}/.test(up), "6s the review step has a way back to the plans");
+    t.ok(/body: JSON\.stringify\(planKey==="__portal__"\s*\? \{action:"create_portal_session"\}\s*: \{action:"create_checkout_session", plan_key:planKey\}\)/.test(up),
+      "6t checkout still posts only the plan key");
+
+    const { loadApp, textOf, describe } = require("./_renderApp.cjs");
+    let A = null;
+    try { A = loadApp(["UpgradeScreen"]); } catch (e) { t.ok(false, `6u App.jsx bundles: ${describe(e)}`); }
+    if (A) {
+      const html = A.render(A.h(A.UpgradeScreen, { status: { enabled: true, paid: false, founding: { available: true, cohortLimit: 50 } }, mode: "plans", notice: null, onClose: () => {} }));
+      const order = [...html.matchAll(/data-plan-choice="([a-z_]+)" data-selected="(true|false)"/g)].map(m => m[1] + (m[2] === "true" ? "*" : ""));
+      t.eq(order, ["founding_annual*", "monthly", "annual"], "6u rendered: founding first and selected, then monthly and annual");
+      const txt = textOf(html);
+      t.ok(txt.includes(U.UPGRADE_COPY.headline) && U.UPGRADE_COPY.bullets.every(b => txt.includes(b)) && txt.includes(U.UPGRADE_COPY.continue),
+        "6v the headline, the three lines and Continue are on the screen");
+      t.ok(!txt.includes("Opening checkout…") && !txt.includes(U.UPGRADE_COPY.reviewConfirm), "6w nothing is on its way to Stripe when the screen opens");
+      const plain = textOf(A.render(A.h(A.UpgradeScreen, { status: { enabled: true, paid: false }, mode: "plans", notice: null, onClose: () => {} })));
+      t.ok(!/Founding/.test(plain) && plain.includes("$11.99 a month") && plain.includes("$99.99 a year"), "6x no founding offer: monthly and annual only, at the landing's prices");
+    }
+
+    // The words still to come: every placeholder in the code is in docs/product/SIGNUP-PATH-WORDS.md, and the other way round.
+    const S = await import("../src/lib/signupUi.js");
+    const mine = [...U.SIGNUP_PATH_PLACEHOLDERS, ...Object.values(S.SIGNUP_COPY)];
+    const DOC = fs.readFileSync(path.join(__dirname, "..", "docs", "product", "SIGNUP-PATH-WORDS.md"), "utf8");
+    const inDoc = [...DOC.matchAll(/`(\[WORDS: [^\]`]*\])`/g)].map(m => m[1]);
+    t.eq(mine.filter(w => !inDoc.includes(w)), [], "6y every sign-up path placeholder is listed in docs/product/SIGNUP-PATH-WORDS.md");
+    t.eq(inDoc.filter(w => !mine.includes(w)), [], "6z …and the list names none the code no longer has");
+    t.eq(new Set(mine).size, 14, "6z2 fourteen placeholders in all");
+    const libSrc = ["upgradeFlow.js", "signupUi.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "lib", f), "utf8")).join("\n");
+    for (const w of mine) t.ok(libSrc.includes(w.replace(": <date>", ": ${endLabel}")), `6z3 in the code: ${w}`);
+  }
+
   if (savedFlag === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = savedFlag;
   t.summary("billingUpgradeScreen.test");
 })();

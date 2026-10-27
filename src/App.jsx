@@ -40,6 +40,7 @@ import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlist
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
 import { AUTH_C } from "./lib/authTheme.js";
 import { trialCountdown, upgradeChoices, selectedChoice, trialEndLabel, UPGRADE_COPY, upgradeTrialLine, reviewChargeLine } from "./lib/upgradeFlow.js";
+import { trialEndsAtMs } from "./lib/usageLimits.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { confirmLinkResult } from "./lib/confirmLink.js";
@@ -13786,6 +13787,15 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
   const [confirmState,setConfirmState]=useState("idle");
   const plans = offeredPlans({status});
+  // H14 (audit 2026-10-26): the founding price first when it is offered, one plan selected from the start, and
+  // a review step between choosing and Stripe ("choose" | "review"). Which plans, and every amount, are still
+  // offeredPlans' (the server's answer and pricing.js); checkout still posts only the plan key.
+  const choices = upgradeChoices(plans);
+  const [picked,setPicked]=useState(null);
+  const [step,setStep]=useState("choose");
+  const chosenKey = selectedChoice(choices, picked);
+  const chosen = choices.find(p=>p.key===chosenKey) || null;
+  const trialLine = upgradeTrialLine(trialEndLabel(trialEndsAtMs(), { trialActive: isTrialActive() }));
 
   const sendConfirm = async () => {
     setConfirmState("sending");
@@ -13852,8 +13862,33 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
               {busy==="__portal__"?"Opening…":"Manage subscription"}
             </button>
           </div>
+        ) : (step==="review"&&chosen) ? (
+          <div data-upgrade-review="" style={{display:"flex",flexDirection:"column",gap:GAP.textToControl}}>
+            <h2 style={{...TYPE.title2,color:C.cream,margin:0}}>{UPGRADE_COPY.reviewHeading}</h2>
+            <div data-review-plan={chosen.key} style={{background:C.card,border:`2px solid ${chosen.key==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",columnGap:10}}>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{chosen.label}</div>
+                <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{chosen.price}</div>
+              </div>
+              {chosen.note&&<div style={{color:chosen.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{chosen.note}</div>}
+            </div>
+            <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>
+            <button data-review-confirm="" onClick={()=>go(chosen.key)} disabled={!!busy} style={{width:"100%",minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy?0.7:1}}>
+              {busy===chosen.key?"Opening checkout…":UPGRADE_COPY.reviewConfirm}
+            </button>
+            <button onClick={()=>{setStep("choose");setError("");}} disabled={!!busy} style={{alignSelf:"center",background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>
+              ← Back
+            </button>
+          </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div data-upgrade-intro="" style={{marginBottom:SPACE.xs}}>
+              <h2 id="upgrade-headline" style={{...TYPE.title2,color:C.cream,margin:`0 0 ${SPACE.sm}px`}}>{UPGRADE_COPY.headline}</h2>
+              {trialLine&&<div data-upgrade-trial="" style={{color:C.mutedHi,fontSize:14,lineHeight:1.5,marginBottom:SPACE.sm}}>{trialLine}</div>}
+              <ul style={{margin:0,paddingLeft:SPACE.lg+SPACE.xs,color:C.cream,fontSize:14,lineHeight:1.6}}>
+                {UPGRADE_COPY.bullets.map(b=><li key={b}>{b}</li>)}
+              </ul>
+            </div>
             {foundingConfirmOffered(status)&&(
               <div style={{background:C.card,border:`2px solid ${C.gold}77`,borderRadius:16,padding:"16px 18px"}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:SPACE.xs}}>{FOUNDING_CONFIRM_COPY.title}</div>
@@ -13866,17 +13901,32 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
                 {confirmState==="failed"&&<div role="status" style={{color:C.redBright,fontSize:13,marginTop:SPACE.sm,lineHeight:1.6}}>{FOUNDING_CONFIRM_COPY.failed}</div>}
               </div>
             )}
-            {plans.map(plan=>(
-              <button key={plan.key} onClick={()=>go(plan.key)} disabled={!!busy} style={{textAlign:"left",background:C.card,border:`2px solid ${plan.key==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px",cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy&&busy!==plan.key?0.5:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}>
-                  <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{plan.label}</div>
-                  <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
-                </div>
-                {plan.sub&&<div style={{color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</div>}
-                {plan.note&&<div style={{color:plan.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</div>}
-                {busy===plan.key&&<div style={{color:C.muted,fontSize:13,marginTop:8}}>Opening checkout…</div>}
-              </button>
-            ))}
+            {choices.length>0&&(
+              <fieldset style={{border:"none",margin:0,padding:0,display:"flex",flexDirection:"column",gap:GAP.controlToControl+SPACE.xs}}>
+                <legend style={{position:"absolute",width:1,height:1,overflow:"hidden",clip:"rect(0 0 0 0)",whiteSpace:"nowrap"}}>{UPGRADE_COPY.headline}</legend>
+                {choices.map(plan=>{
+                  const on = plan.key===chosenKey;
+                  const founding = plan.key==="founding_annual";
+                  return(
+                    <label key={plan.key} data-plan-choice={plan.key} data-selected={on?"true":"false"} style={{display:"flex",alignItems:"flex-start",gap:SPACE.md,textAlign:"left",background:on?C.greenDim:C.card,border:`2px solid ${on?C.green:founding?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px",cursor:"pointer",fontFamily:"inherit",minHeight:LAYOUT.minTap}}>
+                      <input type="radio" name="upgrade-plan" value={plan.key} checked={on} onChange={()=>setPicked(plan.key)}
+                        style={{width:22,height:22,margin:"2px 0 0",flexShrink:0,accentColor:C.green,cursor:"pointer"}}/>
+                      <span style={{flex:1,minWidth:0}}>
+                        <span style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",columnGap:10}}>
+                          <span style={{color:C.cream,fontWeight:800,fontSize:15}}>{plan.label}</span>
+                          <span style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</span>
+                        </span>
+                        {plan.sub&&<span style={{display:"block",color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</span>}
+                        {plan.note&&<span style={{display:"block",color:founding?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+            )}
+            {chosen&&<button data-upgrade-continue="" onClick={()=>{setError("");setStep("review");}} style={{width:"100%",minHeight:LAYOUT.minTap,marginTop:SPACE.xs,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+              {UPGRADE_COPY.continue}
+            </button>}
           </div>
         )}
 
