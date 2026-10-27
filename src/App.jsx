@@ -13347,7 +13347,7 @@ function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="October 22, 2026";
+  const last="October 26, 2026";
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();

@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // THE 2026-10-21 WORDING, WORD FOR WORD (ChatGPT AGREE and Grok AGREE), AND WHERE EACH LINE MAY SHOW.
 //
-//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (October 22, 2026, when the store-app form came in);
+//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (October 26, 2026, when the website-analytics line came in);
 //      in a store app, A2 from its Apple and Google sentence and no Stripe line (a store app never names the website);
 //   B  B1 (App Store) and B2 (Google Play) on a store app's Subscription card, only for an account that holds a
 //      founding spot while paying for a regular store plan: every case, both ways;
@@ -44,7 +44,7 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
     const pp = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {} }))).replace(/\s+/g, " ").replace(/ :/g, ":");
     for (const k of ["A1", "A2", "A3", "A4", "A5"]) t.ok(pp.includes(A[k]), `${k} word for word`);
     t.ok(A.A6.every((line) => pp.includes(line)), "A6 the five new lines in section 6");
-    t.ok(pp.includes("Last updated October 22, 2026"), "A7 Last updated October 22, 2026");
+    t.ok(pp.includes("Last updated October 26, 2026"), "A7 Last updated October 26, 2026");
     const i1 = pp.indexOf("Bank connection data (Plaid):"), i2 = pp.indexOf(A.A2), i3 = pp.indexOf(A.A3), i4 = pp.indexOf("2. How We Use Your Information");
     t.ok(i1 > 0 && i1 < i2 && i2 < i3 && i3 < i4, "A2 and A3 follow the Plaid paragraph, still in section 1");
     const s6 = pp.slice(pp.indexOf("6. Data Sharing"), pp.indexOf("7. Your Rights"));
@@ -66,7 +66,7 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
       // Contact section's "Website:" line. The privacy@ address is an email address, not the website.
       const rest = nat.replace(A.A1, "").replace("Website: flourishmoney.app", "").replace(/privacy@flourishmoney\.app/g, "");
       t.ok(!/flourishmoney\.app/.test(rest), `A ${pl}: no other mention of flourishmoney.app in the store app's policy`);
-      t.ok(nat.includes("Last updated October 22, 2026") && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
+      t.ok(nat.includes("Last updated October 26, 2026") && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
     }
   }
 
