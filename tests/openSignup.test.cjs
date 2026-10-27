@@ -499,7 +499,8 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{fieldErr\.password \? "auth-password-error" : undefined\}/.test(form)
       && /<div id="auth-password-error" data-field-error="password" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.passwordError\}<\/div>/.test(form),
       "11n …and so is the password error");
-    t.ok(/^\[WORDS: /.test(SIGNUP_COPY.emailError) && /^\[WORDS: /.test(SIGNUP_COPY.passwordError), "11o their words are placeholders until approved (docs/product/SIGNUP-PATH-WORDS.md)");
+    t.eq([SIGNUP_COPY.emailError, SIGNUP_COPY.passwordError], ["Enter a valid email address.", "Choose a password of at least 8 characters."],
+      "11o the approved inline errors, word for word (2026-10-27, docs/product/SIGNUP-PATH-WORDS.md)");
   }
 
   t.summary("openSignup.test");

@@ -49,27 +49,30 @@ export function trialEndLabel(endsAtMs, { trialActive = false } = {}) {
 }
 
 // ── WORDS ─────────────────────────────────────────────────────────────────────────────────────────────
-// Reused where an approved label fits: "Close", "← Back", "Opening checkout…", the plan rows' own lines
-// (offeredPlans), the founding note, and "Upgrade →" and trialChip on the countdown. NEW WORDS ARE NOT WRITTEN
-// HERE: each is a [WORDS: …] placeholder until the approved words are in (docs/product/SIGNUP-PATH-WORDS.md).
+// Approved word for word on 2026-10-27 (ChatGPT and Grok agreed); docs/product/SIGNUP-PATH-WORDS.md lists each with
+// where it shows. Do not reword them here. Reused approved labels: "Close", "← Back", "Opening checkout…", the plan
+// rows' own lines (offeredPlans), the founding note, and "Upgrade →" and trialChip on the countdown.
 export const UPGRADE_COPY = Object.freeze({
-  headline: "[WORDS: upgrade-headline]",
-  bullets: Object.freeze(["[WORDS: upgrade-bullet-1]", "[WORDS: upgrade-bullet-2]", "[WORDS: upgrade-bullet-3]"]),
-  continue: "[WORDS: upgrade-continue]",
-  reviewHeading: "[WORDS: review-heading]",
-  reviewConfirm: "[WORDS: review-confirm]",
+  headline: "All of flourish, in one subscription",
+  bullets: Object.freeze(["The coach, with no weekly limit", "What-If as often as you like", "More than one bank, all in one place"]),
+  continue: "Review my plan",
+  reviewHeading: "Check your plan",
+  reviewConfirm: "Go to secure checkout",
 });
 // The trial line, with the server's end date in it.
 export function upgradeTrialLine(endLabel) {
-  return endLabel ? `[WORDS: upgrade-trial-ends: ${endLabel}]` : null;
+  return endLabel ? `Your trial ends on ${endLabel}.` : null;
 }
 // The review step's line about the charge, for the chosen plan's billing period.
 export function reviewChargeLine(planKey) {
-  return planKey === "monthly" ? "[WORDS: review-charge-monthly]" : "[WORDS: review-charge-yearly]";
+  return planKey === "monthly"
+    ? "If you subscribe, you're charged today in CAD plus tax, then every month until you cancel. You can cancel in Settings → Manage subscription. Any trial ends when you subscribe."
+    : "If you subscribe, you're charged today in CAD plus tax, then every year until you cancel. You can cancel in Settings → Manage subscription. Any trial ends when you subscribe.";
 }
-// Every placeholder this module carries, as the words list names them (a date is <date>). lib/signupUi.js SIGNUP_COPY has the rest.
-export const SIGNUP_PATH_PLACEHOLDERS = Object.freeze([
+// Every approved line this module carries, as the words list names them (the trial line with <date>).
+// lib/signupUi.js SIGNUP_COPY has the rest.
+export const SIGNUP_PATH_WORDS = Object.freeze([
   UPGRADE_COPY.headline, ...UPGRADE_COPY.bullets, UPGRADE_COPY.continue,
-  UPGRADE_COPY.reviewHeading, UPGRADE_COPY.reviewConfirm, "[WORDS: upgrade-trial-ends: <date>]",
+  UPGRADE_COPY.reviewHeading, UPGRADE_COPY.reviewConfirm, "Your trial ends on <date>.",
   reviewChargeLine("monthly"), reviewChargeLine("annual"),
 ]);

@@ -64,13 +64,13 @@ export function fieldErrors({ mode = "signup", email = "", password = "", touche
 }
 
 // ── WORDS ─────────────────────────────────────────────────────────────────────────────────────────────
-// New lines for the sign-up card are NOT written here: each is a [WORDS: …] placeholder until the approved
-// words are in (docs/product/SIGNUP-PATH-WORDS.md lists each one with what it must say and its limit).
+// Approved word for word on 2026-10-27 (ChatGPT and Grok agreed); docs/product/SIGNUP-PATH-WORDS.md lists each one
+// with where it shows. Do not reword them here.
 export const SIGNUP_COPY = Object.freeze({
-  statusUnavailable: "[WORDS: signup-status-unavailable]",
-  emailError: "[WORDS: signup-email-error]",
-  passwordError: "[WORDS: signup-password-error]",
-  mailNotSent: "[WORDS: signup-mail-not-sent]",
+  statusUnavailable: "We couldn't check sign-up just now. You can still create your account.",
+  emailError: "Enter a valid email address.",
+  passwordError: "Choose a password of at least 8 characters.",
+  mailNotSent: "Your account was created, but the email didn't send. Tap \"Resend confirmation email\" below or email hello@flourishmoney.app.",
 });
 
 // THE LANDING'S WAITLIST AREA (billing day, approved by ChatGPT and Grok, 2026-10-15; no flash, 2026-10-22). What

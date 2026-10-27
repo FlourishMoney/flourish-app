@@ -485,7 +485,7 @@ function buildApp(supabaseUrl) {
     await page.locator("[data-plan-choice]").first().waitFor();
     const rows = await page.locator("[data-plan-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-plan-choice") + (e.querySelector("input").checked ? "*" : "")));
     t.eq(rows, ["founding_annual*", "monthly", "annual"], `F5a ${w}: founding first, and selected`);
-    t.ok(await page.locator("[data-upgrade-trial]").count() === 1 && /\[WORDS: upgrade-trial-ends: /.test(await page.locator("[data-upgrade-trial]").innerText()), `F5b ${w}: the trial line, with its end date`);
+    t.ok(await page.locator("[data-upgrade-trial]").count() === 1 && /^Your trial ends on [A-Z][a-z]+ \d{1,2}, \d{4}\.$/.test(await page.locator("[data-upgrade-trial]").innerText()), `F5b ${w}: the trial line, with its end date`);
     await shot(page, `founding-${w}-upgrade-plans`);
     await page.locator('[data-plan-choice="monthly"]').click();
     t.eq(await page.locator('[data-plan-choice="monthly"] input').isChecked(), true, `F5c ${w}: a tap on a row selects it`);
@@ -522,7 +522,7 @@ function buildApp(supabaseUrl) {
     t.eq(asks, 3, "U1a the check is tried three times before the screen says it failed");
     const u = await text(page);
     t.ok(!/Beta access code|invite code/i.test(u), "U1b no beta code is asked for on an error");
-    t.ok(u.includes("[WORDS: signup-status-unavailable]") && await page.getByRole("button", { name: "Try again", exact: true }).count() === 1, "U1c the line, and Try again");
+    t.ok(u.includes("We couldn't check sign-up just now. You can still create your account.") && await page.getByRole("button", { name: "Try again", exact: true }).count() === 1, "U1c the line, and Try again");
     await page.getByPlaceholder("Email address").fill("sam@example.org");
     await page.getByPlaceholder("Password (min 8 characters)").fill("a-long-enough-password");
     t.eq(await btn(page, "Create Account").getAttribute("aria-disabled"), "false", "U1d Create Account still works (the server decides)");

@@ -304,16 +304,17 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
       t.ok(!/Founding/.test(plain) && plain.includes("$11.99 a month") && plain.includes("$99.99 a year"), "6x no founding offer: monthly and annual only, at the landing's prices");
     }
 
-    // The words still to come: every placeholder in the code is in docs/product/SIGNUP-PATH-WORDS.md, and the other way round.
+    // The approved words (2026-10-27): the code and docs/product/SIGNUP-PATH-WORDS.md say the same, line for line.
     const S = await import("../src/lib/signupUi.js");
-    const mine = [...U.SIGNUP_PATH_PLACEHOLDERS, ...Object.values(S.SIGNUP_COPY)];
+    const mine = [...U.SIGNUP_PATH_WORDS, ...Object.values(S.SIGNUP_COPY)];
     const DOC = fs.readFileSync(path.join(__dirname, "..", "docs", "product", "SIGNUP-PATH-WORDS.md"), "utf8");
-    const inDoc = [...DOC.matchAll(/`(\[WORDS: [^\]`]*\])`/g)].map(m => m[1]);
-    t.eq(mine.filter(w => !inDoc.includes(w)), [], "6y every sign-up path placeholder is listed in docs/product/SIGNUP-PATH-WORDS.md");
-    t.eq(inDoc.filter(w => !mine.includes(w)), [], "6z …and the list names none the code no longer has");
-    t.eq(new Set(mine).size, 14, "6z2 fourteen placeholders in all");
-    const libSrc = ["upgradeFlow.js", "signupUi.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "lib", f), "utf8")).join("\n");
-    for (const w of mine) t.ok(libSrc.includes(w.replace(": <date>", ": ${endLabel}")), `6z3 in the code: ${w}`);
+    const inDoc = [...DOC.matchAll(/^\| \d+ \| [a-z0-9-]+ \| `([^`]+)` \|/gm)].map(m => m[1]);
+    t.eq(inDoc.length, 14, "6y the approved list has fourteen lines");
+    t.eq(mine.filter(w => !inDoc.includes(w)), [], "6z every approved line in the code is in the list, word for word");
+    t.eq(inDoc.filter(w => !mine.includes(w)), [], "6z2 …and the list has none the code does not");
+    t.eq(U.upgradeTrialLine("November 9, 2026"), "Your trial ends on November 9, 2026.", "6z3 the trial line carries the server's date");
+    const lib = ["upgradeFlow.js", "signupUi.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "lib", f), "utf8")).join("\n");
+    t.ok(!/\[WORDS:/.test(lib + APP_SRC), "6z4 no [WORDS: placeholder is left in the app");
   }
 
   if (savedFlag === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = savedFlag;
