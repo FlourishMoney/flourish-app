@@ -36,6 +36,7 @@
 const { mayEmailWaitlistRow, foundingEmailKindFor } = require("./waitlistConsent");
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
 const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort");
+const { emailHtml } = require("./emailLayout");
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 5000;
@@ -94,26 +95,20 @@ function consentLineFor(row) {
 }
 const footerLines = (url, line) => [WHY_LINE, line, ...CONTACT_BLOCK, `Unsubscribe with one click: ${url}`];
 
-const _esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const _para = (html, extra) => `<p style="margin:0 0 16px;${extra || ""}">${html}</p>`;
-const _small = "font-size:13px;color:rgba(26,32,53,0.66);";
+// THE HTML PART (2026-10-26): the shared flourish layout (_lib/emailLayout.js), carrying exactly the words of the
+// plain-text part, in the same order: the body paragraphs, then the footer. The one thing it adds is the button's
+// label on the founding link email; the "Your link: …" line follows the button as a text link, so the link still
+// works with buttons or images blocked. The launch email has no link and no button.
+// The button label, as approved 2026-10-27.
+const FOUNDING_BUTTON_LABEL = "Get my founding price";
 function foundingLinkHtml(position, url, line, kind = FOUNDING_LINK_KIND) {
-  const body = paragraphsFor(kind, position).map(t => t.startsWith("Your link: ")
-    ? _para(`<a href="${FOUNDING_LINK_URL}" style="color:#1A2035;font-weight:700;">Open your founding price link</a>`)
-    : _para(_esc(t)));
-  return [
-    '<!doctype html>',
-    `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${subjectFor(kind)}</title></head>`,
-    '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
-    '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
-    'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
-    body.join(""),
-    _para(_esc(WHY_LINE), "margin-top:24px;" + _small),
-    _para(_esc(line), _small),
-    ...CONTACT_BLOCK.map(l => _para(_esc(l), _small)),
-    _para(`<a href="${url}" style="color:#1A2035;">Unsubscribe with one click</a>`, _small),
-    '</div></body></html>',
-  ].join("");
+  return emailHtml({
+    title: subjectFor(kind),
+    paragraphs: paragraphsFor(kind, position),
+    link: kind === LAUNCH_KIND ? null : { line: `Your link: ${FOUNDING_LINK_URL}`, url: FOUNDING_LINK_URL, button: FOUNDING_BUTTON_LABEL },
+    footer: footerLines(url, line),
+    unsubscribeUrl: url,
+  });
 }
 
 // The whole message for one waitlist row, or null. row: { id, founding_position, is_test, unsubscribed_at,
@@ -178,6 +173,6 @@ async function sendFoundingLinkEmail(to, row, opts = {}) {
 }
 
 module.exports = {
-  FOUNDING_LINK_KIND, LAUNCH_KIND, FOUNDING_LINK_URL, SUBJECT, LAUNCH_SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
-  consentLine, consentLineFor, PERSONAL_RELATIONSHIP_CONSENT_LINE, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
+  FROM, REPLY_TO, FOUNDING_LINK_KIND, LAUNCH_KIND, FOUNDING_LINK_URL, SUBJECT, LAUNCH_SUBJECT, LANDING_PRICE_SENTENCE, CONTACT_BLOCK, WHY_LINE,
+  FOUNDING_BUTTON_LABEL, foundingLinkHtml, footerLines, subjectFor, paragraphsFor, consentLine, consentLineFor, PERSONAL_RELATIONSHIP_CONSENT_LINE, foundingLinkParagraphs, launchParagraphs, foundingLinkEmailPayload, sendFoundingLinkEmail, RESEND_TIMEOUT_MS,
 };
