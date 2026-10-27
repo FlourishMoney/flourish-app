@@ -71,7 +71,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.ok(/const emailAddr = typeof email === "string" \? email\.trim\(\)\.toLowerCase\(\) : "";\n\n    \/\/ Basic email validation\n    if \(!emailAddr \|\| !isEmail\(emailAddr\)\) \{/.test(B),
     "4a2 the waitlist still refuses a space inside (its row carries CASL consent; waitlistWelcomeEmail 10d)");
   const APP = read("src", "App.jsx");
-  t.ok(/<input style=\{inpStyle\} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck=\{false\} placeholder="Email address" value=\{email\} onChange=\{e => setEmail\(stripEmailSpaces\(e\.target\.value\)\)\}/.test(APP),
+  // The field's style is inpStyle(invalid) since the inline errors (audit H11, 2026-10-26); onChange is on the next line.
+  t.ok(/<input style=\{inpStyle\(fieldErr\.email\)\} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck=\{false\} placeholder="Email address" value=\{email\}\s*onChange=\{e => setEmail\(stripEmailSpaces\(e\.target\.value\)\)\}/.test(APP),
     "4b the app's sign-in and signup email field strips spaces as typed, with no autocorrect, auto-capitalisation or spell check");
   t.ok(/const emailVal = email\.trim\(\);\n    if \(!WAITLIST_EMAIL_RX\.test\(emailVal\)\)/.test(APP), "4c the landing's waitlist form is unchanged: trimmed, and a space inside is refused");
   t.summary("emailAddress.test");

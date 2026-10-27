@@ -37,6 +37,8 @@ import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNo
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
+import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
+import { AUTH_C } from "./lib/authTheme.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { confirmLinkResult } from "./lib/confirmLink.js";
@@ -15183,14 +15185,18 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [betaCode, setBetaCode] = useState("");
   // Is signup open to anyone, or still invite-only? Only the SERVER knows: the store apps bundle this
   // code at build time, so a binary shipped today cannot carry what Amanda sets in Netlify tomorrow.
-  // null means "not asked yet"; anything other than a clear yes shows the code field, which is exactly
-  // what this screen does today. A server that cannot be reached therefore changes nothing.
+  // null while asking; true or false once the server has answered; "unavailable" when no answer could be
+  // read (audit H12, lib/signupUi.js). Only a definite false shows the code field: a failed check is never
+  // treated as invite-only, and the screen offers to check again instead.
   const [openSignup, setOpenSignup] = useState(null);
-  const [showCodeField, setShowCodeField] = useState(false);
+  // Which fields the person has left (or tried to submit), for the inline errors (audit H11).
+  const [touched, setTouched] = useState({});
+  // Whether the confirmation email after a self-serve signup actually went out (beta.js `sent`).
+  const [mailSent, setMailSent] = useState(true);
   // The address a self-serve signup must confirm, and the cooldown on asking for the mail again.
   const [pendingConfirm, setPendingConfirm] = useState("");
   const [resendConfirmCooldown, setResendConfirmCooldown] = useState(0);
-  const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
+  const { codeRequired, showField: showCodeInput, unavailable: statusUnavailable } = signupCodeState({ openSignup });
   // The same helper the tests check, rather than the rule written twice: the button used to re-state
   // "a code is needed unless the door is open" inline, where it could drift from the field beside it.
   const codeOk = mode === "login" || signupSubmittable({ openSignup, code: betaCode });
@@ -15233,28 +15239,37 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // page on the site and has no sign-up form on it, so asking there would spend a function invocation
   // per visitor to answer a question that page never asks. Asking when the card opens still lands the
   // answer well before anyone switches to the Sign Up tab and types an email.
+  // H12: asked up to three times (lib/signupUi.js SIGNUP_STATUS_RETRY_MS) before the screen says the check
+  // failed; "Try again" asks the same way. The answer lands even if the card was closed meanwhile (the effect
+  // asks only once), so it is kept by whether the screen is still mounted, not by the effect's cleanup.
   const askedStatus = useRef(false);
-  useEffect(() => {
-    if (!showAuth || askedStatus.current) return;
-    askedStatus.current = true;
-    let cancelled = false;
-    (async () => {
+  const authMounted = useRef(true);
+  useEffect(() => () => { authMounted.current = false; }, []);
+  const askSignupStatus = async () => {
+    for (const wait of SIGNUP_STATUS_RETRY_MS) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      if (!authMounted.current) return;
       try {
         const res = await fetch(`${API_BASE}/api/beta`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "signup_status" }),
         });
-        const out = await res.json().catch(() => ({}));
-        if (!cancelled) setOpenSignup(statusFromResponse(out));
+        const out = await res.json().catch(() => null);
+        const answer = statusFromResponse(out, { ok: res.ok });
+        if (answer === true || answer === false) { if (authMounted.current) setOpenSignup(answer); return; }
       } catch {
-        // Offline, blocked, or the function is down: stay invite-only on screen. The server decides
-        // in the end anyway, so the worst case is a code field shown to someone who does not need one.
-        if (!cancelled) setOpenSignup(false);
+        // Offline, blocked, or the function is down: ask again, and never read it as invite-only.
       }
-    })();
-    return () => { cancelled = true; };
+    }
+    if (authMounted.current) setOpenSignup("unavailable");
+  };
+  useEffect(() => {
+    if (!showAuth || askedStatus.current) return;
+    askedStatus.current = true;
+    askSignupStatus();
   }, [showAuth]);
+  const retrySignupStatus = () => { setOpenSignup(null); askSignupStatus(); };
 
   // Phase E1: waitlist email capture (replaces public signup CTAs). The form itself is WaitlistForm.
   // Launch is Canada only, so the form offers no country choice and the demo link below it is Canadian.
@@ -15316,6 +15331,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
     } catch {
       setError("Couldn't reach the server. Try again in a moment."); return;
     }
+    setMailSent(true);
     setCheckEmailNote("Confirmation email re-sent ✓. Check your inbox (and spam).");
   };
 
@@ -15349,22 +15365,30 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
       }
       // A CODED signup is confirmed on creation, so there is no email to check: drop them on the
       // login screen, where the address and password are still filled in. A SELF-SERVE signup is not
-      // usable until the address is confirmed, so say exactly that and offer to send it again.
+      // usable until the address is confirmed, so (audit H10) it goes to the check-your-email state: the
+      // address the mail went to, "Resend confirmation email" with its cooldown, and "Wrong email? Start
+      // over". There is no Log In button there, so a new person is not sent to a sign-in that refuses them.
       setCheckEmailNote("");
       if (out.needsConfirmation) {
         setPendingConfirm(email);
         if (out.sent === false) {
-          // The account exists but no mail went out. Saying "check your email" would send them to an
-          // empty inbox and leave them stuck on an account they cannot use.
+          // The account exists but no mail went out. Saying "we sent a link" would send them to an
+          // empty inbox, so the screen says it was not sent and the resend is ready at once.
           setSuccess("");
-          setError("Your account was created, but we couldn't send the confirmation email. Tap \"Send it again\" below, or contact hello@flourishmoney.app.");
+          setMailSent(false);
+          setError(SIGNUP_COPY.mailNotSent);
+          setResendCooldown(0);
         } else {
-          setSuccess("Check your email to confirm your address.");
+          setSuccess("");
+          setMailSent(true);
+          setResendCooldown(60);      // the mail has just gone: the same 60 s as a resend
         }
-      } else {
-        setPendingConfirm("");
-        setSuccess("Account created. You can log in now.");
+        setMode("check_email");
+        setLoading(false);
+        return;
       }
+      setPendingConfirm("");
+      setSuccess("Account created. You can log in now.");
       setMode("login");
       setLoading(false);
     } catch (e) {
@@ -15452,26 +15476,39 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
     }
   };
 
-  const inpStyle = {
-    width: "100%", padding: "14px 16px", borderRadius: 14,
-    background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)",
-    color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif",
-    outline: "none", boxSizing: "border-box", marginBottom: 12
-  };
+  const inpStyle = (invalid) => ({
+    width: "100%", padding: "14px 16px", borderRadius: 13, minHeight: LAYOUT.minTap,
+    background: AUTH_C.card, border: `1.5px solid ${invalid ? AUTH_C.error : AUTH_C.inputBorder}`,
+    color: AUTH_C.ink, fontSize: 16, fontFamily: "'Plus Jakarta Sans',sans-serif",
+    outline: "none", boxSizing: "border-box", display: "block",
+  });
+  const fieldErrStyle = { color: AUTH_C.error, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
+  // Text buttons (Back, Forgot password?, Wrong email?): underlined, and a 44 px target however short the label.
+  const authLinkStyle = { background: "none", border: "none", minHeight: LAYOUT.minTap, padding: "0 4px", color: AUTH_C.link, fontSize: 13,
+    fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", textUnderlineOffset: 2 };
 
   const btnStyle = (active) => ({
-    width: "100%", padding: "15px", borderRadius: 14, border: "none",
-    background: active ? "linear-gradient(135deg,#00D68F,#00B37A)" : "rgba(0,214,143,0.3)",
-    color: "#021208", fontWeight: 800, fontSize: 15,
+    width: "100%", padding: "15px", minHeight: LAYOUT.minTap, borderRadius: 13, border: "none",
+    background: `linear-gradient(135deg,${AUTH_C.btnFrom},${AUTH_C.btnTo})`,
+    color: AUTH_C.btnInk, fontWeight: 800, fontSize: 15, opacity: active ? 1 : 0.55,
     fontFamily: "'Plus Jakarta Sans',sans-serif", cursor: active ? "pointer" : "not-allowed",
-    boxShadow: active ? "0 4px 20px rgba(0,214,143,0.4)" : "none"
+    boxShadow: active ? "0 8px 22px rgba(46,139,46,0.26)" : "none"
   });
+
+  // H11: the inline errors, and Create Account / Log In. The button is never `disabled`, so a tap on it while
+  // a field is wrong shows that field's error instead of doing nothing; it submits only when canSubmit.
+  const fieldErr = fieldErrors({ mode, email, password, touched });
+  const canSubmit = !loading && !!email && password.length >= 8 && codeOk;
+  const submitAuth = () => {
+    if (!canSubmit) { if (!loading) setTouched({ email: true, password: true }); return; }
+    if (mode === "login") handleLogin(); else handleSignup();
+  };
 
   const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
   const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
 
   return (
-    <div style={{ minHeight: "100dvh", background: showAuth ? "#050D09" : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)", ...safeX(0) }}>
+    <div style={{ minHeight: "100dvh", background: showAuth ? AUTH_C.page : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)", ...safeX(0) }}>
 
       {!showAuth ? (
 
@@ -15828,42 +15865,45 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 
       ) : (
 
-        /* ───────────────── AUTH FORM ───────────────── */
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24 }}>
+        /* ───────────────── AUTH FORM ─────────────────
+           Audit H11 (2026-10-26): the landing's light tokens (lib/authTheme.js AUTH_C), so Log in and Try free stay in
+           one brand; inline errors once a field is left; no invite link while signup is open. Every link here is a
+           44 px tap target. */
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: SPACE.xl, background: AUTH_C.page, color: AUTH_C.ink }}>
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
-            <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ textAlign: "center", marginBottom: SPACE.xl }}>
               {!isNativeApp() && <button onClick={() => setShowAuth(false)}
-                style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                style={{ ...authLinkStyle, display: "flex", alignItems: "center", gap: 6, margin: `0 auto ${SPACE.md}px`, textDecoration: "none" }}>
                 ← Back
               </button>}
-              <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishLockup size={60} color="#EDE9E2" /></div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: SPACE.sm }}><FlourishLockup size={60} color={AUTH_C.heading} /></div>
+              <div style={{ color: AUTH_C.muted, fontSize: 14, marginTop: SPACE.xs }}>
                 {mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
-            <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div data-auth-card="" style={{ background: AUTH_C.card, borderRadius: SPACE.xl, padding: SPACE.xl, border: `1px solid ${AUTH_C.border}`, boxShadow: "0 10px 30px rgba(22,58,28,0.07)" }}>
 
               {mode === "check_email" && (
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 42, marginBottom: 12 }}>📬</div>
-                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 900, color: "#EDE9E2", marginBottom: 10 }}>Check your email</div>
-                  <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: checkEmailNote ? 10 : 20, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                    We sent a confirmation link to <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{email || "your email"}</span>. Click it to activate your account, then come back and log in.
-                  </div>
-                  {checkEmailNote && <div style={{ color: "#00D68F", fontSize:13, marginBottom: 18, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{checkEmailNote}</div>}
-                  {error && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12 }}>{error}</div>}
+                <div data-check-email="" style={{ textAlign: "center" }}>
+                  <div aria-hidden="true" style={{ fontSize: 42, marginBottom: SPACE.md }}>📬</div>
+                  <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 900, color: AUTH_C.heading, margin: `0 0 ${SPACE.sm}px` }}>Check your email</h2>
+                  {mailSent && <div style={{ color: AUTH_C.muted, fontSize: 14, lineHeight: 1.65, marginBottom: checkEmailNote ? SPACE.sm : SPACE.lg }}>
+                    We sent a confirmation link to <span data-check-email-address="" style={{ color: AUTH_C.ink, fontWeight: 700, overflowWrap: "anywhere" }}>{email || "your email"}</span>. Click it to activate your account, then come back and log in.
+                  </div>}
+                  {checkEmailNote && <div role="status" style={{ color: AUTH_C.success, fontSize: 13, marginBottom: SPACE.lg, background: AUTH_C.successBg, padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{checkEmailNote}</div>}
+                  {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginBottom: SPACE.md, background: AUTH_C.errorBg, padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{error}</div>}
                   <button style={btnStyle(!loading && resendCooldown === 0 && !!email)} onClick={handleResend} disabled={loading || resendCooldown > 0 || !email}>
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend confirmation email"}
                   </button>
-                  <div style={{ display: "flex", gap: 18, justifyContent: "center", marginTop: 16 }}>
-                    <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
-                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", columnGap: SPACE.lg, justifyContent: "center", marginTop: SPACE.sm }}>
+                    <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); setTouched({}); }}
+                      style={authLinkStyle}>
                       Wrong email? Start over
                     </button>
                     <button onClick={() => { setMode("login"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
-                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                      style={authLinkStyle}>
                       Back to log in
                     </button>
                   </div>
@@ -15872,40 +15912,48 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 
               {(mode === "login" || mode === "signup") && (
                 <div>
-                  <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
+                  <div style={{ display: "flex", background: AUTH_C.tabBg, borderRadius: 12, padding: 3, marginBottom: SPACE.xl }}>
                     {["login","signup"].map(m => (
-                      <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
-                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 13, background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
+                      <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); setTouched({}); }} aria-pressed={mode === m}
+                        style={{ flex: 1, minHeight: LAYOUT.minTap, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, background: mode === m ? AUTH_C.btnFrom : "transparent", color: mode === m ? AUTH_C.btnInk : AUTH_C.muted }}>
                         {m === "login" ? "Log In" : "Sign Up"}
                       </button>
                     ))}
                   </div>
-                  {foundingNote && !isNativeApp() && <div style={{ color: "#EDE9E2", fontSize: 13, lineHeight: 1.6, marginBottom: SPACE.lg, background: "rgba(255,255,255,0.05)", padding: "10px 14px", borderRadius: 10 }}>{foundingNote}</div>}
-                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  {foundingNote && !isNativeApp() && <div style={{ color: AUTH_C.ink, fontSize: 13, lineHeight: 1.6, marginBottom: SPACE.lg, background: AUTH_C.successBg, padding: "10px 14px", borderRadius: 10 }}>{foundingNote}</div>}
+                  {success && <div role="status" style={{ color: AUTH_C.success, fontSize: 13, marginBottom: pendingConfirm ? SPACE.sm : SPACE.lg, background: AUTH_C.successBg, padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   {pendingConfirm && mode === "login" && (
-                    <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ color: "rgba(237,233,226,0.55)", fontSize:13, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
+                    <div style={{ marginBottom: SPACE.lg, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ color: AUTH_C.muted, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
                       <button onClick={handleResendConfirm} disabled={resendConfirmCooldown > 0}
-                        style={{ background: "transparent", border: "1.5px solid rgba(0,214,143,0.4)", color: "#00D68F", borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize:13, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.5 : 1 }}>
+                        style={{ minHeight: LAYOUT.minTap, background: "transparent", border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 13, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.6 : 1 }}>
                         {resendConfirmCooldown > 0 ? `Send again in ${resendConfirmCooldown}s` : "Send it again"}
                       </button>
                     </div>
                   )}
-                  <input style={inpStyle} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email} onChange={e => setEmail(stripEmailSpaces(e.target.value))} autoComplete="email" name="email" />
-                  <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
-                  {/* Invite-only: the code field, as it has always been. Open: a quiet link, so the
-                      few people holding a code can still use it without asking everyone else for one. */}
+                  {/* H12: the status check failed. Never a code field: a line and a way to check again. */}
+                  {mode === "signup" && statusUnavailable && (
+                    <div data-signup-status="unavailable" role="status" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: SPACE.md, rowGap: SPACE.xs, marginBottom: SPACE.lg, background: AUTH_C.tabBg, padding: "6px 6px 6px 14px", borderRadius: 10 }}>
+                      <span style={{ color: AUTH_C.ink, fontSize: 13, lineHeight: 1.5, flex: "1 1 180px" }}>{SIGNUP_COPY.statusUnavailable}</span>
+                      <button onClick={retrySignupStatus} style={{ ...authLinkStyle, padding: "0 10px" }}>Try again</button>
+                    </div>
+                  )}
+                  <input style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+                    onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
+                    aria-invalid={fieldErr.email || undefined} aria-describedby={fieldErr.email ? "auth-email-error" : undefined} autoComplete="email" name="email" />
+                  {fieldErr.email && <div id="auth-email-error" data-field-error="email" style={fieldErrStyle}>{SIGNUP_COPY.emailError}</div>}
+                  <input style={{ ...inpStyle(fieldErr.password), marginTop: SPACE.md }} type="password" placeholder="Password (min 8 characters)" value={password}
+                    onChange={e => setPassword(e.target.value)} onBlur={() => password && setTouched(t => ({ ...t, password: true }))}
+                    aria-invalid={fieldErr.password || undefined} aria-describedby={fieldErr.password ? "auth-password-error" : undefined}
+                    autoComplete={mode === "signup" ? "new-password" : "current-password"} name="password" />
+                  {fieldErr.password && <div id="auth-password-error" data-field-error="password" style={fieldErrStyle}>{SIGNUP_COPY.passwordError}</div>}
+                  {/* Invite-only (the server's definite answer): the code field, as it has always been. Signup open,
+                      still asking, or the check failed: no field and no invite link (H11, H12). */}
                   {mode==="signup"&&showCodeInput&&(
-                    <input style={{ ...inpStyle, marginBottom: 20,   }} type="text" placeholder={codeRequired?"Beta access code":"Invite code (optional)"} value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
                   )}
-                  {mode==="signup"&&showCodeLink&&(
-                    <button onClick={() => setShowCodeField(true)}
-                      style={{ display: "block", width: "100%", marginBottom: 20, background: "transparent", border: "none", padding: 0, color: "rgba(237,233,226,0.55)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize:13, textAlign: "left", cursor: "pointer", textDecoration: "underline" }}>
-                      Have an invite code?
-                    </button>
-                  )}
-                  {error && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && email && password.length >= 8 && codeOk)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || !codeOk}>
+                  {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
+                  <button style={{ ...btnStyle(canSubmit), marginTop: SPACE.lg }} onClick={submitAuth} aria-disabled={!canSubmit}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
                   {mode === "login" && (
@@ -15914,23 +15962,23 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                           app, so the button would be a dead end. Web keeps it. Password reset stays
                           on native: it ends with a password the person can type into the app. */}
                       {!isNativeApp() && <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
-                        style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
+                        style={{ width: "100%", minHeight: LAYOUT.minTap, marginTop: SPACE.md, background: "transparent", color: AUTH_C.link, border: `1.5px solid ${AUTH_C.link}`, borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
                         {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Email me a magic link"}
                       </button>}
-                      <div style={{ textAlign: "center", marginTop: 14 }}>
+                      <div style={{ textAlign: "center", marginTop: SPACE.sm }}>
                         <button onClick={handleForgotPassword} disabled={loading || resendCooldown > 0}
-                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
+                          style={{ ...authLinkStyle, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
                           {resendCooldown > 0 ? `Forgot password? (wait ${resendCooldown}s)` : "Forgot password?"}
                         </button>
                       </div>
                     </>
                   )}
                   {mode === "signup" && (
-                    <div style={{ color: "#6B7A6E", fontSize:13, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
+                    <div style={{ color: AUTH_C.muted, fontSize: 13, textAlign: "center", marginTop: SPACE.md, lineHeight: 1.5 }}>
                       By signing up you agree to our{" "}
-                      <a href="/terms" style={{ color: "#00D68F", textDecoration: "none" }}>Terms of Service</a>
+                      <a href="/terms" style={{ color: AUTH_C.link, textDecoration: "underline", textUnderlineOffset: 2 }}>Terms of Service</a>
                       {" "}and{" "}
-                      <a href="/privacy" style={{ color: "#00D68F", textDecoration: "none" }}>Privacy Policy</a>.
+                      <a href="/privacy" style={{ color: AUTH_C.link, textDecoration: "underline", textUnderlineOffset: 2 }}>Privacy Policy</a>.
                     </div>
                   )}
                 </div>
@@ -15939,9 +15987,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
             </div>
             {isNativeApp() && onTryDemo && (
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
-              <div style={{ textAlign: "center", marginTop: 22 }}>
-                <button onClick={() => onTryDemo(waitlistCountry)} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo, no account needed</button>
-                <div style={{ color: "#6B7A6E", fontSize:13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
+              <div style={{ textAlign: "center", marginTop: SPACE.xl }}>
+                <button onClick={() => onTryDemo(waitlistCountry)} style={{ minHeight: LAYOUT.minTap, background: AUTH_C.card, border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo, no account needed</button>
+                <div style={{ color: AUTH_C.muted, fontSize:13, marginTop: SPACE.sm, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
               </div>
             )}
           </div>
