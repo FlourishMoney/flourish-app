@@ -39,6 +39,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
 import { AUTH_C } from "./lib/authTheme.js";
+import { trialCountdown, upgradeChoices, selectedChoice, trialEndLabel, UPGRADE_COPY, upgradeTrialLine, reviewChargeLine } from "./lib/upgradeFlow.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { confirmLinkResult } from "./lib/confirmLink.js";
@@ -13693,6 +13694,32 @@ function NativeTrialChip({daysLeft}){
   );
 }
 
+// THE WEBSITE'S TRIAL COUNTDOWN (audit H13, 2026-10-26): every day of the trial, the days left in the store apps'
+// approved words (trialChip, "N days left in your trial") and the way to upgrade before it ends. A bar under the
+// phone layout's top edge; a card in the desktop sidebar, with how much of the trial is left. lib/upgradeFlow.js
+// decides when; the last two days are in orange.
+function TrialCountdown({countdown, onUpgrade, sidebar=false}){
+  const ink = countdown.urgent ? C.orangeInk : C.purpleBright;
+  const fill = countdown.urgent ? [C.orange, C.gold] : [C.purple, C.purpleBright];
+  // Never in a store app (trialCountdown is null there too): the button is on the web side of the guard.
+  const button = !isNativeApp()&&<button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${fill[0]},${fill[1]})`,border:"none",borderRadius:SPACE.sm,padding:`0 ${SPACE.md}px`,minHeight:LAYOUT.minTap,color:textOn(fill[0],fill[1]),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Upgrade →</button>;
+  if(sidebar) return(
+    <div data-trial-countdown={countdown.daysLeft} style={{background:countdown.urgent?C.orangeDim:C.purpleDim,border:`1px solid ${countdown.urgent?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:`${SPACE.md}px`,marginBottom:SPACE.sm}}>
+      <div role="status" style={{color:ink,fontWeight:700,fontSize:13,lineHeight:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.sm}}>{countdown.label}</div>
+      <div style={{height:3,background:C.border,borderRadius:99,marginBottom:SPACE.sm,overflow:"hidden"}}>
+        <div style={{width:`${Math.max(4,Math.min(100,(countdown.daysLeft/14)*100))}%`,height:"100%",background:fill[0],borderRadius:99}}/>
+      </div>
+      {button}
+    </div>
+  );
+  return(
+    <div data-trial-countdown={countdown.daysLeft} style={{background:countdown.urgent?C.orangeDim:C.purpleDim,borderBottom:`1px solid ${countdown.urgent?C.orange+"55":C.purple+"44"}`,padding:`${SPACE.xs}px ${SPACE.lg}px`,display:"flex",alignItems:"center",flexWrap:"wrap",columnGap:SPACE.md,rowGap:GAP.textToControl,flexShrink:0}}>
+      <span role="status" style={{color:ink,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,lineHeight:1.4,flex:"1 1 160px"}}>{countdown.label}</span>
+      {button}
+    </div>
+  );
+}
+
 function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=false}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
@@ -17021,6 +17048,11 @@ export default function FlourishApp(){
   const trialDaysLeft = getTrialDaysLeft();
   const trialActive = isTrialActive();
   const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
+  // H13 (audit 2026-10-26): the website's trial countdown, from the trial itself, not from isPremium (which the trial
+  // sets, so the old banner never showed). Not for a household the server says pays, and not in a store app, which
+  // has NativeTrialChip. lib/upgradeFlow.js trialCountdown.
+  const countdown = trialCountdown({ trialActive, daysLeft: trialDaysLeft, native: isNativeApp(),
+    paid: billingStatus?.paid === true || storeStatus?.paid === true });
   // A store app says once that the trial has ended (NativeTrialEndedLine); put away, it stays away on this device.
   const [trialEndNoteHidden,setTrialEndNoteHidden]=useState(()=>{ try { return localStorage.getItem("flourish_trial_end_note_seen")==="1"; } catch { return false; } });
   const hideTrialEndNote=()=>{ try { localStorage.setItem("flourish_trial_end_note_seen","1"); } catch {} setTrialEndNoteHidden(true); };
@@ -18655,6 +18687,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
+          {countdown&&<TrialCountdown countdown={countdown} onUpgrade={openUpgrade} sidebar/>}
           {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<div style={{marginBottom:SPACE.sm,borderRadius:12,overflow:"hidden"}}><NativeTrialEndedLine onDismiss={hideTrialEndNote}/></div>}
           {isNativeApp()&&trialActive&&trialDaysLeft>0&&<div style={{marginBottom:SPACE.sm}}><NativeTrialChip daysLeft={trialDaysLeft}/></div>}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
@@ -18676,7 +18709,8 @@ input,button,select,textarea { font-family:inherit; }
                 {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
                 {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
                     "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
-                {isPremium&&!isNativeApp()&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {/* H13: a household on the trial is not called Plus; the countdown above names the trial. */}
+                {isPremium&&!isNativeApp()&&!trialActive&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -18737,18 +18771,6 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{position:"absolute",top:"40%",right:-100,width:360,height:360,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(77,168,255,0.025) 0%,transparent 70%)":"radial-gradient(circle,rgba(36,114,200,0.04) 0%,transparent 70%)",animation:"breathe 12s ease-in-out infinite 4s"}}/>
       </div>
       <div style={{width:"100%",maxWidth:430,minHeight:"100dvh",display:"flex",flexDirection:"column",position:"relative",zIndex:1,paddingTop:"var(--banner-h, 0px)"}}>
-        {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
-        {!isPremium&&!isNativeApp()&&trialActive&&trialDaysLeft<=7&&(
-          <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-            <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
-            <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>
-              {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
-            </span>
-            <button onClick={openUpgrade} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              Upgrade →
-            </button>
-          </div>
-        )}
         {!isNativeApp()&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
@@ -18773,6 +18795,9 @@ input,button,select,textarea { font-family:inherit; }
         </div>
         {/* 2026-10-23: below the header, which clears the top safe area (the Duo's 82 px strip, the notch).
             Above it, with the demo banner hidden, both sat in the strip. */}
+        {/* ── TRIAL BANNER ─── H13 (audit 2026-10-26): every day of the trial, gated on the trial, not on isPremium.
+            Below the header for the same reason as the store apps' chip under it. */}
+        {countdown&&<TrialCountdown countdown={countdown} onUpgrade={openUpgrade}/>}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls

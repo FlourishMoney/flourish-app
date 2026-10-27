@@ -111,8 +111,9 @@ global.Date = PinnedDate;
     t.ok(!/Start the meeting|Start solo check-in/.test(nMeet) && nMeet.includes("This part isn't included in the free plan. On the free plan you keep safe to spend, your bills and paydays, and your weekly agenda.")
       && !/\btrial\b/i.test(nMeet) && !/Start your trial/.test(nMeet),
       "2b native Meet, for a free household: the agenda and the founder's locked-screen line, no meeting, no trial named");
-    const nativeProfile = APP.slice(APP.indexOf("appData.profile?.name||\"User\""), APP.indexOf("appData.profile?.name||\"User\"") + 700);
-    t.ok(/\{isPremium&&!isNativeApp\(\)&&<div[^>]*>✦ Flourish Plus<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
+    const nativeProfile = APP.slice(APP.indexOf("appData.profile?.name||\"User\""), APP.indexOf("appData.profile?.name||\"User\"") + 1000);
+    // H13 (audit 2026-10-26): nor during the trial (&&!trialActive), which the countdown names instead.
+    t.ok(/\{isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^>]*>✦ Flourish Plus<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
     // Controls: the web is unchanged.
     const wTerms = textOf(W.render(W.h(W.TermsOfService, { onBack: () => {} })));
     t.ok(/Free Tier/.test(wTerms), "2d (web Terms keep their tiers)");
