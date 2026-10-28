@@ -79,8 +79,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
 
   // ── 5. What's new ─────────────────────────────────────────────────────────────────────────────
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
-  // 1.1.2 (2026-10-26) carries 1.1.1's approved text until its own is approved ([WORDS: 1.1.2 What's new]).
-  t.eq([W.version, W.intro, W.notes, W.notesAndroid], ["1.1.2", APPROVED.whatsNewIntro, APPROVED.whatsNewIos, APPROVED.whatsNewAndroid],
+  // 1.1.2 (2026-10-26) and 1.1.3 (2026-10-28) carry 1.1.1's approved text until their own is approved ([WORDS: 1.1.3 What's new]).
+  t.eq([W.version, W.intro, W.notes, W.notesAndroid], ["1.1.3", APPROVED.whatsNewIntro, APPROVED.whatsNewIos, APPROVED.whatsNewAndroid],
     "5a What's new for 1.1.1 is the approved text, word for word: the intro, the iPhone notes, the Android notes");
   t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
