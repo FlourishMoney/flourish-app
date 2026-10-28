@@ -6,8 +6,9 @@
 //    app (the 14-day account trial, then the free plan, or full access for a paid plan from any provider).
 // 2. In 1.1: the same rule. A household in its 14-day account trial is entitled; after it, the free plan, until it
 //    subscribes. No store product has a free month or an introductory offer, and nothing depends on install history.
-// 3. When: only when the household asks (a locked screen's "See plans", Settings). Nothing raises it on its own, and
-//    a confirmed subscription closes it.
+// 3. When: when the household asks (a locked screen's "See plans", Settings), and one exception (1.1.3, Amanda
+//    2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is shown it once, by itself. Nothing
+//    else raises it on its own, and a confirmed subscription closes it.
 // 4. How: drawn OVER the app, never in place of it. Every screen, sheet and half-typed form stays mounted with its
 //    state; open sheets and dialogs stay above it and can be finished; Terms and Privacy open inside it.
 // 5. Nothing is lost: the paywall and its purchase flow never write, clear or replace the household's data.
@@ -64,7 +65,11 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
 
   // ── 3. When: only when the household asks ─────────────────────────────────────────────────────
   {
-    t.eq((APP.match(/setPaywallUp\(true\)/g) || []).length, 2, "3a two ways in, both the household's own tap: openUpgrade (a locked screen's See plans) and Settings' See plans");
+    t.eq((APP.match(/setPaywallUp\(true\)/g) || []).length, 3, "3a three ways in: the household's own tap on openUpgrade (a locked screen's See plans) or Settings' See plans, and the founding exception (3i)");
+    const auto = APP.slice(APP.indexOf("  const foundingOpenedRef = useRef(new Set());"), APP.indexOf("  const foundingOpenedRef = useRef(new Set());") + 900);
+    t.ok(/if\(!foundingPlansAutoOpen\(\{ storeBilling, userId: user\?\.id, askedFor: storeAskedFor, status: storeStatus,/.test(auto)
+      && /rememberFoundingPlansShown\(store, user\.id\);\n    setPaywallUp\(true\);/.test(auto),
+      "3i the one automatic opening is the founding rule's (lib/foundingPlans.js foundingPlansAutoOpen), remembered per account before it opens");
     t.ok(/onSubscribe: storeStatus\?\.paid \? null : \(\)=>setPaywallUp\(true\),/.test(APP) && /\{storeSubscription\.onSubscribe&&<Btn label="See plans" onClick=\{storeSubscription\.onSubscribe\}/.test(APP),
       "3b Settings offers See plans only to a household not paying yet");
     t.eq((APP.match(/storeOn=\{storeBilling\}/g) || []).length, 2, "3c the locked screens (Credit, the coach) get their See plans only in a selling build");
@@ -93,7 +98,7 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
   // ── 5. Nothing is lost ───────────────────────────────────────────────────────────────────────
   {
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    const ov = APP.slice(APP.indexOf("const storePaywallOverlay ="), APP.indexOf("const content=()=>{"));
+    const ov = APP.slice(APP.indexOf("const storePaywallOverlay ="), APP.indexOf("// ── Legal screens — always accessible"));
     const lib = read("src", "lib", "storeBilling.js") + read("src", "lib", "storeOffer.js");
     const WRITES = /setAppData|clearState|clearAllUserLocal|localStorage\.(removeItem|clear|setItem)|setOnboarded|setHousehold/;
     t.ok(!WRITES.test(comp) && !WRITES.test(ov.replace(/onSignOut=\{signOut\}|onDeleteAccount=\{deleteAllData\}/g, "")) && !WRITES.test(lib),
