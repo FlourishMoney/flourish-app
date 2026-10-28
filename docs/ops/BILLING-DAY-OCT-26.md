@@ -374,6 +374,16 @@ At most 10 a run and 40 a day. The Resend allowance is shared with the welcome e
 
 To stop the emails only: remove `FOUNDING_LINK_EMAIL` and deploy, or publish D2 (section 8).
 
+**One address only (`FOUNDING_LINK_EMAIL_ONLY`, 2026-10-28).** It is for the founding dress rehearsal, which goes
+through this sweep itself. Set it to the addresses the run may email (comma or space separated), Production only,
+**before** `FOUNDING_LINK_EMAIL`, then trigger deploy:
+- only those rows are selected, and each row is checked against the list again before its email;
+- a value that is not a clean list of addresses stops the run, which then reads, sends and writes nothing;
+- it never turns the sweep on by itself.
+
+Remove both variables and deploy straight after (`tests/foundingLinkOnly.test.cjs`). Unset, the sweep is
+unchanged.
+
 **This is the only founding email any waitlist row gets. No reminders follow it.** The waitlist consent
 ("when flourish launches in Canada, plus a few updates before then") ends at the October 26 launch, so
 emails on October 29 or November 2 would be outside it (ChatGPT and Grok, 2026-10-15). After a row's
