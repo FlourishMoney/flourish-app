@@ -155,8 +155,8 @@ async function sweepUntilDone(rows, { open }) {
     for (const [i, f] of friends.entries()) {
       const s = sends.find((x) => x.to[0] === f);
       const p = rows.find((r) => r.email === f).founding_position;
-      t.ok(s && s.text.includes(`You're founding household #${p} of 50`) && s.text.includes(E.FOUNDING_LINK_URL) && s.text.includes(E.LANDING_PRICE_SENTENCE),
-        `2d ${i + 1}: the founding email with its own number, the link and the price sentence`);
+      t.ok(s && s.text.includes(`You're founding household #${p} of 50`) && s.text.includes(E.FOUNDING_GET_URL) && s.text.includes(E.FOUNDING_LINK_URL) && s.text.includes(E.FOUNDING_EMAIL_PRICE_LINE),
+        `2d ${i + 1}: the founding email with its own number, the device link, the website link and the price line`);
     }
     t.eq(sends.filter((s) => ["early-no-number@example.test", "friend-unsubscribed@example.test", "friend-test@example.test"].includes(s.to[0]) || /^test\d@/.test(s.to[0])).length, 0,
       "2e nothing to the 2026-10-06 row with no number (as today), the unsubscribed friend, or any test row");

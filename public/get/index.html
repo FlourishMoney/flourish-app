@@ -1,0 +1,50 @@
+<!doctype html>
+<!--
+  public/get/index.html: THE DEVICE LINK, flourishmoney.app/get?ref=founding (2026-10-27).
+  get.js sends an iPhone or iPad to the App Store and an Android phone to Google Play. Anything else stays on this
+  page: the stores' own badges (one of each; Apple allows one App Store badge per layout), and the website's founding
+  checkout as a smaller second way. Plausible counts which way people went, with no personal data (get.js).
+  A plain static page, not the app: it loads in a moment, and works with scripts off (the badges and the link are
+  ordinary links). The native build leaves it out (scripts/strip-landing-media.mjs). Words approved 2026-10-27:
+  docs/product/FOUNDING-STORE-EMAIL-WORDS.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>flourish</title>
+<link rel="icon" href="/flourish-adult-favicon-32.png">
+<style>
+  :root { --page: #F4F1EB; --card: #FFFFFF; --ink: #1A2035; --muted: #5B6170; --rule: #E6E1D8; --brand: #007048; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #12151E; --card: #1A1F2B; --ink: #F4F1EB; --muted: #B4B9C6; --rule: #2A3142; --brand: #4FD1A0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--page); color: var(--ink);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+  main { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 28px 24px; text-align: center; }
+  .mark { display: block; width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 14px; }
+  h1 { margin: 0 0 20px; font-size: 22px; line-height: 1.3; font-weight: 800; }
+  .badges { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 0 0 24px; }
+  .badges a { display: block; line-height: 0; border-radius: 8px; }
+  .badges img { display: block; height: 40px; width: auto; }
+  .web { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .web a { color: var(--brand); text-decoration: underline; }
+  a:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <img class="mark" src="/flourish-adult-app-icon-180.png" width="56" height="56" alt="">
+  <h1 data-words="get-heading">Get flourish on the App Store or Google Play</h1>
+  <div class="badges">
+    <a id="app-store" href="https://apps.apple.com/ca/app/flourish-money-handled/id6792967778"><img src="/store-badges/download-on-the-app-store.svg" width="120" height="40" alt="Download on the App Store"></a>
+    <a id="google-play" href="https://play.google.com/store/apps/details?id=com.flourishmoney.app"><img src="/store-badges/GetItOnGooglePlay_Badge_Web_color_English.svg" width="135" height="40" alt="Get it on Google Play"></a>
+  </div>
+  <p class="web"><a id="website" href="/?checkout=founding" data-words="get-website">Prefer the website? Your founding price is there too.</a></p>
+</main>
+<script src="/get/get.js"></script>
+</body>
+</html>

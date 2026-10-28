@@ -13,7 +13,8 @@
 //     the page's origin and path (no query string, no hash: tokens, emails, checkout params) and the referrer's
 //     origin and path, and drops the request outright whenever no public page is showing.
 //   - Events (track), with no property that identifies anyone: "Try free", "Founding list join", "Store badge"
-//     ({ store: "App Store" | "Google Play" }), "Demo open".
+//     ({ store: "App Store" | "Google Play" }), "Demo open". The device link's page (public/get/, a static page outside
+//     this bundle, 2026-10-27) sends one more, "Get link" ({ way, ref }, from fixed lists), with the same cleaning.
 // -----------------------------------------------------------------------------
 
 import { isNativeApp } from "./billingVisibility.js";

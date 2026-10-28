@@ -23,7 +23,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
 (async () => {
   const t = create();
   const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
-  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png"], "0 the landing-only media: the videos, the screenshots, the link-preview images");
+  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images");
 
   // ── 1. the web build keeps every landing file ───────────────────────────────────────────────
   const web = tempDir("landing-media-web");
@@ -36,6 +36,8 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   const pubShots = path.join(ROOT, "public", "app-screens");
   t.ok(list(pubShots).length > 0 && list(pubShots).every(f => same(path.join(pubShots, f), path.join(web, "dist", "app-screens", f))),
     "1d …and every landing screenshot, and the hero card");
+  t.ok(["get/index.html", "get/get.js", "email/flourish-wordmark.png", "email/app-store-badge.png", "email/google-play-badge.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))),
+    "1f …and the device link's page and script, and the emails' images");
   t.ok(["og-image.png", "og-image-ca.png"].every(f => same(path.join(ROOT, "public", f), path.join(web, "dist", f))), "1e …and both link-preview images");
 
   // ── 2. the native strip removes them, and only them ─────────────────────────────────────────
@@ -56,7 +58,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   // ── 3. the native check refuses landing media ───────────────────────────────────────────────
   const check = (cwd) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-native-build.mjs"), "--artifact"], { cwd, env: ENV, encoding: "utf8" });
   const bad = check(web);
-  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png\)/.test(bad.stderr + bad.stdout),
+  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png, get, email\)/.test(bad.stderr + bad.stdout),
     "3a check-native-build --artifact refuses a dist/ that still holds the landing media");
   const good = check(nat);
   t.ok(good.status === 0 && /native build check passed \(artifact\)/.test(good.stdout), "3b …and passes the stripped one");

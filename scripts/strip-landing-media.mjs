@@ -17,6 +17,8 @@ export const LANDING_ONLY = [
   "app-screens",      // the landing's screenshots and the hero card crop
   "og-image.png",     // link previews of the site
   "og-image-ca.png",
+  "get",              // the device link's page (flourishmoney.app/get), with its Plausible script (2026-10-27)
+  "email",            // images the emails load from the website (the wordmark, the store badges)
 ];
 
 // The landing's link-preview tags in index.html (between the LANDING-META markers): they name the website, and a
