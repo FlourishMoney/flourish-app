@@ -115,7 +115,8 @@ const invert = (hex) => "#" + hex.replace("#", "").match(/../g).map((x) => (255 
   }
   const founder = E.foundingLinkEmailPayload("household@example.test", rows["a newer holder"], { launched: true });
   const badgeImgs = [...founder.html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]).slice(1);
-  t.ok(badgeImgs.length === 2 && badgeImgs.every((i) => new RegExp(`font-weight:700;[^"]*color:${L.COLORS.brand}`).test(i)), "4i the badges' alt text is styled bold brand green (images blocked, they still read as links)");
+  t.ok(badgeImgs.length === 2 && badgeImgs.every((i) => new RegExp(`font-size:11px;font-weight:700;line-height:13px;color:${L.COLORS.brand}`).test(i)),
+    "4i the badges' alt text is bold brand green, 11 px on 13 px lines, so it wraps whole inside the 40 px badge box with images blocked");
 
   // ── 5. Readable as designed and inverted ───────────────────────────────────────────────────────
   const K = L.COLORS;

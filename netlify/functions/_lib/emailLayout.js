@@ -50,9 +50,10 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const href = (u) => { const s = String(u); if (/["<>\s]/.test(s) || !/^https:\/\//.test(s)) throw new Error("email link refused"); return s; };
 
 // The stores' badges in one row, in the order given, each a link to its store. Fixed size (the PNGs are 3x); the alt
-// text is the badge's own words, bold and brand green, for a client that blocks images.
+// text is the badge's own words, bold and brand green, for a client that blocks images, small enough (11 px on 13 px
+// lines) to wrap whole inside the badge's own box instead of being cut off.
 function badgeRow(badges) {
-  const cells = badges.map((b, i) => `<td style="padding:0 ${i < badges.length - 1 ? 12 : 0}px 0 0;"><a href="${href(b.href)}" style="text-decoration:none;"><img src="${href(b.src)}" width="${b.width}" height="${b.height}" alt="${esc(b.alt)}" style="display:block;width:${b.width}px;height:${b.height}px;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:14px;font-weight:700;line-height:${b.height}px;color:${COLORS.brand};"></a></td>`);
+  const cells = badges.map((b, i) => `<td style="padding:0 ${i < badges.length - 1 ? 12 : 0}px 0 0;"><a href="${href(b.href)}" style="text-decoration:none;"><img src="${href(b.src)}" width="${b.width}" height="${b.height}" alt="${esc(b.alt)}" style="display:block;width:${b.width}px;height:${b.height}px;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:11px;font-weight:700;line-height:13px;color:${COLORS.brand};"></a></td>`);
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px;border-collapse:collapse;"><tr>${cells.join("")}</tr></table>`;
 }
 
