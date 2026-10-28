@@ -32,10 +32,16 @@
  * function at 30 s), and at most DAILY_CAP in any 24 hours. The Resend plan's daily allowance is shared
  * with the welcome sweep (its own cap is 50) and with GrowSmart.
  *
+ * ONLY THESE ADDRESSES (FOUNDING_LINK_EMAIL_ONLY, 2026-10-28: the founding dress rehearsal goes through this sweep
+ * itself). When it is set, the run emails only the addresses it lists (comma or space separated; case and spaces
+ * never matter). Only those rows are selected, and each row is checked against the list again before its email.
+ * Set but not a clean list of addresses: the run reads, sends and writes nothing. Unset: no change at all. It
+ * narrows the two switches above, never replaces them: FOUNDING_LINK_EMAIL must still be "true".
+ *
  * LOGS: counts only. Never an address, a row id or a key.
  *
- * Env: BILLING_ENABLED, FOUNDING_LINK_EMAIL, OPEN_SIGNUP (the launch email), SUPABASE_URL, SUPABASE_SECRET_KEY, RESEND_API_KEY,
- * WAITLIST_UNSUBSCRIBE_SECRET (optional; see _lib/waitlistUnsubscribe.js).
+ * Env: BILLING_ENABLED, FOUNDING_LINK_EMAIL, FOUNDING_LINK_EMAIL_ONLY (optional), OPEN_SIGNUP (the launch email), SUPABASE_URL,
+ * SUPABASE_SECRET_KEY, RESEND_API_KEY, WAITLIST_UNSUBSCRIBE_SECRET (optional; see _lib/waitlistUnsubscribe.js).
  */
 "use strict";
 
@@ -50,6 +56,17 @@ const READ_TIMEOUT_MS = 3000;
 const WRITE_TIMEOUT_MS = 3000;
 
 const flagOn = (name) => process.env[name] === "true";
+
+// FOUNDING_LINK_EMAIL_ONLY: null when unset (every owed row, as before), { set } of normalised addresses, or
+// { invalid: true } when it is set to anything that is not a clean list of addresses (the run then stops). An
+// address may not hold a quote, comma or bracket, so it is always safe inside PostgREST's in.( ) list.
+function allowlistFromEnv() {
+  const raw = process.env.FOUNDING_LINK_EMAIL_ONLY;
+  if (raw === undefined || raw === "") return null;
+  const parts = String(raw).split(/[\s,]+/).filter(Boolean).map(normalizeEmail);
+  if (!parts.length || parts.some((a) => !/^[^@\s",()]+@[^@\s",()]+\.[^@\s",().]+$/.test(a))) return { invalid: true };
+  return { set: new Set(parts) };
+}
 
 async function fetchWithDeadline(url, opts, ms, label) {
   const controller = new AbortController();
@@ -85,9 +102,11 @@ async function countSentSince(supabaseUrl, key, sinceIso) {
 // and their launch email still needs signup open. Every row is decided again on its own (foundingEmailKindFor).
 const versionsFor = () => [...FOUNDING_LINK_CONSENT_VERSIONS, ...LAUNCH_EMAIL_CONSENT_VERSIONS];
 
-async function selectOwed(supabaseUrl, key, limit, launched = false) {
+async function selectOwed(supabaseUrl, key, limit, launched = false, only = null) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
     + `?select=id,email,founding_position,is_test,unsubscribed_at,consent_version,metadata`
+    // FOUNDING_LINK_EMAIL_ONLY: only the listed addresses are even read.
+    + (only ? `&email=in.(${[...only].map((a) => encodeURIComponent(`"${a}"`)).join(",")})` : "")
     // A founding number (from 1 up, 0025), or (signup open) a pre-2026-10-01 row, number or not.
     + (launched
       ? `&or=(and(founding_position.gte.1,founding_position.lte.${FOUNDING_COHORT_LIMIT}),consent_version.in.(${LAUNCH_EMAIL_CONSENT_VERSIONS.map(encodeURIComponent).join(",")}))`
@@ -162,6 +181,11 @@ async function runFoundingLinkSweep(opts = {}) {
   if (!flagOn("BILLING_ENABLED")) return done("billing_off");
   if (!flagOn("FOUNDING_LINK_EMAIL")) return done("founding_link_email_off");
   if (!(process.env.RESEND_API_KEY || "").trim()) return done("no_api_key");
+  const allow = allowlistFromEnv();
+  if (allow && allow.invalid) {
+    console.error("[founding-link] skipped", "allowlist_invalid");
+    return done("allowlist_invalid");
+  }
   // Signup open on billing day is the launch the pre-2026-10-01 rows asked to hear about.
   const launched = flagOn("OPEN_SIGNUP");
 
@@ -181,14 +205,16 @@ async function runFoundingLinkSweep(opts = {}) {
   }
 
   const limit = Math.min(perRunCap, remaining);
-  const rows = await selectOwed(supabaseUrl, key, limit, launched);
+  const rows = await selectOwed(supabaseUrl, key, limit, launched, allow && allow.set);
   if (rows === null) return done("select_failed");
 
-  let sent = 0, failed = 0, notHonoured = 0, stoppedEarly = false, lookupDown = false, recordDown = false;
+  let sent = 0, failed = 0, notHonoured = 0, notAllowed = 0, stoppedEarly = false, lookupDown = false, recordDown = false;
   const batch = rows.slice(0, limit);
   for (const row of batch) {
     if (clock() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email || row.is_test === true) { notHonoured++; continue; }
+    // FOUNDING_LINK_EMAIL_ONLY, again per row: an address not on the list is never emailed, whatever the select returned.
+    if (allow && !allow.set.has(normalizeEmail(row.email))) { notAllowed++; continue; }
     const kind = foundingEmailKindFor(row, { launched });
     if (!kind || !mayEmailWaitlistRow(row, kind)) { notHonoured++; continue; }
     if (row.metadata && row.metadata.founding_link) { notHonoured++; continue; }
@@ -211,8 +237,10 @@ async function runFoundingLinkSweep(opts = {}) {
   console.log("[founding-link]", JSON.stringify({
     considered: batch.length, sent, failed, not_honoured: notHonoured, stopped_early: stoppedEarly,
     lookup_down: lookupDown, record_down: recordDown, sent_24h: sentToday + sent, daily_cap: dailyCap,
+    ...(allow ? { allowlist: allow.set.size, not_allowed: notAllowed } : {}),
   }));
-  return { skipped: lookupDown ? "lookup_failed" : recordDown ? "record_failed" : null, considered: batch.length, sent, failed, notHonoured, stoppedEarly };
+  return { skipped: lookupDown ? "lookup_failed" : recordDown ? "record_failed" : null, considered: batch.length, sent, failed, notHonoured, stoppedEarly,
+    ...(allow ? { allowlist: allow.set.size, notAllowed } : {}) };
 }
 
 exports.handler = async () => {
