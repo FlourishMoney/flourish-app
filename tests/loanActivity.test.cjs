@@ -160,11 +160,15 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
       if (u.includes("supabase")) return json([]);
       throw new Error("network blocked in test: " + u);
     };
+    // The server's 90-day window counts back from its clock: run it on the fixture's (Oct 14), not today's, or the
+    // oldest rows (77 days before Oct 14) leave the window as the real date moves on (they did on 2026-10-27).
+    const realNow = Date.now;
+    Date.now = () => now.getTime();
     try {
       const res = await plaid.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" },
         body: JSON.stringify({ action: "get_transactions", item_id: "item-1", access_token: "access-sandbox-test", days: 90, full_resync: true }) });
       return { status: res.statusCode, body: JSON.parse(res.body || "{}"), calls };
-    } finally { global.fetch = realFetch; process.env = saved; delete require.cache[PLAID_PATH]; delete require.cache[AUTH_PATH]; delete require.cache[SUPA_PATH]; }
+    } finally { Date.now = realNow; global.fetch = realFetch; process.env = saved; delete require.cache[PLAID_PATH]; delete require.cache[AUTH_PATH]; delete require.cache[SUPA_PATH]; }
   }
   async function clientFetch(serverBody, storedAccounts) {
     const realFetch = global.fetch;
