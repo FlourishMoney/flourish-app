@@ -97,8 +97,8 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
   }
 
   // ── 2. the email: its words, and its one price line ─────────────────────────────────────────────
-  // Since 2026-10-27 it leads to the stores first (docs/product/FOUNDING-STORE-EMAIL-WORDS.md): the lines that changed
-  // are placeholders until approved, the price line among them (the landing sentence says "Paid on flourishmoney.app").
+  // Since 2026-10-27 it leads to the stores first (docs/product/FOUNDING-STORE-EMAIL-WORDS.md, approved that day): its
+  // price line is the landing sentence's first sentence only (the second says "Paid on flourishmoney.app").
   const payload = E.foundingLinkEmailPayload(ADDRESS, ROW);
   {
     t.ok(payload !== null, "2a a founding household with current consent gets the email");
@@ -106,11 +106,11 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.eq(E.foundingLinkParagraphs(7), [
       "Payments for flourish are open.",
       "You're founding household #7 of 50, and your founding price is ready:",
-      "[WORDS: founding-email-price]",
+      "$79.99 a year plus tax, for as long as you stay subscribed.",
       "Your link: https://flourishmoney.app/get?ref=founding",
       { badges: E.STORE_BADGES },
-      "[WORDS: founding-email-store-steps]",
-      { small: "[WORDS: founding-email-computer]", url: "https://flourishmoney.app/?checkout=founding" },
+      "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.",
+      { small: "On a computer? You can subscribe on our website with this same email:", url: "https://flourishmoney.app/?checkout=founding" },
       "Questions? Just reply to this email.",
       "Amanda, founder of flourish",
     ], "2c the words, exactly (changing one is a deliberate edit here)");
@@ -119,8 +119,10 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     for (const [part, body] of [["text", payload.text], ["html", payload.html]]) {
       const stripped = body.split(E.FOUNDING_EMAIL_PRICE_LINE).join("");
       t.eq(stripped.match(MONEY), null, `2e the ${part} names no price outside its price line`);
-      t.ok(body.includes(E.FOUNDING_EMAIL_PRICE_LINE) && !body.includes("Paid on flourishmoney.app"), `2f the ${part} has its price line, and no longer says "Paid on flourishmoney.app"`);
+      t.eq((body.match(MONEY) || []).length, 1, `2f the ${part} names exactly one price, its price line's`);
+      t.ok(body.includes(E.FOUNDING_EMAIL_PRICE_LINE) && !body.includes("Paid on flourishmoney.app"), `2f2 the ${part} has its price line, and no longer says "Paid on flourishmoney.app"`);
     }
+    t.ok(O.foundingOfferCopy().price.startsWith(`${E.FOUNDING_EMAIL_PRICE_LINE} `), "2f3 the price line is the landing sentence's first sentence, word for word");
     t.ok(payload.text.includes(E.FOUNDING_GET_URL) && payload.html.includes(`href="${E.FOUNDING_GET_URL}"`), "2g the text and the html both carry the device link");
     t.ok(payload.text.includes(E.FOUNDING_LINK_URL) && payload.html.includes(`href="${E.FOUNDING_LINK_URL}"`), "2g2 …and the website's founding link");
     t.eq([payload.text.includes(ADDRESS), payload.html.includes(ADDRESS), JSON.stringify(payload.headers).includes(ADDRESS)], [false, false, false],

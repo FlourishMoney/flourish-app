@@ -15,13 +15,13 @@
 // Wherever the household pays, whether the founding price is offered is the server's answer for the signed-in
 // account's own confirmed email (_lib/foundingCohort.js), so a forwarded link gives nobody a price.
 //
-// WORDS PENDING. The lines that changed for the stores are placeholders (WORDS ids), listed with their facts and
-// limits in docs/product/FOUNDING-STORE-EMAIL-WORDS.md (tests/foundingStoreLink.test.cjs holds the two together).
-// They are replaced before this is merged; the sweep sends nothing unless FOUNDING_LINK_EMAIL is "true".
+// THE STORE LINES. The lines that changed for the stores were approved word for word on 2026-10-27, and are listed
+// with their facts and limits in docs/product/FOUNDING-STORE-EMAIL-WORDS.md (tests/foundingStoreLink.test.cjs holds
+// the two together).
 //
-// PRICES. The only price this email states is its price line. It was the landing page's sentence, word for word
-// (src/lib/foundingOffer.js foundingOfferCopy().price); that sentence says "Paid on flourishmoney.app", which is
-// no longer the email's main way to pay, so the line is a placeholder until new words are approved.
+// PRICES. The only price this email states is its price line, approved 2026-10-27: the first sentence of the landing
+// page's (src/lib/foundingOffer.js foundingOfferCopy().price). Its second sentence, "Paid on flourishmoney.app…", is
+// not in the email, since the email leads to the stores first.
 //
 // CASL. The footer says why they got it and which consent version is on record for them, carries the
 // landing page's Contact block word for word, and a signed one-click unsubscribe link; the message goes out
@@ -73,11 +73,11 @@ const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay 
 const CONTACT_BLOCK = Object.freeze(["flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", "hello@flourishmoney.app"]);
 const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";
 
-// THE STORE LINES (2026-10-27), placeholders until approved: docs/product/FOUNDING-STORE-EMAIL-WORDS.md.
-const FOUNDING_EMAIL_PRICE_LINE = "[WORDS: founding-email-price]";
-const FOUNDING_BUTTON_LABEL = "[WORDS: founding-email-button]";
-const FOUNDING_STORE_STEPS_LINE = "[WORDS: founding-email-store-steps]";
-const FOUNDING_COMPUTER_LINE = "[WORDS: founding-email-computer]";
+// THE STORE LINES, approved word for word 2026-10-27 (ChatGPT and Grok agreed): docs/product/FOUNDING-STORE-EMAIL-WORDS.md.
+const FOUNDING_EMAIL_PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed.";
+const FOUNDING_BUTTON_LABEL = "Get the app";
+const FOUNDING_STORE_STEPS_LINE = "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.";
+const FOUNDING_COMPUTER_LINE = "On a computer? You can subscribe on our website with this same email:";
 
 function foundingLinkParagraphs(position) {
   return [

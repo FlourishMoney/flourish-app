@@ -1,8 +1,8 @@
 // tests/foundingStoreLink.test.cjs
 // -----------------------------------------------------------------------------
 // THE FOUNDING EMAIL TO THE APP STORES (2026-10-27, Amanda: "People won't know how to download it").
-//   1  the words to write: every [WORDS: id] in docs/product/FOUNDING-STORE-EMAIL-WORDS.md is in the code exactly once
-//      (the email or the device link's page), and the code has no other placeholder; each has its place, facts and limit
+//   1  the words (approved 2026-10-27): every line in docs/product/FOUNDING-STORE-EMAIL-WORDS.md is in the code exactly
+//      once (the email or the device link's page), within its limit, with its place and facts; no placeholder is left
 //   2  the email's order: price line, the button (to the device link) with its text link, the stores' badges, the
 //      steps line, then the website as a small line; the launch email is untouched
 //   3  one set of store listings: the email, the device link's page and the website's badges name the same two
@@ -33,34 +33,40 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
   // ── 1. The words to write ────────────────────────────────────────────────────────────────────
   const docIds = [...doc.matchAll(/^### `([a-z-]+)`/gm)].map((m) => m[1]);
   t.eq(docIds, ["founding-email-button", "founding-email-store-steps", "founding-email-computer", "founding-email-price", "get-heading", "get-website"],
-    "1a the doc lists six placeholders: the button, the steps line, the computer line, the price line, and the page's two");
-  const inCode = (id) => (emailSrc.split(`[WORDS: ${id}]`).length - 1) + (page.split(`[WORDS: ${id}]`).length - 1);
-  t.ok(docIds.every((id) => inCode(id) === 1), "1b each is in the code exactly once (the email or the device link's page)");
-  const codeIds = [...new Set([...`${emailSrc}\n${page}\n${script}`.matchAll(/\[WORDS: ([a-z-]+)\]/g)].map((m) => m[1]))].sort();
-  t.eq(codeIds, [...docIds].sort(), "1c …and the code has no placeholder the doc does not list");
+    "1a the doc lists six lines: the button, the steps line, the computer line, the price line, and the page's two");
+  const section = (id) => doc.split(`### \`${id}\``)[1].split(/\n### |\n## /)[0];
+  const approved = Object.fromEntries(docIds.map((id) => [id, (section(id).match(/^- \*\*Approved:\*\* "(.+)"$/m) || [])[1]]));
+  const where = { "founding-email-button": E.FOUNDING_BUTTON_LABEL, "founding-email-store-steps": E.FOUNDING_STORE_STEPS_LINE, "founding-email-computer": E.FOUNDING_COMPUTER_LINE, "founding-email-price": E.FOUNDING_EMAIL_PRICE_LINE };
   for (const id of docIds) {
-    const sec = doc.split(`### \`${id}\``)[1].split(/\n### |\n## /)[0];
-    t.ok(/\*\*Where:\*\*/.test(sec) && /\*\*Facts it must state/.test(sec) && /\*\*Limit:\*\* \d+ characters/.test(sec), `1d ${id}: where it shows, the facts it must state, and a character limit`);
+    const line = approved[id], sec = section(id), limit = +((sec.match(/\*\*Limit:\*\* (\d+) characters/) || [])[1] || 0);
+    const count = (emailSrc.split(JSON.stringify(line)).length - 1) + (page.split(`>${line}<`).length - 1);
+    t.ok(!!line && count === 1 && (!(id in where) || where[id] === line), `1b ${id}: the approved line is in the code exactly once${id in where ? ", as the email's own" : ", on the page"}`);
+    t.ok(/\*\*Where:\*\*/.test(sec) && /\*\*Facts it must state/.test(sec) && limit > 0 && line.length <= limit, `1d ${id}: where it shows, its facts, and within its limit (${line && line.length}/${limit})`);
   }
-  const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0];
+  t.ok(!/\[WORDS:/.test(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}`) && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => /\[WORDS:/.test(read("src", "lib", f))),
+    "1c no [WORDS: placeholder is left: the email, the device link's page and script, App.jsx, src/lib");
+  const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0].split("**Facts it must state")[1] || "";
   const order = ["same email address this message went to", "tap the confirmation link", "open **See plans** and choose **Founding annual**"].map((s) => steps.indexOf(s));
   t.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2], "1e the steps line's facts: same email, then the confirmation link, then See plans and Founding annual, in that order");
   t.ok(/\*\*in place of Annual\*\*, not first/.test(steps) && /Monthly, then Founding annual/.test(steps), "1f …and that the store apps show Founding annual in place of Annual, not first");
-  t.ok(/flagged: the approved sentence is no longer all true/.test(doc) && /"Paid on flourishmoney\.app"/.test(doc), "1g the price line is flagged: \"Paid on flourishmoney.app\" is no longer the email's way to pay");
+  const said = ["email address this message was sent to", "tap the confirmation link", "open See plans and choose Founding annual"].map((x) => E.FOUNDING_STORE_STEPS_LINE.indexOf(x));
+  t.ok(said.every((i) => i >= 0) && said[0] < said[1] && said[1] < said[2] && !/\bfirst\b|at the top|selected/i.test(E.FOUNDING_STORE_STEPS_LINE),
+    "1e2 the approved steps line says the three, in that order, and never that Founding annual is first or selected");
+  t.ok(/flagged on 2026-10-27: the landing sentence was no longer all true/.test(doc) && /"Paid on flourishmoney\.app"/.test(doc), "1g the price line's flag stays on record: \"Paid on flourishmoney.app\" is not the email's way to pay");
 
   // ── 2. The email's order ─────────────────────────────────────────────────────────────────────
   const paras = E.foundingLinkParagraphs(7);
   const kinds = paras.map((p) => (typeof p === "string" ? p : p.badges ? "{badges}" : p.small ? `{small ${p.small}}` : "?"));
-  t.eq(kinds.slice(2, 7), ["[WORDS: founding-email-price]", "Your link: https://flourishmoney.app/get?ref=founding", "{badges}", "[WORDS: founding-email-store-steps]", "{small [WORDS: founding-email-computer]}"],
+  t.eq(kinds.slice(2, 7), [E.FOUNDING_EMAIL_PRICE_LINE, "Your link: https://flourishmoney.app/get?ref=founding", "{badges}", E.FOUNDING_STORE_STEPS_LINE, `{small ${E.FOUNDING_COMPUTER_LINE}}`],
     "2a the price line, the device link (drawn as the button), the badges, the steps line, the website as a small line");
   t.eq(paras[6].url, "https://flourishmoney.app/?checkout=founding", "2b the small line's link is the website's founding checkout");
   const payload = E.foundingLinkEmailPayload("household@example.test", { id: "00000000-0000-4000-8000-000000000012", is_test: false, consent_version: "2026-10-01", founding_position: 12, unsubscribed_at: null, metadata: {} });
   const html = payload.html;
   const at = (s) => html.indexOf(s);
-  t.ok(at(">[WORDS: founding-email-button]<") < at('src="https://flourishmoney.app/email/app-store-badge.png"') && at('src="https://flourishmoney.app/email/app-store-badge.png"') < at('src="https://flourishmoney.app/email/google-play-badge.png"')
-    && at('src="https://flourishmoney.app/email/google-play-badge.png"') < at("[WORDS: founding-email-store-steps]") && at("[WORDS: founding-email-store-steps]") < at("[WORDS: founding-email-computer]"),
+  t.ok(at(`>${E.FOUNDING_BUTTON_LABEL}<`) > 0 && at(`>${E.FOUNDING_BUTTON_LABEL}<`) < at('src="https://flourishmoney.app/email/app-store-badge.png"') && at('src="https://flourishmoney.app/email/app-store-badge.png"') < at('src="https://flourishmoney.app/email/google-play-badge.png"')
+    && at('src="https://flourishmoney.app/email/google-play-badge.png"') < at(E.FOUNDING_STORE_STEPS_LINE) && at(E.FOUNDING_STORE_STEPS_LINE) < at(E.FOUNDING_COMPUTER_LINE),
     "2c in the HTML: the button, then the App Store badge, the Google Play badge, the steps line, the small website line");
-  t.ok(payload.text.split("\n\n").includes("[WORDS: founding-email-computer] https://flourishmoney.app/?checkout=founding") && !/badge/i.test(payload.text),
+  t.ok(payload.text.split("\n\n").includes(`${E.FOUNDING_COMPUTER_LINE} https://flourishmoney.app/?checkout=founding`) && !/badge/i.test(payload.text),
     "2d in the plain text: the website line with its url; no badges (the device link does their job)");
   const launch = E.paragraphsFor(E.LAUNCH_KIND, null);
   t.ok(launch.every((p) => typeof p === "string") && !/WORDS|get\?ref/.test(launch.join(" ")), "2e the launch email is untouched: no badges, no device link, no placeholder");
