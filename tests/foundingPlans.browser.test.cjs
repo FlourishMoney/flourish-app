@@ -126,6 +126,8 @@ function installStore([platform, uid]) {
         if (action === "store_sync") { scenario.status = status({ paid: true, provider: platform === "android" ? "play_store" : "app_store", plan_key: "founding_annual" });
           return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...scenario.status }) }); }
         if (action === "status") return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: true, paid: scenario.status.paid }) });
+        // Couple mode's purchase hold (billing.js store_hold): an account in no household is held at once.
+        if (action === "store_hold") return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(scenario.status.paid ? { held: false, paid: true } : { held: true }) });
         return r.fulfill({ status: 404, contentType: "application/json", body: "{}" });
       }
       if (u.protocol === "data:" || u.protocol === "blob:") return r.continue();
@@ -168,6 +170,7 @@ function installStore([platform, uid]) {
       await page.locator(`${DIALOG} [data-plan="founding_annual"] button`).click();
       const sheet = await until(() => page.evaluate(() => window.__store.purchases.length > 0), 8000);
       t.eq(sheet ? await page.evaluate(() => window.__store.purchases) : [], ["app.flourishmoney.founding.annual"], "1f one tap on its button opens the store's sheet for the founding annual");
+      t.ok(asked.includes("store_hold") && asked.indexOf("store_hold") < (asked.indexOf("store_sync") < 0 ? Infinity : asked.indexOf("store_sync")), "1f2 …after the server held the household for this purchase (couple mode: one purchase at a time)");
       t.ok(await until(async () => !(await dialogUp(page)), 15000) && asked.includes("store_sync"), "1g the server confirms the purchase and the screen closes");
       await ctx.close();
     }
