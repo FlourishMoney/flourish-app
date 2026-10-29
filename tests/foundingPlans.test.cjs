@@ -3,10 +3,10 @@
 // A FOUNDING HOUSEHOLD IS ASKED TO PAY STRAIGHT AWAY (version 1.1.3, Amanda, 2026-10-28; lib/foundingPlans.js).
 //
 // In a store app that sells, the existing plans screen opens by itself once per account, as soon as the account is
-// in the app, when the server offers it the founding price (founding ledger address, confirmed by our link) and it
-// has no paid plan. Founding annual is first. It can be closed; it never opens by itself again for that account.
+// in the app, when the server offers it the founding price (since 2026-10-29: any confirmed address while founding
+// seats are left, migration 0029) and it has no paid plan. Founding annual is first. It can be closed; it never opens by itself again for that account.
 //   1  founding + confirmed + unpaid: opens, once, with Founding annual first
-//   2  not founding (no position, or not confirmed by our link): no change
+//   2  not founding (seats full, or the address not confirmed): no change
 //   3  already paid (any provider, a founding switch, a web subscription in collection): never opens
 //   4  closed once: does not reopen on its own (the marker survives sign out; storage blocked: once per session)
 //   5  the wiring in App.jsx, and the words: no new line, the approved disclosure and the close button stay
@@ -27,8 +27,8 @@ const U1 = "11111111-1111-4111-8111-111111111111", U2 = "22222222-2222-4222-8222
 const HOLDER = "holder@example.ca", NOBODY = "nobody@example.ca";
 const LATER = new Date(Date.now() + 200 * 86400000).toISOString();
 
-// A service-role client with a founding ledger behind waitlist_founding_number_for_email (as tests/storeFounding).
-function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptions = [] } = {}) {
+// A service-role client with `seats` founding seats held (0029) and a ledger behind waitlist_founding_number_for_email.
+function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptions = [], seats = 0 } = {}) {
   const db = { subscriptions: subscriptions.map((r) => ({ ...r })), profiles: [] };
   const from = (name) => {
     const f = [];
@@ -41,9 +41,10 @@ function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptio
   return {
     from,
     rpc: async (fn, args) => fn === "waitlist_founding_number_for_email"
-      ? { data: args.p_email === email && position ? position : null, error: null } : { data: null, error: null },
-    auth: { admin: { getUserById: async () => ({ data: { user: { id: U1, email, email_confirmed_at: "2026-10-28T00:00:00Z",
-      app_metadata: confirmedByLink ? { email_confirmation: "link" } : { provider: "email" } } }, error: null }) } },
+      ? { data: args.p_email === email && position ? position : null, error: null }
+      : fn === "founding_seats_taken" ? { data: seats, error: null } : { data: null, error: null },
+    auth: { admin: { getUserById: async () => ({ data: { user: { id: U1, email, email_confirmed_at: confirmedByLink ? "2026-10-28T00:00:00Z" : null,
+      app_metadata: { email_confirmation: "link" } } }, error: null }) } },
   };
 }
 function loadBilling(admin) {
@@ -73,7 +74,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
 
   // ── 1. Founding, confirmed by our link, not paying: opens once, Founding annual first ────────────────
   {
-    t.eq([holder.paid, holder.founding.available], [false, true], "1a the server: a ledger address confirmed by our link, with no subscription, is offered the founding price and is not paid");
+    t.eq([holder.paid, holder.founding.available], [false, true], "1a the server: a confirmed address with no subscription, while seats are left, is offered the founding price and is not paid");
     t.eq(F.foundingPlansAutoOpen(ready(holder)), true, "1b …so the plans screen opens by itself");
     const s = memStorage();
     t.eq(F.foundingPlansShown(s, U1), false, "1c not yet shown for this account");
@@ -89,9 +90,9 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
 
   // ── 2. Not founding: no change ───────────────────────────────────────────────────────────────────
   {
-    const nobody = await status(fakeAdmin({ email: NOBODY, position: null }));
+    const nobody = await status(fakeAdmin({ email: NOBODY, position: null, seats: 50 }));
     const unconfirmed = await status(fakeAdmin({ email: HOLDER, position: 36, confirmedByLink: false }));
-    t.eq([nobody.founding.available, unconfirmed.founding.available], [false, false], "2a the server: no founding price without a position, nor before the address is confirmed by our link");
+    t.eq([nobody.founding.available, unconfirmed.founding.available], [false, false], "2a the server: no founding price once 50 seats are held, nor before the address is confirmed");
     t.eq([F.foundingPlansAutoOpen(ready(nobody)), F.foundingPlansAutoOpen(ready(unconfirmed))], [false, false], "2b …so nothing opens by itself for either");
     t.eq(F.paywallPlanOrder(regularPkgs).map(([p]) => p), ["monthly", "annual"], "2c the plans stay in their old order: Monthly, then Annual");
     t.eq(F.foundingPlansAutoOpen(ready({ paid: false })), false, "2d an answer without a founding part opens nothing");
@@ -104,7 +105,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
       t.eq([st.paid, st.founding.available, F.foundingPlansAutoOpen(ready(st))], [true, false, false], `3a paid through ${provider} (${plan_key}): the server offers nothing and it never opens`);
     }
     const regular = await status(fakeAdmin({ email: HOLDER, position: 36, subscriptions: [{ user_id: U1, provider: "app_store", status: "active", plan_key: "monthly", current_period_end: LATER, provider_subscription_id: "x" }] }));
-    t.ok(regular.paid === true && regular.founding.held_on_regular_plan && F.foundingPlansAutoOpen(ready(regular)) === false, "3b a founding holder on a regular store plan (the founding switch) is paying: never opens");
+    t.ok(regular.paid === true && regular.founding.held_on_regular_plan && F.foundingPlansAutoOpen(ready(regular)) === false, "3b a household offered founding but on a regular store plan (the founding switch) is paying: never opens");
     t.eq(F.foundingPlansAutoOpen(ready({ paid: true, founding: { available: true } })), false, "3c even an answer that said both: paid wins");
     t.eq(F.foundingPlansAutoOpen(ready({ paid: false, web_attention: true, founding: { available: true } })), false, "3d a web subscription the store must not sell on top of: never opens");
   }

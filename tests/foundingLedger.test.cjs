@@ -4,9 +4,11 @@
 //
 // tests/foundingLedger.sql.test.cjs runs the migration in a real Postgres. This checks, without one, that
 // every reader goes through the one ledger, the one issuing rule and the one lookup:
-//   1  billing asks waitlist_founding_number_for_email, and 0016's name is the same answer;
-//   2  checkout (billing.js) gives founding_annual only through mayBuyFoundingPrice, which asks that lookup;
-//   3  the landing count (/api/founding) and the waitlist form's "spots full" check count the REAL holders;
+//   1  the lookup waitlist_founding_number_for_email, and 0016's name is the same answer (kept: the founding
+//      email names a number; since 2026-10-29 it no longer decides who may buy the founding price);
+//   2  checkout (billing.js) gives founding_annual only through mayBuyFoundingPrice, which counts founding
+//      seats (0029), never the ledger;
+//   3  the waitlist form's "spots full" check counts the REAL holders; the landing count counts seats;
 //   4  the waitlist trigger and confirmed accounts issue through one function, under 0014's lock, with one cap;
 //   5  the migration never alters auth.users (Supabase's auth admin owns it), runs as one transaction, numbers
 //      the confirmed accounts once, and carries its dry run, check and rollback.
@@ -34,17 +36,19 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
   t.ok(/or l\.user_id is not null/.test(lookup), "1c …held by a live waitlist row OR recorded against an account");
   t.ok(/select public\.waitlist_founding_number_for_email\(p_email\);/.test(fnBody("waitlist_founding_position_for_email")), "1d 0016's name answers the same");
   const cohort = read("netlify", "functions", "_lib", "foundingCohort.js");
-  t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(cohort), "1e the cohort rule calls that lookup by name");
+  t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(cohort), "1e foundingPositionForEmail still calls that lookup by name");
 
   // 2. Checkout.
   const billing = read("netlify", "functions", "billing.js");
   t.ok(/if \(planKey === "founding_annual" && !\(await mayBuyFoundingPrice\(admin, user_id, user\)\)\)/.test(billing),
-    "2a checkout refuses founding_annual unless mayBuyFoundingPrice says this household holds a number");
-  t.ok(/return \(await foundingPositionForEmail\(admin, user\.email\)\) !== null;/.test(cohort) && /emailVerifiedByLink\(user\)/.test(cohort),
-    "2b …which needs the address confirmed by our link and a number from the lookup");
+    "2a checkout refuses founding_annual unless mayBuyFoundingPrice says so");
+  const rule = cohort.slice(cohort.indexOf("async function mayBuyFoundingPrice"), cohort.indexOf("module.exports"));
+  t.ok(/const held = await seatsTaken\(admin\);\s+return held !== null && held < FOUNDING_COHORT_LIMIT;/.test(rule) && /emailConfirmed\(user\)/.test(rule) && !/foundingPositionForEmail/.test(rule),
+    "2b …which needs a confirmed address and fewer than 50 seats held, and never the ledger");
 
   // 3. One count: the real holders.
-  t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position&void_at=is\.null/.test(read("netlify", "functions", "founding.js")), "3a /api/founding counts the real holders");
+  t.ok(/\/rest\/v1\/rpc\/founding_seats_taken/.test(read("netlify", "functions", "founding.js")) && !/waitlist_founding_ledger/.test(read("netlify", "functions", "founding.js")),
+    "3a /api/founding counts founding seats (0029), not the ledger");
   t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position&void_at=is\.null/.test(read("netlify", "functions", "beta.js")), "3b the waitlist form's spots-full check counts the same");
   t.ok(/insert into public\.waitlist_founding_ledger \(position, email_key, source, user_id\)/.test(fnBody("founding_issue_for_key")), "3c accounts' numbers are rows in that same ledger");
 

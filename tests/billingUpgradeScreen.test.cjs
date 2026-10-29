@@ -42,6 +42,7 @@ function fakeAdmin(state) {
   const norm = (e) => String(e || "").replace(/\s+/g, "").toLowerCase();
   const rpc = async (name, args) => {
     // waitlist_founding_number_for_email (0017). This file's fixtures never void a number or pass 50.
+    if (name === "founding_seats_taken") return { data: state.seats || 0, error: null };   // 0029 (2026-10-29)
     if (name !== "waitlist_founding_number_for_email") return { data: null, error: { message: "no such function" } };
     const hits = (state.rows.waitlist || []).filter(r => norm(r.email) === norm(args.p_email) && norm(args.p_email)
       && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1);
@@ -107,7 +108,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
       "1g …and the screen becomes visible on that answer alone");
   }
 
-  // ── 2. The founding offer belongs to waitlist positions 1 to 50 ─────────────────────────────
+  // ── 2. The founding offer belongs to the first 50 who subscribe (2026-10-29: founding seats) ──────
   {
     process.env.BILLING_ENABLED = "true";
     t.eq(cohort.FOUNDING_COHORT_LIMIT, 50, "2a the cohort is 50 households");
@@ -119,15 +120,15 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     t.eq([cohort.isFoundingPosition(0), cohort.isFoundingPosition(53)], [false, true], "2d 0 is not a founding number; 53 is, when the database issued it after voided test numbers");
     t.eq(cohort.isFoundingPosition(null), false, "2e a position that could not be established is NOT a founding position");
 
-    // Whatever the paid count is, only the waitlist position matters.
-    const ask = async (email) => {
-      const state = { rows: { waitlist: waitlist(60), subscriptions: [] }, user: confirmed(email) };
+    // The seats held decide (0029), not the waitlist position: 49 held, one left; 50 held, none.
+    const ask = async (email, seats) => {
+      const state = { rows: { waitlist: waitlist(60), subscriptions: [] }, user: confirmed(email), seats };
       const billing = loadBilling({ state });
       return JSON.parse((await billing.handler(post({ action: "status" }))).body);
     };
-    const at50 = await ask("h50@example.test"), at51 = await ask("h51@example.test");
-    t.eq(at50.founding.available, true, "2f waitlist household #50 is offered the founding price");
-    t.eq(at51.founding.available, false, "2g #51 is not — the SERVER decides, from the waitlist, not the client");
+    const at50 = await ask("h51@example.test", 49), at51 = await ask("h1@example.test", 50);
+    t.eq(at50.founding.available, true, "2f with 49 seats held, a confirmed household (waitlist #51 here) is offered the founding price");
+    t.eq(at51.founding.available, false, "2g with 50 held nobody is (waitlist #1 here) — the SERVER decides, from the seats, not the client");
     t.eq(at50.founding.cohortLimit, 50, "2h …and the limit travels with the answer, so the label cannot drift");
 
     t.ok(vis.offeredPlans({ status: at50 }).some(p => p.key === "founding_annual"),
@@ -141,10 +142,10 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
 
     // And the rule is enforced where money changes hands, not only where the price is shown.
     let stripeCalls = 0;
-    const state = { rows: { waitlist: waitlist(60) }, user: confirmed("h51@example.test") };
+    const state = { rows: { waitlist: waitlist(60) }, user: confirmed("h1@example.test"), seats: 50 };
     const billing = loadBilling({ state, stripePost: async () => { stripeCalls++; return { url: "x" }; } });
     const res = await billing.handler(post({ action: "create_checkout_session", plan_key: "founding_annual" }));
-    t.eq(res.statusCode, 403, "2l a client posting for the founding price without a founding position is refused");
+    t.eq(res.statusCode, 403, "2l a client posting for the founding price once 50 seats are held is refused");
     t.eq(stripeCalls, 0, "2m …before Stripe is asked for anything");
   }
 

@@ -42,6 +42,7 @@
 const { alertSupport } = require("./supportAlert");
 const crypto = require("crypto");
 const { isPaidSubscription, STORE_PROVIDERS } = require("./planRules");
+const { takeSeat, releaseSeat } = require("./foundingSeats");
 
 const ENTITLEMENT_ID = "plus";
 
@@ -99,6 +100,8 @@ function acceptSandboxFor(user, env = process.env) {
  * whatever RevenueCat's "plus" entitlement currently points at: a promotional grant or another source must not
  * stand in for, or cancel, a real store purchase. The live one with the latest expiry wins; activeCount says how
  * many are live (more than one is a household paying twice, which sync reports).
+ * Two more answers for the founding seats (migration 0029): sandbox (the chosen purchase is a sandbox one, the
+ * App Review account's: never a seat), and foundingRefunds (the stores whose founding purchase was refunded).
  */
 function storeRowFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = false } = {}) {
   const subs = (subscriber && subscriber.subscriptions) || {};
@@ -120,6 +123,8 @@ function storeRowFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = 
     else status = sub.period_type === "trial" ? "trialing" : "active";   // a billing retry inside the grace period stays active
     found.push({
       live: status !== "canceled",
+      refunded: refunded !== null,
+      sandbox: !!sub.is_sandbox,
       sortAt: refunded !== null ? refunded : (expires !== null ? expires : t),
       row: {
         provider: sub.store,
@@ -131,10 +136,11 @@ function storeRowFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = 
       },
     });
   }
-  if (!found.length) return { row: null, reason, activeCount: 0 };
+  const foundingRefunds = [...new Set(found.filter((f) => f.refunded && f.row.plan_key === "founding_annual").map((f) => f.row.provider))];
+  if (!found.length) return { row: null, reason, activeCount: 0, sandbox: false, foundingRefunds };
   const live = found.filter((f) => f.live);
   const pick = (live.length ? live : found).sort((x, y) => y.sortAt - x.sortAt)[0];
-  return { row: pick.row, reason: null, activeCount: live.length };
+  return { row: pick.row, reason: null, activeCount: live.length, sandbox: pick.sandbox, foundingRefunds };
 }
 
 /**
@@ -178,7 +184,8 @@ async function fetchSubscriber(appUserId, { key = (process.env.REVENUECAT_SECRET
  *   flag          something for support, not for the household: "two_store_subscriptions" (paying twice in the
  *                 stores: a regular plan and the founding annual are separate App Store groups, so both can be
  *                 live), "store_and_web_subscriptions" (a store purchase on top of a paid website subscription),
- *                 "founding_not_eligible" (the founding price bought by a household it was not offered to).
+ *                 "founding_not_eligible" (the founding price bought by a household it was not offered to, or
+ *                 bought at the same moment as the 50th seat).
  *                 The household keeps its access. A flag is recorded on the row (support_flag, support_flag_at,
  *                 migration 0022; a repeat keeps the first time) and, when it is new, the support inbox is told
  *                 at once (_lib/supportAlert.js), so it is seen the same day.
@@ -191,7 +198,7 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   const fetchSub = deps.fetchSubscriber || fetchSubscriber;
   const user = deps.user || null;
   const subscriber = await fetchSub(userId);
-  const { row, reason, activeCount } = storeRowFromSubscriber(subscriber, now, { acceptSandbox: acceptSandboxFor(user, deps.env || process.env) });
+  const { row, reason, activeCount, sandbox, foundingRefunds = [] } = storeRowFromSubscriber(subscriber, now, { acceptSandbox: acceptSandboxFor(user, deps.env || process.env) });
 
   const { data: existing, error: readErr } = await admin
     .from("subscriptions")
@@ -219,6 +226,8 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
     // The store no longer reports any live purchase (refunded, or RevenueCat moved it to another account): it ends now.
     next = { provider: existingProvider, status: "canceled", current_period_end: nowIso, updated_at: nowIso, last_event_at: nowIso };
   }
+  // A REFUNDED FOUNDING PURCHASE GIVES ITS SEAT BACK (2026-10-29), whatever the row says now.
+  for (const provider of foundingRefunds) await releaseSeat(admin, userId, { reason: "refund", provider });
   if (!next) return answer({});
   if (!mayReplace(existing, next, now)) {
     console.error("[store-sync] conflict: a store purchase for a household whose subscription is with", existingProvider);
@@ -260,6 +269,11 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   const { error: writeErr } = await admin.from("subscriptions").upsert({ user_id: userId, ...next }, { onConflict: "user_id" });
   if (writeErr) throw new Error(`subscriptions write: ${writeErr.message}`);
   if (flag) await tellSupport(flag, next.provider);
+  // A FOUNDING SEAT (2026-10-29, migration 0029): a paid founding store purchase holds one, taken the first time
+  // the server sees it (0029 ignores every later call). Past 50, a purchase made at the same moment as the last
+  // seat, it is honoured and logged (_lib/foundingSeats.js), and support sees founding_not_eligible above.
+  // Never a sandbox purchase: the App Review account's are let through for access, not as households.
+  if (next.plan_key === "founding_annual" && isPaidSubscription(next, now) && !sandbox) await takeSeat(admin, userId, next.provider, null);
   if (foundingEnded && user && user.email) {
     const { error: endErr } = await admin.rpc("waitlist_founding_mark_ended", { p_email: user.email });
     if (endErr) throw new Error(`founding end: ${endErr.message}`);

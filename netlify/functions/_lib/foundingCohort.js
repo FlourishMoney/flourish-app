@@ -1,48 +1,40 @@
 // netlify/functions/_lib/foundingCohort.js
 // -----------------------------------------------------------------------------
-// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-06; rules of 2026-10-07).
+// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-29: the first 50 households who subscribe).
 //
-// The founding price is $79.99 a year plus tax, "for as long as you stay subscribed". In order:
+// The founding price is $79.99 a year plus tax, "for as long as you stay subscribed". It goes to the first 50
+// households who subscribe to it, on the website, the App Store or Google Play (_lib/foundingSeats.js,
+// migration 0029). A waitlist number no longer grants it, and no one's is held. In order:
 //   1. ENDED IS FINAL. An account that has had a founding subscription that ended
 //      (subscriptions.founding_ended_at, stamped by the webhook) is offered the regular prices only.
 //   2. BETA FOUNDERS. A beta tester flagged as a founder (profiles.founder_flag) keeps the founding price
-//      they were promised. They are outside the 50: this never reads or touches the waitlist.
-//   3. THE FIRST 50 ON THE WAITLIST. Otherwise the account's confirmed email must hold a waitlist
-//      founding number, on a row that is not a test row, that is not void and whose founding
-//      subscription has never ended. Since 0025 numbers can run past 50: a test row's number is voided
-//      and never reissued, and the database caps the REAL holders at 50, not the highest number.
-// Everyone else is offered the regular prices.
+//      they were promised. They are outside the 50 and never take a seat.
+//   3. ANY OTHER HOUSEHOLD, while fewer than 50 seats are held: a signed-in account whose email address is
+//      confirmed, and not at a test domain. Whether it already pays is the caller's question (billing.js
+//      offers nothing to a household that pays, and checkout refuses a second subscription).
+// Everyone else, and everyone once 50 seats are held, is offered the regular prices.
 //
-// The numbers are the database's (migration 0014): issued once, in created_at order, recorded in a
-// ledger and never reissued. Nothing here assigns, frees or counts them, so:
-//   • a household that joins and never pays keeps its number, and the 51st joiner never gets it;
-//   • a household whose founding subscription ends keeps its number too: nobody else is given it;
-//   • paying, or not paying, moves nobody up or down.
+// A SEAT is taken when a founding subscription's first payment succeeds, and given back by a refund (0029). The
+// offer counts seats, never waitlist numbers: the waitlist ledger (0014, 0025) is kept as it is and not read here.
 //
-// THE SERVER DECIDES. The client sends a plan key and nothing else; it is told whether the founding
-// price is available to this account, never a position or a count.
+// THE SERVER DECIDES. The client sends a plan key and nothing else; it is told whether the founding price is
+// available to this account, and how many founding spots are left (the same public figure the landing shows).
 //
-// The match runs in Postgres (waitlist_founding_number_for_email, migration 0025), which ignores case
-// and whitespace on both sides and skips test rows, test addresses and void numbers. The address is normalised here as well, so
-// the question asked is the same either way.
+// CONFIRMED. Supabase Auth's email_confirmed_at, from the server's own record, never the client's word. An
+// address confirmed on creation (app_metadata.email_confirmation "auto": an invite code while signup was shut)
+// was never proved by its owner and is not offered the founding price.
 //
-// The email is the account's own, from Supabase Auth, and only once the HOUSEHOLD has confirmed it by
-// clicking the link we emailed (round 3): an address nobody has proved they own cannot claim someone
-// else's place. beta.js records how each account's address gets confirmed in app_metadata, which only
-// the server can write: "link" (created unconfirmed; confirmed only when the link is clicked) or "auto"
-// (confirmed on creation: an invite code while signup was shut). An auto-confirmed address never gets the
-// founding price. Accounts made before that marker existed have none and count as not verified. A beta
-// founder (founder_flag) never needed the waitlist, so this changes nothing for them.
-//
-// FAILS CLOSED. If the lookup errors, the function is not applied yet, the address is a test address,
-// or the answer is not a whole number from 1 up, the answer is "no": the regular prices are still offered. Offering a price we then
-// cannot honour is worse than not offering it.
+// FAILS CLOSED. If the seats cannot be counted (0029 not applied, the read failed) or the address is a test
+// address, the answer is "no": the regular prices are still offered. Offering a price we then cannot honour is
+// worse than not offering it.
 // -----------------------------------------------------------------------------
 "use strict";
 
-// The size of the founding cohort: how many REAL households may hold a founding number. One place. See
-// docs/ops/BILLING-SETUP.md. The issuing rule in 0025 (founding_issue_for_key) carries the same 50.
-const FOUNDING_COHORT_LIMIT = 50;
+const { FOUNDING_SEAT_LIMIT, seatsTaken } = require("./foundingSeats");
+
+// The size of the founding cohort: how many households may hold a founding seat. One place
+// (_lib/foundingSeats.js, migration 0029 carry the same 50). See docs/ops/BILLING-SETUP.md.
+const FOUNDING_COHORT_LIMIT = FOUNDING_SEAT_LIMIT;
 
 // Sign-ups from these domains are Flourish's own tests, never households (Amanda, 2026-10-14). A
 // subdomain counts too. Migration 0025's waitlist_is_test_email() holds the same two.
@@ -67,7 +59,8 @@ function isFoundingPosition(p) {
   return Number.isInteger(p) && p >= 1;
 }
 
-// The waitlist founding position for this address, or null. Never throws.
+// The waitlist founding position for this address, or null. Never throws. The ledger is kept, and the founding
+// email still names it; it no longer decides who may buy the founding price.
 async function foundingPositionForEmail(admin, email) {
   const addr = normalizeEmail(email);
   if (!addr || isTestEmail(addr)) return null;
@@ -94,7 +87,7 @@ async function foundingEndedForAccount(admin, user_id) {
   }
 }
 
-// A beta tester flagged as a founder. A failed read is "not flagged": they still get the waitlist check.
+// A beta tester flagged as a founder. A failed read is "not flagged": they still get the seat rule.
 async function isBetaFounder(admin, user_id) {
   try {
     const { data, error } = await admin
@@ -111,16 +104,15 @@ function emailVerifiedByLink(user) {
   return !!(user && user.email_confirmed_at && user.app_metadata && user.app_metadata.email_confirmation === "link");
 }
 
-// AN OLDER ACCOUNT HOLDING A FOUNDING ADDRESS (round 4): its address is confirmed, but not by our link, and
-// the address holds a founding spot. It may ask for a confirmation link (_lib/foundingConfirm.js), which sets
-// the "link" marker. Never for a beta founder, an account whose founding subscription ended, or one already
-// verified by link. Fails closed: any answer it cannot read is "no".
-async function foundingConfirmNeeded(admin, user_id, user) {
-  if (!user_id || !user || !user.email || !user.email_confirmed_at) return false;
-  if (emailVerifiedByLink(user)) return false;
-  if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
-  if (await isBetaFounder(admin, user_id)) return false;
-  return (await foundingPositionForEmail(admin, user.email)) !== null;
+// A confirmed address its owner proved: Supabase Auth says it is confirmed, and it was not confirmed on creation.
+function emailConfirmed(user) {
+  return !!(user && user.email && user.email_confirmed_at && !(user.app_metadata && user.app_metadata.email_confirmation === "auto"));
+}
+
+// THE CONFIRMATION LINK FOR OLDER ACCOUNTS (round 4) is no longer needed: a confirmed address is enough
+// (rule 3 above), however it was confirmed. Always "no", so billing.js never offers or sends one.
+async function foundingConfirmNeeded() {
+  return false;
 }
 
 // The account (its id, and the user as Supabase Auth holds it) -> may it buy the founding price?
@@ -128,11 +120,12 @@ async function mayBuyFoundingPrice(admin, user_id, user) {
   if (!user_id) return false;
   if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
   if (await isBetaFounder(admin, user_id)) return true;
-  if (!user || !user.email || !emailVerifiedByLink(user)) return false;
-  return (await foundingPositionForEmail(admin, user.email)) !== null;
+  if (!emailConfirmed(user) || isTestEmail(user.email)) return false;
+  const held = await seatsTaken(admin);
+  return held !== null && held < FOUNDING_COHORT_LIMIT;
 }
 
 module.exports = {
   FOUNDING_COHORT_LIMIT, TEST_EMAIL_DOMAINS, normalizeEmail, isTestEmail, isFoundingPosition, foundingPositionForEmail,
-  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, foundingConfirmNeeded, mayBuyFoundingPrice,
+  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, emailConfirmed, foundingConfirmNeeded, mayBuyFoundingPrice,
 };

@@ -1,29 +1,29 @@
 // tests/foundingBilling.test.cjs
 // -----------------------------------------------------------------------------
-// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-06; rules of 2026-10-07).
+// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-29: the first 50 households who subscribe).
 //
 // The founding price ($79.99 a year plus tax, "for as long as you stay subscribed") is sold to:
 //   • a beta tester flagged as a founder (profiles.founder_flag), outside the 50; or
-//   • a confirmed account whose email holds a waitlist founding number that is not void, on a row that
-//     is not a test row and not at a test domain (since 0017 the database caps the REAL holders at 50;
-//     a test row's number is void and never reissued, so numbers can run past 50);
-// and never to an account, or a waitlist number, whose founding subscription has ended. Everyone else is
-// offered the regular prices ($11.99 a month, $99.99 a year). The server decides; the client sends a
-// plan key.
+//   • any signed-in account whose address is confirmed (not on creation) and not at a test domain, while fewer
+//     than 50 founding seats are held (migration 0029: a seat per household whose founding subscription's first
+//     payment succeeded, given back by a refund);
+// and never to an account whose founding subscription has ended. A waitlist number neither grants nor is
+// needed for it. Everyone else is offered the regular prices ($11.99 a month, $99.99 a year). The server
+// decides; the client sends a plan key.
 //
 // What this pins:
-//   1. number 50 gets the founding price; 51 (the first after the cohort) does not
-//   2. a test row never takes a spot, even one that still carries a number
-//   3. email case and whitespace do not matter, on either side
-//   4. a household that joins and never pays does not free its spot
+//   1. 49 seats held: a confirmed household gets the founding price; at 50 (or past, a store race) nobody does
+//   2. a test-domain address never does, in any case or padding
+//   3. the waitlist is not asked: a household never on it gets the price, a waitlist number gets nothing extra
+//   4. a household that joins the waitlist and never pays takes no seat
 //   5. the server decides: nothing the client sends changes the answer
-//   6. it fails closed: no lookup, no confirmed email, no founding price — the regular prices remain
+//   6. it fails closed: no seat count, no confirmed email, no founding price — the regular prices remain
 //   7. the 0016 SQL: same rules, service role only, the check row marked by hash and nothing else
-//   8. cancel and return: an active founding subscription renews at $79.99; once one has ended the
-//      household is offered regular prices only; its number is never given to anyone else
-//   9. beta founders keep the founding price, take no waitlist spot and change nobody's number
-//  10. 0017: billing refuses a void number and a test-domain address; a real holder whose number is past
-//      50 (issued after test numbers were voided) gets it; the 51st real household does not
+//   8. cancel and return: an active founding subscription renews at $79.99; a paid founding checkout takes a
+//      seat; once a founding subscription has ended that account is offered regular prices only, and its seat
+//      stays held (it subscribed; only a refund gives a seat back)
+//   9. beta founders keep the founding price and take no seat
+//  10. the 0025 ledger SQL is kept as it was, and billing no longer reads it
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -43,10 +43,11 @@ const norm = (e) => String(e == null ? "" : e).replace(/\s+/g, "").toLowerCase()
 // The database, as far as billing and the webhook see it. waitlist rows carry their number; the ledger
 // (0014) records every number ever issued, by address key, with ended_at (0016). Built from the rows'
 // numbers, as start() and the trigger build it.
-function makeState({ waitlist = [], profiles = [], subscriptions = [], user, rpcError, endError } = {}) {
+function makeState({ waitlist = [], profiles = [], subscriptions = [], user, rpcError, endError, seatsHeld = 0, seatError } = {}) {
   const ledger = {};
   for (const r of waitlist) if (Number.isInteger(r.founding_position)) ledger[norm(r.email)] = { position: r.founding_position, ended_at: r.ended_at || null, void_at: r.void_at || null };
-  return { rows: { waitlist, profiles, subscriptions, billing_events: [] }, ledger, user, rpcError, endError, rpcCalls: [], writes: [] };
+  return { rows: { waitlist, profiles, subscriptions, billing_events: [] }, ledger, user, rpcError, endError, rpcCalls: [], writes: [],
+    seats: Array.from({ length: seatsHeld }, (_, i) => ({ user_id: `held-${i}`, provider: "stripe", released_at: null })), seatError };
 }
 
 // waitlist_founding_number_for_email, as 0017 defines it (0016's lookup plus: not void, not a test
@@ -114,6 +115,18 @@ function fakeAdmin(state) {
       if (!l || l.ended_at) return { data: 0, error: null };
       l.ended_at = "2026-11-01T00:00:00Z";
       return { data: 1, error: null };
+    }
+    // Migration 0029, as it counts and takes seats (a test address and a beta founder never take one).
+    if (name === "founding_seats_taken") {
+      if (state.seatError) return { data: null, error: { message: state.seatError, code: state.seatErrorCode } };
+      return { data: state.seats.filter(x => !x.released_at).length, error: null };
+    }
+    if (name === "founding_seat_take") {
+      const held = state.seats.filter(x => !x.released_at).length;
+      const excluded = isTestDomain(state.user && state.user.email) || state.rows.profiles.some(p => p.user_id === args.p_user_id && p.founder_flag);
+      if (excluded || state.seats.some(x => x.user_id === args.p_user_id)) return { data: [{ taken: false, seats: held, over_cap: false }], error: null };
+      state.seats.push({ user_id: args.p_user_id, provider: args.p_provider, ref: args.p_ref, over_cap: held >= 50, released_at: null });
+      return { data: [{ taken: true, seats: held + 1, over_cap: held >= 50 }], error: null };
     }
     return { data: null, error: { message: "no such function" } };
   };
@@ -209,78 +222,70 @@ async function deliver(state, id, type, object, created = T) {
     regular(r, tag);
   };
 
-  // ── 1. number 50 gets it; 51 does not ────────────────────────────────────────────────────────
+  // ── 1. the first 50 who subscribe: 49 seats held, one left; at 50 none ───────────────────────
   {
-    founding(await asAccount({ waitlist: sixty(), user: acct("h50@example.test") }), "1a #50");
-    regular(await asAccount({ waitlist: sixty(), user: acct("h50@example.test") }), "1b #50");
-    founding(await asAccount({ waitlist: sixty(), user: acct("h1@example.test") }), "1c #1");
-    notFounding(await asAccount({ waitlist: sixty(), user: acct("h51@example.test") }), "1d #51");
-    notFounding(await asAccount({ waitlist: sixty(), user: acct("never-joined@example.test") }), "1e not on the waitlist");
-    t.eq([cohort.isFoundingPosition(0), cohort.isFoundingPosition(-3), cohort.isFoundingPosition(50.5), cohort.isFoundingPosition("7")], [false, false, false, false],
-      "1f 0, negatives, fractions and strings are never founding numbers");
-    // 0017: a number past 50 exists only when test numbers were voided first, so it is one of the first 50
-    // real households. The cap on real holders is the database's (section 10 and the 0017 SQL checks).
-    t.eq(cohort.isFoundingPosition(53), true, "1g a number past 50 is a founding number when the database issued it");
+    founding(await asAccount({ seatsHeld: 49, user: acct("h70@example.test") }), "1a 49 seats held: a confirmed household");
+    regular(await asAccount({ seatsHeld: 49, user: acct("h70@example.test") }), "1b 49 seats held");
+    founding(await asAccount({ seatsHeld: 0, user: acct("h1@example.test") }), "1c no seats held yet");
+    notFounding(await asAccount({ seatsHeld: 50, user: acct("h70@example.test") }), "1d 50 seats held");
+    notFounding(await asAccount({ seatsHeld: 51, user: acct("h70@example.test") }), "1e 51 seats held (a store purchase at the last seat)");
+    const released = makeState({ seatsHeld: 50, user: acct("h70@example.test") });
+    released.seats[0].released_at = "2026-11-02T00:00:00Z";
+    founding(await asAccount({ state: released }), "1f 50 taken, one given back by a refund: a seat is free again");
   }
 
-  // ── 2. a test row never takes a spot ─────────────────────────────────────────────────────────
+  // ── 2. a test address never gets it ──────────────────────────────────────────────────────────
   {
-    const rows = [{ email: "check-row@example.test", is_test: true, founding_position: null }, ...sixty()];
-    notFounding(await asAccount({ waitlist: rows, user: acct("check-row@example.test") }), "2a a test row");
-    founding(await asAccount({ waitlist: rows, user: acct("h50@example.test") }), "2b #50 behind a test row");
-    // Marked as a test row AFTER it was numbered: it keeps the number (numbers never shift); the lookup skips it.
-    notFounding(await asAccount({ waitlist: [{ email: "late-test@example.test", is_test: true, founding_position: 3 }], user: acct("late-test@example.test") }),
-      "2c a test row still holding a number");
+    for (const e of ["amanda@getgrowsmart.com", " Amanda@GetGrowSmart.com ", "qa@mail.flourishmoney.app"]) {
+      const r = await asAccount({ user: acct(e) });
+      notFounding(r, `2a a test address (${e.trim()})`);
+      t.eq(r.state.rpcCalls.filter(c => c.name === "founding_seats_taken").length, 0, `2b …refused before the seats are even counted (${e.trim()})`);
+    }
+    founding(await asAccount({ user: acct("x@getgrowsmart.com.example.ca") }), "2c an address that only contains a test domain is a household");
   }
 
-  // ── 3. email case and whitespace do not matter ──────────────────────────────────────────────
+  // ── 3. the waitlist is not asked ─────────────────────────────────────────────────────────────
   {
-    const rows = [
-      { email: "  Alex.Rivera@Example.CA ", is_test: false, founding_position: 7 },
-      { email: "jordan@example.ca", is_test: false, founding_position: 8 },
-    ];
-    const a = await asAccount({ waitlist: rows, user: acct("alex.rivera@example.ca") });
-    founding(a, "3a a mixed-case, padded waitlist row and a lower-case account");
-    const j = await asAccount({ waitlist: rows, user: acct("  JORDAN@Example.CA\t") });
-    founding(j, "3b a lower-case waitlist row and a mixed-case, padded account");
-    t.eq(j.state.rpcCalls.find(c => c.name === "waitlist_founding_number_for_email").args.p_email, "jordan@example.ca",
-      "3c the address is normalised before it is sent");
-    t.eq(cohort.normalizeEmail(" A b@C.d\n"), "ab@c.d", "3d whitespace anywhere and case are dropped");
-    notFounding(await asAccount({ waitlist: rows, user: acct("alex.rivera@example.com") }), "3e a different address");
+    const never = await asAccount({ waitlist: sixty(), user: acct("never-joined@example.test") });
+    founding(never, "3a a household never on the waitlist");
+    founding(await asAccount({ waitlist: sixty(), user: acct("h51@example.test") }), "3b a waitlist household without a number (#51)");
+    notFounding(await asAccount({ waitlist: sixty(), seatsHeld: 50, user: acct("h1@example.test") }), "3c founding number #1 once 50 seats are held");
+    t.eq(never.state.rpcCalls.filter(c => /waitlist|founding_.*for_email/.test(c.name)).length, 0, "3d no waitlist or ledger lookup is made");
+    t.eq(cohort.normalizeEmail(" A b@C.d\n"), "ab@c.d", "3e whitespace anywhere and case are dropped");
   }
 
-  // ── 4. joining and never paying does not free a spot ─────────────────────────────────────────
+  // ── 4. joining and never paying takes no seat ────────────────────────────────────────────────
   {
-    const r51 = await asAccount({ waitlist: sixty(), user: acct("h51@example.test") });
-    t.eq(r51.state.rows.subscriptions.filter(x => x.status).length, 0, "4a no household has paid (the only rows are Stripe customer stubs from opening checkouts)");
-    notFounding(r51, "4b #51 while 50 households have not paid");
-    notFounding(await asAccount({ waitlist: sixty(), user: acct("h60@example.test") }), "4c #60");
+    const r = await asAccount({ waitlist: sixty(), user: acct("h60@example.test") });
+    t.eq(r.state.rows.subscriptions.filter(x => x.status).length, 0, "4a no household has paid (the only rows are Stripe customer stubs from opening checkouts)");
+    t.eq(r.state.seats.length, 0, "4b …so 60 waitlist households and an opened checkout hold no seat");
+    founding(r, "4c the 60th household on the waitlist");
     const src = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingCohort.js"), "utf8").replace(/\/\/.*$/gm, "");
-    t.ok(!/\bcount\b|count=|\.length/.test(src) && /\.from\("subscriptions"\)\.select\("founding_ended_at"\)\.eq\("user_id", user_id\)\.maybeSingle\(\)/.test(src),
-      "4d the rule never counts subscriptions: it reads only this account's own row");
+    t.ok(/await seatsTaken\(admin\)/.test(src) && /held < FOUNDING_COHORT_LIMIT/.test(src) && /\.from\("subscriptions"\)\.select\("founding_ended_at"\)\.eq\("user_id", user_id\)\.maybeSingle\(\)/.test(src),
+      "4d the rule counts seats (0029) and reads only this account's own subscription row");
   }
 
   // ── 5. the server decides ────────────────────────────────────────────────────────────────────
   {
     const extra = { founding: true, available: true, founding_position: 1, position: 1, email: "h1@example.test",
-      founder_flag: true, price: "price_founding_7999", price_id: "price_founding_7999", amount: 7999 };
-    const r = await asAccount({ waitlist: sixty(), user: acct("h51@example.test"), extra });
-    notFounding(r, "5a a client claiming a number, an email, the flag or a price");
-    t.ok(r.state.rpcCalls.every(c => c.args.p_email === "h51@example.test"), "5b the lookup always asks about the account's own email");
-    // Round 4 adds confirmEmail: another yes or no about this account (may it ask for a confirmation link).
-    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit,confirmEmail", "5c the client is told yes or no and the cohort size, never a number or a count");
-    t.eq([typeof r.status.founding.available, typeof r.status.founding.confirmEmail], ["boolean", "boolean"], "5c2 …both answers are plain yes or no");
+      founder_flag: true, price: "price_founding_7999", price_id: "price_founding_7999", amount: 7999, spots_left: 9, seats: 0 };
+    const r = await asAccount({ seatsHeld: 50, user: acct("h51@example.test"), extra });
+    notFounding(r, "5a a client claiming a number, an email, the flag, a price or a seat count");
+    t.eq(Object.keys(r.status.founding).sort().join(","), "available,cohortLimit,confirmEmail", "5c the website is told yes or no and the cohort size");
+    t.eq([typeof r.status.founding.available, r.status.founding.confirmEmail], ["boolean", false], "5c2 …and never asked to confirm by link any more");
   }
 
   // ── 6. fails closed ──────────────────────────────────────────────────────────────────────────
   {
-    notFounding(await asAccount({ waitlist: sixty(), rpcError: "function does not exist", user: acct("h1@example.test") }), "6a a failed lookup (0016 not applied)");
-    const unconfirmed = await asAccount({ waitlist: sixty(), user: acct("h1@example.test", null) });
+    notFounding(await asAccount({ seatError: "function founding_seats_taken does not exist", user: acct("h1@example.test") }), "6a the seats cannot be counted (0029 not applied)");
+    const unconfirmed = await asAccount({ user: acct("h1@example.test", null) });
     notFounding(unconfirmed, "6b an unconfirmed email");
-    t.eq(unconfirmed.state.rpcCalls.length, 0, "6c …which is not even looked up");
-    notFounding(await asAccount({ waitlist: sixty(), user: acct("") }), "6d an account with no email");
-    notFounding(await asAccount({ waitlist: sixty(), user: null }), "6e an account Supabase Auth cannot find");
-    const unread = makeState({ waitlist: sixty(), user: acct("h1@example.test"), profiles: [{ user_id: "u1", founder_flag: true }] });
+    t.eq(unconfirmed.state.rpcCalls.length, 0, "6c …which is not even counted");
+    notFounding(await asAccount({ user: acct("h1@example.test", CONFIRMED, "auto") }), "6c2 an address confirmed on creation (an invite code), never proved");
+    founding(await asAccount({ user: { email: "old@example.test", email_confirmed_at: CONFIRMED, app_metadata: {} } }), "6c3 an older account confirmed before the marker existed");
+    notFounding(await asAccount({ user: acct("") }), "6d an account with no email");
+    notFounding(await asAccount({ user: null }), "6e an account Supabase Auth cannot find");
+    const unread = makeState({ user: acct("h1@example.test"), profiles: [{ user_id: "u1", founder_flag: true }] });
     unread.readError = { subscriptions: "column subscriptions.founding_ended_at does not exist" };
     notFounding(await asAccount({ state: unread }), "6f the ended marker cannot be read (0016 not applied): not even a flagged founder");
   }
@@ -311,9 +316,10 @@ async function deliver(state, id, type, object, created = T) {
     // (a) An active founding subscription renews at $79.99: the renewal changes nothing about the price.
     const state = makeState({ waitlist: sixty(), user: acct("h50@example.test") });
     await deliver(state, "evt_co", "checkout.session.completed",
-      { customer: "cus_f1", subscription: "sub_f1", metadata: { user_id: "u1", plan_key: "founding_annual" } }, T - 3600);
+      { customer: "cus_f1", subscription: "sub_f1", mode: "subscription", payment_status: "paid", metadata: { user_id: "u1", plan_key: "founding_annual" } }, T - 3600);
     const locked = state.rows.subscriptions[0].founding_locked_at;
     t.ok(!!locked && state.rows.subscriptions[0].plan_key === "founding_annual", "8a a founding checkout starts the founding lock");
+    t.eq(state.seats.map(x => [x.user_id, x.provider, x.ref]), [["u1", "stripe", "sub_f1"]], "8a2 …and its first payment takes a seat, recorded against the account and the subscription");
     const renewal = { ...sub("active"), current_period_end: Math.floor(Date.parse("2028-11-01T10:00:00Z") / 1000) };
     const rr = await deliver(state, "evt_renew", "customer.subscription.updated", renewal, T + 365 * 86400);
     const row = state.rows.subscriptions[0];
@@ -354,16 +360,19 @@ async function deliver(state, id, type, object, created = T) {
     t.eq([st3.rows.subscriptions[0].founding_ended_at ?? null, st3.rpcCalls.length], [null, 0], "8n an annual subscription ending marks nothing");
     founding(await asAccount({ state: st3 }), "8o …so a #8 who tried annual first can still buy founding");
 
-    // The account deleted and re-created with the same email: no subscriptions row, but the number remembers.
+    // The account deleted and re-created with the same email: the waitlist ledger no longer decides, so the new
+    // account is a new household to the founding rule (its old seat stays held by the deleted account).
     const fresh = makeState({ waitlist: sixty(), user: acct("h50@example.test") });
     fresh.ledger["h50@example.test"].ended_at = endedAt;
-    notFounding(await asAccount({ state: fresh }), "8p a new account on an email whose founding subscription ended");
+    founding(await asAccount({ state: fresh }), "8p a new account on an email whose founding subscription ended (the ledger is not read)");
 
-    // (d) The spot is never reassigned.
+    // (d) The seat stays held after the subscription ended: only a refund gives it back.
+    t.eq(state.seats.filter(x => !x.released_at).length, 1, "8q #50's seat is still held after its founding subscription ended");
     const before = numbersOf(state.rows.waitlist);
-    notFounding(await asAccount({ state: { ...state, user: acct("h51@example.test") } }), "8q #51 after #50's founding subscription ended");
-    t.eq(numbersOf(state.rows.waitlist), before, "8r nobody's number changed when #50's subscription ended");
-    t.ok(Object.values(state.ledger).filter(l => l.position === 50).length === 1, "8s number 50 is still held by one household, the one it was issued to");
+    const other = makeState({ waitlist: state.rows.waitlist, user: acct("h51@example.test") });
+    other.seats = state.seats;
+    founding(await asAccount({ state: other }), "8r another household, while seats remain");
+    t.eq(numbersOf(state.rows.waitlist), before, "8s nobody's waitlist number changed");
 
     // A failure to mark the waitlist number is a 5xx, so Stripe retries until it is recorded.
     const st4 = makeState({ waitlist: sixty(), user: acct("h9@example.test"), endError: "connection reset" });
@@ -387,57 +396,31 @@ async function deliver(state, id, type, object, created = T) {
     const before = numbersOf(s.rows.waitlist), ledgerBefore = JSON.stringify(s.ledger);
     await asAccount({ state: s });
     await deliver(s, "evt_tester_co", "checkout.session.completed",
-      { customer: "cus_t", subscription: "sub_t", metadata: { user_id: "u1", plan_key: "founding_annual" } });
+      { customer: "cus_t", subscription: "sub_t", mode: "subscription", payment_status: "paid", metadata: { user_id: "u1", plan_key: "founding_annual" } });
     t.eq(numbersOf(s.rows.waitlist), before, "9e a flagged tester buying the founding price changes nobody's waitlist number");
     t.eq(JSON.stringify(s.ledger), ledgerBefore, "9f …and uses up no number");
-    founding(await asAccount({ waitlist: s.rows.waitlist, user: acct("h50@example.test") }), "9g #50 still has the founding price beside the tester");
-    notFounding(await asAccount({ waitlist: s.rows.waitlist, user: acct("h51@example.test") }), "9h …and #51 still does not");
+    t.eq(s.seats.length, 0, "9g …and takes no founding seat: outside the 50");
+    founding(await asAccount({ waitlist: s.rows.waitlist, user: acct("h51@example.test") }), "9h another household still has the founding price beside the tester");
 
     // Ended is final for a beta founder too.
     const ended = flagged(acct("tester@example.test"), { subscriptions: [{ user_id: "u1", status: "canceled", founding_ended_at: "2026-12-01T00:00:00Z" }] });
     notFounding(await asAccount({ state: ended }), "9i a flagged tester whose founding subscription ended");
     const unflagged = makeState({ waitlist: sixty(), profiles: [{ user_id: "u1", founder_flag: false }], user: acct("tester@example.test") });
-    notFounding(await asAccount({ state: unflagged }), "9j an unflagged tester not in the 50");
+    founding(await asAccount({ state: unflagged }), "9j an unflagged tester is offered it as any other household is, while seats remain");
   }
 
-  // ── 10. 0025 (0017's rules, since 2026-10-20 in 0025): void numbers, test addresses, numbers past 50 ──
+  // ── 10. the 0025 ledger is kept, and billing no longer reads it ──────────────────────────────
   {
     const SQL17 = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0025_founding_ledger.sql"), "utf8");
-    // After 0025: numbers 1..54 issued; 18, 19, 21 and 24 were test sign-ups, now void; 50 real holders.
-    const VOID = [18, 19, 21, 24];
-    const after = () => {
-      const rows = [];
-      for (let n = 1; n <= 54; n++) rows.push(VOID.includes(n)
-        ? { email: `test${n}@getgrowsmart.com`, is_test: true, founding_position: null }
-        : { email: `h${n}@example.test`, is_test: false, founding_position: n });
-      rows.push({ email: "h55@example.test", is_test: false, founding_position: null });   // the 51st real household
-      return rows;
-    };
-    t.eq(after().filter(r => r.founding_position !== null).length, 50, "10a (the fixture: exactly 50 real holders, numbers up to 54)");
-    founding(await asAccount({ waitlist: after(), user: acct("h54@example.test") }), "10b #54, a real holder past 50");
-    founding(await asAccount({ waitlist: after(), user: acct("h20@example.test") }), "10c #20, a real holder whose number did not change");
-    notFounding(await asAccount({ waitlist: after(), user: acct("h55@example.test") }), "10d the 51st real household");
-    notFounding(await asAccount({ waitlist: after(), user: acct("test19@getgrowsmart.com") }), "10e a voided test sign-up");
-    // A void number, even on a row that somehow still carries it: refused.
-    notFounding(await asAccount({ waitlist: [{ email: "real18@example.ca", is_test: false, founding_position: 18, void_at: "2026-10-14T00:00:00Z" }], user: acct("real18@example.ca") }),
-      "10f a void number");
-    // Before 0025 is applied a test-domain row may still hold a number and is_test = false: refused anyway.
-    const pre = await asAccount({ waitlist: [{ email: "amanda@getgrowsmart.com", is_test: false, founding_position: 19 }], user: acct(" Amanda@GetGrowSmart.com ") });
-    notFounding(pre, "10g a test-domain address holding a number, before 0025");
-    t.eq(pre.state.rpcCalls.filter(c => /founding_.*for_email/.test(c.name)).length, 0, "10h …refused before the database is even asked");
     t.ok([cohort.isTestEmail("x@getgrowsmart.com"), cohort.isTestEmail("x@mail.flourishmoney.app"), cohort.isTestEmail("x@getgrowsmart.com.example.ca"), cohort.isTestEmail("x@notgetgrowsmart.com")].join() === "true,true,false,false",
       "10i the two test domains and their subdomains, nothing that only contains them");
-    // The SQL billing calls.
     const fn = SQL17.slice(SQL17.indexOf("create or replace function public.waitlist_founding_number_for_email"), SQL17.indexOf("$$;", SQL17.indexOf("function public.waitlist_founding_number_for_email")));
-    t.ok(fn.length > 200 && /and l\.void_at is null/.test(fn) && /and l\.ended_at is null/.test(fn) && /where public\.waitlist_email_key\(t\.email\) = l\.email_key and t\.is_test/.test(fn)
-      && /and not public\.waitlist_is_test_email\(p_email\)/.test(fn) && /w\.founding_position = l\.position/.test(fn) && /or l\.user_id is not null/.test(fn) && !/between 1 and 50/.test(fn),
-      "10j 0025's lookup: not void, not ended, not a test row or a test address, held by that row or recorded against an account, any number from 1 up");
-    t.ok(/create or replace function public\.waitlist_founding_position_for_email\(p_email text\)[\s\S]{0,200}select public\.waitlist_founding_number_for_email\(p_email\);/.test(SQL17),
-      "10j2 0016's lookup name gives the same answer, so no caller can read the old rule");
+    t.ok(fn.length > 200 && /and l\.void_at is null/.test(fn) && /and l\.ended_at is null/.test(fn), "10j 0025's ledger lookup is unchanged (the founding email still names a number)");
     t.ok(/revoke all on function public\.waitlist_founding_number_for_email\(text\) from public, anon, authenticated;/.test(SQL17)
       && /grant execute on function public\.waitlist_founding_number_for_email\(text\) to service_role;/.test(SQL17), "10k only the service role may call it");
     const code = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingCohort.js"), "utf8");
-    t.ok(/admin\.rpc\("waitlist_founding_number_for_email"/.test(code) && !/rpc\("waitlist_founding_position_for_email"/.test(code), "10l billing calls 0025's lookup by its own name");
+    const rule = code.slice(code.indexOf("async function mayBuyFoundingPrice"), code.indexOf("module.exports"));
+    t.ok(rule.length > 100 && !/foundingPositionForEmail|waitlist|rpc\(/.test(rule) && /seatsTaken\(admin\)/.test(rule), "10l the founding rule never asks the waitlist ledger: it counts seats");
   }
 
   process.env = savedEnv;

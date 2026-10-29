@@ -1,18 +1,18 @@
 // tests/foundingVerifiedEmail.test.cjs
 // -----------------------------------------------------------------------------
-// THE FOUNDING PRICE NEEDS AN ADDRESS THE HOUSEHOLD VERIFIED (billing day, round 3).
+// THE FOUNDING PRICE NEEDS A CONFIRMED ADDRESS (billing day, round 3; the first 50 who subscribe, 2026-10-29).
 //
-// The founding price follows an email address to its waitlist spot. A signup with an invite code was
-// confirmed the moment it was created, so someone holding a shared code could register a founding
-// household's address first and be offered its founding price. Now:
+// A signup with an invite code while signup was shut was confirmed the moment it was created. Now:
 //   • beta.js marks every account it creates in app_metadata (server-only): "link" when the address must be
 //     confirmed by clicking the link we email, "auto" when it was confirmed on creation;
 //   • once OPEN_SIGNUP is on, nobody is confirmed on creation, coded or not;
-//   • _lib/foundingCohort.js offers the founding price only to a "link" account whose address is confirmed.
-// Pinned, as Amanda asked, end to end from the real signup to the real billing status and checkout:
+//   • _lib/foundingCohort.js offers the founding price to an account whose address is confirmed, never to one
+//     confirmed on creation ("auto"), while fewer than 50 founding seats are held (migration 0029). A waitlist
+//     number no longer decides it.
+// Pinned end to end from the real signup to the real billing status and checkout:
 //   1. a coded signup gets no founding price until its address is verified, then gets it;
-//   2. a verified founding household gets it;
-//   3. an auto-confirmed account never gets it (marked "auto", or made before the marker existed);
+//   2. any verified household gets it while seats remain, and none does at 50;
+//   3. an auto-confirmed account never gets it; one made before the marker existed, confirmed, does;
 //   4. billing off = unchanged; existing beta founders keep what they have.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -64,15 +64,15 @@ const accountFrom = (created, { clicked = false } = {}) => ({
   app_metadata: { provider: "email", providers: ["email"], ...(created.app_metadata || {}) },
 });
 
-// The real billing.js, for that account, against a waitlist where HOLDER holds number 7.
-async function billingFor(user, { founder = false, billing = true } = {}) {
+// The real billing.js, for that account, against a waitlist where HOLDER holds number 7 and `seats` founding seats held.
+async function billingFor(user, { founder = false, billing = true, seats = 0 } = {}) {
   const saved = { ...process.env };
   for (const p of [BILLING_PATH, AUTH_PATH, API_PATH]) delete require.cache[p];
   const real = require("../netlify/functions/_lib/auth.js");
   const admin = {
     from: (table) => { const q = { select() { return q; }, eq() { return q; }, async upsert() { return { error: null }; },
       async maybeSingle() { return { data: table === "profiles" ? { founder_flag: founder } : null, error: null }; } }; return q; },
-    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 7 : null, error: null }),
+    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 7 : name === "founding_seats_taken" ? seats : null, error: null }),
     auth: { admin: { getUserById: async () => ({ data: { user } }) } },
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };
@@ -113,15 +113,17 @@ async function billingFor(user, { founder = false, billing = true } = {}) {
     t.eq([after.founding, after.buyCode, after.stripeCalls], [true, 200, 2], "1d after the household clicks our link: the founding price is offered and checkout opens (customer, then session)");
   }
 
-  // ── 2. a verified founding household gets it ────────────────────────────────────────────────────
+  // ── 2. any verified household gets it while seats remain ───────────────────────────────────────
   {
     const selfServe = await signup(OPEN, {});
     const made = selfServe.state.created[0];
     t.eq([selfServe.data.source, made.email_confirm, made.app_metadata], ["self_serve", false, { email_confirmation: "link" }], "2a a self-serve signup: unconfirmed, marked to confirm by link");
     const r = await billingFor(accountFrom(made, { clicked: true }));
-    t.eq([r.founding, r.buyCode], [true, 200], "2b verified: the founding household gets its founding price");
+    t.eq([r.founding, r.buyCode], [true, 200], "2b verified: the household holding a waitlist number gets the founding price");
     const other = await billingFor({ ...accountFrom(made, { clicked: true }), email: "someone.else@example.test" });
-    t.eq(other.founding, false, "2c (control) a verified address with no founding spot does not");
+    t.eq([other.founding, other.buyCode], [true, 200], "2c a verified address with no waitlist number gets it too");
+    const full = await billingFor(accountFrom(made, { clicked: true }), { seats: 50 });
+    t.eq([full.founding, full.buyCode, full.stripeCalls], [false, 403, 0], "2d (control) at 50 seats held nobody does, waitlist number or not");
   }
 
   // ── 3. an auto-confirmed account never gets it ──────────────────────────────────────────────────
@@ -132,15 +134,21 @@ async function billingFor(user, { founder = false, billing = true } = {}) {
     const auto = await billingFor(accountFrom(made));
     t.eq([auto.founding, auto.buyCode, auto.stripeCalls], [false, 403, 0], "3b an auto-confirmed account holding a founding address never gets the founding price");
     const legacy = await billingFor({ email: HOLDER, email_confirmed_at: "2026-09-20T00:00:00Z", app_metadata: { provider: "email", providers: ["email"] } });
-    t.eq([legacy.founding, legacy.buyCode], [false, 403], "3c an account made before the marker existed counts as not verified either");
+    t.eq([legacy.founding, legacy.buyCode], [true, 200], "3c an account made before the marker existed, its address confirmed, gets it");
     for (const [why, am] of [["a forged user_metadata", { provider: "email" }], ["a marker spelt otherwise", { email_confirmation: "LINK" }], ["no app_metadata at all", undefined]]) {
-      const u = { email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: am, user_metadata: { email_confirmation: "link" } };
-      t.eq((await billingFor(u)).founding, false, `3d ${why}: no founding price (only app_metadata counts, exactly "link")`);
+      const u = { email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: am, user_metadata: { email_confirmation: "auto" } };
+      t.eq((await billingFor(u)).founding, true, `3d ${why}: confirmed, and only app_metadata "auto" says confirmed on creation`);
     }
+    t.eq((await billingFor({ email: HOLDER, email_confirmed_at: null, app_metadata: { email_confirmation: "link" } })).founding, false, "3d2 never confirmed: no founding price");
     const cohort = require("../netlify/functions/_lib/foundingCohort.js");
     t.eq([cohort.emailVerifiedByLink({ email_confirmed_at: "x", app_metadata: { email_confirmation: "link" } }),
       cohort.emailVerifiedByLink({ email_confirmed_at: null, app_metadata: { email_confirmation: "link" } }),
-      cohort.emailVerifiedByLink(null)], [true, false, false], "3e verified means both: our link marker, and a confirmed address");
+      cohort.emailVerifiedByLink(null)], [true, false, false], "3e verified by link means both: our link marker, and a confirmed address");
+    t.eq([cohort.emailConfirmed({ email: "a@b.c", email_confirmed_at: "x", app_metadata: { email_confirmation: "link" } }),
+      cohort.emailConfirmed({ email: "a@b.c", email_confirmed_at: "x", app_metadata: {} }),
+      cohort.emailConfirmed({ email: "a@b.c", email_confirmed_at: "x", app_metadata: { email_confirmation: "auto" } }),
+      cohort.emailConfirmed({ email: "a@b.c", email_confirmed_at: null }), cohort.emailConfirmed(null)], [true, true, false, false, false],
+      "3f confirmed for the founding price: Supabase Auth says so, and it was not confirmed on creation");
   }
 
   // ── 4. billing off = unchanged; beta founders keep what they have ──────────────────────────────

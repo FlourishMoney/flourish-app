@@ -196,8 +196,8 @@ async function sweepUntilDone(rows, { open }) {
   // ── 6. The founding price itself is unchanged ────────────────────────────────────────────────────
   {
     const cohort = fs.readFileSync(path.join(REPO, "netlify", "functions", "_lib", "foundingCohort.js"), "utf8");
-    t.ok(/if \(!user \|\| !user\.email \|\| !emailVerifiedByLink\(user\)\) return false;\s*\n\s*return \(await foundingPositionForEmail\(admin, user\.email\)\) !== null;/.test(cohort) && !/consent_basis|personal_relationship/.test(cohort),
-      "6a the founding price still needs an address confirmed by our link and a ledger number; the basis plays no part in it");
+    t.ok(/if \(!emailConfirmed\(user\) \|\| isTestEmail\(user\.email\)\) return false;\s*\n\s*const held = await seatsTaken\(admin\);/.test(cohort) && !/consent_basis|personal_relationship/.test(cohort),
+      "6a the founding price needs a confirmed address and a founding seat left (2026-10-29); the consent basis plays no part in it");
   }
 
   // ── 8. The consent line (Amanda, 2026-10-26) ─────────────────────────────────────────────────────
