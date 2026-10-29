@@ -20,8 +20,8 @@
 // the two together).
 //
 // PRICES. The only price this email states is its price line, approved 2026-10-27: the first sentence of the landing
-// page's (src/lib/foundingOffer.js foundingOfferCopy().price). Its second sentence, "Paid on flourishmoney.app…", is
-// not in the email, since the email leads to the stores first.
+// page's (src/lib/foundingOffer.js foundingOfferCopy().price). Its second sentence (since 2026-10-29 "Available on the
+// website and in the iPhone and Android apps.") is not in the email, since the email leads to the stores first.
 //
 // CASL. The footer says why they got it and which consent version is on record for them, carries the
 // landing page's Contact block word for word, and a signed one-click unsubscribe link; the message goes out
@@ -70,7 +70,7 @@ const SUBJECT = pendingWords("founding-email-subject");
 const LAUNCH_SUBJECT = "flourish has launched in Canada";
 
 // The landing page's founding price sentence, word for word. The one price in this email.
-const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.";
+const LANDING_PRICE_SENTENCE = "$79.99 a year plus tax, for as long as you stay subscribed. Available on the website and in the iPhone and Android apps.";
 // The landing page's Contact block (src/App.jsx, id="contact"), word for word, one line per paragraph.
 const CONTACT_BLOCK = Object.freeze(["flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", "hello@flourishmoney.app"]);
 const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";

@@ -28,8 +28,8 @@ const A = {
 };
 // 2026-10-29 (the first 50 who subscribe): nobody "holds a founding spot" now; the two lines are words to come
 // (docs/product/FOUNDING-SEATS-WORDS.md rows 7 and 8).
-const B1 = "[WORDS: store-founding-spot-line-ios]";
-const B2 = "[WORDS: store-founding-spot-line-android]";
+const B1 = "Founding annual is open while spots last, and spots aren't held. To avoid being charged during a plan change, cancel your current plan in your Apple Account settings first. You keep access until it ends, then choose Founding annual in See plans.";
+const B2 = "Founding annual is open while spots last, and spots aren't held. To avoid being charged during a plan change, cancel your current plan in Google Play under Subscriptions first. You keep access until it ends, then choose Founding annual in See plans.";
 const C = "flourish is now available in Canada at flourishmoney.app, on the App Store and on Google Play.";
 const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.";
 

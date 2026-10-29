@@ -30,14 +30,14 @@ const GRANTS = path.join(REPO, "supabase", "migrations", "0015_waitlist_founding
 const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(p); };
 const stripSql = (src) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/gm, " ");
 
-const HEADING = "Founding price for the first 50 households";
-const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.";
+const HEADING = "Founding price for the first 50 households who subscribe";   // A, approved 2026-10-29
+const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Available on the website and in the iPhone and Android apps.";   // D, approved 2026-10-29
 const REGULAR_LINE = "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.";
 const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
 // 2026-10-29 (the first 50 who subscribe): the welcome email's founding line no longer names a number; its words are to
 // come (docs/product/FOUNDING-SEATS-WORDS.md row 21). It was "You're founding household #N of 50. We'll email your link…".
-const EMAIL_LINE = () => "[WORDS: welcome-founding-line]";
+const EMAIL_LINE = () => "The founding price goes to the first 50 households who subscribe, so joining the list doesn't hold a spot. You can subscribe now on the website or in the iPhone and Android apps.";
 
 // Run the real endpoint against a stubbed Supabase. `supabase` decides the answer to the seat count
 // (0032's founding_seats_taken, a bare number): seats, or a status, a thrown error, or a body that is not a count.
@@ -231,9 +231,10 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     if (A.AuthScreen) {
       const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
       // Before any answer the landing is the trial-first page (2026-10-22): the block follows the hero's column (the
-      // main button, its lines and the badges) and holds the founding list form and its consent line.
-      const formAt = html.indexOf('class="fll-hero-form"'), offerAt = html.indexOf('class="fll-founding"'), consentAt = html.indexOf('id="fll-consent-hero"'), demoAt = html.indexOf('class="fll-hero-demo"');
-      t.ok(formAt > 0 && offerAt > formAt && consentAt > offerAt && demoAt > consentAt, "4e the block comes right after the hero's column, holds the form and its consent line, and comes before the demo column");
+      // main button, its lines and the badges). It holds no form since 2026-10-29 (the founding list form is gone).
+      const formAt = html.indexOf('class="fll-hero-form"'), offerAt = html.indexOf('class="fll-founding"'), demoAt = html.indexOf('class="fll-hero-demo"');
+      t.ok(formAt > 0 && offerAt > formAt && demoAt > offerAt && !html.slice(offerAt, demoAt).includes('id="fll-consent-hero"') && !html.slice(offerAt, demoAt).includes("<input"),
+        "4e the block comes right after the hero's column and before the demo column, with no form in it");
       const app4 = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       // The trial-first landing (approved Oct 22): on a phone, the $1,944 card comes straight after the subline, then the
       // main button and its lines, then this block.
@@ -307,7 +308,7 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
       t.ok(!/How founding spots work/.test(tA) && !tA.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/data-founding-live/.test(after),
         "7f after the launch: no \"How founding spots work\", no join line, no count line in the box");
       t.ok(tA.includes(HEADING) && tA.includes(PRICE_LINE) && tA.includes(REGULAR_LINE) && /<h2 class="fll-founding-h fll-fo-desk" id="fll-founding-h">/.test(after),
-        "7g …and still the desktop heading, the founding price with \"Paid on flourishmoney.app, and it works in the iPhone and Android apps too.\", and the standard price");
+        "7g …and still the desktop heading, the founding price with \"Available on the website and in the iPhone and Android apps.\", and the standard price");
     }
     t.ok(/className=\{`fll-founding-live\$\{spotsLeft > 0 \? " fll-fo-desk" : ""\}`\}/.test(comp),
       "7e the \"X of 50 founding spots left\" line is desktop only; \"spots are full\" shows at every width");

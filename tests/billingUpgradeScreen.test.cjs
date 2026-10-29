@@ -137,7 +137,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
       "2j …and not to anyone else, who still sees the regular plans");
     t.eq(vis.offeredPlans({ status: at51 }).map(p => p.key).join(","), "monthly,annual", "2j2 …monthly and annual");
     t.eq(vis.offeredPlans({ status: at50 }).find(p => p.key === "founding_annual").note,
-      "Founding price for the first 50 households. Locked in while you stay subscribed.",
+      "Founding price for the first 50 households who subscribe. Locked in while you stay subscribed.",   // C, approved 2026-10-29
       "2k the label is exactly the approved sentence, with the server's number in it");
 
     // And the rule is enforced where money changes hands, not only where the price is shown.

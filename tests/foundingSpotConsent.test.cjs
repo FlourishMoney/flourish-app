@@ -17,9 +17,8 @@
 // Nothing is sent.
 // -----------------------------------------------------------------------------
 "use strict";
-// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
-const { sample: sampleWords } = require("./_sampleWords.cjs");
-require("./_sampleWords.cjs").useSampleWords();
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const path = require("path");
@@ -129,7 +128,7 @@ async function join({ open, consentVersion, insert = { status: 201, body: [{ id:
       return { status: 599, body: {} };
     }, () => fresh(FN("founding-link-sweep.js")).runFoundingLinkSweep());
     const sends = calls.filter(c => c.url.includes("api.resend.com")).map(c => JSON.parse(c.body));
-    t.eq([result.sent, sends.map(s => [s.subject, s.tags[0].value, s.tags[1].value])], [1, [[sampleWords("founding-email-subject"), "founding_link", "2026-10-26"]]],
+    t.eq([result.sent, sends.map(s => [s.subject, s.tags[0].value, s.tags[1].value])], [1, [[emailWords("founding-email-subject"), "founding_link", "2026-10-26"]]],
       "4a the founding link sweep sends a 2026-10-26 row its founding link email, recording the version");
     const select = decodeURIComponent(calls.find(c => c.url.includes("/rest/v1/waitlist?select=id,email,")).url);
     t.ok(/consent_version\.in\.\(2026-10-01,2026-10-05,2026-10-06,2026-10-26,2026-10-22,pre-2026-10-01\)|consent_version=in\.\(2026-10-01,2026-10-05,2026-10-06,2026-10-26,2026-10-22,pre-2026-10-01\)/.test(select),

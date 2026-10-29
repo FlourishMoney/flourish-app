@@ -104,7 +104,7 @@ export function foundingLabel(cohortLimit) {
   const n = Number.isFinite(cohortLimit) ? cohortLimit : null;
   return n === null
     ? "Founding price. Locked in while you stay subscribed."
-    : `Founding price for the first ${n} households. Locked in while you stay subscribed.`;
+    : `Founding price for the first ${n} households who subscribe. Locked in while you stay subscribed.`;   // C, approved 2026-10-29
 }
 
 /**

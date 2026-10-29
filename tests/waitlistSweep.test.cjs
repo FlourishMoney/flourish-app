@@ -17,8 +17,6 @@
 // ones are asserted to be the numbers the brief specified.
 // -----------------------------------------------------------------------------
 "use strict";
-// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
-require("./_sampleWords.cjs").useSampleWords();
 const { create } = require("./_runner.cjs");
 const path = require("path");
 

@@ -19,9 +19,8 @@
 //   6  the server still needs a confirmed address and a ledger number before the founding price (unchanged)
 // -----------------------------------------------------------------------------
 "use strict";
-// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
-const { sample: sampleWords } = require("./_sampleWords.cjs");
-require("./_sampleWords.cjs").useSampleWords();
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const path = require("path");
@@ -107,7 +106,6 @@ async function sweepUntilDone(rows, { open }) {
     for (let i = 0; i < 6; i++) {
       delete require.cache[require.resolve(SWEEP)];
       for (const k of Object.keys(require.cache)) if (k.includes(path.join("netlify", "functions", "_lib"))) delete require.cache[k];
-      require("./_sampleWords.cjs").useSampleWords();
       runs.push(await require(SWEEP).runFoundingLinkSweep());
       if (runs[runs.length - 1].sent === 0) break;
     }
@@ -159,7 +157,7 @@ async function sweepUntilDone(rows, { open }) {
     for (const [i, f] of friends.entries()) {
       const s = sends.find((x) => x.to[0] === f);
       const p = rows.find((r) => r.email === f).founding_position;
-      t.ok(s && !s.text.includes(`#${p} of 50`) && s.text.includes(sampleWords("founding-email-position")) && s.text.includes(E.FOUNDING_GET_URL) && s.text.includes(E.FOUNDING_LINK_URL) && s.text.includes(E.FOUNDING_EMAIL_PRICE_LINE),
+      t.ok(s && !s.text.includes(`#${p} of 50`) && s.text.includes(emailWords("founding-email-position")) && s.text.includes(E.FOUNDING_GET_URL) && s.text.includes(E.FOUNDING_LINK_URL) && s.text.includes(E.FOUNDING_EMAIL_PRICE_LINE),
         `2d ${i + 1}: the founding email (no founding number named since 2026-10-29: the line is words to come), the device link, the website link and the price line`);
     }
     t.eq(sends.filter((s) => ["early-no-number@example.test", "friend-unsubscribed@example.test", "friend-test@example.test"].includes(s.to[0]) || /^test\d@/.test(s.to[0])).length, 0,
@@ -231,7 +229,6 @@ async function sweepUntilDone(rows, { open }) {
     delete process.env.OPEN_SIGNUP;
     const BETA = path.join(REPO, "netlify", "functions", "beta.js");
     for (const k of Object.keys(require.cache)) if (k.includes(path.join("netlify", "functions"))) delete require.cache[k];
-    require("./_sampleWords.cjs").useSampleWords();
     const beta = require(BETA);
     const calls = [], realFetch = global.fetch, quiet = { e: console.error, l: console.log, w: console.warn };
     console.error = console.log = console.warn = () => {};

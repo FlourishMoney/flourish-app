@@ -11,8 +11,6 @@
 //   4  each welcome email sent counts against that inbox, as signup's mail does
 // -----------------------------------------------------------------------------
 "use strict";
-// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
-require("./_sampleWords.cjs").useSampleWords();
 const { create } = require("./_runner.cjs");
 const path = require("path");
 

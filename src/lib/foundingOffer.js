@@ -25,8 +25,9 @@ export function foundingOfferCopy({ launched = false } = {}) {
   const p = getPricing("CA");
   if (launched === true) return { ...foundingOfferCopy(), join: LAUNCHED_JOIN, phoneJoin: LAUNCHED_JOIN };
   return {
-    heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
-    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.`,
+    // A, C and D (approved 2026-10-29): the first 50 households who subscribe; available on every platform.
+    heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households who subscribe`,
+    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Available on the website and in the iPhone and Android apps.`,
     regular: `Standard price for everyone else: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
     join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
     // Under 960px the founding card at the top already shows the price and the count, so the block
@@ -73,7 +74,7 @@ export function foundingCardParts(spotsLeft) {
     price: `${formatPrice(p.foundingAnnual)} a year`,
     pill: n === null ? null : `${n} of ${FOUNDING_HOUSEHOLDS} left`,
     // In this order on the card (2026-10-15): the founding price, its terms, then what everyone else pays.
-    small: "Plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
+    small: "Plus tax, for as long as you stay subscribed. Available on the website and in the iPhone and Android apps.",
     save: `Everyone else: ${formatPrice(p.annual)} a year, plus tax.`,
   };
 }

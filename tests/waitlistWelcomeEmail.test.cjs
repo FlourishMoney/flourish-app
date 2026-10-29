@@ -17,9 +17,8 @@
 // function actually sends, in the order it sends it. No network, no Supabase, no Resend.
 // -----------------------------------------------------------------------------
 "use strict";
-// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
-const { sample: sampleWords } = require("./_sampleWords.cjs");
-require("./_sampleWords.cjs").useSampleWords();
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
@@ -183,7 +182,7 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
   // gets one line, second, after the thanks. 2j above still holds for every other row.
   {
     // 2026-10-29: the line no longer names a number or promises a held price; its words are to come.
-    const LINE = sampleWords("welcome-founding-line");
+    const LINE = emailWords("welcome-founding-line");
     const p = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 7 }] } })).payload;
     const unsubUrl = (/Unsubscribe with one click: (\S+)$/.exec(p.text) || [])[1];
     t.eq(p.text, [EXPECTED_PARAGRAPHS[0], LINE, ...EXPECTED_PARAGRAPHS.slice(1), WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),

@@ -4,14 +4,14 @@ The founding email now leads to the App Store and Google Play first (Amanda, 202
 download it"). Every line whose words changed was approved word for word on 2026-10-27 (ChatGPT and Grok agreed).
 Each section below gives the approved line, where it shows, the facts it had to state, and its limit.
 `tests/foundingStoreLink.test.cjs` holds this list and the code together: every approved line is in the code exactly
-once, within its limit, and no `[WORDS:` placeholder is left but the three superseded on 2026-10-29 (below).
+once, within its limit, and no `[WORDS:` placeholder is left. Three lines were superseded on 2026-10-29 and approved again (below).
 
 Code: `netlify/functions/_lib/foundingLinkEmail.js` (the email) and `public/get/index.html` (the device link's page).
 
 The email's order (phone and desktop, HTML part):
 
 1. "Payments for flourish are open." (unchanged)
-2. `[WORDS: founding-email-position]` (2026-10-29: it named the waitlist number; words to come, `docs/product/FOUNDING-SEATS-WORDS.md` row 23)
+2. "The founding price goes to the first 50 households who subscribe. Spots aren't held, so it's first come, first served:" (approved 2026-10-29, `docs/product/FOUNDING-SEATS-WORDS.md` row 23; it used to name the waitlist number)
 3. **`founding-email-price`**: "$79.99 a year plus tax, for as long as you stay subscribed."
 4. The button, **`founding-email-button`** ("Get the app"), then "Your link: https://flourishmoney.app/get?ref=founding" as a text link
 5. The App Store and Google Play badges (the stores' own artwork and words, not ours)
@@ -34,8 +34,8 @@ The plain-text part has the same lines without the badges (the device link in li
   written for the website checkout. Reuse it only if it still fits a link that opens a store.
 
 ### `founding-email-store-steps`
-- **Approved:** "[WORDS: founding-email-store-steps]"
-- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.". The new words to write are row 24 in `docs/product/FOUNDING-SEATS-WORDS.md`.
+- **Approved:** "Create your account in the app with any email address and tap the confirmation link we send you. Then open See plans and choose Founding annual while spots last."
+- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.". The new line above was approved on 2026-10-29: row 24 in `docs/product/FOUNDING-SEATS-WORDS.md`.
 - **Where:** the line under the two badges, body size (16 px), in the HTML and the plain-text part.
 - **Facts it must state, in this order:**
   1. create the account with the same email address this message went to;
@@ -54,8 +54,8 @@ The plain-text part has the same lines without the badges (the device link in li
 - **Limit:** 220 characters.
 
 ### `founding-email-computer`
-- **Approved:** "[WORDS: founding-email-computer]"
-- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "On a computer? You can subscribe on our website with this same email:". The new words to write are row 25 in `docs/product/FOUNDING-SEATS-WORDS.md`.
+- **Approved:** "On a computer? You can subscribe on our website:"
+- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "On a computer? You can subscribe on our website with this same email:". The new line above was approved on 2026-10-29: row 25 in `docs/product/FOUNDING-SEATS-WORDS.md`.
 - **Where:** a small grey line (13 px) under the steps. The website's founding checkout URL follows it as a text link,
   so the words end where the URL begins (for example with a colon).
 - **Facts it must state:** that it is for someone on a computer, and that the founding price can be paid on the
@@ -88,8 +88,8 @@ The plain-text part has the same lines without the badges (the device link in li
 - **Limit:** 48 characters (two lines at most on a narrow window).
 
 ### `get-website`
-- **Approved:** "[WORDS: get-website]"
-- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "Prefer the website? Your founding price is there too.". The new words to write are row 26 in `docs/product/FOUNDING-SEATS-WORDS.md`.
+- **Approved:** "Prefer the website? The founding price is there too."
+- **Superseded 2026-10-29** (the first 50 who subscribe): the words approved on 2026-10-27 tied the founding price to this email address and its waitlist number. They were: "Prefer the website? Your founding price is there too.". The new line above was approved on 2026-10-29: row 26 in `docs/product/FOUNDING-SEATS-WORDS.md`.
 - **Where:** the small line under the badges on the same page (14 px). The whole line is the link: to the founding
   checkout (https://flourishmoney.app/?checkout=founding) from the founding link, and to the home page otherwise.
 - **Facts it must state:** the website is the other way, on this computer. For the founding link, the founding price

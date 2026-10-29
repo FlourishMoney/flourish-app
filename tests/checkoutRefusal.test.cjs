@@ -54,7 +54,7 @@ function loadBilling(state) {
     }
     // 2026-10-29 (the first 50 who subscribe): the old words said the price goes to a waitlist address; the new ones are
     // to come (docs/product/FOUNDING-SEATS-WORDS.md row 18: spots full or the founding subscription ended; regular plans).
-    t.eq(vis.FOUNDING_REFUSED_TEXT, "[WORDS: checkout-founding-refused]", "1c the words are to come");
+    t.eq(vis.FOUNDING_REFUSED_TEXT, "The founding price isn't available for this account. Either all 50 spots are taken or your founding subscription has ended. Monthly and annual plans are still available.", "1c the words are to come");
     t.eq(vis.FOUNDING_REFUSED_TEXT.match(/\$\s?\d/g), null, "1d …with no price in them");
     t.eq(vis.checkoutErrorText({ status: 403, error: "founding_cohort_full" }), vis.FOUNDING_REFUSED_TEXT, "1e the older name gets the same words");
   }

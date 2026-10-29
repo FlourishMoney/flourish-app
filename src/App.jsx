@@ -78,7 +78,7 @@ import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, tr
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { STORE_BADGES } from "./lib/storeLinks.js";
-import { CONSENT_VERSION, CONSENT_TEXT, FOUNDING_SPOT_CONSENT_VERSION, FOUNDING_SPOT_CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
+import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -14981,10 +14981,8 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 // one as the row's source and anything else as "direct". The form's position goes in metadata.placement.
 // The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
 // only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
-// `founding` (billing day, approved by ChatGPT and Grok, 2026-10-15; the trial-first landing, approved Oct 22):
-// while signup is open and founding spots remain, the form sits inside the price box, the button says "Join the
-// founding list" and the line under it is the founding spot line, sent as its own version (2026-10-22), whose one
-// promise is the founding price link.
+// The founding list form that sat inside the price box is gone (Amanda, 2026-10-29): the founding price goes to the
+// first 50 households who subscribe, so joining a list holds nothing.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WAITLIST_FORM_CSS = `
             .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
@@ -15003,21 +15001,19 @@ const WAITLIST_FORM_CSS = `
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             .fll-account .fll-consent{ margin-block:10px 0; }
             .fll-label{ display:block; margin-block:0 6px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; font-weight:700; color:#15321a; }
-            .fll-join-note{ margin-block:0 ${SPACE.sm}px; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; line-height:1.45; color:#15321a; }
-            .fll-done .fll-btn{ margin-top:16px; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
               .fll-input{ width:auto; }
               .fll-btn{ width:auto; }
             }
 `;
-function WaitlistForm({ source = "landing", founding = false, onCreateAccount = null }) {
+function WaitlistForm({ source = "landing" }) {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "full" | "error" | "stale"
+  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
   const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
   // The wording this form shows, and the version it sends with it: always the same pair.
-  const shownText = founding ? FOUNDING_SPOT_CONSENT_TEXT : CONSENT_TEXT;
-  const shownVersion = founding ? FOUNDING_SPOT_CONSENT_VERSION : CONSENT_VERSION;
+  const shownText = CONSENT_TEXT;
+  const shownVersion = CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
   useEffect(() => { captureWaitlistSrc(); }, []);
 
@@ -15040,34 +15036,20 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
         body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: shownVersion }),
       });
       const data = await res.json();
-      // The last founding spot went while this form was open: no number, no email (beta.js join_waitlist).
-      if (data.spotsFull === true) setStatus("full");
-      else if (data.joined) { setStatus(data.alreadyJoined ? "already" : "success"); if (!data.alreadyJoined) track(EVENT.foundingJoin); }
+      if (data.joined) { setStatus(data.alreadyJoined ? "already" : "success"); if (!data.alreadyJoined) track(EVENT.foundingJoin); }
       else setStatus(res.status === 400 && data.error === "Consent required" ? "stale" : "error");
     } catch {
       setStatus("error");
     }
   };
 
-  // Approved by ChatGPT and Grok (2026-10-15): the founding spots filled up while the form was open.
-  if (status === "full") {
-    return (
-      <div className="fll-capture fll-done">
-        <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
-        {/* The words that assumed a waitlist number are to come (2026-10-29, lib/pendingWords.js). */}
-        <div className="fll-done-t">{pendingWords("founding-join-full-title")}</div>
-        <div className="fll-done-b">{pendingWords("founding-join-full-body")}</div>
-        {onCreateAccount && <button type="button" className="fll-btn" onClick={onCreateAccount}>Create your account</button>}
-      </div>
-    );
-  }
   if (status === "success" || status === "already") {
     return (
       <div className="fll-capture fll-done">
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
         <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
-        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : founding ? pendingWords("founding-join-success-title") : "You're on the list"}</div>
-        <div className="fll-done-b">{founding ? pendingWords("founding-join-success-body") : "We'll email you when flourish launches in Canada."}</div>
+        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : "You're on the list"}</div>
+        <div className="fll-done-b">We'll email you when flourish launches in Canada.</div>
       </div>
     );
   }
@@ -15075,9 +15057,7 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
   return (
     <div className="fll-capture">
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
-      {/* The trial-first landing (approved Oct 22): inside the price box, one line above the form, and a visible
-          label on every email box. */}
-      {founding && <p className="fll-join-note">{pendingWords("founding-join-note")}</p>}
+      {/* A visible label on every email box (the trial-first landing, approved Oct 22). */}
       <label className="fll-label" htmlFor={`fll-email-${tag}`}>Email address</label>
       <div className="fll-form">
         <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email" id={`fll-email-${tag}`}
@@ -15085,7 +15065,7 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
         <button className="fll-btn" onClick={submit} disabled={busy}>
-          {busy ? "Joining…" : founding ? pendingWords("founding-join-button") : "Join the waitlist"}
+          {busy ? "Joining…" : "Join the waitlist"}
         </button>
         {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
             unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
@@ -15191,7 +15171,7 @@ function LandingHowTo() {
 }
 
 // THE PRICE BOX (Amanda's decision, 2026-10-06; the trial-first landing, approved Oct 22): every approved line
-// it had, unchanged, and the founding list form inside it (children). Under 960px it opens with the founding
+// it had (the founding list form that sat inside it is gone, 2026-10-29). Under 960px it opens with the founding
 // card's rows (FoundingCard, hidden from 960px), then the lines for that width; from 960px, the desktop lines.
 // The live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
@@ -15347,13 +15327,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const waitlistArea = landingWaitlistArea({ answer: foundingAnswer, native: isNativeApp() });
   const waitlistForms = waitlistArea === "waitlist" || waitlistArea === "founding";
   // THE TRIAL-FIRST LANDING (approved Oct 22): while signup is open and founding spots remain, the main action is
-  // "Try flourish free for 14 days", top and bottom, and the founding list form sits inside the price box. With
+  // "Try flourish free for 14 days", top and bottom (no founding list form since 2026-10-29). With
   // signup shut it is the waitlist; with all 50 spots taken it is "Create your account", unchanged (its line needs
   // its own approved words).
   const trialFirst = waitlistArea === "founding";
   const foundingOpen = trialFirst;
   // One landing view per browser session, by src and device (lib/landingCounts.js). Web only.
-  useEffect(() => { if (!isNativeApp()) countLandingViewOnce({ base: API_BASE }); }, []);
+  // The visit's ?src= is kept for the session first (lib/waitlistSrc.js), so the counts and the signup carry it. The
+  // founding list form used to do this on the trial-first page; it is gone (2026-10-29), so the landing does it.
+  useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); countLandingViewOnce({ base: API_BASE }); } }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15833,8 +15815,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
           </div>
 
           {/* Hero. The trial-first landing, approved Oct 22. Phone, one column: H1, subline, the $1,944 card, the main
-              button, its line, the store badges, the read-only line, the founding line, then the price box with the
-              founding list form inside. 960px and up: the card on the right, the same order on the left; from
+              button, its line, the store badges, the read-only line, the founding line, then the price box. 960px and up: the card on the right, the same order on the left; from
               1024px the videos, "Sound familiar?" and the demo button in a full-width row below (grid areas in
               .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
@@ -15875,9 +15856,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
               </div>
               {/* The price box, its own grid item: under the founding line, in the left column on desktop. */}
               {waitlistForms && (
-                <FoundingOffer launched={waitlistArea !== "waitlist"}>
-                  {foundingOpen && <WaitlistForm source="hero" founding onCreateAccount={goSignup}/>}
-                </FoundingOffer>
+                <FoundingOffer launched={waitlistArea !== "waitlist"}/>
               )}
               <div className="fll-hero-demo">
                 <LandingHowTo/>

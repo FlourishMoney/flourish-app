@@ -173,7 +173,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
       "6c no live count to state (none, 0, past 50, not a whole number): no small print");
     t.eq([O.trialConfirmBody(6), O.trialConfirmBody(1), O.trialConfirmBody(0)], [P.pendingWords("trial-confirm-body", 6), P.pendingWords("trial-confirm-body", 1), null], "6d the body carries the count it is given");
     t.ok(/\{n\}/.test(P.PENDING_WORDS["trial-confirm-body"]) && O.trialConfirmBody(6).includes("6"), "6e …in its {n}");
-    t.eq(Object.values(O.TRIAL_KEEP_COPY), ["trial-link", "trial-confirm-title", "trial-confirm-stay", "trial-confirm-leave"].map((id) => P.pendingWords(id)), "6f the link, title and buttons are the pending words, for now");
+    t.eq(Object.values(O.TRIAL_KEEP_COPY), ["trial-link", "trial-confirm-title", "trial-confirm-stay", "trial-confirm-leave"].map((id) => P.pendingWords(id)), "6f the link, title and buttons are the approved words (lib/pendingWords.js)");
     t.ok(/const showKeepTrial = !held && !!onClose && trialKeepShown\(\{ status, inTrial, closable: !!onClose, foundingCard: cards\.some\(c=>c\.plan==="founding_annual"\) \}\);/.test(sp),
       "6g the paywall shows it by that rule");
     t.ok(/setKeepTrial\(true\);\s*askStore\("store_status"\)\.then\(s=>\{ if\(s\) onResolved\(s\); \}\)/.test(sp), "6h opening the confirm asks the server again, so the count is live");
@@ -188,7 +188,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     const { execFileSync } = require("child_process");
     const dir = require("./_tmp.cjs").tempDir("pendingwords");
     const guard = (target) => { try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), target], { stdio: "pipe" }); return 0; } catch (e) { return e.status; } };
-    fs.writeFileSync(path.join(dir, "a.js"), `const x = "${P.PENDING_WORDS["trial-link"]}";`);
+    fs.writeFileSync(path.join(dir, "a.js"), 'const x = "[WORDS: trial-link]";');
     const caught = guard(dir);
     fs.writeFileSync(path.join(dir, "a.js"), 'const x = "Keep my trial";');
     t.eq([caught, guard(dir)], [1, 0], "6n the guard refuses a build holding a placeholder, and passes one without");
@@ -198,7 +198,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.ok(/&& node scripts\/check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]), "6p every store build runs it last");
     const srcFiles = (d) => fs.readdirSync(path.join(REPO, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? srcFiles(path.join(d, e.name)) : [path.join(d, e.name)]);
     const holders = srcFiles("src").filter((f) => /\.(js|jsx)$/.test(f) && /\[WORDS:\s*[a-z0-9-]+/.test(read(f)));
-    t.eq(holders, [path.join("src", "lib", "pendingWords.js")], "6q in the app, only lib/pendingWords.js holds a placeholder");
+    t.eq(holders, [], "6q no placeholder is left in the app (the words were approved 2026-10-29)");
   }
 
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
