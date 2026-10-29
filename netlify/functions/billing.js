@@ -31,6 +31,7 @@ const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
+const { householdCover } = require("./_lib/household");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
 // calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any
@@ -141,6 +142,15 @@ exports.handler = async (event) => {
       const { data: row, error: rowErr } = await readWithRetry(() => admin
         .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // COUPLE MODE: the other member's subscription covers this person too (_lib/household.js). Covered, they are
+      // paid, offered nothing, and have nothing of their own to manage. A household read that fails is a 503.
+      const cover = isPaidSubscription(row) ? { covered: false } : await householdCover(admin, user_id);
+      if (cover.unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (cover.covered) {
+        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner" });
+        return json(200, CORS, { enabled: true, provider: cover.provider, paid: true, covered_by: "partner", period_end: cover.period_end,
+          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false } });
+      }
 
       // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
@@ -189,6 +199,15 @@ exports.handler = async (event) => {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
       } else {
         state = { paid: isPaidSubscription(row), provider: row ? row.provider || "stripe" : null, plan_key: row ? row.plan_key : null, conflict: false, conflictKind: null };
+      }
+      // COUPLE MODE: covered by the other member's subscription, the store app sells this person nothing.
+      if (!state.paid) {
+        const cover = await householdCover(admin, user_id);
+        if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+        if (cover.covered) {
+          return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", provider: cover.provider, plan_key: null, conflict: !!state.conflict,
+            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null } });
+        }
       }
       // A web subscription Stripe is still collecting (a renewal that failed): not paid, so no access, but still
       // live, so the app must not sell a store subscription on top of it. The household fixes the card on the web.
@@ -241,6 +260,11 @@ exports.handler = async (event) => {
         if (!curErr && isLiveRow(current)) {
           return json(409, CORS, { error: "already_subscribed", provider: current.provider || "stripe" });
         }
+        // COUPLE MODE: the other member's subscription already covers this household: never a second charge.
+        // A household read that fails stops the checkout (503) rather than risk selling twice.
+        const cover = await householdCover(admin, user_id);
+        if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+        if (cover.covered) return json(409, CORS, { error: "already_subscribed", provider: cover.provider || "stripe", covered_by: "partner" });
       }
 
       const user = await authUser(admin, user_id);

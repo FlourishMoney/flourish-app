@@ -7,6 +7,7 @@
 
 const { createClient } = require("@supabase/supabase-js");
 const { deriveEntitlement } = require("./planRules");
+const { householdCover } = require("./household");
 
 let _admin = null;
 function getAdminClient() {
@@ -169,6 +170,17 @@ async function getUserPlan(user_id, { delays = PLAN_READ_DELAYS_MS } = {}) {
     }
     const sub = subRead.data;
     const ent = deriveEntitlement(data, sub, Date.now());
+    // COUPLE MODE: one subscription covers the household. Asked only when this person's own answer is not
+    // already unlimited; the other member's paid subscription or beta-founder flag counts, their trial does
+    // not (_lib/household.js householdCover). A household read that fails is "unavailable", never "not paid".
+    if (!ent.unlimited) {
+      const cover = await householdCover(admin, user_id);
+      if (cover.unavailable) return { ...UNAVAILABLE, plan, founder_flag: founder };
+      if (cover.covered) {
+        return { plan, entitlement: "premium", founder_flag: founder, unlimited: true, paid: false,
+          subscription_status: sub ? sub.status : null, status_unavailable: false, covered_by: "partner" };
+      }
+    }
     return {
       // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
       // existing tests read this shape. The derived answer is added beside it, not in place of it.

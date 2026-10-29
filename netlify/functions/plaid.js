@@ -29,6 +29,7 @@ const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { emailKey, emailRef } = require("./_lib/logSafe");
+const household = require("./_lib/household");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -271,7 +272,7 @@ exports.handler = async (event) => {
     // 4. get_transactions
     if (action === "get_transactions") {
       const { days = 90, full_resync = false } = body;
-      const { access_token, user_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, user_id, owner_id, item_row_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
 
       const cappedDays = Math.min(Math.max(1, days), 730);
@@ -280,7 +281,8 @@ exports.handler = async (event) => {
 
       // Sprint Z #1/#3: incremental cursor sync. Returns { transactions (added+modified, normalized),
       // removed (ids), truncated, full }. Cursor is read from / persisted to plaid_items per item.
-      let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, fullResync: !!full_resync });
+      // Couple mode: a bank the other member linked keeps a cursor of this member's own (plaid_item_cursors).
+      let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, owner_id, item_row_id, fullResync: !!full_resync });
       // Fall back to /transactions/get ONLY on an empty FULL sync (fresh sandbox items sometimes
       // return nothing from /sync at first). An empty INCREMENTAL sync just means "no changes".
       if (result.full && result.transactions.length === 0 && result.removed.length === 0) {
@@ -375,7 +377,8 @@ exports.handler = async (event) => {
 
     // 7. remove_item
     if (action === "remove_item") {
-      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      // Couple mode: only the person who linked a bank may revoke it (the Plaid consent is theirs).
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ownOnly: true });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       await plaid("/item/remove", { access_token });
       return ok({ removed: true });
@@ -472,7 +475,23 @@ exports.handler = async (event) => {
         console.error("[plaid_items list]", error.message);
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to load accounts." }) };
       }
-      return ok({ items: data || [] });
+      // Couple mode: the banks the other member linked are listed too, marked linked_by "partner" (a role,
+      // never a name), so both see every account. Only their metadata: a token never leaves the server.
+      // A failed household read lists this person's own banks, as before.
+      let shared = [];
+      try {
+        const peers = await household.peerIdsOf(admin, user_id);
+        if (peers.length) {
+          const { data: theirs, error: peerErr } = await admin
+            .from("plaid_items")
+            .select("id, item_id, institution_id, institution_name, status, created_at, updated_at")
+            .in("user_id", peers)
+            .order("created_at", { ascending: true });
+          if (peerErr) console.error("[plaid_items list] household:", peerErr.message);
+          else shared = (theirs || []).map((r) => ({ ...r, linked_by: "partner" }));
+        }
+      } catch (e) { console.error("[plaid_items list] household:", e.message); }
+      return ok({ items: (data || []).concat(shared) });
     }
 
     // 11. delete_item — auth-required: revoke an item from Plaid + delete row
@@ -730,6 +749,17 @@ exports.handler = async (event) => {
         }
       }
 
+      // 1c. COUPLE MODE: leave the household first, while this person's bank links still exist, so their banks
+      // come out of the shared blob and the partner becomes the owner (migration 0031, household_leave). Critical:
+      // a partner must never keep a deleted person's accounts. Before 0031 runs there is nothing to leave.
+      {
+        const { error: hhErr } = await admin.rpc("household_leave", { p_user: user_id });
+        if (hhErr && !household.isMissing(hhErr)) {
+          console.error("[delete_account] household leave:", hhErr.code || "error");
+          return stop("household");
+        }
+      }
+
       // 2. Round-3: the meeting's stored answers and the billing row, BEFORE anything irreversible at
       // Plaid. Both reference auth.users with ON DELETE CASCADE, but they are deleted explicitly and
       // CRITICALLY: if either fails, we stop with the bank links and the sign-in still in place, so a
@@ -838,7 +868,11 @@ exports.handler = async (event) => {
 // server-side via store_item and references them by item_id.)
 // Returns { access_token, error, statusCode }. On success: { access_token, error: null }.
 // On failure: { access_token: null, error: <reason>, statusCode: 400 | 401 }.
-async function resolveAccessToken(event, body) {
+// The access token for one of the caller's banks. COUPLE MODE: a bank the other member of the caller's
+// household linked is the caller's to read too (accounts, transactions, investments, liabilities), never
+// to revoke (ownOnly). The caller's own bank is looked up exactly as before; the household is asked only
+// when it is not theirs, and a failed household read finds nothing (the bank is refused, never widened).
+async function resolveAccessToken(event, body, { ownOnly = false } = {}) {
   if (!body.item_id) {
     return { access_token: null, error: "item_id required", statusCode: 400 };
   }
@@ -853,10 +887,24 @@ async function resolveAccessToken(event, body) {
     .eq("user_id", user_id)
     .eq("item_id", body.item_id)
     .single();
-  if (error || !data) {
-    return { access_token: null, error: "item not found for this user", statusCode: 400 };
+  if (!error && data) return { access_token: data.access_token, user_id, owner_id: user_id, error: null };
+  if (!ownOnly) {
+    try {
+      const peers = await household.peerIdsOf(admin, user_id);
+      if (peers.length) {
+        const { data: theirs, error: peerErr } = await admin
+          .from("plaid_items")
+          .select("id, user_id, access_token")
+          .in("user_id", peers)
+          .eq("item_id", body.item_id)
+          .maybeSingle();
+        if (!peerErr && theirs && theirs.access_token) {
+          return { access_token: theirs.access_token, user_id, owner_id: theirs.user_id, item_row_id: theirs.id, error: null };
+        }
+      }
+    } catch (e) { console.error("[resolveAccessToken] household:", e.message); }
   }
-  return { access_token: data.access_token, user_id, error: null };
+  return { access_token: null, error: "item not found for this user", statusCode: 400 };
 }
 
 // /transactions/sync — cursor-based incremental sync (Sprint Z #1/#3).
@@ -870,13 +918,24 @@ async function resolveAccessToken(event, body) {
 // persisted) is recoverable with a full_resync.
 const SYNC_PAGE_CAP = 10;
 async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
-  const { user_id, item_id, fullResync = false } = ctx;
+  const { user_id, item_id, owner_id = user_id, item_row_id = null, fullResync = false } = ctx;
   const canPersist = !!(user_id && item_id);
   const admin = canPersist ? getAdminClient() : null;
+  // Couple mode: a bank the other member linked. Its cursor in plaid_items is the linker's; this member keeps
+  // their own (plaid_item_cursors, migration 0031), so neither phone consumes the other's new transactions.
+  const memberCursor = !!(admin && owner_id && owner_id !== user_id && item_row_id);
 
   // Starting cursor: the stored cursor unless a full resync is forced.
   let startCursor = null;
-  if (admin && !fullResync) {
+  if (admin && !fullResync && memberCursor) {
+    const { data, error } = await admin
+      .from("plaid_item_cursors")
+      .select("next_cursor")
+      .eq("plaid_item_id", item_row_id)
+      .eq("user_id", user_id)
+      .maybeSingle();
+    if (!error) startCursor = data?.next_cursor || null;
+  } else if (admin && !fullResync) {
     const { data, error } = await admin
       .from("plaid_items")
       .select("next_cursor")
@@ -927,7 +986,12 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
     const truncated = hasMore; // stopped at the cap with more pages remaining
 
     // Persist the cursor reached so the next sync resumes (incremental advance, or truncation resume).
-    if (admin && cursor) {
+    if (admin && cursor && memberCursor) {
+      const { error } = await admin
+        .from("plaid_item_cursors")
+        .upsert({ plaid_item_id: item_row_id, user_id, next_cursor: cursor, updated_at: new Date().toISOString() }, { onConflict: "plaid_item_id,user_id" });
+      if (error) console.error("[syncTransactions member cursor persist]", error.message);
+    } else if (admin && cursor) {
       const { error } = await admin
         .from("plaid_items")
         .update({ next_cursor: cursor })

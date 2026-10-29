@@ -143,13 +143,14 @@ const stopped = (t, r, why) => {
   // ── 4. founding: the number is stamped ended, never freed ───────────────────────────────────
   {
     const f = await run({ subs: [SUB({ plan_key: "founding_annual" })] });
-    t.eq(f.log.rpc, [["waitlist_founding_mark_ended", { p_email: "someone@example.invalid" }]], "4a a founding subscription: its number is stamped ended");
+    // Couple mode: delete_account then leaves the household (household_leave, migration 0031), after the stamp.
+    t.eq(f.log.rpc, [["waitlist_founding_mark_ended", { p_email: "someone@example.invalid" }], ["household_leave", { p_user: "00000000-0000-4000-8000-000000000001" }]], "4a a founding subscription: its number is stamped ended");
     t.ok(f.log.events.indexOf("stripe:DELETE") < f.log.events.findIndex(e => e.startsWith("delete:")), "4b …after the cancellation, before anything is erased");
     stopped(t, await run({ subs: [SUB({ plan_key: "founding_annual" })], rpcFails: true }), "4c the stamp fails");
     const retry = await run({ subs: [SUB({ plan_key: "founding_annual" })], stripe: { getStatus: "canceled" } });
-    t.eq([retry.log.rpc.length, retry.body.deleted], [1, true], "4d a retry after that (Stripe now shows it cancelled) stamps again, then deletes");
+    t.eq([retry.log.rpc.filter(([n]) => n === "waitlist_founding_mark_ended").length, retry.log.rpc.length, retry.body.deleted], [1, 2, true], "4d a retry after that (Stripe now shows it cancelled) stamps again, then deletes");
     const unpaid = await run({ subs: [SUB({ plan_key: "founding_annual", status: "incomplete" })], stripe: { getStatus: "incomplete" } });
-    t.eq(unpaid.log.rpc, [], "4e a founding checkout that never completed was never a founding subscription: no stamp");
+    t.eq(unpaid.log.rpc, [["household_leave", { p_user: "00000000-0000-4000-8000-000000000001" }]], "4e a founding checkout that never completed was never a founding subscription: no stamp (only the household leave)");
     t.ok([f, retry, unpaid].every(r => !r.log.deletes.some(x => /ledger/.test(x))), "4f the founding ledger is never deleted from");
     const src = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "plaid.js"), "utf8").replace(/\/\/.*$/gm, "");
     t.ok(!/waitlist_founding_ledger/.test(src), "4g delete_account does not touch the ledger table at all");
