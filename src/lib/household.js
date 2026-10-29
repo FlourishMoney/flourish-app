@@ -156,6 +156,12 @@ export function inviteTokenFromSearch(search) {
   } catch { return null; }
 }
 
+// A link's token, kept for this tab only while the person signs in (never in localStorage, never synced).
+const session = () => { try { return globalThis.sessionStorage || null; } catch { return null; } };
+export function rememberInviteToken(t) { try { session()?.setItem(HOUSEHOLD_INVITE_KEY, t); } catch {} }
+export function recallInviteToken() { try { return inviteTokenFromSearch(`?household_invite=${session()?.getItem(HOUSEHOLD_INVITE_KEY) || ""}`); } catch { return null; } }
+export function forgetInviteToken() { try { session()?.removeItem(HOUSEHOLD_INVITE_KEY); } catch {} }
+
 // What the person typed as the code: capitals, letters and digits only ("abc-234" → "ABC234").
 export function normalizeInviteCode(s) {
   return String(s == null ? "" : s).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);

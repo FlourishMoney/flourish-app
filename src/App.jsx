@@ -108,7 +108,7 @@ import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
-import { HOUSEHOLD_STAMP_KEY, HOUSEHOLD_INVITE_KEY, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName } from "./lib/household.js";
+import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -12254,7 +12254,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
       {made && made.email_sent === false && <div style={{ ...txt, ...gap }}>{W.emailNotSent}</div>}
       {made && made.code && <div data-household-code="" style={gap}>
         <div style={txt}>{W.codeLabel}</div>
-        <div style={{ color: C.cream, fontSize: 28, fontWeight: 800, letterSpacing: 6, fontFamily: "ui-monospace,Menlo,monospace" }}>{made.code}</div>
+        <div style={{ color: C.cream, fontSize: 28, fontWeight: 800, fontFamily: "ui-monospace,Menlo,monospace" }}>{made.code}</div>
         <div style={txt}>{W.codeOnce}</div>
       </div>}
     </div>}
@@ -12273,7 +12273,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
     </div>
     {!hh && <div data-household-join="" style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
       <label style={{ ...txt, display: "block" }}>{W.joinLabel}
-        <input value={code} onChange={e => setCode(e.target.value.toUpperCase().slice(0, 8))} autoCapitalize="characters" autoComplete="one-time-code" style={{ ...input, marginTop: 6, letterSpacing: 4, fontFamily: "ui-monospace,Menlo,monospace" }}/>
+        <input value={code} onChange={e => setCode(e.target.value.toUpperCase().slice(0, 8))} autoCapitalize="characters" autoComplete="one-time-code" style={{ ...input, marginTop: 6, fontFamily: "ui-monospace,Menlo,monospace" }}/>
       </label>
       <div style={gap}><Btn label={W.joinButton} small disabled={busy || code.replace(/[^A-Za-z0-9]/g, "").length !== 6} onClick={() => { setError(null); setJoinBy({ code }); setStep("partner-consent"); }}/></div>
     </div>}
@@ -17182,17 +17182,17 @@ export default function FlourishApp(){
   const [showUpgrade,setShowUpgrade]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
-  // link's invite token kept while the person signs in (sessionStorage, never synced; lib/household.js).
+  // link's invite token kept for this tab while the person signs in (never synced; lib/household.js).
   const [householdInfo,setHouseholdInfo]=useState(null);
   const [householdLinkToken,setHouseholdLinkToken]=useState(()=>{
     try {
       const t = inviteTokenFromSearch(window.location.search);
       if (t) {
-        sessionStorage.setItem(HOUSEHOLD_INVITE_KEY, t);
+        rememberInviteToken(t);
         const u = new URL(window.location.href); u.searchParams.delete("household_invite");
         window.history.replaceState(window.history.state, "", u.toString());   // the token leaves the address bar
       }
-      return t || sessionStorage.getItem(HOUSEHOLD_INVITE_KEY) || null;
+      return t || recallInviteToken();
     } catch { return null; }
   });
   const [billingNotice,setBillingNotice]=useState(null);
@@ -17716,9 +17716,9 @@ export default function FlourishApp(){
   // Apply a hydrated DB blob to React state (DB is canonical). The plan is NOT taken from the blob:
   // real entitlement comes from the profiles row, and the local plan cache is what the server last
   // said. See the derivation below.
-  const applyBlob = (blob) => {
+  const applyBlob = (blob, { keepSynced = false } = {}) => {
     const c = (blob && blob.core) || {};
-    if (c.appData !== undefined) setAppData(c.appData);
+    if (c.appData !== undefined) setAppData((prev) => (keepSynced ? keepSyncedTransactions(c.appData, prev) : c.appData));
     setOnboarded(!!c.onboarded);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
@@ -17736,18 +17736,8 @@ export default function FlourishApp(){
   // The household's blob, applied as applyBlob applies a user_data row: the shared keys and THIS person's own
   // (lib/household.js sideKeysForMember), never the other person's consent. keepSynced: the bank transactions
   // this device already holds stay (lib/household.js keepSyncedTransactions).
-  const applyHouseholdBlob = (blob, userId, { keepSynced = false } = {}) => {
-    const c = (blob && blob.core) || {};
-    if (c.appData !== undefined) setAppData((prev) => (keepSynced ? keepSyncedTransactions(c.appData, prev) : c.appData));
-    setOnboarded(!!c.onboarded);
-    setCheckInBonus(c.checkInBonus || 0);
-    writeSideKeys(sideKeysForMember(blob, userId));
-    setIsPremium(isPremiumOrFounder() || isTrialActive());
-    try {
-      setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
-      setAiCoachEnabled(localStorage.getItem("flourish_ai_coach_enabled") !== "0");
-    } catch {}
-  };
+  const applyHouseholdBlob = (blob, userId, { keepSynced = false } = {}) =>
+    applyBlob({ ...(blob || {}), sideKeys: sideKeysForMember(blob, userId) }, { keepSynced });
 
   // Couple mode, at sign-in: which data this device loads (lib/household.js householdHydratePlan). A member loads the
   // household's blob (the usual newer-wins decision, or the household's outright on a device that did not hold it);
@@ -17990,7 +17980,7 @@ export default function FlourishApp(){
     linkOpenedRef.current = true;
     setShowSettings(true);
   }, [user, hydrated, householdLinkToken, householdInfo]); // eslint-disable-line react-hooks/exhaustive-deps
-  const clearHouseholdLink = ()=>{ try { sessionStorage.removeItem(HOUSEHOLD_INVITE_KEY); } catch {} setHouseholdLinkToken(null); };
+  const clearHouseholdLink = ()=>{ forgetInviteToken(); setHouseholdLinkToken(null); };
   // Joining, leaving or being removed changes whose data this device holds: it is cleared and loaded again.
   const restartForHousehold = ()=>{
     householdRef.current = null;

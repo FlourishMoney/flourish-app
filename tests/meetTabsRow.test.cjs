@@ -14,6 +14,10 @@
 //
 // The row is READ OUT OF App.jsx at test time and executed, so this tests the real
 // expression rather than a description of it.
+//
+// COUPLE MODE (2026-10-29): the mock Household tab and its HOUSEHOLD_ENABLED flag are gone (Amanda: nothing
+// may suggest a feature that is not real). The real household is Settings > Household. Sections 1 and 3 now
+// pin that: no flag and no Household tab here, and a row given a second tab still renders.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -24,10 +28,9 @@ const path = require("path");
   const t = create();
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
 
-  // ── 1. The flag, as shipped ──────────────────────────────────────────────────────────────────
-  const flagLine = /const HOUSEHOLD_ENABLED = (true|false);/.exec(app);
-  t.ok(!!flagLine, "1a HOUSEHOLD_ENABLED is declared in App.jsx");
-  t.eq(flagLine[1], "false", "1b …and Household Sharing is OFF, which is why the row held one tab");
+  // ── 1. The mock is gone ──────────────────────────────────────────────────────────────────────
+  t.ok(!/HOUSEHOLD_ENABLED/.test(app), "1a the mock's HOUSEHOLD_ENABLED flag is gone from App.jsx");
+  t.ok(!/\["household",\s*"Household"\]/.test(app), "1b …and the Meet row has no Household tab (the real one is Settings > Household)");
 
   // ── 2. The real row, compiled and run ────────────────────────────────────────────────────────
   const start = app.indexOf("const meetTabs=[");
@@ -40,26 +43,27 @@ const path = require("path");
   const rowSrc = guard ? app.slice(start, declEnd + guard.index + guard[0].length) : app.slice(start, declEnd);
 
   // Returns null when the row is hidden, or the tab list when it renders.
-  const run = (HOUSEHOLD_ENABLED, isCouple) => new Function("HOUSEHOLD_ENABLED", "isCouple",
-    `return (() => { ${rowSrc} return meetTabs; })();`)(HOUSEHOLD_ENABLED, isCouple);
+  // extra: a second tab put into the row's own declaration, to show the guard lets a real row of two through.
+  const run = (isCouple, extra = false) => new Function("isCouple",
+    `return (() => { ${extra ? rowSrc.replace("const meetTabs=[", 'const meetTabs=[["extra","Extra"],') : rowSrc} return meetTabs; })();`)(isCouple);
 
-  t.eq(run(false, false), null, "2b OFF + solo: the row is hidden, not a single dead tab");
-  t.eq(run(false, true), null, "2c OFF + couple: hidden too");
+  t.eq(run(false), null, "2b solo: the row is hidden, not a single dead tab");
+  t.eq(run(true), null, "2c couple: hidden too");
 
   // What it would have rendered — the dead control this defect is about.
-  const wouldHaveShown = new Function("HOUSEHOLD_ENABLED", "isCouple",
+  const wouldHaveShown = new Function("isCouple",
     `return (() => { ${app.slice(start, app.indexOf(";", start) + 1)} return meetTabs; })();`);
-  t.eq(wouldHaveShown(false, true).length, 1, "2d …and it really would have been ONE tab");
-  t.eq(wouldHaveShown(false, true)[0][1], "Money Meeting", "2e …labelled 'Money Meeting' for a couple");
-  t.eq(wouldHaveShown(false, false)[0][1], "Check-In", "2f …'Check-In' for a solo user");
+  t.eq(wouldHaveShown(true).length, 1, "2d …and it really would have been ONE tab");
+  t.eq(wouldHaveShown(true)[0][1], "Money Meeting", "2e …labelled 'Money Meeting' for a couple");
+  t.eq(wouldHaveShown(false)[0][1], "Check-In", "2f …'Check-In' for a solo user");
 
-  // ── 3. The day the flag is flipped, the row comes back ───────────────────────────────────────
+  // ── 3. The day the row holds a second, real tab, it renders ──────────────────────────────────
   {
     const tabs = run(true, true);
-    t.ok(Array.isArray(tabs), "3a ON: the row renders again");
-    t.eq(tabs.length, 2, "3b …with two tabs");
-    t.eq(tabs.map(x => x[0]).join(","), "meeting,household", "3c …Money Meeting and Household");
-    t.eq(run(true, false).length, 2, "3d …and the same for a solo user");
+    t.ok(Array.isArray(tabs), "3a two tabs: the row renders");
+    t.eq(tabs.length, 2, "3b …with both");
+    t.eq(tabs.map(x => x[0]).join(","), "extra,meeting", "3c …the added one and the meeting");
+    t.eq(run(false, true).length, 2, "3d …and the same for a solo user");
   }
 
   // ── 4. Hiding the row did not hide the meeting ───────────────────────────────────────────────
