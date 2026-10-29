@@ -13,6 +13,9 @@
 //   3  already paid: never opens
 //   4  closed once: a reload, and signing out and back in, do not open it again; See plans still does
 //   5  a new account: it opens over onboarding, and on Android with Google Play's disclosure
+//   6  keep the trial (2026-10-29): small print under the founding plans opens a confirm stating the live founding
+//      spots left (asked of the server again as it opens); "stay" goes back to the plans, "leave" closes them and the
+//      trial goes on, and the plans do not reopen on their own; no count, no link
 // FOUNDING_PLANS_SHOTS=<dir> also saves screenshots of the auto-opened screen there (for the store build review).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -40,9 +43,9 @@ function household({ onboarded = true } = {}) {
   } : null;
   return blob;
 }
-const status = ({ paid = false, founding = false, provider = null, plan_key = null } = {}) => ({
+const status = ({ paid = false, founding = false, provider = null, plan_key = null, spots = 7 } = {}) => ({
   enabled: true, paid, provider, plan_key, conflict: false, conflict_kind: null, web_attention: false,
-  period_end: paid ? "2027-10-28T00:00:00.000Z" : null, founding: { available: founding, held_on_regular_plan: null },
+  period_end: paid ? "2027-10-28T00:00:00.000Z" : null, founding: { available: founding, held_on_regular_plan: null, spots_left: founding ? spots : null },
 });
 
 // Runs in the page before the app: the platform, and RevenueCat behind Capacitor's native bridge.
@@ -158,7 +161,7 @@ function installStore([platform, uid]) {
       t.eq(await plans(page), [["founding_annual", true], ["monthly", false]], "1b Founding annual first, marked as the chosen plan, then Monthly");
       const text = await page.locator(DIALOG).innerText();
       t.ok(/Founding annual\s*\$79\.99 a year/.test(text) && /\$11\.99 a month/.test(text) && text.indexOf("Founding annual") < text.indexOf("Monthly"), "1c the store's own prices");
-      t.ok(text.includes("Payment is charged to your Apple Account when you confirm.") && /For the first 50 founding members\./.test(text), "1d the approved disclosure and founding line are on it");
+      t.ok(text.includes("Payment is charged to your Apple Account when you confirm.") && text.includes("For the first 50 households who subscribe. Stays the same while you stay subscribed."), "1d the approved disclosure and the founding line (words to come, 2026-10-29) are on it");
       t.eq(await page.locator(`${DIALOG} button[aria-label="Close"]`).count(), 1, "1e it has a visible close button");
       await page.waitForTimeout(600);
       await shot(page, "ios-founding-plans-auto-open.png");
@@ -237,6 +240,52 @@ function installStore([platform, uid]) {
       await shot(page, "android-onboarding-after-close.png");
       await ctx.close();
       onboarded = true;
+    }
+    // ── 6. Keep the trial ────────────────────────────────────────────────────────────────────────
+    {
+      const O = await import("../src/lib/storeOffer.js");
+      const W = O.TRIAL_KEEP_COPY;
+      const scenario = { status: status({ founding: true, spots: 7 }) };
+      const { ctx, page, asked } = await phone({ scenario });
+      await go(page);
+      t.ok(await until(() => dialogUp(page), 15000), "6a (it opened by itself, the account in its 14-day trial)");
+      await page.locator(`${DIALOG} [data-trial-link]`).waitFor({ timeout: 10000 });
+      t.eq(await page.locator(`${DIALOG} [data-trial-link]`).innerText(), W.link, "6b the small print under the plans");
+      const order = await page.locator(DIALOG).evaluate((d) => { const all = [...d.querySelectorAll("*")]; const at = (sel) => all.indexOf(d.querySelector(sel));
+        return [at('[data-plan="monthly"]'), at("[data-trial-link]")]; });
+      t.ok(order[0] >= 0 && order[1] > order[0], "6c …below the plans");
+      const before = asked.filter((a) => a === "store_status").length;
+      scenario.status = status({ founding: true, spots: 6 });        // a spot was taken since the screen opened
+      await page.locator(`${DIALOG} [data-trial-link]`).click();
+      const confirm = page.locator("[data-trial-confirm]");
+      await confirm.waitFor({ timeout: 5000 });
+      t.ok(await until(async () => (await confirm.innerText()).includes(O.trialConfirmBody(6)), 5000) && asked.filter((a) => a === "store_status").length > before,
+        "6d the confirm states the live spots left, asked of the server as it opens (6, not the 7 the screen opened with)");
+      const ctext = await confirm.innerText();
+      t.ok(ctext.includes(W.title) && ctext.includes(W.stay) && ctext.includes(W.leave), "6e …with its title and two buttons");
+      t.eq(await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute("data-trial-stay")), true, "6f the first button has the focus");
+      await page.waitForTimeout(300);
+      await shot(page, "ios-trial-confirm.png");
+      await page.locator("[data-trial-stay]").click();
+      t.ok(await until(async () => (await confirm.count()) === 0, 3000) && await dialogUp(page) && (await plans(page))[0][0] === "founding_annual", "6g stay: back to the plans, Founding annual still first");
+      await page.locator(`${DIALOG} [data-trial-link]`).click();
+      await confirm.waitFor({ timeout: 5000 });
+      await page.locator("[data-trial-leave]").click();
+      t.ok(await until(async () => !(await dialogUp(page)), 5000), "6h leave: the plans close");
+      t.ok(await page.getByText(/days? left/i).first().isVisible().catch(() => false), "6i …and the trial goes on (the trial chip is there)");
+      asked.length = 0;
+      await go(page);
+      await quiet(page, asked);
+      t.eq(await dialogUp(page), false, "6j the plans do not reopen on their own afterwards");
+      await ctx.close();
+
+      const none = { status: status({ founding: true, spots: null }) };
+      const p2 = await phone({ scenario: none });
+      await go(p2.page);
+      t.ok(await until(() => dialogUp(p2.page), 15000), "6k (founding offered, but no count came with it)");
+      await p2.page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
+      t.eq(await p2.page.locator(`${DIALOG} [data-trial-link]`).count(), 0, "6l no count to state: no trial link");
+      await p2.ctx.close();
     }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && e.message) || e).split("\n").slice(0, 3).join(" | "));

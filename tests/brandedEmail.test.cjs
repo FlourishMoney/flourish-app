@@ -15,6 +15,8 @@
 //   5  readable: every colour pair the layout uses clears 4.5:1 as designed AND inverted (a client's forced dark mode)
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 const { create } = require("./_runner.cjs");
 
 const decode = (s) => s.replace(/&quot;/g, "\"").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");

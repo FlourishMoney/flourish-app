@@ -25,11 +25,13 @@ const { verifyStripeSignature } = require("./_lib/stripeSignature");
 const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
 const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
+const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  "charge.refunded",
 ]);
 
 const reply = (statusCode, body) => ({
@@ -90,6 +92,14 @@ function foundingSubscriptionEnded(evtType, sub) {
 
 function userIdFrom(object) {
   return object?.metadata?.user_id || object?.client_reference_id || null;
+}
+
+// A FOUNDING SEAT (2026-10-29, migration 0032): the first 50 households who subscribe to the founding price hold
+// one. Taken when a founding checkout completes with its first payment made ("paid"; "no_payment_required" too, a
+// promotion code that covers it, since that household holds the price all the same), never for "unpaid".
+function foundingCheckoutPaid(session) {
+  return session?.metadata?.plan_key === "founding_annual" && session?.mode !== "payment"
+    && ["paid", "no_payment_required"].includes(session?.payment_status);
 }
 
 exports.handler = async (event) => {
@@ -261,6 +271,8 @@ exports.handler = async (event) => {
             if (error) throw new Error(error.message);
           }
         }
+        // The seat is the payment's, not the row's: taken however the row was written.
+        if (foundingCheckoutPaid(object)) await takeSeat(admin, user_id, "stripe", sessionSubId || null);
         return await acknowledgeStale();
       }
       if (await storePaidRow(user_id)) return await acknowledgeConflict();
@@ -281,6 +293,22 @@ exports.handler = async (event) => {
       if (eventAtIso) patch.last_event_at = eventAtIso;
       const { error } = await admin.from("subscriptions").upsert(patch, { onConflict: "user_id" });
       if (error) throw new Error(error.message);
+      // Past 50 (two checkouts completing at the last seat) the seat is still recorded, and logged: they paid.
+      if (foundingCheckoutPaid(object)) await takeSeat(admin, user_id, "stripe", sessionSubId || null);
+    }
+
+    // A REFUND GIVES THE FOUNDING SEAT BACK (2026-10-29). A charge refunded in full, for a customer whose account
+    // holds a seat taken on the website: the seat is released (a store purchase's seat is never touched by a
+    // Stripe refund). A partial refund changes nothing. The account comes from our own row for the customer,
+    // never from the charge.
+    if (evt.type === "charge.refunded") {
+      const customerId = typeof object.customer === "string" ? object.customer : object.customer?.id;
+      if (object.refunded === true && customerId) {
+        const { data: owner, error: ownerErr } = await admin
+          .from("subscriptions").select("user_id").eq("provider_customer_id", customerId).maybeSingle();
+        if (ownerErr) throw new Error(ownerErr.message);
+        if (owner?.user_id) await releaseSeat(admin, owner.user_id, { reason: "refund", provider: "stripe" });
+      }
     }
 
     if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {

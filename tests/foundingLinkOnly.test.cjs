@@ -13,6 +13,8 @@
 // The sweep runs for real against a stubbed fetch, as in tests/foundingLink.test.cjs section 5.
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 const { create } = require("./_runner.cjs");
 const path = require("path");
 
@@ -100,7 +102,8 @@ function emailFilter(url) {
     t.ok(r.select.url.includes("%2B") && !/email=in\.\([^)]*\+/.test(r.select.url), "1b the + in the address is sent as %2B, never a bare + (which PostgREST would read as a space)");
     t.eq(r.sentTo, [[REHEARSAL]], "1c FOUNDING_LINK_EMAIL=true with the list set: exactly one email, to the listed address alone");
     t.eq(r.resend[0].idem, `founding-link/${OURS.id}`, "1d …with production's Idempotency-Key for that row");
-    t.eq(JSON.parse(r.resend[0].body).text.includes("#36"), true, "1e …naming that row's own number, #36");
+    const sentText = JSON.parse(r.resend[0].body).text;
+    t.eq([sentText.includes("#36"), sentText.includes(emailWords("founding-email-position"))], [false, true], "1e …and no longer naming the row's founding number (2026-10-29: the line is words to come)");
     t.eq([r.patches.length, r.patches[0] && r.patches[0].url.includes(`id=eq.${OURS.id}`)], [1, true], "1f the only record written is the listed row's");
     t.eq(r.lookups, [REHEARSAL], "1g billing's lookup is asked about the listed address only");
     t.eq([r.result.sent, r.result.allowlist, r.result.notAllowed], [1, 1, 0], "1h result: sent 1, allowlist of 1, none skipped (the others were never read)");

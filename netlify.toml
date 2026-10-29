@@ -2,6 +2,11 @@
   command   = "npm run build"
   publish   = "dist"
 
+# Production only: no "[WORDS: id]" placeholder ships (scripts/check-pending-words.mjs). Deploy previews build
+# with the plain command above, so screens with words still to come can be looked at.
+[context.production]
+  command   = "npm run build && node scripts/check-pending-words.mjs dist netlify/functions"
+
 [build.environment]
   NODE_VERSION           = "22"
   SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"

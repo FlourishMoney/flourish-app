@@ -386,6 +386,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     // The lists live in _copyStrings.cjs so the tester-suggestions tests scan new copy with the same rules.
     const { MONEY_VERBS, STARTS, VERDICT } = require("./_copyStrings.cjs");
     const ALLOW = new Set([
+      // The founding plans screen's trial confirm (approved 2026-10-29): the household keeps its free trial, not money.
+      "Keep your trial for now?", "Keep my trial",
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",

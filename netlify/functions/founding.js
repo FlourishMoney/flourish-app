@@ -2,26 +2,19 @@
  * Flourish — founding spots left
  * netlify/functions/founding.js   (GET /api/founding)
  *
- * Answers {"spotsLeft": N, "openSignup": true|false}: 50 less the real holders (founding numbers issued
- * and not void, migration 0025), never below 0, and whether signup is open (the same public answer as
- * beta.js signup_status, from OPEN_SIGNUP). The landing reads both from this one call to pick its
- * waitlist form (src/lib/signupUi.js). No address, no id, no row leaves through this function, and it
+ * Answers {"spotsLeft": N, "openSignup": true|false}: 50 less the founding seats held, never below 0, and
+ * whether signup is open (the same public answer as beta.js signup_status, from OPEN_SIGNUP). The landing reads
+ * both from this one call (src/lib/signupUi.js). No address, no id, no row leaves through this function, and it
  * takes no input.
  *
- * Real holders are the numbers in public.waitlist_founding_ledger (migration 0014) that are not void
- * (migration 0025). Every number ever issued is recorded and none is ever freed: a household that never
- * pays, whose founding subscription ended, or whose waitlist row was deleted still holds its number. A
- * test row's number is void: it never counts as a household and is never issued again.
+ * THE FIRST 50 WHO SUBSCRIBE (Amanda, 2026-10-29). A seat is held by a household whose founding subscription's
+ * first payment succeeded, on the website, the App Store or Google Play, and given back by a refund
+ * (migration 0032, founding_seats_taken()). Waitlist numbers are not counted. At 50 the answer is 0, and the
+ * founding price is offered nowhere (_lib/foundingCohort.js asks the same count).
  *
- * Until 0025 is applied there is no void_at column and PostgREST answers 400: the count is then every number
- * issued, which is what this answered before 0025, so the landing keeps today's figure and its founding form
- * (a 503 would put the pre-launch waitlist form back, whose consent version signup-open refuses).
- *
- * If the count cannot be read (no env, Supabase down or slow, migration 0014 not applied yet, a reply
- * without a count) it answers 503 {"error":"unavailable"} and the landing page shows no number. An EMPTY
- * ledger is answered the same way: it means waitlist_founding_start() has not run yet (the list already
- * has households), and "50 left" would be wrong. Either way the answer still says whether signup is open. It never answers with a remembered or default figure
- * older than 60 s.
+ * If the count cannot be read (no env, Supabase down or slow, 0032 not applied yet, a reply that is not a whole
+ * number) it answers 503 {"error":"unavailable"} and the landing page shows no number. The answer still says
+ * whether signup is open. It never answers with a remembered or default figure older than 60 s.
  *
  * Cache: 60 s. A good answer is kept in this instance's memory for 60 s and sent with max-age=60 for the
  * browser and Netlify's CDN. A failure is never cached.
@@ -32,7 +25,7 @@
 "use strict";
 
 const { corsHeadersFor } = require("./_lib/cors");
-const { spotsLeftFromCount, countFromContentRange } = require("./_lib/foundingWaitlist");
+const { FOUNDING_SEAT_LIMIT } = require("./_lib/foundingSeats");
 const { openSignupEnabled } = require("./_lib/signupGate");
 
 const CACHE_MS = 60 * 1000;
@@ -51,28 +44,23 @@ function headersFor(event, ok) {
   };
 }
 
-// The count of real holders (numbers issued and not void), or null. HEAD with count=exact: PostgREST sends the total in Content-Range and
-// no body at all, so not even the one id the select names comes back. Before 0025 (no void_at column, a 400): every number issued.
-const LEDGER_COUNTS = ["/rest/v1/waitlist_founding_ledger?select=position&void_at=is.null", "/rest/v1/waitlist_founding_ledger?select=position"];
-async function readIssuedCount(supabaseUrl, secretKey) {
+// The founding seats held (0032), or null. One RPC call with the service role; the answer is a bare number.
+async function readSeatsTaken(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
   try {
-    let res = null;
-    for (const q of LEDGER_COUNTS) {
-      res = await fetch(`${supabaseUrl}${q}`, {
-        method: "HEAD",
-        headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Prefer": "count=exact" },
-        signal: controller.signal,
-      });
-      if (res.status !== 400) break;
-    }
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/founding_seats_taken`, {
+      method: "POST",
+      headers: { "apikey": secretKey, "Authorization": `Bearer ${secretKey}`, "Content-Type": "application/json" },
+      body: "{}",
+      signal: controller.signal,
+    });
     if (!res.ok) {
       console.error("[founding] count failed", res.status);
       return null;
     }
-    const n = countFromContentRange(res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : null);
-    if (n === null) console.error("[founding] count failed", "no_count_header");
+    const n = await res.json();
+    if (!Number.isInteger(n) || n < 0) { console.error("[founding] count failed", "not_a_count"); return null; }
     return n;
   } catch (err) {
     const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
@@ -100,10 +88,9 @@ async function handler(event, _context, now = Date.now()) {
   const secretKey   = (process.env.SUPABASE_SECRET_KEY || "").trim();
   if (!supabaseUrl || !secretKey) return unavailable();
 
-  const holders = await readIssuedCount(supabaseUrl, secretKey);
-  if (holders === 0) return unavailable();         // start() has not run yet: no number rather than "50"
-  const spotsLeft = spotsLeftFromCount(holders);
-  if (spotsLeft === null) return unavailable();
+  const seats = await readSeatsTaken(supabaseUrl, secretKey);
+  if (seats === null) return unavailable();
+  const spotsLeft = Math.max(0, FOUNDING_SEAT_LIMIT - seats);
   cached = { at: now, spotsLeft };
   return { statusCode: 200, headers: headersFor(event, true), body: JSON.stringify({ spotsLeft, openSignup }) };
 }

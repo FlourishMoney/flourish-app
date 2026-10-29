@@ -20,6 +20,8 @@
 //      join_waitlist prove it; there are no founding reminders.
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
@@ -89,7 +91,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     t.eq(E.foundingLinkEmailPayload(ADDRESS, { ...ROW, metadata: SENT }, { launched: true }), null, "3d already sent: never again");
     for (const v of ["2026-10-01", "2026-10-05", "2026-10-06"]) {
       const q = E.foundingLinkEmailPayload(ADDRESS, { ...ROW, consent_version: v }, { launched: true });
-      t.eq([q.subject, q.tags[0].value], ["Your founding price is ready", "founding_link"], `3e ${v}: the founding link email, never the launch one`);
+      t.eq([q.subject, q.tags[0].value], [emailWords("founding-email-subject"), "founding_link"], `3e ${v}: the founding link email, never the launch one`);
     }
     for (const [why, over] of [["unsubscribed", { unsubscribed_at: "2026-10-20T00:00:00Z" }], ["a test row", { is_test: true }], ["a version never shown", { consent_version: "2026-09-01" }], ["no version", { consent_version: null }]]) {
       t.eq(E.foundingLinkEmailPayload(ADDRESS, { ...ROW, ...over }, { launched: true }), null, `3f ${why}: nothing`);
@@ -128,7 +130,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     const LATER = { id: "0a8e9b77-3f4c-4d2b-8e1a-5c6d7e8f9a0b", email: "later.household@example.test", founding_position: 9, is_test: false, unsubscribed_at: null, consent_version: "2026-10-06", metadata: null };
     const open = await sweep({ OPEN_SIGNUP: "true" }, [EARLY, LATER]);
     const sends = open.calls.filter(c => c.url.includes("api.resend.com")).map(c => JSON.parse(c.body));
-    t.eq(sends.map(s => [s.to[0], s.subject]).sort(), [[ADDRESS, "flourish has launched in Canada"], ["later.household@example.test", "Your founding price is ready"]].sort(),
+    t.eq(sends.map(s => [s.to[0], s.subject]).sort(), [[ADDRESS, "flourish has launched in Canada"], ["later.household@example.test", emailWords("founding-email-subject")]].sort(),
       "4a signup open: the early household (no founding number) gets the launch email, the later one the founding link email");
     const select = decodeURIComponent(open.calls.find(c => c.url.includes("/rest/v1/waitlist?select=id,email,")).url);
     t.ok(select.includes(`or=(and(founding_position.gte.1,founding_position.lte.50),consent_version.in.(${LEGACY}))`), "4b the query lets a pre-2026-10-01 row in without a founding number");

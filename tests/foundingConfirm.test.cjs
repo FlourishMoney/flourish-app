@@ -6,13 +6,14 @@
 // email_confirmation = "link"). Accounts made before that marker had no way to get it. Now the checkout screen
 // offers one tap to email a confirmation link; clicking it (and pressing the button) sets the marker. Pinned:
 //   1. the link: signed, 24 hours, tied to the account's CURRENT address, carrying no address;
-//   2. who is offered it: confirmed but not by link, holding a founding spot; never a founder, an ended
-//      founding subscription, an account already verified, or an address with no spot;
-//   3. billing.js: the status says so; the send action is for those accounts only, at most 3 in 24 hours, and
-//      refuses when it cannot count (fails closed); billing off is a 404 as before;
+//   2. who is offered it: since 2026-10-29 (the first 50 who subscribe) nobody: a confirmed address is enough for
+//      the founding price, however it was confirmed, so no account needs the link;
+//   3. billing.js: the status never offers it, and the send action refuses every account and sends nothing;
+//      billing off is a 404 as before;
 //   4. founding-confirm.js: GET changes nothing; POST sets "link" and keeps the rest of app_metadata; an
 //      expired, forged or stale link changes nothing; nothing is logged but fixed words;
-//   5. end to end: after the click the founding price is offered;
+//   5. end to end: an older confirmed account is offered the founding price without the click (a link already
+//      sent still works: section 4);
 //   6. the checkout screen's words.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -39,7 +40,7 @@ function fakeAdmin(state) {
   return {
     from: (table) => { const q = { select() { return q; }, eq() { return q; }, async upsert() { return { error: null }; },
       async maybeSingle() { return { data: table === "profiles" ? { founder_flag: !!state.founder } : (table === "subscriptions" ? state.sub || null : null), error: null }; } }; return q; },
-    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 4 : null, error: null }),
+    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 4 : name === "founding_seats_taken" ? 0 : null, error: null }),
     auth: { admin: {
       getUserById: async () => ({ data: { user: state.user }, error: null }),
       updateUserById: async (id, attrs) => { state.updates.push({ id, attrs }); state.user = { ...state.user, ...attrs }; return { data: { user: state.user }, error: null }; },
@@ -88,16 +89,15 @@ function load(modPath, state, { blobs = memStore() } = {}) {
     t.ok(F.confirmSecret() && F.confirmSecret() !== process.env.SUPABASE_SECRET_KEY, "1m the signing key is derived, never the Supabase key itself");
   }
 
-  // ── 2. who is offered it ────────────────────────────────────────────────────────────────────────
+  // ── 2. who is offered it: nobody any more ───────────────────────────────────────────────────────
   {
     const need = (user, extra = {}) => cohort.foundingConfirmNeeded(fakeAdmin({ user, updates: [], ...extra }), UID, user);
-    t.eq(await need(OLD), true, "2a an older account (confirmed, no marker) holding a founding address: offered");
-    t.eq(await need({ ...OLD, app_metadata: { email_confirmation: "auto" } }), true, "2b …and an auto-confirmed one");
-    t.eq(await need({ ...OLD, app_metadata: { email_confirmation: "link" } }), false, "2c already verified by link: not offered (it has the price)");
-    t.eq(await need({ ...OLD, email: "no.spot@example.test" }), false, "2d an address with no founding spot: not offered");
-    t.eq(await need(OLD, { founder: true }), false, "2e a beta founder: not offered (it has the price)");
-    t.eq(await need(OLD, { sub: { founding_ended_at: "2026-11-01T00:00:00Z" } }), false, "2f a founding subscription that ended: not offered (ended is final)");
-    t.eq(await need({ ...OLD, email_confirmed_at: null }), false, "2g an unconfirmed address: not offered");
+    for (const [why, u] of [["an older account (confirmed, no marker) holding a founding address", OLD],
+      ["an auto-confirmed one", { ...OLD, app_metadata: { email_confirmation: "auto" } }],
+      ["one verified by link", { ...OLD, app_metadata: { email_confirmation: "link" } }],
+      ["an unconfirmed address", { ...OLD, email_confirmed_at: null }]]) {
+      t.eq(await need(u), false, `2a ${why}: not offered a link (a confirmed address is enough since 2026-10-29)`);
+    }
   }
 
   // ── 3. billing.js ───────────────────────────────────────────────────────────────────────────────
@@ -117,25 +117,12 @@ function load(modPath, state, { blobs = memStore() } = {}) {
   }
   {
     const st = await billingRun(OLD, ["status"]);
-    t.eq([st.out[0].body.founding.available, st.out[0].body.founding.confirmEmail], [false, true], "3a status: no founding price yet, and offered a confirmation link");
+    t.eq([st.out[0].body.founding.available, st.out[0].body.founding.confirmEmail], [true, false], "3a status: an older confirmed account has the founding price, and no confirmation link is offered");
     const linked = await billingRun({ ...OLD, app_metadata: { email_confirmation: "link" } }, ["status"]);
-    t.eq([linked.out[0].body.founding.available, linked.out[0].body.founding.confirmEmail], [true, false], "3b a verified account: the price, no link needed");
+    t.eq([linked.out[0].body.founding.available, linked.out[0].body.founding.confirmEmail], [true, false], "3b a verified account: the same");
     const blobs = memStore();
-    const r = await billingRun(OLD, ["send_founding_confirmation", "send_founding_confirmation", "send_founding_confirmation", "send_founding_confirmation"], { blobs });
-    t.eq(r.out.map(o => o.code), [200, 200, 200, 429], "3c three links in 24 hours, then refused");
-    t.eq(r.sends.length, 3, "3d …three emails sent, not four");
-    const mail = r.sends[0].body;
-    t.eq([mail.to, mail.subject], [[HOLDER], "Confirm your email address for your founding price"], "3e to the account's own address");
-    t.ok(/founding-confirm\//.test(r.sends[0].headers["Idempotency-Key"]), "3f with an Idempotency-Key of its own");
-    const link = mail.text.match(/Confirm it here: (\S+)/)[1];
-    t.eq(F.checkConfirm(Object.fromEntries(new URL(link).searchParams), HOLDER), "ok", "3g the emailed link is a valid one for this account");
-    t.ok(!r.logs.join("\n").includes(HOLDER) && !r.logs.join("\n").includes(UID), "3h no log line holds the address or the account id");
-    const notNeeded = await billingRun({ ...OLD, app_metadata: { email_confirmation: "link" } }, ["send_founding_confirmation"]);
-    t.eq([notNeeded.out[0].code, notNeeded.sends.length], [409, 0], "3i an account that doesn't need one: refused, nothing sent");
-    const noStore = await billingRun(OLD, ["send_founding_confirmation"], { blobs: null });
-    t.eq([noStore.out[0].code, noStore.out[0].body.error, noStore.sends.length], [503, "store_unavailable", 0], "3j the counter cannot be read: refused (fails closed), nothing sent");
-    const failed = await billingRun(OLD, ["send_founding_confirmation"], { resendOk: false });
-    t.eq(failed.out[0].code, 502, "3k Resend refuses: says so");
+    const r = await billingRun(OLD, ["send_founding_confirmation", "send_founding_confirmation"], { blobs });
+    t.eq([r.out.map(o => o.code), r.out[0].body.error, r.sends.length, blobs.m.size], [[409, 409], "not_needed", 0, 0], "3c the send action refuses every account: nothing sent, nothing counted");
     const off = await billingRun(OLD, ["status", "send_founding_confirmation"], { billing: false });
     t.eq(off.out.map(o => o.code), [404, 404], "3l billing off: 404 to both, as before");
   }
@@ -174,12 +161,12 @@ function load(modPath, state, { blobs = memStore() } = {}) {
     t.ok(/from\s+= "\/api\/founding-confirm"\s*\n\s*to\s+= "\/\.netlify\/functions\/founding-confirm"/.test(toml), "4i /api/founding-confirm is routed");
   }
 
-  // ── 5. end to end: the click unlocks the founding price ────────────────────────────────────────
+  // ── 5. end to end: the click is no longer needed ───────────────────────────────────────────────
   {
     const before = await cohort.mayBuyFoundingPrice(fakeAdmin({ user: OLD, updates: [] }), UID, OLD);
     const done = await confirmRun("POST", q);
     const after = await cohort.mayBuyFoundingPrice(fakeAdmin({ user: done.state.user, updates: [] }), UID, done.state.user);
-    t.eq([before, after], [false, true], "5a before the click: no founding price; after it: offered");
+    t.eq([before, after], [true, true], "5a an older confirmed account is offered the founding price before any click, and still after one");
   }
 
   // ── 6. the checkout screen ──────────────────────────────────────────────────────────────────────

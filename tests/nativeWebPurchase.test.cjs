@@ -195,8 +195,8 @@ function load(db) {
     t.ok(/useState\(\(\)=>\{\s*if\(isNativeApp\(\)\) return false;/.test(init), "6e the App never even holds the founding link in a store app");
     t.ok(/\{foundingNote && !isNativeApp\(\) && /.test(app), "6f the sign-in card's founding line never renders in a store app");
     const { LANDING_PRICE_SENTENCE } = require("../netlify/functions/_lib/foundingLinkEmail.js");
-    t.ok(/ Paid on flourishmoney\.app, and it works in the iPhone and Android apps too\.$/.test(LANDING_PRICE_SENTENCE) && !/Not yet/i.test(LANDING_PRICE_SENTENCE),
-      "6g the founding link email says, in the landing page's words, that it is paid on the website and works in the iPhone and Android apps too (approved 2026-10-21)");
+    t.ok(/ Available on the website and in the iPhone and Android apps\.$/.test(LANDING_PRICE_SENTENCE) && !/Not yet/i.test(LANDING_PRICE_SENTENCE),
+      "6g the founding link email's landing sentence says it is available on the website and in the iPhone and Android apps (D, approved 2026-10-29)");
   }
 
 

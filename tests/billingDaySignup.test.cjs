@@ -9,8 +9,8 @@
 //      cap no longer locks a code holder out;
 //   2. the beta founder flag: no signup, open or coded, can set it; an existing founder keeps the founding
 //      price and the founder plan, with the door open or shut;
-//   3. the waitlist founding lookup: signing up touches no waitlist row and no founding number, and the
-//      founding price follows the account's CONFIRMED email exactly as before.
+//   3. the founding rule: signing up touches no waitlist row and no founding number, and the founding price
+//      needs the account's CONFIRMED email and a founding seat left (2026-10-29: the first 50 who subscribe).
 // The real beta.js runs against a fake admin client (the openSignup.test.cjs pattern); no network.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -139,11 +139,11 @@ async function signup(env, body, over = {}) {
       "3a signing up reads and writes no waitlist row and no founding number (its one request is the account_created count; no founding function)");
     const cohort = require("../netlify/functions/_lib/foundingCohort.js");
     const HOLDER = "Founder.Household@Example.test";
-    const ask = async (user) => {
+    const ask = async (user, seats = 0) => {
       const asked = [];
       const admin = {
         from: () => { const q = { select() { return q; }, eq() { return q; }, async maybeSingle() { return { data: null, error: null }; } }; return q; },
-        rpc: async (name, args) => { asked.push(args.p_email); return { data: args.p_email === "founder.household@example.test" ? 7 : null, error: null }; },
+        rpc: async (name) => { asked.push(name); return { data: name === "founding_seats_taken" ? seats : null, error: null }; },
       };
       return { may: await cohort.mayBuyFoundingPrice(admin, "new-1", user), asked };
     };
@@ -152,10 +152,11 @@ async function signup(env, body, over = {}) {
       const unconfirmed = await ask({ email: HOLDER, email_confirmed_at: null });
       t.eq([unconfirmed.may, unconfirmed.asked], [false, []], `3b signup ${open ? "open" : "shut"}: a new account with a founding address is not offered the price before the address is confirmed`);
       const confirmed = await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } });
-      t.eq([confirmed.may, confirmed.asked], [true, ["founder.household@example.test"]], `3c …once confirmed from our link it is, matched on the normalised address`);
+      t.eq([confirmed.may, confirmed.asked], [true, ["founding_seats_taken"]], `3c …once confirmed from our link it is, while founding seats are left (the seats are counted, no waitlist lookup)`);
       const auto = await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "auto" } });
       t.eq([auto.may, auto.asked], [false, []], `3c2 …but never when the address was confirmed on creation`);
-      t.eq((await ask({ email: "someone.else@example.test", email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } })).may, false, "3d …and another address is not");
+      t.eq((await ask({ email: "someone.else@example.test", email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } })).may, true, "3d …another confirmed address too: a waitlist number is not needed");
+      t.eq((await ask({ email: HOLDER, email_confirmed_at: "2026-10-26T15:00:00Z", app_metadata: { email_confirmation: "link" } }, 50)).may, false, "3e …and at 50 seats held, nobody");
     }
     delete process.env.OPEN_SIGNUP;
   }

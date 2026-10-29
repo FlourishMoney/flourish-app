@@ -15,9 +15,9 @@
 //      voided, until exactly 50 real households hold one; the 51st never does, from either side;
 //   3  who never holds a seat: test rows and test addresses (also when marked later, which frees the seat),
 //      beta founders, accounts confirmed on creation, accounts never confirmed;
-//   4  checkout's own rule (_lib/foundingCohort.js mayBuyFoundingPrice) against this database: the founding
-//      price for every real holder, from the website or an app; never a void, test or 51st number; a beta
-//      founder still through the flag;
+//   4  checkout's own rule (_lib/foundingCohort.js mayBuyFoundingPrice) against this database: since 2026-10-29
+//      (the first 50 who subscribe, migration 0032) it no longer reads this ledger: every confirmed household
+//      while seats are left, number or not; never a test address; a beta founder still through the flag;
 //   5  a second run of 0025 changes nothing, and founding_accounts_start() runs once;
 //   6  concurrent confirmations and joins never share a number, and the cap holds under the race;
 //   7  nothing is callable or readable from the browser roles;
@@ -203,29 +203,29 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq([lookup("join0@example.ca"), sql(`select void_reason from public.waitlist_founding_ledger where position = ${freed}`)], ["", "test"], "3c unmarking it does not bring the number back (void is final)");
     t.eq(join("someone@sub.getgrowsmart.com"), "", "3d a subdomain of a test domain is a test address too");
 
-    // ── 4. Checkout's rule, against this database ───────────────────────────────────────────────────────
+    // ── 4. Checkout's rule, against this database: it no longer reads the ledger ────────────────────────
     const { mayBuyFoundingPrice } = require("../netlify/functions/_lib/foundingCohort.js");
     const idOf = (email) => sql(`select id from auth.users where email = ${lit(email)}`);
+    const asked = [];
     const admin = {
-      rpc: async (name, args) => name === "waitlist_founding_number_for_email"
+      rpc: async (name, args) => { asked.push(name); return name === "waitlist_founding_number_for_email"
         ? { data: (() => { const v = lookup(args.p_email); return v === "" ? null : Number(v); })(), error: null }
-        : { data: null, error: { message: `not in this test: ${name}` } },
+        : name === "founding_seats_taken" ? { data: 0, error: null } : { data: null, error: { message: `not in this test: ${name}` } }; },
       from: (table) => ({ select: () => ({ eq: (_c, uid) => ({ maybeSingle: async () => ({
         data: table === "profiles" ? { founder_flag: sql(`select coalesce((select founder_flag::text from public.profiles where user_id = '${uid}'), 'false')`) === "true" } : null,
         error: null }) }) }) }),
     };
     const linkUser = (email) => ({ email, email_confirmed_at: "2026-10-20T00:00:00Z", app_metadata: { email_confirmation: "link" } });
     const buy = (email) => mayBuyFoundingPrice(admin, idOf(email), linkUser(email));
-    t.eq([await buy(fiftieth), await buy(fiftyFirst)], [true, false], "4a checkout offers the founding price to the 50th real household (#64) and refuses the 51st");
-    t.eq(await buy("app.first@example.ca"), true, "4b …to an account numbered by 0025 (#34)");
-    t.eq(await buy("real3@example.ca"), true, "4c …to a waitlist household that signed up in an app later");
-    t.eq([await buy("amanda@getgrowsmart.com"), await buy("qa@flourishmoney.app")], [false, false], "4d …never to a test address");
-    t.eq(await buy("join0@example.ca"), false, "4e …nor to a number voided when its row was marked a test");
+    t.eq([await buy(fiftieth), await buy(fiftyFirst)], [true, true], "4a the 50th real waitlist household (#64) and the 51st alike: seats are left, numbers do not decide");
+    t.eq([await buy("app.first@example.ca"), await buy("real3@example.ca")], [true, true], "4b …an account numbered by 0025, and a waitlist household that signed up in an app");
+    t.eq(asked.filter((n) => n !== "founding_seats_taken"), [], "4c …and the ledger is never asked");
+    t.eq([await buy("amanda@getgrowsmart.com"), await buy("qa@flourishmoney.app")], [false, false], "4d never to a test address");
     t.eq(await mayBuyFoundingPrice(admin, bf, { email: "beta.founder@example.ca", email_confirmed_at: "2026-10-01T00:00:00Z", app_metadata: {} }), true,
       "4f a beta founder keeps the founding price through the flag, outside the 50, with no number");
     t.eq(await mayBuyFoundingPrice(admin, idOf(fiftieth), { email: fiftieth, email_confirmed_at: null, app_metadata: { email_confirmation: "link" } }), false,
       "4g never to an address the household has not confirmed");
-    t.eq(lookup("amanda.test16@example.ca"), "", "4h a confirmed orphan's number is void: no founding price if the address comes back");
+    t.eq(lookup("amanda.test16@example.ca"), "", "4h (the ledger itself is unchanged) a confirmed orphan's number is still void");
     t.eq(sql("select public.waitlist_founding_position_for_email('app.first@example.ca')"), "34", "4i 0016's lookup name gives the same answer");
 
     // ── 5. A second run changes nothing; start() runs once ──────────────────────────────────────────────
