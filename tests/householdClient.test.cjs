@@ -162,6 +162,9 @@ const O = "owner-id", P = "partner-id";
     t.ok(rows.every((r) => r[2].trim() && r[3].trim() && /\d/.test(r[4])), "7g every row says where, what, and a length limit");
     const app = read("src", "App.jsx");
     t.ok(!/\[WORDS:/.test(app), "7h no placeholder is written into App.jsx itself: the lines come from lib/householdWords.js");
+    const libDir = path.join(ROOT, "src", "lib");
+    const housed = fs.readdirSync(libDir).filter((f) => /household/i.test(f) && f !== "householdWords.js" && /\[WORDS:/.test(read("src", "lib", f)));
+    t.eq(housed, [], "7i no other household file in src/lib carries a placeholder: the one list is lib/householdWords.js");
   }
 
   t.summary("householdClient.test");

@@ -43,8 +43,10 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
     t.ok(!!line && count === 1 && (!(id in where) || where[id] === line), `1b ${id}: the approved line is in the code exactly once${id in where ? ", as the email's own" : ", on the page"}`);
     t.ok(/\*\*Where:\*\*/.test(sec) && /\*\*Facts it must state/.test(sec) && limit > 0 && line.length <= limit, `1d ${id}: where it shows, its facts, and within its limit (${line && line.length}/${limit})`);
   }
-  t.ok(!/\[WORDS:/.test(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}`) && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => /\[WORDS:/.test(read("src", "lib", f))),
-    "1c no [WORDS: placeholder is left: the email, the device link's page and script, App.jsx, src/lib");
+  // Couple mode (2026-10-29): its words to come live in lib/householdWords.js, held to being placeholders until
+  // approved by householdClient 7c; the feature stays off (HOUSEHOLD_ENABLED) and its PR unmerged until then.
+  t.ok(!/\[WORDS:/.test(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}`) && !fs.readdirSync(path.join(ROOT, "src", "lib")).filter((f) => f !== "householdWords.js").some((f) => /\[WORDS:/.test(read("src", "lib", f))),
+    "1c no [WORDS: placeholder is left: the email, the device link's page and script, App.jsx, src/lib (couple mode's words to come live in lib/householdWords.js)");
   const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0].split("**Facts it must state")[1] || "";
   const order = ["same email address this message went to", "tap the confirmation link", "open **See plans** and choose **Founding annual**"].map((s) => steps.indexOf(s));
   t.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2], "1e the steps line's facts: same email, then the confirmation link, then See plans and Founding annual, in that order");
