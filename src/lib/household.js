@@ -140,6 +140,13 @@ export function coachProfileFor(profile, viewerRole) {
   };
 }
 
+// The name of the person using the app: the profile is written from the owner's side, so the partner's own
+// name is its partnerName. Empty when it was never entered (the screen then says "there").
+export function viewerName(profile, viewerRole) {
+  const p = profile || {};
+  return String((viewerRole === "partner" ? p.partnerName : p.name) || "").trim();
+}
+
 // A link's token from the address bar (?household_invite=…), or null. Only a token of the shape the server
 // makes (43 base64url characters) is kept.
 export function inviteTokenFromSearch(search) {

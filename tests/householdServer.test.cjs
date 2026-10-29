@@ -290,6 +290,8 @@ const coupleDb = (over = {}) => ({
       t.ok(!/owner@example|partner@example|00000000-0000-4000-8000-00000000000a/.test(JSON.stringify(sp.body)), "6b …no name, no address and no account id of the other");
       t.eq(sp.body.household.invite, null, "6c only the owner sees the open invite");
       t.eq([sp.body.household.billing.paid_by, sp.body.household.billing.your_extra], ["both", "play_store"], "6d both pay: the partner is told theirs (Google Play) is extra, so they can cancel it");
+      const so2 = await call(a.household, O, { action: "status" });
+      t.eq([so2.body.household.billing.paid_by, so2.body.household.billing.your_extra], ["both", null], "6d2 …and the owner is not told to cancel: one of them cancels, never both");
       db.household_invites.push({ household_id: "h1", email_key: "partner@example.test", expires_at: "2099-01-01T00:00:00Z", used_at: null, revoked_at: null, created_at: "2026-10-29" });
       db.household_members = db.household_members.filter((m) => m.user_id === O);
       const so = await call(a.household, O, { action: "status" });

@@ -73,6 +73,8 @@ const O = "owner-id", P = "partner-id";
     t.ok(/const reset = hhPlan === "join" \|\| hhPlan === "left";\n    if \(reset\) \{[\s\S]*clearAllUserLocal\(\);/.test(helper), "3b join or left: this device's data is dropped first");
     t.ok(/reset \? \{ apply: true, pushLocal: false/.test(helper), "3c …and on joining the household's data is loaded, never this device's pushed over it");
     t.ok(/if \(!remoteH\) throw/.test(helper), "3d a member who cannot read the household's row never writes this session");
+    const merges = [...appSrc.matchAll(/mergeHouseholdBlobs\(([^,]+),/g)].map((m) => m[1].trim());
+    t.ok(merges.length >= 3 && merges.every((b) => b === "cur.base" || b === "hh.base"), `3e every merge is over what this device last read, so a removal on the server wins (${merges.join(", ")})`);
   }
 
   // ── 4. THE COACH: ROLES, THE ASKER'S OWN ────────────────────────────────────────────────────────
@@ -87,6 +89,9 @@ const O = "owner-id", P = "partner-id";
     t.ok(/const profile = coachProfileFor\(data\.profile\|\|\{\}, data\.householdRole\);/.test(appSrc), "4d the coach's context is built from the asker's side");
     t.ok(/setCoachNames\(coachProfileFor\(appData\?\.profile, householdRole\)\);/.test(appSrc), "4e …and so is the register that turns names into roles");
     t.ok(/- Name: not shared; call them "you"/.test(appSrc) && !/Name: \$\{/.test(appSrc), "4f the context still never carries a name");
+    t.eq([H.viewerName(profile, "owner"), H.viewerName(profile, "partner"), H.viewerName({ name: "Sam" }, "partner")], ["Sam Rivera", "Jo", ""],
+      "4g the screen greets the person using the app by their own name, never the other's");
+    t.ok(/Hey \{viewerName\(data\.profile, data\.householdRole\)\|\|"there"\}/.test(appSrc), "4h …on Today");
   }
 
   // ── 5. SAVING OVER A VERSION ────────────────────────────────────────────────────────────────────

@@ -108,7 +108,7 @@ import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
-import { HOUSEHOLD_STAMP_KEY, HOUSEHOLD_INVITE_KEY, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions } from "./lib/household.js";
+import { HOUSEHOLD_STAMP_KEY, HOUSEHOLD_INVITE_KEY, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -6182,7 +6182,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
       <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
           <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
-            Hey {data.profile?.name||"there"} 👋
+            Hey {viewerName(data.profile, data.householdRole)||"there"} 👋
           </div>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
             {urgentBill?`⚠️ ${urgentBill.name} due in ${daysUntilDueDay(urgentBill.date, new Date())} day${daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}`:isPayday?"🎉 Payday: a great time to save":"Here's your financial pulse"}
@@ -17982,6 +17982,7 @@ export default function FlourishApp(){
     else if (r.status === 404) setHouseholdInfo({ enabled: false });
   };
   useEffect(()=>{ if (user && hydrated) refreshHousehold(); }, [user, hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ if (showSettings && user && hydrated) refreshHousehold(); }, [showSettings]); // eslint-disable-line react-hooks/exhaustive-deps
   // A link's invite: once signed in and loaded, Settings opens on Household with the partner's consent screen.
   const linkOpenedRef = useRef(false);
   useEffect(()=>{
@@ -18036,10 +18037,11 @@ export default function FlourishApp(){
       const hh = householdRef.current;
       const remote = hh ? await fetchHouseholdData(supabase, hh.id).catch(()=>null) : null;
       if (remote && householdRef.current) {
+        // Merged over what this device last read, so the server's removal of the partner's banks wins.
         const local = householdPayload(latestStateRef.current, user.id).blob;
         const cur = householdRef.current;
         householdRef.current = { ...cur, version: remote.version, base: remote.blob };
-        applyHouseholdBlob(mergeHouseholdBlobs(remote.blob, local, remote.blob), user.id, { keepSynced: true });
+        applyHouseholdBlob(mergeHouseholdBlobs(cur.base, local, remote.blob), user.id, { keepSynced: true });
       }
       await refreshHousehold();
       return { ok: true };
@@ -19137,7 +19139,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:32,height:32,borderRadius:99,background:C.green+"22",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}><Icon id="user" size={15} color={C.green} strokeWidth={1.5}/></div>
               <div>
-                <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
+                <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{viewerName(appData.profile, householdRole)||"User"}</div>
                 {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
                     "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
                 {/* H13: a household on the trial is not called Plus; the countdown above names the trial. */}

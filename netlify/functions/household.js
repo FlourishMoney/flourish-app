@@ -78,8 +78,8 @@ async function statusFor(admin, userId) {
       billing: {
         covered: payers.length > 0,
         paid_by: payers.length === 0 ? null : payers.some((m) => m.user_id === userId) ? (payers.length > 1 ? "both" : "you") : "partner",
-        // You pay on your own while your partner's subscription already covers the household: cancel yours.
-        your_extra: payers.length > 1 ? subs[userId] : null,
+        // Both pay: the PARTNER is told theirs is extra and where to cancel it (the owner's keeps covering both).
+        your_extra: payers.length > 1 && mine.role === "partner" ? subs[userId] : null,
       },
     },
   };
