@@ -14244,11 +14244,13 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
   useEffect(() => { if (numberShown && !shownOnce.current) { shownOnce.current = true; try { if (onNumberShown) onNumberShown(); } catch { /* never blocks the screen */ } } }, [numberShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
+    // Scrolls when the screen is shorter than its content (a Duo's outer screen in landscape is 466px tall): centred
+    // by auto margins rather than justifyContent, so it never spills past the bottom safe-area padding into the strip.
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",overflowY:"auto",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
       {/* Ambient glow */}
       <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
-      <div style={{position:"relative",width:"100%",maxWidth:360}}>
+      <div style={{position:"relative",width:"100%",maxWidth:360,margin:"auto 0"}}>
         {/* Welcome */}
         <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           {firstNumberGreeting(data.profile?.name)}
