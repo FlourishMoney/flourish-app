@@ -71,8 +71,8 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
 
   // ── 4. the wiring ───────────────────────────────────────────────────────────────────────────
   const pkg = require(path.join(ROOT, "package.json")).scripts;
-  t.eq(pkg["build:native"], "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact",
-    "4a build:native builds without website analytics, strips the landing media after vite build and before its artifact check");
+  t.eq(pkg["build:native"], "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact && node scripts/check-pending-words.mjs dist",
+    "4a build:native builds without website analytics, strips the landing media after vite build and before its artifact check (then refuses words still to come, 2026-10-29)");
   t.eq(pkg.build, "vite build", "4b the web build does not strip anything");
   t.ok(/command\s*=\s*"npm run build"/.test(fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8")), "4c Netlify builds the site with npm run build");
   t.ok(/npm run build:native/.test(fs.readFileSync(path.join(ROOT, "scripts", "ship-ios.sh"), "utf8")), "4d ship-ios.sh builds with build:native");

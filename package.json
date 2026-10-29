@@ -12,7 +12,7 @@
     "test:layout": "node tests/layout.browser.test.cjs",
     "screens:landing": "node scripts/capture-landing-screens.mjs && node scripts/crop-hero-card.mjs",
     "check:native-env": "node scripts/check-native-build.mjs --env",
-    "build:native": "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact"
+    "build:native": "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact && node scripts/check-pending-words.mjs dist"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

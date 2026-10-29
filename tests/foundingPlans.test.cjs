@@ -9,7 +9,9 @@
 //   2  not founding (seats full, or the address not confirmed): no change
 //   3  already paid (any provider, a founding switch, a web subscription in collection): never opens
 //   4  closed once: does not reopen on its own (the marker survives sign out; storage blocked: once per session)
-//   5  the wiring in App.jsx, and the words: no new line, the approved disclosure and the close button stay
+//   5  the wiring in App.jsx, and the words: the approved disclosure and the close button stay
+//   6  keep the trial (2026-10-29): who sees the small print, the confirm's live count, the wiring; the words still to
+//      come live in lib/pendingWords.js only, and no production or store build ships with one
 // tests/foundingPlans.browser.test.cjs drives the built app through the same four cases.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -152,7 +154,51 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     const lib = read("src", "lib", "foundingPlans.js");
     const strings = [...lib.replace(/\/\/.*$/gm, "").matchAll(/"([^"\n]*)"/g)].map((m) => m[1]).filter((x) => / /.test(x));
     t.eq(strings, [], "5k the library carries no words for the screen: the plans screen keeps only its approved lines");
-    t.ok(!/\[WORDS/.test(sp), "5l (no placeholder words are needed)");
+    t.ok(!/\[WORDS/.test(sp), "5l the paywall itself holds no placeholder: words still to come come from lib/pendingWords.js");
+  }
+
+  // ── 6. Keep the trial ──────────────────────────────────────────────────────────────────────────────
+  {
+    const APP = read("src", "App.jsx");
+    const sp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
+    const O = await import("../src/lib/storeOffer.js");
+    const P = await import("../src/lib/pendingWords.js");
+    const on = { paid: false, founding: { available: true, spots_left: 7 } };
+    const show = (o) => O.trialKeepShown({ status: on, inTrial: true, closable: true, foundingCard: true, ...o });
+    t.eq(show({}), true, "6a in the trial, founding offered with a count, the founding card shown, closable: the small print shows");
+    t.eq([show({ inTrial: false }), show({ closable: false }), show({ foundingCard: false }), show({ status: { ...on, paid: true } }),
+      show({ status: { paid: false, founding: { available: false, spots_left: 7 } } }), show({ status: null })], [false, false, false, false, false, false],
+      "6b not after the trial, not without a way to close, not without the founding plan, not to a household that pays, not when founding is not offered");
+    t.eq([0, 51, null, undefined, "7", 6.5].map((n) => show({ status: { paid: false, founding: { available: true, spots_left: n } } })), [false, false, false, false, false, false],
+      "6c no live count to state (none, 0, past 50, not a whole number): no small print");
+    t.eq([O.trialConfirmBody(6), O.trialConfirmBody(1), O.trialConfirmBody(0)], [P.pendingWords("trial-confirm-body", 6), P.pendingWords("trial-confirm-body", 1), null], "6d the body carries the count it is given");
+    t.ok(/\{n\}/.test(P.PENDING_WORDS["trial-confirm-body"]) && O.trialConfirmBody(6).includes("6"), "6e …in its {n}");
+    t.eq(Object.values(O.TRIAL_KEEP_COPY), ["trial-link", "trial-confirm-title", "trial-confirm-stay", "trial-confirm-leave"].map((id) => P.pendingWords(id)), "6f the link, title and buttons are the pending words, for now");
+    t.ok(/const showKeepTrial = !held && !!onClose && trialKeepShown\(\{ status, inTrial, closable: !!onClose, foundingCard: cards\.some\(c=>c\.plan==="founding_annual"\) \}\);/.test(sp),
+      "6g the paywall shows it by that rule");
+    t.ok(/setKeepTrial\(true\);\s*askStore\("store_status"\)\.then\(s=>\{ if\(s\) onResolved\(s\); \}\)/.test(sp), "6h opening the confirm asks the server again, so the count is live");
+    t.ok(/data-trial-stay="" onClick=\{\(\)=>setKeepTrial\(false\)\}/.test(sp) && /data-trial-leave="" onClick=\{\(\)=>\{ setKeepTrial\(false\); onClose\(\); \}\}/.test(sp),
+      "6i stay closes the confirm only; leave closes the plans too");
+    t.ok(/return pushBackHandler\(\(\)=>\{ setKeepTrial\(false\); return true; \}\);/.test(sp) && /role="alertdialog" aria-modal="true"/.test(sp), "6j Android's back key closes the confirm first; it is announced as a dialog");
+    t.ok(/if\(keepTrial && !keepBody\) setKeepTrial\(false\);/.test(sp), "6k if the last spot goes while it is open, the confirm closes (its count is gone)");
+    t.ok(/<StorePaywall [\s\S]{0,400}inTrial=\{trialActive\} onManage=/.test(APP), "6l the app tells the paywall whether the account is in its trial");
+    t.ok(sp.indexOf("{storeDisclosure(platform)}") < sp.indexOf("data-trial-link") && sp.indexOf("data-trial-link") < sp.indexOf("PAYWALL_COPY.terms"), "6m the small print sits under the plans and the disclosure, above the three links");
+
+    // The words still to come never ship.
+    const { execFileSync } = require("child_process");
+    const dir = require("./_tmp.cjs").tempDir("pendingwords");
+    const guard = (target) => { try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), target], { stdio: "pipe" }); return 0; } catch (e) { return e.status; } };
+    fs.writeFileSync(path.join(dir, "a.js"), `const x = "${P.PENDING_WORDS["trial-link"]}";`);
+    const caught = guard(dir);
+    fs.writeFileSync(path.join(dir, "a.js"), 'const x = "Keep my trial";');
+    t.eq([caught, guard(dir)], [1, 0], "6n the guard refuses a build holding a placeholder, and passes one without");
+    const toml = read("netlify.toml");
+    const pkg = JSON.parse(read("package.json"));
+    t.ok(/\[context\.production\]\s*\n\s*command\s*=\s*"npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml), "6o the production web deploy runs it, on the site and the functions");
+    t.ok(/&& node scripts\/check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]), "6p every store build runs it last");
+    const srcFiles = (d) => fs.readdirSync(path.join(REPO, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? srcFiles(path.join(d, e.name)) : [path.join(d, e.name)]);
+    const holders = srcFiles("src").filter((f) => /\.(js|jsx)$/.test(f) && /\[WORDS:\s*[a-z0-9-]+/.test(read(f)));
+    t.eq(holders, [path.join("src", "lib", "pendingWords.js")], "6q in the app, only lib/pendingWords.js holds a placeholder");
   }
 
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];

@@ -98,7 +98,7 @@ import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, 
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
-import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, TRIAL_KEEP_COPY, trialConfirmBody, trialKeepShown, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { FOUNDING_PLANS_SHOWN_KEY, foundingPlansAutoOpen, foundingPlansShown, rememberFoundingPlansShown, paywallPlanOrder } from "./lib/foundingPlans.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
@@ -13947,8 +13947,10 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
 // approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
 // purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
 // whose one ModalHost sits above it.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose}){
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
+  const [keepTrial,setKeepTrial]=useState(false); // the "keep the trial" confirm (2026-10-29) is open
+  const keepStayRef=useRef(null);
   const [loadFailed,setLoadFailed]=useState(false);
   const [busy,setBusy]=useState(null);            // the plan key being bought, or "restore"
   const [outcome,setOutcome]=useState(null);
@@ -14006,6 +14008,22 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   })).filter(c=>!!c.copy) : [];
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
+  // KEEP THE TRIAL (2026-10-29, lib/storeOffer.js TRIAL_KEEP_COPY): small print under the founding plans, for a
+  // household in its trial. It opens a confirm that states the founding spots left, asked of the server again as it
+  // opens (the live count); "stay" goes back to the plans, "leave" closes them and the trial goes on. Back closes it.
+  const showKeepTrial = !held && !!onClose && trialKeepShown({ status, inTrial, closable: !!onClose, foundingCard: cards.some(c=>c.plan==="founding_annual") });
+  const keepBody = trialConfirmBody(status?.founding?.spots_left);
+  const openKeepTrial = ()=>{
+    setKeepTrial(true);
+    askStore("store_status").then(s=>{ if(s) onResolved(s); }).catch(()=>{ /* the count already shown stands */ });
+  };
+  useEffect(()=>{
+    if(!keepTrial) return undefined;
+    keepStayRef.current?.focus?.();
+    return pushBackHandler(()=>{ setKeepTrial(false); return true; });
+  },[keepTrial]);
+  // The count the server gives now is gone (the last spot was taken): the confirm closes; the plans redraw without it.
+  useEffect(()=>{ if(keepTrial && !keepBody) setKeepTrial(false); },[keepTrial, keepBody]);
   return(
     <div style={{background:C.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
@@ -14039,6 +14057,22 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
           ))}
         </div>
         {!held && cards.length>0 && <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform)}</div>}
+        {showKeepTrial && <div style={{display:"flex",justifyContent:"center",marginTop:SPACE.xs}}>
+          <button type="button" data-trial-link="" onClick={openKeepTrial} style={link}>{TRIAL_KEEP_COPY.link}</button>
+        </div>}
+        {keepTrial && keepBody && (
+          <div style={{position:"fixed",inset:0,zIndex:1,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",...overlaySafe([20,16], { bottom: true })}}>
+            <div role="alertdialog" aria-modal="true" aria-labelledby="trial-keep-title" aria-describedby="trial-keep-body" data-trial-confirm=""
+              style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:390}}>
+              <div id="trial-keep-title" style={{color:C.cream,fontWeight:800,fontSize:16,marginBottom:SPACE.xs}}>{TRIAL_KEEP_COPY.title}</div>
+              <div id="trial-keep-body" style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,marginBottom:SPACE.md}}>{keepBody}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm}}>
+                <button type="button" ref={keepStayRef} data-trial-stay="" onClick={()=>setKeepTrial(false)} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{TRIAL_KEEP_COPY.stay}</button>
+                <button type="button" data-trial-leave="" onClick={()=>{ setKeepTrial(false); onClose(); }} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{TRIAL_KEEP_COPY.leave}</button>
+              </div>
+            </div>
+          </div>
+        )}
         {said&&<div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{said}</div>}
         {waiting&&<button onClick={doCheck} disabled={!!busy} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontWeight:700,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>{busy==="check"?PAYWALL_COPY.checking:PAYWALL_COPY.checkAgain}</button>}
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.lg}}>
@@ -18329,7 +18363,7 @@ export default function FlourishApp(){
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
             onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
-            onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
+            inTrial={trialActive} onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
     </div>
   ) : null;
   // ── Legal screens — always accessible, even before auth/onboarding ──

@@ -54,8 +54,8 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     t.eq([P.storePlan("trial", { paid: false }), P.storePlan("free", { paid: false }), P.storePlan("free", { paid: true })], ["trial", "free", "premium"],
       "2a the 14-day account trial counts in a selling build; after it the free plan, until the household subscribes");
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
-      "2b one paywall: nothing on it depends on when the household installed or what it did before");
+    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
+      "2b one paywall: nothing on it depends on when the household installed or what it did before (inTrial is today's trial, 2026-10-29)");
     t.ok(!/checkTrialOrIntroductoryPriceEligibility|introEligible|trialLine|free month/i.test(comp) && !("introEligible" in O)
       && ["monthly", "annual", "founding_annual"].every((plan) => { const c = O.offerCopy({ plan, priceString: "$X", platform: "ios" }); return c && !/free|trial|intro/i.test(JSON.stringify(c)); }),
       "2c no store trial and no introductory offer: the paywall never asks the store for one, and no plan's words promise one");
