@@ -6,12 +6,13 @@
 // who never granted consent — and a user with no profiles row — reached Anthropic. It now encodes the
 // FIXED contract, which draws the distinction the old gate collapsed:
 //
-//   "we couldn't check"            (read error / thrown query)         → FAIL OPEN  (reaches Anthropic)
+//   "we couldn't check"            (read error / thrown query)         → FAIL CLOSED 503 (no provider call)
 //   "we checked, no consent on file" (missing row / consent_at null / revoked) → BLOCK 403
 //   "we checked, consent on file"  (consent_at set, no later revoke)   → ALLOW      (reaches Anthropic)
 //
-// Fail-open-on-error is a deliberate availability tradeoff: a transient DB blip must not take AI down
-// for everyone. It is NOT the same as "checked and found no consent", which must block.
+// Audit 2026-10-29: the gate used to fail OPEN on an unreadable check. It now fails closed: consent that
+// can't be confirmed is not consent. A 503 (the app retries) is still not the same answer as "checked
+// and found no consent", which is the 403.
 //
 // NO NETWORK, NO CREDENTIALS:
 //   * @supabase/supabase-js is replaced in the require cache BEFORE _lib/auth.js loads.
@@ -58,7 +59,8 @@ require.cache[supabaseId] = {
   id: supabaseId, filename: supabaseId, loaded: true, paths: [],
   exports: {
     createClient: () => ({
-      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      // A confirmed address: _lib/auth.js answers 401 for an unconfirmed one before the gate runs.
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID, email_confirmed_at: GRANT } }, error: null }) },
       from: () => makeQuery(null),
       rpc: async () => ({ data: 1, error: null }), // usage counter healthy
     }),
@@ -80,9 +82,12 @@ process.env.ANTHROPIC_API_KEY = "stub-key-not-real";
 const { handler } = require(FN);
 
 // ── fetch recorder: records, never transmits ─────────────────────────────────
+// fetchCount counts EVERY outbound fetch, so "zero provider fetches" means nothing left the function.
 let anthropicCalled = false;
 let lastOutboundUrl = null;
+let fetchCount = 0;
 global.fetch = async (url) => {
+  fetchCount += 1;
   lastOutboundUrl = String(url);
   if (lastOutboundUrl.startsWith("https://api.anthropic.com")) {
     anthropicCalled = true;
@@ -109,12 +114,14 @@ function bodyFor(type) {
 }
 
 // ── runner ───────────────────────────────────────────────────────────────────
-// expect: "block" → must NOT reach Anthropic (403);  "allow" → MUST reach Anthropic.
+// expect: "block" → must NOT reach Anthropic (403);  "allow" → MUST reach Anthropic;
+//         "unavailable" → 503 and ZERO outbound fetches (the check could not be performed).
 const results = [];
 async function check(name, sc, type, expect) {
   scenario = sc;
   anthropicCalled = false;
   lastOutboundUrl = null;
+  fetchCount = 0;
   const res = await handler(evt(bodyFor(type)));
   let error = null;
   try {
@@ -123,6 +130,14 @@ async function check(name, sc, type, expect) {
         `gate should have BLOCKED this request, but user data reached api.anthropic.com ` +
         `(handler returned ${res.statusCode})`);
       assert.strictEqual(res.statusCode, 403, `expected a 403 consent block, got ${res.statusCode}`);
+    } else if (expect === "unavailable") {
+      assert.strictEqual(fetchCount, 0,
+        `an unreadable consent check must make NO provider call, but ${fetchCount} fetch(es) went out ` +
+        `(last: ${lastOutboundUrl})`);
+      assert.strictEqual(anthropicCalled, false, "an unreadable consent check reached api.anthropic.com");
+      assert.strictEqual(res.statusCode, 503, `expected a 503 (consent could not be read), got ${res.statusCode}`);
+      assert.strictEqual(JSON.parse(res.body).error, "consent_unavailable",
+        `expected error consent_unavailable, got ${res.body}`);
     } else {
       assert.strictEqual(anthropicCalled, true,
         `gate should have ALLOWED this request (fail-open / consented), but nothing reached Anthropic ` +
@@ -131,13 +146,13 @@ async function check(name, sc, type, expect) {
   } catch (e) { error = e; }
   results.push({ name, type, expect, status: res.statusCode, anthropicCalled, error });
   console.log(`${error ? "FAIL" : "PASS"}  [${type}] ${name}`);
-  console.log(`        expect=${expect}  status=${res.statusCode}  anthropicCalled=${anthropicCalled}  outbound=${lastOutboundUrl || "(none)"}`);
+  console.log(`        expect=${expect}  status=${res.statusCode}  anthropicCalled=${anthropicCalled}  fetches=${fetchCount}  outbound=${lastOutboundUrl || "(none)"}`);
   if (error) console.log(`        AssertionError: ${error.message}`);
 }
 
 (async () => {
   console.log("\n=== coach.js consent gate — contract ===");
-  console.log("Reaches api.anthropic.com ONLY when consent is confirmed, or when the check could not be performed.\n");
+  console.log("Reaches api.anthropic.com ONLY when consent is confirmed. An unreadable check is a 503 with no fetch.\n");
 
   // ---- HARNESS SANITY CHECKS ----
   console.log("--- harness sanity ---");
@@ -156,16 +171,22 @@ async function check(name, sc, type, expect) {
     { profileRow: { ai_third_party_consent_at: GRANT, ai_third_party_consent_revoked_at: null } },
     "chat", "allow");
 
-  // ---- (a) COULD NOT CHECK -> fail open (deliberate availability tradeoff) ----
-  console.log("\n--- (a) consent read could not be performed -> fail OPEN ---");
-  await check("a1 consent read returns an ERROR (cErr truthy) -> fail open",
-    { profileRow: null, consentReadError: { message: "db read failed" } }, "chat", "allow");
-  await check("a2 consent read THROWS -> fail open",
-    { throwOnConsentRead: true }, "chat", "allow");
-  await check("a3 consent read THROWS, unmetered type -> fail open",
-    { throwOnConsentRead: true }, "insights", "allow");
-  await check("a4 consent read returns an ERROR, unmetered type -> fail open",
-    { profileRow: null, consentReadError: { message: "db read failed" } }, "document", "allow");
+  // ---- (a) COULD NOT CHECK -> fail closed: 503, zero provider fetches ----
+  console.log("\n--- (a) consent read could not be performed -> fail CLOSED ---");
+  await check("a1 consent read returns a Supabase ERROR (cErr truthy) -> 503, no fetch",
+    { profileRow: null, consentReadError: { message: "db read failed" } }, "chat", "unavailable");
+  await check("a2 consent query THROWS -> 503, no fetch",
+    { throwOnConsentRead: true }, "chat", "unavailable");
+  await check("a3 consent query THROWS, retired type -> 503 before dispatch, no fetch",
+    { throwOnConsentRead: true }, "insights", "unavailable");
+  await check("a4 consent read returns an ERROR, unmetered type -> 503, no fetch",
+    { profileRow: null, consentReadError: { message: "db read failed" } }, "document", "unavailable");
+  await check("a5 consent query THROWS, unmetered live type -> 503, no fetch",
+    { throwOnConsentRead: true }, "checkin", "unavailable");
+  // A read error that still carries a grant-shaped row is not a grant: the error wins.
+  await check("a6 read ERROR alongside a granted row -> 503, no fetch",
+    { profileRow: { ai_third_party_consent_at: GRANT, ai_third_party_consent_revoked_at: null },
+      consentReadError: { message: "db read failed" } }, "chat", "unavailable");
 
   // ---- (b) CHECKED, NO CONSENT ON FILE -> block (this is the fix) ----
   console.log("\n--- (b) successful read, no affirmative consent -> BLOCK ---");
@@ -205,6 +226,6 @@ async function check(name, sc, type, expect) {
   }
   console.log(failed.length
     ? "\nCONTRACT VIOLATED — see failures above.\n"
-    : "\nConsent gate contract holds: affirmative consent required, fail-open only on unreadable check.\n");
+    : "\nConsent gate contract holds: affirmative consent required; an unreadable check fails closed.\n");
   process.exit(failed.length ? 1 : 0);
 })().catch((e) => { console.error("HARNESS ERROR:", e); process.exit(2); });
