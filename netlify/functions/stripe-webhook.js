@@ -26,6 +26,7 @@ const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
 const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
+const { reconcileHouseholdBilling } = require("./_lib/household");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -295,6 +296,9 @@ exports.handler = async (event) => {
       if (error) throw new Error(error.message);
       // Past 50 (two checkouts completing at the last seat) the seat is still recorded, and logged: they paid.
       if (foundingCheckoutPaid(object)) await takeSeat(admin, user_id, "stripe", sessionSubId || null);
+      // COUPLE MODE (audit H5): the other member already paid too (a race the hold did not stop, or a store
+      // purchase): one of the two is the extra; if it is this Stripe one, it is set to end and is never charged again.
+      await reconcileHouseholdBilling(admin, user_id);
     }
 
     // A REFUND GIVES THE FOUNDING SEAT BACK (2026-10-29). A charge refunded in full, for a customer whose account
@@ -373,6 +377,8 @@ exports.handler = async (event) => {
       } else {
         throw new Error(`no account for subscription ${object.id}`);
       }
+      // COUPLE MODE (audit H5): a subscription that became paid in a household the other member pays for.
+      if (!subscriptionOver && isLiveStripeStatus(object.status)) await reconcileHouseholdBilling(admin, existing?.user_id || user_id);
       if (foundingEnded) {
         // And on the waitlist number, which outlives the account (deleting an account deletes its waitlist
         // row, not the number's ledger entry). A failure here is a 5xx, so Stripe retries the event.

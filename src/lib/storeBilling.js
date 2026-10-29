@@ -121,7 +121,11 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
  *   pending       the store is waiting (Ask to Buy, a slow payment); access follows when it completes
  *   failed        the store refused it (a declined payment, a store problem)
  *   unconfirmed   the store took it but the server has not confirmed yet ("Check again" / Restore)
- * deps: serverStatus(), purchasePackage(pkg), serverSync(), sleep(ms)
+ * deps: serverStatus(), serverHold(), purchasePackage(pkg), serverSync(), sleep(ms)
+ *
+ * COUPLE MODE (audit H5): just before the store's sheet opens, the server is asked to hold the household for this
+ * purchase (billing.js store_hold), so the other member cannot buy at the same moment on another platform. Only
+ * { held: true } opens the sheet; the other member buying, a household already paid for, or no answer sells nothing.
  */
 export async function buy(deps, pkg) {
   let status = null;
@@ -131,6 +135,12 @@ export async function buy(deps, pkg) {
   if (status.paid) return { outcome: "already_paid", provider: status.provider || null };
   if (status.web_attention) return { outcome: "web_attention", provider: "stripe" };
   if (!pkg) return { outcome: "failed", reason: "no_package" };
+  if (deps.serverHold) {
+    let hold = null;
+    try { hold = await deps.serverHold(); } catch { hold = null; }
+    if (!hold) return { outcome: "failed", reason: "hold_unavailable" };
+    if (!hold.held) return hold.paid ? { outcome: "already_paid", provider: hold.provider || null } : { outcome: "failed", reason: "partner_buying" };
+  }
   try {
     await deps.purchasePackage(pkg);
   } catch (e) {

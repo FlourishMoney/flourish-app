@@ -10,6 +10,8 @@
 //      joining loads the HOUSEHOLD's data and drops the partner's own, and user_data is not read again
 //   4  the partner removed by the owner: the next time the app comes to the front, the household's data is
 //      cleared off this phone and the app starts fresh
+// Throughout: each person's own keys (consent) live in their own private row (household_member_private), and
+// nothing the app saves to the shared blob carries one (audit H3).
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -36,11 +38,16 @@ function blob(bills, name) {
   const t = create();
   // The approved words (2026-10-29), found on the page exactly as the app writes them.
   const { HOUSEHOLD_WORDS: HW } = await import("../src/lib/householdWords.js");
+  const { PERSONAL_SIDE_KEYS } = await import("../src/lib/household.js");
+  // As migrations 0030/0031 keep them: the shared blob never holds a personal key; the private row only those.
+  const personalOnly = (keys) => Object.fromEntries(Object.entries(keys || {}).filter(([k]) => PERSONAL_SIDE_KEYS.includes(k)));
+  const hasPersonal = (data) => !!data && ("personal" in data || Object.keys((data && data.sideKeys) || {}).some((k) => PERSONAL_SIDE_KEYS.includes(k)));
+  const strip = (data) => (data ? { ...data, sideKeys: Object.fromEntries(Object.entries(data.sideKeys || {}).filter(([k]) => !PERSONAL_SIDE_KEYS.includes(k))) } : data);
   let playwright;
   try { playwright = require("playwright"); } catch { t.ok(false, "playwright is installed"); t.summary("HOUSEHOLD FLOW (browser)"); return; }
   // The stand-in's state, per scenario.
   let S;
-  const reset = (over = {}) => { S = { featureOn: true, membership: null, household: null, userData: null, userDataGets: 0, userDataWrites: 0, patches: [], actions: [], ...over }; };
+  const reset = (over = {}) => { S = { featureOn: true, membership: null, household: null, userData: null, userDataGets: 0, userDataWrites: 0, patches: [], actions: [], personal: null, personalInBlob: false, ...over }; };
   reset();
   let dist = null;
   const body = (req) => new Promise((ok) => { let d = ""; req.on("data", (c) => { d += c; }); req.on("end", () => { try { ok(JSON.parse(d || "{}")); } catch { ok({}); } }); });
@@ -55,15 +62,22 @@ function blob(bills, name) {
       S.userDataWrites++; await body(req); return json(201, []);
     }
     if (p === "/rest/v1/household_members") return rows(S.membership ? [S.membership] : []);
+    if (p === "/rest/v1/household_member_private") {
+      if (req.method === "GET") return rows(S.personal ? [{ data: S.personal }] : []);
+      const b = await body(req);
+      S.personal = personalOnly((Array.isArray(b) ? b[0] : b).data);
+      return json(201, []);
+    }
     if (p === "/rest/v1/household_data") {
       const hidden = !S.membership || !S.household;
-      if (req.method === "GET") return rows(hidden ? [] : [{ data: S.household.data, updated_at: S.household.updated_at, version: S.household.version }]);
+      if (req.method === "GET") return rows(hidden ? [] : [{ data: strip(S.household.data), updated_at: S.household.updated_at, version: S.household.version }]);
       if (req.method === "PATCH") {
         const b = await body(req);
         const v = Number((url.searchParams.get("version") || "").replace(/^eq\./, ""));
         S.patches.push(v);
         if (hidden || v !== S.household.version) return json(200, []);
-        S.household = { data: b.data, version: S.household.version + 1, updated_at: new Date().toISOString() };
+        if (hasPersonal(b.data)) S.personalInBlob = true;
+        S.household = { data: strip(b.data), version: S.household.version + 1, updated_at: new Date().toISOString() };
         return json(200, [{ version: S.household.version, updated_at: S.household.updated_at }]);
       }
     }
@@ -78,12 +92,15 @@ function blob(bills, name) {
       if (b.action === "create_invite") {
         if (b.consent !== true) return json(400, { error: "consent_required" });
         S.membership = { household_id: "h1", role: "owner" };
-        S.household = { data: S.userData, version: 1, updated_at: "2026-10-29T12:00:00.000Z" };   // 0031 copies user_data
+        S.household = { data: strip(S.userData), version: 1, updated_at: "2026-10-29T12:00:00.000Z" };   // 0031 copies user_data
+        S.personal = personalOnly(S.userData && S.userData.sideKeys);                                 // …and the owner's own keys to their row
         return json(200, { ok: true, household_created: true, household_id: "h1", invite: { email: b.email, expires_at: "2026-11-05T12:00:00Z", code: "ABC234", email_sent: false } });
       }
       if (b.action === "accept_invite") {
         if (b.consent !== true || b.token !== TOKEN) return json(400, { error: "invalid" });
         S.membership = { household_id: "h1", role: "partner" };
+        S.personal = personalOnly(S.userData && S.userData.sideKeys);   // 0031: the partner's own keys to their row,
+        S.userData = null;                                               // and their old user_data row deleted
         return json(200, { ok: true, result: "joined" });
       }
       return json(400, { error: "unknown_action" });
@@ -162,12 +179,15 @@ function blob(bills, name) {
       t.ok(S.patches.length >= 1 && S.patches[0] === 1, `2e from now on the app saves to the household's blob, over the version it read (${S.patches.join(",")})`);
       t.eq(S.userDataWrites, writesBefore, "2f …and never to its own user_data row");
       t.eq(JSON.parse((await local(page)).stamp || "null"), { id: "h1", role: "owner" }, "2g this phone now holds the household, as its owner");
+      t.ok(!S.personalInBlob && S.personal && S.personal.flourish_ai_third_party_consent === "1", "2h the owner's consent is in their own private row, and no save to the shared blob carried a personal key");
       await ctx.close();
     }
 
     // ── 3. THE PARTNER JOINS BY THE LINK ────────────────────────────────────────────────────────────
     {
-      reset({ userData: blob([{ id: "pb", name: "Partner own bill", amount: 40, freq: "monthly", date: 3 }], "Jo"),
+      const jo = blob([{ id: "pb", name: "Partner own bill", amount: 40, freq: "monthly", date: 3 }], "Jo");
+      jo.sideKeys = { ...jo.sideKeys, flourish_ai_coach_enabled: "0" };   // the partner switched the coach off; the owner has it on
+      reset({ userData: jo,
         household: { data: blob([{ id: "hb", name: "Mortgage", amount: 2100, freq: "monthly", date: 1 }], "Sam"), version: 5, updated_at: "2026-10-29T12:00:00.000Z" } });
       const { ctx, page } = await open(`/?household_invite=${TOKEN}`);
       await page.getByText(HW.partnerConsentBody, { exact: true }).first().waitFor({ timeout: 40000 });
@@ -182,9 +202,12 @@ function blob(bills, name) {
       const after = await local(page);
       t.ok(after.v1.includes("Mortgage") && !after.v1.includes("Partner own bill"), "3d the phone now holds the household's data, and none of the partner's own");
       t.eq(JSON.parse(after.stamp || "null"), { id: "h1", role: "partner" }, "3e …as the partner");
+      t.eq(await page.evaluate(() => localStorage.getItem("flourish_ai_coach_enabled")), "0", "3e2 the partner's own coach choice comes from their own private row, never the owner's");
+      t.eq(S.userData, null, "3e3 their old user_data row is gone (0031 deletes it on joining)");
       const gets = S.userDataGets;
       await page.reload({ waitUntil: "domcontentloaded" }); await ready(page); await page.waitForTimeout(800);
       t.eq(S.userDataGets, gets, "3f a member's own user_data row is not read again");
+      t.ok(!S.personalInBlob, "3f2 nothing the partner's phone saved to the shared blob carried a personal key");
 
       // ── 4. REMOVED BY THE OWNER ──────────────────────────────────────────────────────────────────
       S.membership = null; S.userData = null;                // removed: no member row, their own row deleted (0031)

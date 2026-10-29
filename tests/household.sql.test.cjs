@@ -15,7 +15,14 @@
 //   4  members share the blob; the app cannot set the version or move the row;
 //   5  a REMOVED partner loses access in the same transaction, their banks leave the shared blob, and their
 //      own row is deleted (they start fresh);
-//   6  the owner deleting their account makes the partner the owner; the last one out takes the data with them.
+//   6  the owner deleting their account makes the partner the owner; the last one out takes the data with them;
+//   7  each person's own keys (AI and Plaid consent) live in their own private row, never in the shared blob,
+//      and only that person reads or writes it; the partner's old user_data row goes when they join;
+//   8  brute force: every failed try is counted at once (tries at the same moment included), per account, per
+//      invited address and per network, and an invite dies after 5 wrong tries; a code only works for its address;
+//   9  races: a remove at the same moment as a leave or an ownership change runs one after the other;
+//  10  one purchase at a time: a member's purchase hold stops the other's;
+//  11  what a departed member's banks left behind (derived data) leaves with them.
 // Postgres comes from FOUNDING_PG_BIN, Homebrew (postgresql@17) or GitHub's Ubuntu runner (/usr/lib/postgresql).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -83,6 +90,18 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
   const svc = (fn) => JSON.parse(last(sql(`set role service_role; select public.${fn}`)));
   const count = (uid, q) => as(uid, `select count(*) from (${q}) x`);
   const updated = (uid, q) => as(uid, `with u as (${q} returning 1) select count(*) from u`);
+  // A statement held open in its own connection (begin … pg_sleep … commit), to race another against it.
+  const slowly = (q, sleep = 1) => {
+    const child = spawn(path.join(bin, "psql"), psqlArgs(["-c", `begin; ${q}; select pg_sleep(${sleep}); commit;`]), { env });
+    let out = "", errOut = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { errOut += d; });
+    const done = new Promise((ok) => child.on("close", () => ok({ out, err: errOut })));
+    return done;
+  };
+  const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const keysOf = (o) => Object.fromEntries(Object.entries(o || {}).sort(([a], [b]) => (a < b ? -1 : 1)));   // jsonb orders keys its own way
+  const json = (s) => JSON.parse(s.split("\n").find((l) => l.trim().startsWith("{")) || "null");
   let started = false;
   try {
     execFileSync(path.join(bin, "initdb"), ["-D", path.join(dir, "data"), "-U", "postgres", "-A", "trust"], { env, stdio: "ignore" });
@@ -103,10 +122,10 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     // 1 GRANTS ------------------------------------------------------------------------------------------------
     fs.writeFileSync(path.join(dir, "c30.sql"), footerCheck(M30));
     fs.writeFileSync(path.join(dir, "c31.sql"), footerCheck(M31));
-    t.eq(file(path.join(dir, "c30.sql")), "f|t|t|f|f|t", "1a 0030: anon nothing; signed in: select the blob, update its data only, never its version, never insert a member");
-    t.ok(/Expected after: false, true, true, false, false, true\./.test(M30), "1b …which is what 0030's footer says to expect");
-    t.eq(file(path.join(dir, "c31.sql")), "f|f|f|t", "1c 0031: nobody signed in reaches the invites or the cursors, or calls the join; the service role does");
-    t.ok(/Expected after: false, false, false, true\./.test(M31), "1d …which is what 0031's footer says to expect");
+    t.eq(file(path.join(dir, "c30.sql")), "f|t|t|f|f|t|f|f", "1a 0030: anon nothing; signed in: select the blob, update its data only, never its version, never insert a member; no anon on the private rows, and nobody moves one");
+    t.ok(/Expected after: false, true, true, false, false, true, false, false\./.test(M30), "1b …which is what 0030's footer says to expect");
+    t.eq(file(path.join(dir, "c31.sql")), "f|f|f|t|f|f", "1c 0031: nobody signed in reaches the invites, the cursors or the holds, or calls the join; the service role does, but never the inner leave");
+    t.ok(/Expected after: false, false, false, true, false, false\./.test(M31), "1d …which is what 0031's footer says to expect");
     const fnRoles = sql(`select string_agg(p.proname || ':' || has_function_privilege('authenticated', p.oid, 'execute')::text, ',' order by p.proname)
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'household\\_%'`);
     t.ok(fnRoles.split(",").every((x) => x.endsWith(":false")), `1e no household_* function is callable by a signed-in user (${fnRoles})`);
@@ -117,8 +136,10 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     const blob = { userId: O, core: { onboarded: true, appData: { profile: { name: "Owner" }, bills: [{ id: "b1", name: "Rent" }],
       accounts: [{ id: "a-own", _item: "item-O" }, { id: "a-part", _item: "item-P" }, { id: "a-hand" }],
       transactions: [{ id: "t1", account_id: "a-own" }, { id: "t2", account_id: "a-part" }, { id: "t3", account_id: "a-hand" }],
-      liabilities: [{ account_id: "a-part" }, { account_id: "a-own" }] } }, sideKeys: { flourish_streak: "3" } };
-    sql(`insert into public.user_data (user_id, data) values ('${O}', '${JSON.stringify(blob)}'::jsonb), ('${P}', '{"core":{"appData":{"bills":[{"id":"p-own"}]}}}'::jsonb)`);
+      liabilities: [{ account_id: "a-part" }, { account_id: "a-own" }] } },
+      sideKeys: { flourish_streak: "3", flourish_ai_third_party_consent: "1", flourish_plan: "premium" } };
+    const pBlob = { core: { appData: { bills: [{ id: "p-own" }] } }, sideKeys: { flourish_ai_third_party_consent: "0", flourish_plaid_consented_at: "2026-10-01T00:00:00Z" } };
+    sql(`insert into public.user_data (user_id, data) values ('${O}', '${JSON.stringify(blob)}'::jsonb), ('${P}', '${JSON.stringify(pBlob)}'::jsonb)`);
     sql(`insert into public.plaid_items (user_id, item_id, access_token) values ('${O}', 'item-O', 'tok-O'), ('${P}', 'item-P', 'tok-P')`);
 
     // 2 BEFORE ANYTHING: nobody reaches anything
@@ -130,6 +151,11 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(as(O, `select data->'core'->'appData'->'bills'->0->>'name' from public.household_data where household_id = '${H}'`), "Rent",
       "3b …with the owner's own blob copied in as the shared one");
     t.eq(as(O, `select role from public.household_members where user_id = '${O}'`), "owner", "3c …and the owner as its owner");
+    // 7 PERSONAL KEYS: the owner's consent did not travel into the shared blob; it is in their own private row.
+    t.eq(JSON.parse(sql(`select data->'sideKeys' from public.household_data where household_id = '${H}'`)), { flourish_streak: "3" },
+      "7a the shared blob carries the shared keys only: the owner's AI consent and plan cache stayed out of it");
+    t.eq(keysOf(JSON.parse(as(O, `select data from public.household_member_private where user_id = '${O}'`))), { flourish_ai_third_party_consent: "1", flourish_plan: "premium" },
+      "7b …they are in the owner's own private row");
 
     // 2 THE NON-MEMBER, on every household table
     for (const [tbl, where] of [["households", `id = '${H}'`], ["household_members", `household_id = '${H}'`], ["household_data", `household_id = '${H}'`]]) {
@@ -142,7 +168,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/permission denied/.test(err(() => as(S, `insert into public.household_members (household_id, user_id, role, consented_at) values ('${H}', '${S}', 'partner', now())`))),
       "2g a non-member cannot add themselves to the household");
     t.ok(/permission denied/.test(err(() => as(S, `insert into public.households (owner_consented_at) values (now())`))), "2h a signed-in user cannot make a household directly");
-    for (const tbl of ["household_invites", "household_join_attempts", "plaid_item_cursors"]) {
+    for (const tbl of ["household_invites", "household_join_attempts", "plaid_item_cursors", "household_purchase_holds"]) {
       t.ok(/permission denied/.test(err(() => as(S, `select count(*) from public.${tbl}`))), `2i nobody signed in reads ${tbl}`);
       t.ok(/permission denied/.test(err(() => as(O, `select count(*) from public.${tbl}`))), `2j …not even the owner (${tbl})`);
     }
@@ -170,6 +196,23 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/household_full/.test(err(() => sql(`insert into public.household_members (household_id, user_id, role, consented_at) values ('${H}', '${T}', 'partner', now())`))),
       "3l …and cannot be added even by the database owner (the trigger)");
     t.eq(as(P, `select consented_at is not null from public.household_members where user_id = '${P}'`), "t", "3m the partner's consent time is recorded");
+    t.eq(keysOf(JSON.parse(as(P, `select data from public.household_member_private where user_id = '${P}'`))), keysOf(pBlob.sideKeys),
+      "7c joining, the partner's own AI and Plaid consent go to their own private row");
+    t.eq(sql(`select count(*) from public.user_data where user_id = '${P}'`), "0", "7d …and their old user_data row is deleted (replaced by the household's, as their consent screen says)");
+    t.eq(count(P, "select * from public.household_member_private"), "1", "7e the partner reads one private row: their own");
+    t.eq(count(P, `select * from public.household_member_private where user_id = '${O}'`), "0", "7f …never the owner's");
+    t.eq(count(O, `select * from public.household_member_private where user_id = '${P}'`), "0", "7g …and the owner never the partner's");
+    t.eq(updated(P, `update public.household_member_private set data = '{"flourish_ai_third_party_consent":"0"}'::jsonb where user_id = '${O}'`), "0",
+      "7h the partner's update of the owner's consent changes 0 rows");
+    t.ok(/row-level security/.test(err(() => as(P, `insert into public.household_member_private (user_id, data) values ('${O}', '{}')`))),
+      "7i …and they cannot make a private row in the owner's name");
+    t.ok(/permission denied/.test(err(() => as(P, `update public.household_member_private set user_id = '${O}' where user_id = '${P}'`))),
+      "7j …or hand their own row to someone else");
+    t.eq(count(S, "select * from public.household_member_private"), "0", "7k a non-member reads no private row");
+    t.ok(/permission denied/.test(err(() => anon("select count(*) from public.household_member_private"))), "7l anon is refused the private rows outright");
+    as(P, `update public.household_member_private set data = '{"flourish_ai_third_party_consent":"1","core":{"appData":{}}}'::jsonb where user_id = '${P}'`);
+    t.eq(JSON.parse(as(P, `select data from public.household_member_private where user_id = '${P}'`)), { flourish_ai_third_party_consent: "1" },
+      "7m a private row keeps only personal keys, whatever is written to it");
 
     // 4 SHARED
     t.eq(count(P, `select * from public.household_data where household_id = '${H}'`), "1", "4a the partner reads the shared blob");
@@ -181,6 +224,12 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/permission denied/.test(err(() => as(P, `update public.household_data set version = 99 where household_id = '${H}'`))), "4f the app cannot set the version");
     t.ok(/permission denied/.test(err(() => as(P, `update public.household_data set household_id = gen_random_uuid() where household_id = '${H}'`))), "4g …or move the row");
     t.ok(/permission denied/.test(err(() => as(P, `update public.household_members set role = 'owner' where user_id = '${P}'`))), "4h …or change anyone's role");
+    // A member who writes consent into the shared blob, as a key or as someone's "personal" section: it never lands.
+    as(P, `update public.household_data set data = jsonb_set(jsonb_set(data, '{sideKeys,flourish_ai_third_party_consent}', '"1"'), '{personal}',
+      jsonb_build_object('${O}', jsonb_build_object('flourish_ai_third_party_consent', '0'))) where household_id = '${H}'`);
+    const written = JSON.parse(sql(`select data from public.household_data where household_id = '${H}'`));
+    t.ok(!("personal" in written) && !("flourish_ai_third_party_consent" in written.sideKeys) && written.sideKeys.flourish_streak === "3",
+      "7n consent written into the shared blob (a key, or a section in someone's name) is taken out by the database; the shared keys stay");
     sql(`insert into public.meeting_records (user_id, met_on) values ('${O}', current_date)`);
     t.eq(count(P, "select * from public.meeting_records"), "1", "4i the partner reads the owner's meeting record");
     t.eq(count(S, "select * from public.meeting_records"), "0", "4j a non-member does not");
@@ -194,6 +243,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(count(P, "select * from public.households"), "0", "5e …no household");
     t.eq(count(P, "select * from public.meeting_records"), "0", "5f …and no longer the owner's meeting records");
     t.eq(sql(`select count(*) from public.user_data where user_id = '${P}'`), "0", "5g the partner's own row is gone: they start fresh");
+    t.eq(sql(`select count(*) from public.household_member_private where user_id = '${P}'`), "0", "7o …and so is their private row");
     const left = JSON.parse(sql(`select data->'core'->'appData' from public.household_data where household_id = '${H}'`));
     t.eq(left.accounts.map((a) => a.id), ["a-own", "a-hand"], "5h the partner's bank accounts are out of the shared blob; the owner's and the hand-entered one stay");
     t.eq(left.transactions.map((x) => x.id), ["t1", "t3"], "5i …with the transactions on them");
@@ -219,6 +269,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(svc(`household_accept_invite('${T}', 'third@example.test', 'tok-hash-6', null)`).result, "too_many_attempts", "3v ten failed tries in an hour stop the account, even with a good link");
     sql(`delete from public.household_join_attempts where user_id = '${T}'`);
     t.eq(svc(`household_accept_invite('${P}', 'partner@example.test', 'tok-hash-6', null)`).result, "wrong_account", "3w an invite is only for its own address");
+    sql(`insert into public.user_data (user_id, data) values ('${T}', '{"core":{"appData":{}},"sideKeys":{"flourish_ai_coach_enabled":"1"}}'::jsonb)`);
     t.eq(svc(`household_accept_invite('${T}', 'third@example.test', 'tok-hash-6', null)`).result, "joined", "3x a second household forms independently");
     t.eq(count(T, `select * from public.household_data where household_id = '${H}'`), "0", "3y a member of another household reads nothing of this one");
     t.eq(svc(`household_accept_invite('${P}', 'partner@example.test', 'tok-hash-6', null)`).result, "used", "3z one household each: an invite already used is refused");
@@ -232,9 +283,182 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(sql(`select count(*) from public.households where id = '${inv3.household_id}'`), "0", "6d …the household is gone");
     t.eq(sql(`select count(*) from public.household_data where household_id = '${inv3.household_id}'`), "0", "6e …with its data");
     t.eq(sql(`select data is not null from public.user_data where user_id = '${T}'`), "t", "6f …and the last one out has the data back in their own row");
+    t.eq(sql(`select data->'sideKeys'->>'flourish_ai_coach_enabled' from public.user_data where user_id = '${T}'`), "1", "7p …with their own keys back in it");
+    t.eq(sql(`select count(*) from public.household_member_private where user_id = '${T}'`), "0", "7q …and no private row left over");
     t.eq(svc(`household_leave('${P}')`).remaining, 1, "6g the partner leaves the first household");
     t.eq(as(O, `select role from public.household_members where user_id = '${O}'`), "owner", "6h the owner stays its owner");
     t.eq(svc(`household_leave('${P}')`).result, "not_member", "6i leaving twice changes nothing");
+
+    // Fresh people for the rest, so each section starts clean.
+    const who = (tag) => id(`${tag}@example.test`);
+    const tries = (u) => sql(`select count(*) from public.household_join_attempts where user_id = '${u}'`);
+    const pair = (tag) => {
+      const o = who(`${tag}-owner`), p = who(`${tag}-partner`);
+      const made = svc(`household_create_invite('${o}', '${tag}-partner@example.test', 'tok-${tag}', 'code-${tag}')`);
+      const joined = svc(`household_accept_invite('${p}', '${tag}-partner@example.test', 'tok-${tag}', null)`);
+      if (joined.result !== "joined") throw new Error(`pair ${tag}: ${joined.result}`);
+      return { o, p, h: made.household_id };
+    };
+    const memberRole = (u) => sql(`select coalesce((select role from public.household_members where user_id = '${u}'), 'none')`);
+
+    // 8 BRUTE FORCE (audit H2) ----------------------------------------------------------------------------------
+    const O8 = who("o8"), P8 = who("p8"), X8 = who("x8");
+    svc(`household_create_invite('${O8}', 'p8@example.test', 'tok-8', 'code-8')`);
+    t.eq(svc(`household_accept_invite('${X8}', 'x8@example.test', null, 'code-8')`).result, "invalid", "8a the right code from an account with another address is refused");
+    t.eq(sql(`select failed_attempts::text || ',' || (revoked_at is null)::text from public.household_invites where token_hash = 'tok-8'`), "0,true",
+      "8b …and cannot use up the invited person's invite (a code only ever finds invites to the caller's own address)");
+    for (let i = 0; i < 4; i++) svc(`household_accept_invite('${P8}', 'p8@example.test', null, 'wrong-8-${i}')`);
+    t.eq(sql(`select failed_attempts::text || ',' || (revoked_at is null)::text from public.household_invites where token_hash = 'tok-8'`), "4,true",
+      "8c four wrong codes from the invited account count against the invite, which still works");
+    t.eq(svc(`household_accept_invite('${P8}', 'p8@example.test', null, 'wrong-8-4')`).result, "invalid", "8d a fifth wrong code is refused…");
+    t.eq(sql(`select revoke_reason from public.household_invites where token_hash = 'tok-8'`), "too_many_tries", "8e …and the invite dies after 5 wrong tries");
+    t.eq(svc(`household_accept_invite('${P8}', 'p8@example.test', null, 'code-8')`).result, "invalid", "8f the right code no longer works: the owner sends a new invite");
+    t.eq(svc(`household_accept_invite('${P8}', 'p8@example.test', 'tok-8', null)`).result, "invalid", "8g …nor does its link");
+    t.eq([tries(P8), tries(X8)], ["7", "1"], "8h every failed try was recorded, unknown codes included, against the account that made it");
+    svc(`household_create_invite('${O8}', 'p8@example.test', 'tok-8b', 'code-8b')`);
+    t.eq(svc(`household_accept_invite('${P8}', 'p8@example.test', null, 'code-8b')`).result, "joined", "8i the new invite's code works for the invited address");
+
+    // Twelve wrong tries at the same moment from one account: the limit of 10 holds, and each try is recorded.
+    const Y8 = who("y8");
+    const burst = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+      slowly(`set role service_role; select public.household_accept_invite('${Y8}', 'y8@example.test', null, 'burst-${i}')`, 0.2)));
+    const answers = burst.map((b) => (json(b.out) || {}).result).sort();
+    t.eq([answers.filter((a) => a === "invalid").length, answers.filter((a) => a === "too_many_attempts").length], [10, 2],
+      "8j twelve wrong tries at the same moment: 10 are refused as wrong and counted, then the account is stopped (none slips past the count)");
+    t.eq(tries(Y8), "10", "8k …and exactly 10 failed tries were recorded");
+
+    // Ten failed tries against one address in the hour, from any accounts, stop that address (stood in here by rows).
+    const Z8 = who("z8"), OZ = who("oz8");
+    svc(`household_create_invite('${OZ}', 'z8@example.test', 'tok-z8', 'code-z8')`);
+    sql(`insert into public.household_join_attempts (user_id, target_key, result) select '${X8}', encode(sha256(convert_to('z8@example.test', 'UTF8')), 'hex'), 'wrong_account' from generate_series(1, 10)`);
+    t.eq(svc(`household_accept_invite('${Z8}', 'z8@example.test', 'tok-z8', null)`).result, "too_many_attempts", "8l ten failed tries for one address in an hour stop it, even from its own account with a good link");
+    sql(`delete from public.household_join_attempts where target_key = encode(sha256(convert_to('z8@example.test', 'UTF8')), 'hex')`);
+    t.eq(svc(`household_accept_invite('${Z8}', 'z8@example.test', 'tok-z8', null)`).result, "joined", "8m …and the hour passing (the rows gone) lets it in");
+
+    // Thirty failed tries from one network, spread over accounts, stop that network; another network is not stopped.
+    for (const tag of ["n1", "n2", "n3"]) { const u = who(tag); for (let i = 0; i < 10; i++) svc(`household_accept_invite('${u}', '${tag}@example.test', null, 'n-${i}', 'net-A')`); }
+    t.eq(sql(`select count(*) from public.household_join_attempts where net_key = 'net-A'`), "30", "8n' thirty failed tries recorded from one network, ten from each of three accounts");
+    const N4 = who("n4");
+    t.eq(svc(`household_accept_invite('${N4}', 'n4@example.test', null, 'n-x', 'net-A')`).result, "too_many_attempts", "8n thirty failed tries from one network in an hour stop a new account on it");
+    t.eq(svc(`household_accept_invite('${N4}', 'n4@example.test', null, 'n-x', 'net-B')`).result, "invalid", "8o …the same account from another network is only refused as wrong");
+    sql(`insert into public.household_join_attempts (user_id, target_key, result, at) values ('${N4}', 'old', 'invalid', now() - interval '2 days')`);
+    svc(`household_accept_invite('${N4}', 'n4@example.test', null, 'n-y', 'net-C')`);
+    t.eq(sql(`select count(*) from public.household_join_attempts where target_key = 'old'`), "0", "8p a failed try is kept a day, then deleted");
+    t.ok(!/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(sql(`select coalesce(string_agg(coalesce(net_key, ''), ','), '') from public.household_join_attempts`)),
+      "8q no IP address is stored (the server sends a keyed hash of the network)");
+
+    // 9 RACES (audit B1): each pair of changes at the same moment runs one after the other ------------------------
+    {
+      const a = pair("r1");
+      const slow = slowly(`set role service_role; select public.household_remove_partner('${a.o}')`);
+      await pause(300);
+      const leave = svc(`household_leave('${a.p}')`);
+      const removed = json((await slow).out);
+      t.eq([removed && removed.result, leave.result], ["removed", "not_member"], "9a the owner removes the partner while the partner leaves: the remove wins, the leave finds them already gone");
+      t.eq([memberRole(a.o), memberRole(a.p), sql(`select count(*) from public.households where id = '${a.h}'`)], ["owner", "none", "1"], "9b …the owner keeps the household");
+    }
+    {
+      const a = pair("r2");
+      const slow = slowly(`set role service_role; select public.household_leave('${a.p}')`);
+      await pause(300);
+      const rm = svc(`household_remove_partner('${a.o}')`);
+      const left = json((await slow).out);
+      t.eq([left && left.result, rm.result], ["left", "no_partner"], "9c the partner leaves while the owner removes them: the leave wins, the remove finds no partner");
+      t.eq([memberRole(a.o), memberRole(a.p)], ["owner", "none"], "9d …and the household is the owner's");
+    }
+    {
+      const a = pair("r3");
+      sql(`update public.household_data set data = jsonb_set(data, '{core}', '{"appData":{"bills":[{"id":"kept"}]}}') where household_id = '${a.h}'`);
+      const slow = slowly(`delete from auth.users where id = '${a.o}'`);
+      await pause(300);
+      const rm = svc(`household_remove_partner('${a.o}')`);
+      await slow;
+      t.eq(rm.result, "not_owner", "9e the owner's account is deleted while they remove the partner: the removal is refused (they are no longer the owner)");
+      t.eq(memberRole(a.p), "owner", "9f …the partner becomes the owner, and is not removed by someone who has gone");
+      t.eq(sql(`select data->'core'->'appData'->'bills'->0->>'id' from public.household_data where household_id = '${a.h}'`), "kept", "9g …and the household's data survives");
+    }
+    {
+      const a = pair("r4");
+      const slow = slowly(`set role service_role; select public.household_leave('${a.o}')`);
+      await pause(300);
+      const rm = svc(`household_remove_partner('${a.o}')`);
+      await slow;
+      t.eq([rm.result, memberRole(a.p)], ["not_owner", "owner"], "9h the owner leaves while removing the partner: the removal is refused and the partner is the owner");
+    }
+    {
+      const a = pair("r5");
+      const slow = slowly(`set role service_role; select public.household_remove_partner('${a.o}')`);
+      await pause(300);
+      sql(`delete from auth.users where id = '${a.o}'`);
+      await slow;
+      t.eq([memberRole(a.p), sql(`select count(*) from public.households where id = '${a.h}'`), sql(`select count(*) from public.household_data where household_id = '${a.h}'`)], ["none", "0", "0"],
+        "9i the owner removes the partner, then their account is deleted at once: the removed partner is not promoted, and no empty household is left behind");
+    }
+
+    // 10 ONE PURCHASE AT A TIME (audit H5) -------------------------------------------------------------------------
+    {
+      const a = pair("b1");
+      t.eq(svc(`household_hold_purchase('${a.o}', 'stripe')`).result, "held", "10a the owner starts a purchase: the household is held for them");
+      t.eq(svc(`household_hold_purchase('${a.p}', 'app_store')`).result, "held_by_partner", "10b the partner cannot start one at the same time, on another platform");
+      t.eq(svc(`household_hold_purchase('${a.o}', 'stripe')`).result, "held", "10c the owner may start again (a new checkout)");
+      sql(`update public.household_purchase_holds set expires_at = now() - interval '1 second' where household_id = '${a.h}'`);
+      t.eq(svc(`household_hold_purchase('${a.p}', 'play_store')`).result, "held", "10d once the hold has run out, the partner may buy");
+      t.eq(svc(`household_hold_purchase('${S}', 'stripe')`).result, "no_household", "10e someone in no household holds nothing");
+      svc(`household_leave('${a.p}')`);
+      t.eq(sql(`select count(*) from public.household_purchase_holds where household_id = '${a.h}'`), "0", "10f a member who leaves takes their hold with them");
+      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))), "10g nobody signed in reads the holds");
+    }
+
+    // 11 WHAT A DEPARTED MEMBER'S BANKS LEFT BEHIND (audit M7) ------------------------------------------------------
+    {
+      const a = pair("m7");
+      const q = (v) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+      const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([p], [r]) => (p < r ? -1 : 1))) : x));
+      sql(`insert into public.plaid_items (user_id, item_id, access_token, institution_name) values
+        ('${a.o}', 'item-o11', 'tok-o11', 'Owner Bank'), ('${a.o}', 'item-o11s', 'tok-o11s', 'Shared Bank'),
+        ('${a.p}', 'item-p11', 'tok-p11', 'Partner Bank'), ('${a.p}', 'item-p11s', 'tok-p11s', 'Shared Bank')`);
+      const appData = {
+        accounts: [{ id: "a-o", _item: "item-o11", institution: "Owner Bank" }, { id: "a-p", _item: "item-p11", institution: "Partner Bank" },
+          { id: "a-p-old", institution: "Partner Bank" }, { id: "a-both", institution: "Shared Bank" }, { id: "a-hand", institution: "Manual" }],
+        transactions: [{ id: "t-o", account_id: "a-o" }, { id: "t-p", account_id: "a-p" }, { id: "t-old", account_id: "a-p-old" }, { id: "t-hand", account_id: "a-hand" }],
+        liabilities: { credit: [{ account_id: "a-p", apr: 21 }, { account_id: "a-o", apr: 19 }], mortgage: [{ account_id: "a-p-old" }], student: [] },
+        investments: [{ id: "a-p_sec1", account_id: "a-p" }, { id: "a-o_sec2", account_id: "a-o" }],
+        debts: [{ account_id: "a-p", fromBank: true, name: "Card" }, { id: "debt-own", account_id: "a-o", fromBank: true },
+          { id: "debt-hand", name: "Car loan", sameAsAccountId: "a-p" }, { id: "debt-hand2", sameAsAccountId: "a-o" }],
+        debtLinkDismissed: ["debt-hand|a-p", "debt-hand2|a-o", "a-p|a-hand"],
+        bills: [{ id: "b1", debtId: "a-p" }, { id: "b2", debtId: "debt-own" }, { id: "b3" }],
+        incomeSuggestion: { signature: "2400|biweekly|5" }, bankConnected: true, goals: [{ id: "g1" }],
+      };
+      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q(appData)})) where household_id = '${a.h}'`);
+      // The partner joined 10 days ago; their meeting records: one from before, two since (one on a day the owner has one).
+      sql(`update public.household_members set joined_at = now() - interval '10 days' where user_id = '${a.p}'`);
+      sql(`insert into public.meeting_records (user_id, met_on) values ('${a.p}', current_date - 20), ('${a.p}', current_date - 5), ('${a.p}', current_date - 2), ('${a.o}', current_date - 2)`);
+      t.eq(count(a.o, `select * from public.meeting_records where user_id = '${a.p}'`), "2", "11a the owner reads the partner's meeting records since they joined, never those from before");
+
+      t.eq(svc(`household_remove_partner('${a.o}')`).result, "removed", "11b the owner removes the partner");
+      const after = JSON.parse(sql(`select data->'core'->'appData' from public.household_data where household_id = '${a.h}'`));
+      t.eq(after.accounts.map((x) => x.id), ["a-o", "a-both", "a-hand"], "11c their accounts are gone: stamped with their bank, or (saved before stamping) at a bank only they linked; one at a bank both linked stays");
+      t.eq(after.transactions.map((x) => x.id), ["t-o", "t-hand"], "11d …with the transactions on them");
+      t.eq(canon(after.liabilities), canon({ credit: [{ account_id: "a-o", apr: 19 }], mortgage: [], student: [] }), "11e …their card, mortgage and loan details (liabilities, kept as an object of lists)");
+      t.eq(after.investments.map((x) => x.id), ["a-o_sec2"], "11f …their holdings");
+      t.eq(canon(after.debts), canon([{ id: "debt-own", account_id: "a-o", fromBank: true }, { id: "debt-hand", name: "Car loan" }, { id: "debt-hand2", sameAsAccountId: "a-o" }]),
+        "11g …the debt made from their card, and a hand-entered debt's link to it; the owner's stay");
+      t.eq(after.debtLinkDismissed, ["debt-hand2|a-o"], "11h …the \"these are different\" answers that named them");
+      t.eq(after.bills, [{ id: "b1" }, { id: "b2", debtId: "debt-own" }, { id: "b3" }], "11i …a bill's link to their debt (the bill itself stays: it is the household's)");
+      t.eq(["incomeSuggestion" in after, after.bankConnected, after.goals], [false, true, [{ id: "g1" }]], "11j the cached pay suggestion goes (worked out again); still a bank; goals untouched");
+      t.eq([count(a.p, "select * from public.meeting_records"), sql(`select count(*) from public.meeting_records where user_id = '${a.p}'`)], ["0", "0"],
+        "11k the removed partner reads no meeting record, and none is left in their name: they start fresh");
+      t.eq(sql(`select string_agg((current_date - met_on)::text, ',' order by met_on) from public.meeting_records where user_id = '${a.o}'`), "5,2",
+        "11l the household keeps its meeting since they joined (moved to the owner); a day the owner already had is not doubled");
+      t.eq([count(a.p, "select * from public.household_data"), count(a.p, "select * from public.household_member_private"), count(S, "select * from public.meeting_records")], ["0", "0", "0"],
+        "11m after removal the partner reads no blob and no private row, and a stranger reads no meeting record");
+      t.eq(sql(`select count(*) from public.plaid_items where user_id = '${a.p}'`), "2", "11n their bank links stay theirs");
+
+      // The app strips the same way when it merges (src/lib/household.js stripAccounts): the same answer.
+      const Hm = await import("../src/lib/household.js");
+      t.eq(canon(Hm.stripAccounts(appData, ["a-p", "a-p-old"])), canon(after), "11o the app's stripAccounts gives exactly what the database left");
+      t.eq(sql("select array_to_string(public.household_personal_keys(), ',')"), Hm.PERSONAL_SIDE_KEYS.join(","), "11p the database's personal keys are the app's, in the same order");
+    }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));
   } finally {

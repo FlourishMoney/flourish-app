@@ -22,6 +22,7 @@ const crypto = require("crypto");
 const { getAdminClient } = require("./_lib/auth");
 const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
+const { reconcileHouseholdBilling } = require("./_lib/household");
 
 const reply = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
@@ -98,6 +99,8 @@ async function handle(event, deps = {}) {
           ? "conflict: a store purchase while the web subscription is still live (past_due); the household pays twice once the card works: cancel one"
           : "conflict: the household already pays on the web and bought in the store too; cancel the web subscription or have the household ask the store for a refund (Apple refunds only on the customer's request; Google Play from Play Console)");
       }
+      // COUPLE MODE (audit H5): a store purchase in a household the other member already pays for: one is the extra.
+      if (r.paid) await reconcileHouseholdBilling(admin, userId);
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
       if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }

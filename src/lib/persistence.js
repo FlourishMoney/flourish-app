@@ -255,3 +255,21 @@ export async function saveHouseholdData(sb, householdId, blob, expectedVersion) 
     return { ok: true, version: data[0].version, updatedAt: data[0].updated_at };
   } catch (e) { console.error("[persist] household save threw:", e?.message || e); return { ok: false, error: e }; }
 }
+
+// COUPLE MODE: this person's own keys (lib/household.js PERSONAL_SIDE_KEYS), in their own row of
+// household_member_private (migration 0030), which only they can read or write. {} when there is no row yet,
+// or before 0030 runs; any other failed read throws (the caller keeps the save gate closed).
+export async function fetchPersonalKeys(sb, userId) {
+  const { data, error } = await sb.from("household_member_private").select("data").eq("user_id", userId).maybeSingle();
+  if (error) { if (isMissingTable(error)) return {}; throw error; }
+  return (data && data.data && typeof data.data === "object") ? data.data : {};
+}
+
+// Writes this person's own keys to their own row. { ok: true } | { ok: false, error }.
+export async function savePersonalKeys(sb, userId, keys) {
+  try {
+    const { error } = await sb.from("household_member_private").upsert({ user_id: userId, data: keys || {} }, { onConflict: "user_id" });
+    if (error) { console.error("[persist] personal keys save failed:", error.message); return { ok: false, error }; }
+    return { ok: true };
+  } catch (e) { console.error("[persist] personal keys save threw:", e?.message || e); return { ok: false, error: e }; }
+}

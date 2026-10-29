@@ -1,6 +1,6 @@
 # Couple mode v1: spec and plan (2026-10-29)
 
-Branch `couple-mode` from main 7f02c1b. Migrations `0030_couple_household.sql` and `0031_couple_household_private.sql` are written, **not run**. The words were approved by ChatGPT and Grok on 2026-10-29 (`COUPLE-MODE-WORDS.md`).
+Branch `couple-mode` from main 7f02c1b (main 9247a43 merged in). Migrations `0030_couple_household.sql` and `0031_couple_household_private.sql` are written, **not run**. The words were approved by ChatGPT and Grok on 2026-10-29 (`COUPLE-MODE-WORDS.md`). The code audit's findings (ChatGPT, Grok, 2026-10-29) are fixed and mapped to their tests in `COUPLE-MODE-FIXES.md`.
 Ships dark: the server answers 404 until `HOUSEHOLD_ENABLED=true` (Netlify), and the app shows Settings > Household only when the server answers.
 So the 1.1.3 store build can carry it before the migration runs.
 
@@ -13,26 +13,39 @@ So the 1.1.3 store build can carry it before the migration runs.
   - Each invite is tied to the partner's address: only an account signed in with that confirmed address can use the link or the code.
   - It expires after 7 days and can be used once. Sending a new invite cancels the old one.
   - The database stores only SHA-256 hashes of the link token and the code.
-- **Join (partner).** The partner signs in or creates a login, opens the link or types the code, and sees the consent screen. Then the server adds them, in one locked transaction: it checks expiry, single use, the address and the 2-adult limit. A wrong code counts toward a limit of 10 failed tries an hour per account. The partner's phone then drops its own data and loads the household's.
+- **Join (partner).** The partner signs in or creates a login, opens the link or types the code, and sees the consent screen. Then the server adds them, in one locked transaction: it checks expiry, single use, the address and the 2-adult limit. The partner's phone then drops its own data and loads the household's.
+  - A code is only ever matched among invites to the signed-in account's own confirmed address.
+  - Failed tries are limited three ways, each counted under its own lock so tries at the same moment cannot slip past: 10 an hour per account, 10 an hour per invited address (whatever account tries), 30 an hour per network. The network is sent to the database as a keyed hash, never the IP address. Every failed try is recorded in the same transaction as its answer, unknown codes and links included, and kept a day.
+  - An invite dies after 5 wrong tries (a wrong code from the invited account, or the link tried by an account with another address). The owner sends a new one.
+  - The partner's own keys (their AI and Plaid consent) move to their own private row, and their old `user_data` row is deleted: it is replaced by the household's, as their consent screen says, and it would never be read again.
 - **Shared.** Today, Safe to spend, bills, paydays, debts, goals, budgets, the money meeting and corrections are all in the household blob (`household_data`). Both people read and write it.
   - Saves check a version number. If both edited at once, the app merges by section (bills, debts, and so on): a section only one person changed keeps that change; if both changed the same section, the later save wins.
   - The app re-reads the household when it comes back to the front.
-- **Personal, per person:** AI consent and the coach switch, the plan cache, and Plaid consent time. These sit under `personal[user_id]` in the blob. One person's AI consent never applies to the other.
+- **Personal, per person:** AI consent and the coach switch, the plan cache, the Plaid consent time and the dismissed tips (`PERSONAL_SIDE_KEYS`, the same list as the database's `household_personal_keys()`).
+  - They live in `household_member_private`, one row per person, which only that person can read, make or update (RLS on `auth.uid()`). They are never in the shared blob: a trigger takes them, and any `personal` section, out of every write to `household_data`, whoever makes it.
+  - The server never reads consent from a blob: the coach's consent gate reads the asker's own `profiles` row, as before.
 - **Banks.** Either person links their own bank, and both see every account.
   - The server lets a member use an item linked by anyone in the same household.
   - Only the person who linked a bank can disconnect or reconnect it, because the Plaid consent is theirs.
   - Each member has their own sync cursor (`plaid_item_cursors`), so one phone never consumes the other's new transactions.
 - **Leave, remove, delete.**
   - Either person can leave, and the owner can remove the partner. The person who goes loses database access in the same transaction.
-  - Their bank accounts are taken out of the household blob, and their banks stay linked to their own login.
-  - Their `user_data` row is deleted and their phone is wiped, so they start fresh.
-  - If the owner deletes their account, the partner is promoted to owner by a trigger. When the last member goes, the household and its data go too.
+  - Every membership change takes the household's row lock first and reads membership again under it, and the trigger that promotes the partner when the owner's account is deleted takes the same lock. So a remove at the same moment as a leave or an ownership change runs one after the other, each on what the other left.
+  - Their bank accounts leave the household blob with everything made from them: the transactions, liabilities (Plaid keeps these as an object of lists) and investments on them; the debts made from them and every link to those debts or accounts; the "these are different" answers that named them; and the cached pay suggestion. An older account saved before it was stamped with its Plaid item goes if it is at a bank only the leaver linked. Their banks stay linked to their own login.
+  - The other member's app does the same when it merges (a removed account stays removed even if that phone changed its accounts), and clears what it keeps about those accounts outside the blob: the net-worth history, their loan activity, and the category corrections and deposit answers for their transactions.
+  - The money meeting's records since the leaver joined move to the one who stays; the rest of the leaver's go. A member never reads the other's records from before the other joined.
+  - Their `user_data` and private rows are deleted and their phone is wiped, so they start fresh.
+  - If the owner deletes their account, the partner is promoted to owner by a trigger. When the last member goes, the household's data, with their own keys, goes back to their `user_data` row and the household goes.
 - **One subscription.**
   - A paid subscription (web, App Store or Play) or a beta-founder flag on either member covers both.
   - Trials stay per person: otherwise a new email every 14 days would be a free plan.
-  - A covered partner is never offered or sold a plan: checkout returns 409 and the store screen gets paid:true. If the partner already pays separately, they are told how to cancel and where.
+  - A covered partner is never offered or sold a plan: checkout returns 409 and the store screen gets paid:true.
+  - One purchase at a time: before a Stripe checkout is made, or the store app opens its purchase sheet (`store_hold`), the buyer holds the household for 32 minutes (`household_purchase_holds`). While the other member holds it, nothing is sold. A household's Stripe checkout ends after 31 minutes, before the hold does.
+  - If a household still ends up paying twice (both paid before joining, or a store purchase made outside the app), one rule picks the extra one: a founding price is kept; then a store's over ours (we can stop ours, not the store's); then the owner's. The extra one's holder is told, in the approved line, where to cancel it; its row is flagged for support (`support_flag = 'household_two_paid'`); it is logged; and if it is ours (Stripe) it is set to end at the end of the period it is paid for, so we never charge it again. This runs after every paid Stripe or store event, when someone joins, and on the Household screen.
+  - When the two stop sharing (leave, remove, account deleted), a Stripe subscription we had set to end as the extra one is resumed.
   - Founding: the household is only ever sold one plan, so it takes one seat. The founding-seats work (0029, other session) still counts seats per account. If both already held a seat before joining, see Risks.
-- **Coach:** still roles only. If the partner asks, the coach context swaps "you" and "your partner" (employment, incomes, age). Names and emails never go in. A test checks this.
+- **Coach:** still roles only. If the partner asks, the coach context swaps "you" and "your partner" (employment, incomes, age). Names and emails never go in.
+  - The server enforces it at the last moment: every request to the AI provider (`coach.js providerFetch`) has the household's names, read from its saved profile from the asker's side, replaced by roles, and emails and account numbers masked, in the system prompt and every message. If the names cannot be read, nothing is sent.
 - **Removed:** the fake Household tab (the FLRSH code, the "join" that always worked, `HOUSEHOLD_ENABLED=false`), the `household` state and the two "Household connected" chips.
 
 ## Tables touched (migration 0030, not run)
@@ -40,30 +53,33 @@ So the 1.1.3 store build can carry it before the migration runs.
 |---|---|---|
 | `households` new | id, created_by, owner_consented_at | select: members only; no client writes |
 | `household_members` new | household_id, user_id (unique: one household each), role owner/partner, consented_at | select: people in the same household; no client writes; trigger enforces at most 2 members and exactly 1 owner, promotes on owner delete |
-| `household_invites` new | email_key, token_hash, code_hash, expires_at, used_at/used_by, revoked_at | **no client access**; service role only |
-| `household_join_attempts` new | user_id, at | service role only |
-| `household_data` new | household_id pk, data jsonb, version, updated_at | select + update: members only; no client insert/delete; anon nothing |
+| `household_invites` new | email_key, token_hash, code_hash, expires_at, used_at/used_by, revoked_at, revoke_reason, failed_attempts | **no client access**; service role only |
+| `household_join_attempts` new | user_id, target_key, net_key, invite_id, result, at | service role only |
+| `household_data` new | household_id pk, data jsonb, version, updated_at | select + update: members only; no client insert/delete; anon nothing; a trigger strips personal keys from every write |
+| `household_member_private` new | user_id pk, data jsonb (personal keys only), updated_at | select, insert, update: the row's own person only; nobody can move a row; anon nothing |
+| `household_purchase_holds` new | household_id pk, user_id, provider, expires_at | service role only |
 | `plaid_item_cursors` new | plaid_item_id, user_id, next_cursor | service role only |
-| `meeting_records` | policy added: members can read each other's records | select own or same household |
+| `meeting_records` | policy added: members read each other's records from the day the author joined | select own, or same household since the author joined |
 | `plaid_items`, `subscriptions`, `profiles`, `user_data` | **no schema change** | plaid_items stays service-only; household access is checked in plaid.js and tested |
 
 RPCs (security definer, `search_path` fixed, execute for service_role only):
-- `household_create_invite`
+- `household_create_invite`, `household_revoke_invite`
 - `household_accept_invite`
-- `household_leave`
-- `household_remove_partner`
+- `household_hold_purchase`
+- `household_leave`, `household_remove_partner` (both through `household_leave_locked`, which nobody may call directly)
 
-Two read helpers are used inside the policies (`is_household_member` and `shares_household_with`). They are the only household functions granted to `authenticated`.
+Three read helpers are used inside the policies (`is_household_member`, `shares_household_with`, `shares_household_record`). They are the only household functions granted to `authenticated`.
 
 ## Files
 - **New:**
-  - `netlify/functions/household.js` (`/api/household`), `_lib/household.js`
-  - `src/lib/household.js` (pure: merge, the personal/shared split, coach roles, hydrate decision)
-  - `src/lib/householdApi.js`
-  - the Household settings screen
+  - `netlify/functions/household.js` (`/api/household`), `_lib/household.js` (membership, invite secrets, the network key, purchase holds, the extra-plan rule and reconciliation)
+  - `netlify/functions/_lib/coachRedact.js` (the coach's names become roles at the provider request)
+  - `src/lib/household.js` (pure: merge, the personal/shared split, the account strip, coach roles, hydrate decision)
+  - `src/lib/householdWords.js` (the approved words)
+  - the Household settings screen (`HouseholdSection` in `App.jsx`)
   - tests, including `household.sql.test.cjs` (real Postgres, runs on CI)
-- **Edited:** `plaid.js` (household item access, cursors, delete_account leaves first), `_lib/auth.js` (coverage), `App.jsx` (persistence switch, Settings row, fake screen out).
-- **Edited, small:** `billing.js` (3 subscription reads, plus the checkout guard), `persistence.js`. These are kept away from the hunks the founding session changed, and that session's files are otherwise untouched.
+- **Edited:** `plaid.js` (household item access, cursors, delete_account leaves first), `_lib/auth.js` (coverage), `coach.js` (every provider request through `providerFetch`), `App.jsx` (persistence switch, private keys, Settings row, fake screen out).
+- **Edited, small:** `billing.js` (subscription reads, the checkout guard and hold, `store_hold`), `stripe-webhook.js` and `revenuecat-webhook.js` (reconcile after a paid event), `persistence.js`, `storeBilling.js` (the hold before the store sheet).
 
 ## Tests that must pass
 - **SQL (real Postgres):**
@@ -71,6 +87,11 @@ Two read helpers are used inside the policies (`is_household_member` and `shares
   - A removed partner reads 0 and updates 0 straight after removal.
   - Expired, used, revoked and wrong-address invites are refused.
   - A second accept fails, a third adult is refused, and the owner's delete promotes the partner.
+  - Each person's private row is theirs alone; consent written into the shared blob never lands.
+  - Twelve wrong tries at the same moment stop at 10; the per-address and per-network limits; an invite dies after 5.
+  - A remove racing a leave, an owner's account deletion or an owner's leave.
+  - Purchase holds.
+  - What a departed member's banks left behind, and the app's strip giving exactly the database's answer.
 - **JS:**
   - plaid.js refuses a non-member's item and allows the partner's.
   - Only the linker can disconnect.
@@ -78,10 +99,12 @@ Two read helpers are used inside the policies (`is_household_member` and `shares
   - The merge, coach roles, and the absence of FLRSH.
 
 ## Risks
+1. **Category corrections and deposit answers keyed by a bank transaction's id** cannot be matched by the database (the bank's transactions are never stored). The other member's app removes the ones for the departed member's transactions it holds; any it never held stay as orphaned entries (a transaction id and a category, nothing shown).
 1. **Joint accounts:** if both people link the same joint account, it counts twice (different Plaid items). v1 does not detect this. A note in Connected Banks warns (`household.bank.joint_note`); real de-duplication is a follow-up.
 2. **Last-writer-wins inside one section:** if both people edit the same section in the same few seconds, one edit is lost. That needs both apps open at once. Versions plus the per-section merge cover everything else.
 3. **A removed partner's phone** keeps its last cached screen until it next talks to the server (open or foreground). Then it is wiped. No new data reaches it.
-4. **Founding seats:** if both people already held a seat before joining, the seat count (other session's 0029) still shows two. Fix after both merge: count seats per household (one line, given to that session).
+4. **Founding seats:** if both people already held a seat before joining, the seat count (0032, now on main) still counts two: it counts per account. One line in `founding_seats_taken()` once this is merged; left to the founding-seats work.
 5. **The partner's own data is replaced when they join, not merged.** The partner's consent screen says so (`household.consent.partner.body`).
 6. **`user_data` has no migration.** The SQL test stands in for it with production's shape; this must be checked against production before running 0030.
-7. **The same migration number 0029 is already used by two open branches.** Mine is 0030, so it must run after whatever 0029 lands.
+7. **Migration order:** 0032 (founding seats) is already on main. 0030 and 0031 do not touch its tables, so they may run before or after it.
+8. **The owner's own `user_data` row** stays while they are a member (it is never read then): it is deleted when they leave someone behind, and written over when they are the last one out.

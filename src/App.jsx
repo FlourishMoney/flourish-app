@@ -14,7 +14,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch, debtAccountKindWord } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
-import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount } from "./lib/loanActivity.js";
+import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount, LOAN_ACTIVITY_KEY } from "./lib/loanActivity.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
@@ -107,9 +107,9 @@ import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportC
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData } from "./lib/persistence.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
-import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName } from "./lib/household.js";
+import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -4284,6 +4284,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         subtype:a.subtype||null,
         balance:normalizeAccountBalance(a),
         institution:ex.institution_name,
+        _item:ex.item_id||null, // the Plaid item it came from, stamped now (couple mode: it leaves with whoever linked it)
       }));
 
       // Requirement 6: fetch transactions on connect so payroll detection has input. DECOUPLED from
@@ -14104,6 +14105,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
 
   const deps = {
     serverStatus: ()=>askStore("store_status"),
+    serverHold: ()=>askStore("store_hold", { platform }),
     serverSync: ()=>askStore("store_sync"),
     purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
     restorePurchases: ()=>purchases.restorePurchases(),
@@ -17374,14 +17376,17 @@ export default function FlourishApp(){
   // Version 1.1: ask the server what this account may do in a store app that sells, and configure RevenueCat
   // for this account (its app user id is the Supabase user id, so a store purchase belongs to the household,
   // not to the phone). Nothing here runs in any other build.
-  const askStore = useCallback(async (action = "store_status")=>{
+  const askStore = useCallback(async (action = "store_status", extra = {})=>{
     const jwt = await getJwt();
     if(!jwt) return null;
     const res = await fetch(`${API_BASE}/api/billing`,{
       method:"POST",
       headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
-      body: JSON.stringify({action}),
+      body: JSON.stringify({action, ...extra}),
     });
+    // Couple mode's purchase hold (lib/storeBilling.js buy): a server from before it (the action unknown there) has no
+    // household to hold for. Asked only after store_status answered, so the store apps are on.
+    if(action==="store_hold" && (res.status===400 || res.status===404)){ const b = await res.json().catch(()=>null); return b && (b.error==="unknown_action" || b.error==="not_found") ? { held: true } : null; }
     if(!res.ok) return null;                      // 404 while IAP_ENABLED is off on the server
     return res.json();
   },[]);
@@ -17674,15 +17679,18 @@ export default function FlourishApp(){
 
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   // ── Couple mode: the household's shared blob (lib/household.js, persistence.js saveHouseholdData) ──
-  // householdRef: { id, role, version, base } while this account is in a household, else null. `base` is the
-  // blob this device last read or wrote, so a save that finds a newer version merges instead of overwriting.
+  // householdRef: { id, role, version, base, personal } while this account is in a household, else null. `base` is
+  // the blob this device last read or wrote, so a save that finds a newer version merges instead of overwriting.
+  // `personal` is what this person's own private row last held (lib/household.js PERSONAL_SIDE_KEYS): their consent
+  // never goes into the shared blob, only into that row (persistence.js savePersonalKeys).
   const readHouseholdStamp = () => { try { return JSON.parse(localStorage.getItem(HOUSEHOLD_STAMP_KEY) || "null"); } catch { return null; } };
   const writeHouseholdStamp = (v) => { try { if (v) localStorage.setItem(HOUSEHOLD_STAMP_KEY, JSON.stringify(v)); else localStorage.removeItem(HOUSEHOLD_STAMP_KEY); } catch {} };
   const householdPayload = ({ onboarded: ob, appData: ad, checkInBonus: cb }, userId) => {
     const hh = householdRef.current;
     const slimAppData = ad ? { ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) } : ad;
-    return { userId, householdId: hh.id, blob: buildHouseholdBlob({ onboarded: ob, slimAppData, checkInBonus: cb },
-      { userId, householdId: hh.id, nowIso: new Date().toISOString(), sideKeys: readSideKeys(), base: hh.base }) };
+    const sideKeys = readSideKeys();
+    return { userId, householdId: hh.id, personal: personalKeysOf(sideKeys), blob: buildHouseholdBlob({ onboarded: ob, slimAppData, checkInBonus: cb },
+      { householdId: hh.id, nowIso: new Date().toISOString(), sideKeys }) };
   };
   // This account is no longer in the household it held (left on another phone, or removed): nothing of the
   // household stays on this device. Reloading starts it again from the server (lib/household.js "left").
@@ -17693,13 +17701,22 @@ export default function FlourishApp(){
     clearAllUserLocal();
     try { window.location.reload(); } catch {}
   };
-  const saveHousehold = async ({ userId, householdId, blob }) => {
+  const saveHousehold = async ({ userId, householdId, blob, personal }) => {
+    // This person's own keys go to their own private row, and only when they changed. A failure there is reported
+    // (and tried again with the next save) but never holds up the household's own save.
+    const start = householdRef.current;
+    let personalErr = null;
+    if (personal && start && start.id === householdId && JSON.stringify(personal) !== JSON.stringify(start.personal ?? null)) {
+      const mine = await savePersonalKeys(supabase, userId, personal);
+      if (!mine.ok) personalErr = mine.error || new Error("personal_keys");
+      else if (householdRef.current && householdRef.current.id === householdId) householdRef.current = { ...householdRef.current, personal };
+    }
     let toWrite = blob;
     for (let i = 0; i < 3; i++) {
       const hh = householdRef.current;
       if (!hh || hh.id !== householdId) return { ok: false };          // left or switched meanwhile: dropped
       const r = await saveHouseholdData(supabase, householdId, toWrite, hh.version);
-      if (r.ok) { householdRef.current = { ...hh, version: r.version, base: toWrite }; return { ok: true }; }
+      if (r.ok) { householdRef.current = { ...hh, version: r.version, base: toWrite }; return personalErr ? { ok: false, error: personalErr } : { ok: true }; }
       if (!r.conflict) return r;
       // A newer version, or this account can no longer see the row: read again to tell which.
       let remote;
@@ -17721,8 +17738,8 @@ export default function FlourishApp(){
   };
   const getSaver = () => {
     if (!saverRef.current) {
-      saverRef.current = makeDebouncedSaver(async ({ userId, blob, householdId }) => {
-        const { ok, error: persistErr } = householdId ? await saveHousehold({ userId, householdId, blob }) : await upsertUserData(supabase, userId, blob);
+      saverRef.current = makeDebouncedSaver(async ({ userId, blob, householdId, personal }) => {
+        const { ok, error: persistErr } = householdId ? await saveHousehold({ userId, householdId, blob, personal }) : await upsertUserData(supabase, userId, blob);
         console.log("[persist] save complete", { ok });
         if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
         else { if (persistErr) captureError(new Error(`persist:${persistErr?.code || "unknown"}`), { area: "persist" }); if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); } } // Sprint Z #10 + Phase D #1: code-only, never the raw PostgrestError (its `details` can echo the row payload)
@@ -17750,11 +17767,38 @@ export default function FlourishApp(){
     } catch {}
   };
 
-  // The household's blob, applied as applyBlob applies a user_data row: the shared keys and THIS person's own
-  // (lib/household.js sideKeysForMember), never the other person's consent. keepSynced: the bank transactions
-  // this device already holds stay (lib/household.js keepSyncedTransactions).
-  const applyHouseholdBlob = (blob, userId, { keepSynced = false } = {}) =>
-    applyBlob({ ...(blob || {}), sideKeys: sideKeysForMember(blob, userId) }, { keepSynced });
+  // The household's blob, applied as applyBlob applies a user_data row: the shared keys from it, and THIS
+  // person's own from their private row (`personal`, when just read; otherwise this device's own stay as they
+  // are), never the other person's consent. keepSynced: the bank transactions this device already holds stay
+  // (lib/household.js keepSyncedTransactions). A bank account that left the household (the other member left, or
+  // disconnected it) also takes what this device keeps about it outside the blob (lib/household.js
+  // localAfterRemoval): the net-worth history that counted it, its loan activity, and the category corrections
+  // and deposit answers for its transactions.
+  const applyHouseholdBlob = (blob, userId, { keepSynced = false, personal = null } = {}) => {
+    const prev = latestStateRef.current?.appData || null;
+    const incoming = blob?.core?.appData;
+    const still = new Set((Array.isArray(incoming?.accounts) ? incoming.accounts : []).map((a) => a && String(a.id)));
+    const goneAccounts = (Array.isArray(prev?.accounts) ? prev.accounts : [])
+      .filter((a) => a && a.id != null && !still.has(String(a.id)) && (a._item || !["", "Manual", "Statement"].includes(a.institution || ""))).map((a) => String(a.id));
+    let next = blob || {};
+    if (goneAccounts.length && incoming) {
+      const goneSet = new Set(goneAccounts);
+      const goneTxns = (Array.isArray(prev?.transactions) ? prev.transactions : []).filter((t) => t && goneSet.has(String(t.account_id))).map((t) => String(t.id));
+      let cat = null, loans = null;
+      try { cat = JSON.parse(localStorage.getItem("flourish_cat_overrides") || "null"); } catch { cat = null; }
+      loans = readLoanActivity();
+      const after = localAfterRemoval({ catOverrides: cat, depositDecisions: incoming.depositDecisions ?? null, loanActivity: loans },
+        { accountIds: goneAccounts, transactionIds: goneTxns });
+      try {
+        if (after.nwHistory) localStorage.setItem("flourish_nw_history", JSON.stringify(after.nwHistory));
+        if (Array.isArray(after.loanActivity)) localStorage.setItem(LOAN_ACTIVITY_KEY, JSON.stringify(after.loanActivity));
+      } catch {}
+      const sideKeys = { ...(next.sideKeys || {}) };
+      if (after.catOverrides && typeof after.catOverrides === "object") sideKeys.flourish_cat_overrides = JSON.stringify(after.catOverrides);
+      next = { ...next, sideKeys, core: { ...(next.core || {}), appData: { ...incoming, ...(after.depositDecisions ? { depositDecisions: after.depositDecisions } : {}) } } };
+    }
+    applyBlob({ ...next, sideKeys: sideKeysForMember(next, personal) }, { keepSynced });
+  };
 
   // Couple mode, at sign-in: which data this device loads (lib/household.js householdHydratePlan). A member loads the
   // household's blob (the usual newer-wins decision, or the household's outright on a device that did not hold it);
@@ -17774,15 +17818,18 @@ export default function FlourishApp(){
     const remoteH = await fetchHouseholdData(supabase, membership.household_id);
     if (isCancelled()) return "cancelled";
     if (!remoteH) throw new Error("household row not readable"); // never write a household this session cannot read
-    householdRef.current = { id: membership.household_id, role: membership.role, version: remoteH.version, base: remoteH.blob };
+    const personal = await fetchPersonalKeys(supabase, userId);  // this person's own keys; throws on a failed read
+    if (isCancelled()) return "cancelled";
+    householdRef.current = { id: membership.household_id, role: membership.role, version: remoteH.version, base: remoteH.blob, personal };
     writeHouseholdStamp({ id: membership.household_id, role: membership.role });
     setHouseholdRole(membership.role);
     const decision = reset ? { apply: true, pushLocal: false, reason: "joined" }
       : decideHydrate({ remoteUpdatedAt: remoteH.updatedAt, localSavedAt: preSavedAt, localHasRealData: preHasReal });
     console.log("[persist] household hydrate decision", { ...decision, plan: hhPlan });
     const snap = loadState() || {};
-    if (decision.apply) applyHouseholdBlob(remoteH.blob, userId, { keepSynced: hhPlan === "same" });
-    else if (decision.pushLocal && !snap.appData?.demo) getSaver().schedule(householdPayload(snap, userId));
+    if (decision.apply) applyHouseholdBlob(remoteH.blob, userId, { keepSynced: hhPlan === "same", personal });
+    else if (decision.pushLocal && !snap.appData?.demo) getSaver().schedule(householdPayload(snap, userId)); // this device's own keys go up too
+    else writeSideKeys(personal);                                  // this person's own keys, from their own row
     return reset ? "reset" : "ok";
   };
 
@@ -18013,8 +18060,10 @@ export default function FlourishApp(){
       if (!householdRef.current && r.data.household_id) {
         // The owner's own data is now the household's: this device saves there from now on.
         const remote = await fetchHouseholdData(supabase, r.data.household_id).catch(()=>null);
+        // The server moved this person's own keys to their private row; this device already holds them.
+        const personal = await fetchPersonalKeys(supabase, user.id).catch(()=>null);
         if (remote) {
-          householdRef.current = { id: r.data.household_id, role: "owner", version: remote.version, base: remote.blob };
+          householdRef.current = { id: r.data.household_id, role: "owner", version: remote.version, base: remote.blob, personal };
           writeHouseholdStamp({ id: r.data.household_id, role: "owner" });
           setHouseholdRole("owner");
           applyHouseholdBlob(remote.blob, user.id, { keepSynced: true });
@@ -18625,9 +18674,9 @@ export default function FlourishApp(){
           console.error("[plaid] transaction fetch failed on connect, accounts still promoted:", txnRes.reason?.message||txnRes.reason);
           captureError(txnRes.reason, { area: "plaid" });
         }
-        return [acctRes.value, txnRes.status === "fulfilled" ? txnRes.value : { transactions: [], removed: [] }];
+        return [acctRes.value, txnRes.status === "fulfilled" ? txnRes.value : { transactions: [], removed: [] }, ex.item_id];
       })
-      .then(async ([acctData, txnData])=>{
+      .then(async ([acctData, txnData, itemId])=>{
         const instName = metadata?.institution?.name||"Your Bank";
         const accounts = acctData.accounts.map(a=>({
           id:a.id,
@@ -18637,6 +18686,7 @@ export default function FlourishApp(){
           balance:normalizeAccountBalance(a),
           currency:a.balance?.currency||null, // Sprint Z3 #6 (null = not stated)
           institution:instName,
+          _item:itemId||null, // stamped now (couple mode: it leaves with whoever linked it)
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
         const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));

@@ -753,11 +753,16 @@ exports.handler = async (event) => {
       // come out of the shared blob and the partner becomes the owner (migration 0031, household_leave). Critical:
       // a partner must never keep a deleted person's accounts. Before 0031 runs there is nothing to leave.
       {
+        let peers = [];
+        try { peers = await household.peerIdsOf(admin, user_id); } catch { peers = []; }
         const { error: hhErr } = await admin.rpc("household_leave", { p_user: user_id });
         if (hhErr && !household.isMissing(hhErr)) {
           console.error("[delete_account] household leave:", hhErr.code || "error");
           return stop("household");
         }
+        // The partner's own Stripe subscription, if we had set it to end as the household's extra one, is resumed:
+        // nobody covers them now (_lib/household.js resumeHouseholdExtra; never throws).
+        if (peers.length) await household.resumeHouseholdExtra(admin, peers);
       }
 
       // 2. Round-3: the meeting's stored answers and the billing row, BEFORE anything irreversible at

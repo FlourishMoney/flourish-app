@@ -32,7 +32,7 @@ const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/st
 const { spotsLeft } = require("./_lib/foundingSeats");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
-const { householdCover } = require("./_lib/household");
+const { householdCover, holdPurchase, membershipOf, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
 // calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any
@@ -52,8 +52,11 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 //                 status call gives, from the same row.
 //   store_sync    "I just bought (or restored) in the store; look now": the row is brought up to date from
 //                 RevenueCat's server (_lib/storeSubscriptions.js), never from anything the app says.
+//   store_hold    COUPLE MODE (audit H5): "about to open the store's purchase sheet". The household is held for this
+//                 person (_lib/household.js holdPurchase), so the other member cannot buy at the same moment on
+//                 another platform. { held: true } lets the sheet open; anything else sells nothing.
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
-const STORE_ACTIONS = Object.freeze(["store_status", "store_sync"]);
+const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -198,6 +201,8 @@ exports.handler = async (event) => {
       let state;
       if (action === "store_sync") {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
+        // COUPLE MODE: a store purchase in a household the other member already pays for: one is the extra.
+        if (state.paid) await reconcileHouseholdBilling(admin, user_id);
       } else {
         state = { paid: isPaidSubscription(row), provider: row ? row.provider || "stripe" : null, plan_key: row ? row.plan_key : null, conflict: false, conflictKind: null };
       }
@@ -244,6 +249,26 @@ exports.handler = async (event) => {
         // for the plans screen's words while the founding price is offered; null otherwise.
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
       });
+    }
+
+    // COUPLE MODE (audit H5): the store app asks this just before it opens the purchase sheet. Nothing is sold to a
+    // household already paid for (by this person, or covered by the other member), or while the other member is
+    // buying. A read or hold that fails sells nothing (503).
+    if (action === "store_hold") {
+      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+      if (rowErr) { console.error("[billing] store hold read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
+      if (isLiveRow(row)) return json(200, CORS, { held: false, paid: isPaidSubscription(row), provider: row.provider || "stripe" });
+      const cover = await householdCover(admin, user_id);
+      if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+      if (cover.covered) return json(200, CORS, { held: false, paid: true, covered_by: "partner", provider: cover.provider });
+      let hold;
+      try {
+        // Only a member of a household has anyone to hold it against; for everyone else nothing changes.
+        hold = (await membershipOf(admin, user_id))
+          ? await holdPurchase(admin, user_id, body.platform === "android" ? "play_store" : "app_store")   // which store: a label only
+          : { held: true };
+      } catch (e) { console.error("[billing] store hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      return hold.held ? json(200, CORS, { held: true }) : json(200, CORS, { held: false, paid: false, reason: "partner_buying" });
     }
 
     if (action === "create_checkout_session") {
@@ -303,6 +328,16 @@ exports.handler = async (event) => {
         return json(503, CORS, { error: "unavailable" });
       }
 
+      // COUPLE MODE (audit H5): one purchase at a time, taken last, just before the checkout is made. A member of a
+      // household holds it (_lib/household.js holdPurchase); while the other member holds it (buying now, on any
+      // platform) no checkout is made, and a hold that cannot be taken makes none either (503). A household's
+      // checkout lives no longer than its hold (expires_at below), so it cannot complete once the other may buy.
+      // Nobody outside a household is held, and their checkout is exactly as before.
+      let hold = { held: true, household: false };
+      try { if (await membershipOf(admin, user_id)) hold = await holdPurchase(admin, user_id, "stripe"); }
+      catch (e) { console.error("[billing] checkout hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      if (!hold.held) return json(409, CORS, { error: "purchase_in_progress", covered_by: "partner" });
+
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",
         customer: customerId,
@@ -313,6 +348,7 @@ exports.handler = async (event) => {
         metadata: { user_id, plan_key: planKey },
         subscription_data: { metadata: { user_id, plan_key: planKey } },
         ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
+        ...(hold.household ? { expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60 } : {}),
         allow_promotion_codes: true,
         success_url: `${APP_ORIGIN()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?billing=cancelled`,

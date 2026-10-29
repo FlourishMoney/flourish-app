@@ -27,33 +27,51 @@ const O = "owner-id", P = "partner-id";
   const CP = await import("../src/lib/coachPrivacy.js");
   const HW = await import("../src/lib/householdWords.js");
 
-  // ── 1. CONSENT IS EACH PERSON'S OWN ─────────────────────────────────────────────────────────────
+  // ── 1. CONSENT IS EACH PERSON'S OWN (audit H3, M6: in their own private row, never in the shared blob) ───
   {
-    const copied = { userId: O, sideKeys: { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_custom_cats: "[\"Pets\"]", flourish_plaid_consented_at: "2026-10-01" } };
-    t.eq(H.personalSideKeysOf(copied, O), { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_plaid_consented_at: "2026-10-01" },
-      "1a a blob copied from the owner's own row: the owner's consent is the owner's");
-    t.eq(H.personalSideKeysOf(copied, P), {}, "1b …and NOT the partner's: the owner's yes to Anthropic or Plaid never stands for them");
-    t.eq(H.sideKeysForMember(copied, P), { flourish_custom_cats: "[\"Pets\"]" }, "1c the partner gets the shared keys only");
-    const built = H.buildHouseholdBlob({ onboarded: true, slimAppData: { bills: [] }, checkInBonus: 0 },
-      { userId: P, householdId: "h1", sideKeys: { flourish_ai_third_party_consent: "0", flourish_custom_cats: "[]" }, base: copied });
-    t.eq(built.personal, { [O]: { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_plaid_consented_at: "2026-10-01" }, [P]: { flourish_ai_third_party_consent: "0" } },
-      "1d the partner's save keeps the owner's consent as the owner's and records their own beside it");
-    t.eq(built.sideKeys, { flourish_custom_cats: "[]" }, "1e …and no personal key in the shared ones");
-    t.eq(H.sideKeysForMember(built, O).flourish_ai_third_party_consent, "1", "1f the owner still reads their own yes");
-    t.eq(H.sideKeysForMember(built, P).flourish_ai_third_party_consent, "0", "1g the partner reads their own no");
-    t.ok(H.PERSONAL_SIDE_KEYS.includes("flourish_ai_coach_enabled") && H.PERSONAL_SIDE_KEYS.includes("flourish_plaid_consented_at"), "1h the coach switch and the Plaid consent time are personal");
+    const keys = { flourish_ai_third_party_consent: "0", flourish_ai_disclosure_seen: "1", flourish_custom_cats: "[\"Pets\"]", flourish_plaid_consented_at: "2026-10-01", flourish_tips_dismissed: "1" };
+    const built = H.buildHouseholdBlob({ onboarded: true, slimAppData: { bills: [] }, checkInBonus: 0 }, { householdId: "h1", sideKeys: keys });
+    t.eq(built.sideKeys, { flourish_custom_cats: "[\"Pets\"]" }, "1a the blob a member saves carries the shared keys only");
+    t.ok(!("personal" in built) && !/consent|disclos|flourish_plan|tips_dismissed/.test(JSON.stringify(built)), "1b …no consent, no plan cache and no section for anyone's own keys");
+    t.eq(H.personalKeysOf(keys), { flourish_ai_third_party_consent: "0", flourish_ai_disclosure_seen: "1", flourish_plaid_consented_at: "2026-10-01", flourish_tips_dismissed: "1" },
+      "1c this person's own keys, for their own private row");
+    // A shared blob that somehow carries someone's consent (written by an old app, or by hand): never applied.
+    const tampered = { sideKeys: { flourish_custom_cats: "[]", flourish_ai_third_party_consent: "1" }, personal: { [P]: { flourish_ai_third_party_consent: "1" } } };
+    t.eq(H.sideKeysForMember(tampered, { flourish_ai_third_party_consent: "0" }), { flourish_custom_cats: "[]", flourish_ai_third_party_consent: "0" },
+      "1d loading the household: the shared keys from the blob, this person's consent from their own row, never consent from the blob");
+    t.eq(H.sideKeysForMember(tampered, null), { flourish_custom_cats: "[]" }, "1e …and with no row read, no consent at all comes from the blob");
+    t.ok(H.PERSONAL_SIDE_KEYS.includes("flourish_ai_coach_enabled") && H.PERSONAL_SIDE_KEYS.includes("flourish_plaid_consented_at"), "1f the coach switch and the Plaid consent time are personal");
+    const m30 = read("supabase", "migrations", "0030_couple_household.sql");
+    const sqlKeys = (m30.match(/household_personal_keys\(\)[\s\S]*?array\[([\s\S]*?)\]::text\[\]/) || [])[1] || "";
+    t.eq([...sqlKeys.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), [...H.PERSONAL_SIDE_KEYS], "1g the database's list of personal keys is the app's, in the same order");
+    // The private row: read and written for this person only.
+    const calls = [];
+    const sb = { from(tbl) { const q = { select() { return q; }, eq(c, v) { calls.push([tbl, "eq", c, v]); return q; },
+      async maybeSingle() { return { data: { data: { flourish_ai_third_party_consent: "1" } }, error: null }; },
+      async upsert(row, o) { calls.push([tbl, "upsert", row, o]); return { error: null }; } }; return q; } };
+    t.eq(await PS.fetchPersonalKeys(sb, "me"), { flourish_ai_third_party_consent: "1" }, "1h this person's keys are read from their own private row");
+    t.eq((await PS.savePersonalKeys(sb, "me", { flourish_plan: "trial" })).ok, true, "1i …and written there");
+    t.eq(calls, [["household_member_private", "eq", "user_id", "me"], ["household_member_private", "upsert", { user_id: "me", data: { flourish_plan: "trial" } }, { onConflict: "user_id" }]],
+      "1j …by their own id, nothing else");
+    const missing = { from() { const q = { select() { return q; }, eq() { return q; }, async maybeSingle() { return { data: null, error: { code: "PGRST205", message: "Could not find the table" } }; } }; return q; } };
+    t.eq(await PS.fetchPersonalKeys(missing, "me"), {}, "1k before 0030 runs there is no private row: nothing, not an error");
+    const app = read("src", "App.jsx");
+    t.ok(/const personal = await fetchPersonalKeys\(supabase, userId\);/.test(app) && /applyHouseholdBlob\(remoteH\.blob, userId, \{ keepSynced: hhPlan === "same", personal \}\)/.test(app),
+      "1l loading a household, the app reads this person's own row and applies their keys from it");
+    t.ok(/const mine = await savePersonalKeys\(supabase, userId, personal\);/.test(app) && /personal: personalKeysOf\(sideKeys\), blob: buildHouseholdBlob/.test(app),
+      "1m saving, this person's own keys go to their own row and the blob gets the shared ones");
   }
 
   // ── 2. TWO SAVES AT ONCE ────────────────────────────────────────────────────────────────────────
   {
-    const base = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" }, personal: { [O]: { flourish_plan: "trial" } } };
-    const local = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 120 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" }, personal: { [O]: { flourish_plan: "trial" } } };
-    const remote = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }, { id: "g2" }], debts: [] } }, sideKeys: { flourish_streak: "2" }, personal: { [O]: { flourish_plan: "trial" }, [P]: { flourish_plan: "free" } } };
+    const base = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" } };
+    const local = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 120 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" } };
+    const remote = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }, { id: "g2" }], debts: [] } }, sideKeys: { flourish_streak: "2" }, personal: { [P]: { flourish_plan: "free" } } };
     const m = H.mergeHouseholdBlobs(base, local, remote);
     t.eq(m.core.appData.bills, [{ id: "b1", amount: 120 }], "2a this phone's change to the bills is kept");
     t.eq(m.core.appData.goals, [{ id: "g1" }, { id: "g2" }], "2b …and the other person's new goal too");
     t.eq(m.sideKeys.flourish_streak, "2", "2c a shared key only the other changed keeps their change");
-    t.eq(m.personal[P], { flourish_plan: "free" }, "2d the other person's own keys are carried, untouched");
+    t.ok(!("personal" in m), "2d someone's own keys found in the server's copy are never carried into a save");
     const both = H.mergeHouseholdBlobs(base, local, { ...remote, core: { ...remote.core, appData: { ...remote.core.appData, bills: [{ id: "b1", amount: 90 }] } } });
     t.eq(both.core.appData.bills, [{ id: "b1", amount: 120 }], "2e both changed the same section: the later save (this one) wins");
     const gone = H.mergeHouseholdBlobs(base, local, { ...remote, core: { ...remote.core, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }] } } });
@@ -61,6 +79,23 @@ const O = "owner-id", P = "partner-id";
     const keep = H.keepSyncedTransactions({ accounts: [{ id: "a1", _item: "i1" }], transactions: [{ id: "m1", account_id: "cash" }] },
       { accounts: [{ id: "a1", _item: "i1" }, { id: "a2", _item: "i2" }], transactions: [{ id: "p1", account_id: "a1" }, { id: "p2", account_id: "a2" }, { id: "m1", account_id: "cash" }] });
     t.eq(keep.transactions.map((x) => x.id), ["p1", "m1"], "2g the bank's transactions this phone holds stay for accounts still in the household, and go with an account that left");
+    // A bank account the other side removed (the partner left, taking their bank) while this phone changed accounts:
+    // the removal wins, with what was made from it (audit M7).
+    const acc = (list, extra = {}) => ({ core: { onboarded: true, checkInBonus: 0, appData: { accounts: list, ...extra } }, sideKeys: {} });
+    const withBank = [{ id: "a1", _item: "i1", balance: 10 }, { id: "a2", _item: "i2", balance: 5 }];
+    const derived = { liabilities: { credit: [{ account_id: "a2" }, { account_id: "a1" }] }, debts: [{ account_id: "a2", fromBank: true }, { id: "d1", sameAsAccountId: "a2" }], incomeSuggestion: { s: 1 }, bankConnected: true };
+    const stripped = H.mergeHouseholdBlobs(acc(withBank, derived), acc([{ id: "a1", _item: "i1", balance: 11 }, withBank[1]], derived), acc([withBank[0]], { ...derived, liabilities: { credit: [{ account_id: "a1" }] }, debts: [{ id: "d1" }] }));
+    t.eq(stripped.core.appData.accounts.map((a) => a.id), ["a1"], "2h an account removed on the other side stays removed although this phone changed the accounts (its balance refresh is kept)");
+    t.eq([stripped.core.appData.accounts[0].balance, stripped.core.appData.liabilities, stripped.core.appData.debts, "incomeSuggestion" in stripped.core.appData],
+      [11, { credit: [{ account_id: "a1" }] }, [{ id: "d1" }], false], "2i …and so do its liabilities, the debt made from it and the link to it, and the cached pay suggestion");
+    t.eq(H.removedAccountIds(acc(withBank), acc([withBank[0]])), ["a2"], "2j the accounts removed are those in what this phone last read and not in the server's copy");
+    t.eq(H.stripAccounts({ accounts: [{ id: "a2", _item: "i2" }, { id: "m", institution: "Manual" }], bankConnected: true }, ["a2"]).bankConnected, false,
+      "2k with no bank left, bankConnected is worked out again");
+    const local2 = H.localAfterRemoval({ catOverrides: { p9: "Dining", m1: "Rent" }, depositDecisions: { p9: { reason: "income" }, keep: { reason: "x" } }, loanActivity: [{ id: "l1", account_id: "a2" }, { id: "l2", account_id: "a1" }] },
+      { accountIds: ["a2"], transactionIds: ["p9"] });
+    t.eq(local2, { nwHistory: [], catOverrides: { m1: "Rent" }, depositDecisions: { keep: { reason: "x" } }, loanActivity: [{ id: "l2", account_id: "a1" }] },
+      "2l on this phone: the net-worth history that counted the account starts again, and its loan activity, category corrections and deposit answers go");
+    t.ok(/const after = localAfterRemoval\(/.test(read("src", "App.jsx")), "2m …which the app does when it applies a household's data that no longer has the account");
   }
 
   // ── 3. WHICH DATA A DEVICE LOADS ────────────────────────────────────────────────────────────────

@@ -12,6 +12,11 @@
 //   5  one subscription covers both: the partner is unlimited and paid in every app, offered nothing and sold
 //      nothing; a partner's trial covers nobody; a failed read is 503, never "not paid"
 //   6  status: roles only, never a name or the other's email
+//   7  joins: the network goes to the database as a keyed hash only, the address is the account's own
+//   8  one purchase at a time: a Stripe checkout or a store purchase holds the household; the other is refused
+//   9  a household that pays twice: one is the extra, by one rule; its holder is told; ours stops renewing;
+//      leaving resumes it
+//  10  the coach: whatever the app sends, the request to the AI provider carries no member's name
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -92,13 +97,29 @@ function fakeSupabase(db, { errors = {}, rpc = {} } = {}) {
   return { client, log };
 }
 
-function load(db, opts = {}, env = {}) {
+// A stand-in for Stripe that records every call (nothing reaches Stripe).
+function fakeStripe(over = {}) {
+  const calls = [];
+  const post = async (p, params, opts) => {
+    calls.push(["POST", p, params, opts && opts.idempotencyKey]);
+    if (over.post) { const r = await over.post(p, params); if (r !== undefined) return r; }
+    if (p === "/customers") return { id: "cus_new" };
+    if (p === "/checkout/sessions") return { id: "cs_1", url: "https://checkout.stripe.test/cs_1" };
+    return { id: p.split("/").pop() };
+  };
+  const get = async (p) => { calls.push(["GET", p]); if (over.get) { const r = await over.get(p); if (r !== undefined) return r; } return { data: [] }; };
+  return { calls, stripePost: post, stripeGet: get, stripeDelete: async () => ({}) };
+}
+
+function load(db, opts = {}, env = {}, stripe = null) {
   const fake = fakeSupabase(db, opts);
   const keep = { HOUSEHOLD_ENABLED: "true", BILLING_ENABLED: "true", IAP_ENABLED: "true", ENFORCE_PLAN_LIMITS: "true" };
   Object.assign(process.env, { SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role",
     PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", RESEND_API_KEY: "re_test_key", ...keep, ...env });
   require.cache[SUPA_PATH] = { id: SUPA_PATH, filename: SUPA_PATH, loaded: true, exports: { createClient: () => fake.client } };
-  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: { stripePost: async () => { throw new Error("stripe must not be called"); }, stripeGet: async () => ({ data: [] }), stripeDelete: async () => ({}) } };
+  require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: stripe
+    ? { stripePost: stripe.stripePost, stripeGet: stripe.stripeGet, stripeDelete: stripe.stripeDelete }
+    : { stripePost: async () => { throw new Error("stripe must not be called"); }, stripeGet: async () => ({ data: [] }), stripeDelete: async () => ({}) } };
   for (const p of [AUTH_PATH, HLIB_PATH, HFN_PATH, PLAID_PATH, BILLING_PATH]) delete require.cache[p];
   return { auth: require(AUTH_PATH), lib: require(HLIB_PATH), household: require(HFN_PATH), plaid: require(PLAID_PATH), billing: require(BILLING_PATH), log: fake.log, db };
 }
@@ -293,9 +314,11 @@ const coupleDb = (over = {}) => ({
       t.eq(sp.body.household.members.map((m) => [m.role, m.you]), [["partner", true], ["owner", false]], "6a the partner sees two roles, themselves first");
       t.ok(!/owner@example|partner@example|00000000-0000-4000-8000-00000000000a/.test(JSON.stringify(sp.body)), "6b …no name, no address and no account id of the other");
       t.eq(sp.body.household.invite, null, "6c only the owner sees the open invite");
-      t.eq([sp.body.household.billing.paid_by, sp.body.household.billing.your_extra], ["both", "play_store"], "6d both pay: the partner is told theirs (Google Play) is extra, so they can cancel it");
+      // The owner pays on the web, the partner in Google Play: the store's we cannot stop, ours we can, so the
+      // owner's web subscription is the extra one (rule: _lib/household.js extraPayer; section 9).
+      t.eq([sp.body.household.billing.paid_by, sp.body.household.billing.your_extra], ["both", null], "6d both pay, one on the web and one in Google Play: the partner (Google Play) is not told to cancel");
       const so2 = await call(a.household, O, { action: "status" });
-      t.eq([so2.body.household.billing.paid_by, so2.body.household.billing.your_extra], ["both", null], "6d2 …and the owner is not told to cancel: one of them cancels, never both");
+      t.eq([so2.body.household.billing.paid_by, so2.body.household.billing.your_extra], ["both", "stripe"], "6d2 …the owner is told theirs (the website's) is the extra one: one of them cancels, never both");
       db.household_invites.push({ household_id: "h1", email_key: "partner@example.test", expires_at: "2099-01-01T00:00:00Z", used_at: null, revoked_at: null, created_at: "2026-10-29" });
       db.household_members = db.household_members.filter((m) => m.user_id === O);
       const so = await call(a.household, O, { action: "status" });
@@ -309,6 +332,187 @@ const coupleDb = (over = {}) => ({
         const b = load({ household_members: [] }, { rpc: { [fn]: () => ({ data: res, error: null }) } });
         const r = await call(b.household, P, { action });
         t.eq([r.code, b.log.rpc[0][1].p_user || b.log.rpc[0][1].p_owner], [want, P], `6h ${action} → ${res.result}: ${want}, for the signed-in account`);
+      }
+    }
+
+    // ── 7. JOINS: THE NETWORK AS A KEYED HASH ONLY (audit H2) ───────────────────────────────────────
+    {
+      const a = load({ household_members: [] }, { rpc: { household_accept_invite: () => ({ data: { result: "invalid" }, error: null }) } });
+      const ip = (v) => (v ? { "x-nf-client-connection-ip": v } : {});
+      for (const v of ["203.0.113.7", "203.0.113.7", "198.51.100.9", null, null]) await call(a.household, P, { action: "accept_invite", code: "ABC234", consent: true }, undefined, ip(v));
+      const keys = a.log.rpc.map(([, x]) => x.p_net_key);
+      t.ok(keys.every((k) => /^v2\/household-net\/[A-Za-z0-9_-]{20,}$/.test(k)), "7a every join sends the database the network as a keyed hash");
+      t.ok(!JSON.stringify(a.log.rpc).includes("203.0.113.7") && !JSON.stringify(a.log.rpc).includes("198.51.100.9"), "7b …never the IP address itself");
+      t.eq([keys[0] === keys[1], keys[0] !== keys[2], keys[3] === keys[4], keys[3] !== keys[0]], [true, true, true, true],
+        "7c the same network counts together, another network apart, and requests with no address share one bucket (never no limit)");
+      t.eq(a.log.rpc.map(([, x]) => x.p_email_key), Array(5).fill("partner@example.test"), "7d the code is looked up only among invites to the account's own confirmed address");
+    }
+
+    // ── 8. ONE PURCHASE AT A TIME (audit H5) ────────────────────────────────────────────────────────
+    {
+      const env = { STRIPE_PRICE_MONTHLY_CAD: "price_monthly" };
+      const hold = (result) => ({ household_hold_purchase: (args) => ({ data: { result }, error: null }) });
+      const sp1 = fakeStripe();
+      const busy = load(coupleDb(), { rpc: hold("held_by_partner") }, env, sp1);
+      const r1 = await call(busy.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      t.eq([r1.code, r1.body.error, sp1.calls.filter(([, p]) => p === "/checkout/sessions").length], [409, "purchase_in_progress", 0], "8a the partner is buying (any platform): the owner's checkout is refused and no checkout is made");
+      t.eq(busy.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1], { p_user: O, p_provider: "stripe", p_ttl: "32 minutes" }, "8b …the hold asked for is this account's, for Stripe, for 32 minutes");
+      const sp2 = fakeStripe();
+      const free = load(coupleDb(), { rpc: hold("held") }, env, sp2);
+      const before = Math.floor(Date.now() / 1000);
+      const r2 = await call(free.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      const session = sp2.calls.find(([, p]) => p === "/checkout/sessions");
+      t.eq([r2.code, !!session], [200, true], "8c holding the household, the owner's checkout is made");
+      t.ok(session && session[2].expires_at >= before + 31 * 60 && session[2].expires_at <= before + 31 * 60 + 5, "8d …and it ends after 31 minutes, before the hold does (32), so it cannot complete once the other may buy");
+      const sp3 = fakeStripe();
+      const solo = load(coupleDb({ household_members: [] }), { rpc: hold("no_household") }, env, sp3);
+      await call(solo.billing, S, { action: "create_checkout_session", plan_key: "monthly" });
+      t.ok(!("expires_at" in sp3.calls.find(([, p]) => p === "/checkout/sessions")[2]), "8e no household: the checkout is exactly as before (no shortened life)");
+      const broken = load(coupleDb(), { rpc: { household_hold_purchase: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } }, env, fakeStripe());
+      t.eq((await call(broken.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 503, "8f a hold that cannot be taken: nothing is sold (503)");
+      const before0031 = load(coupleDb(), { rpc: {} }, env, fakeStripe());
+      t.eq((await call(before0031.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 200, "8g before 0031 runs there is no household to hold: checkout as today");
+      const notMember = load(coupleDb({ household_members: [] }), { rpc: { household_hold_purchase: () => { throw new Error("must not be asked"); } } }, env, fakeStripe());
+      t.eq([(await call(notMember.billing, S, { action: "create_checkout_session", plan_key: "monthly" })).code, notMember.log.rpc.length], [200, 0], "8g2 someone in no household is never held: no hold is even asked for");
+      const nat = { origin: "capacitor://localhost" };
+      const sh = load(coupleDb(), { rpc: hold("held") });
+      t.eq((await call(sh.billing, P, { action: "store_hold", platform: "android" }, undefined, nat)).body, { held: true }, "8h the store app holds the household before it opens the purchase sheet");
+      t.eq(sh.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1].p_provider, "play_store", "8i …named for its store");
+      const sb = load(coupleDb(), { rpc: hold("held_by_partner") });
+      t.eq((await call(sb.billing, P, { action: "store_hold", platform: "ios" }, undefined, nat)).body, { held: false, paid: false, reason: "partner_buying" }, "8j the other member is buying: no sheet");
+      const sc = load(coupleDb({ subscriptions: [{ user_id: O, ...PAID() }] }), { rpc: hold("held") });
+      const covered = await call(sc.billing, P, { action: "store_hold" }, undefined, nat);
+      t.eq([covered.body.held, covered.body.paid, covered.body.covered_by, sc.log.rpc.length], [false, true, "partner", 0], "8k already covered by the other member: no sheet, and nothing held");
+      const blip = load(coupleDb(), { errors: { household_members: { code: "XX000", message: "upstream" } } });
+      t.eq((await call(blip.billing, P, { action: "store_hold" }, undefined, nat)).code, 503, "8l a household read that fails sells nothing (503)");
+      const SB = await import("../src/lib/storeBilling.js");
+      const bought = [];
+      const deps = (hold) => ({ serverStatus: async () => ({ paid: false }), serverHold: async () => hold, purchasePackage: async (p) => { bought.push(p); }, serverSync: async () => ({ paid: true }), sleep: async () => {} });
+      t.eq([(await SB.buy(deps({ held: false, paid: false, reason: "partner_buying" }), "pkg")).outcome, (await SB.buy(deps(null), "pkg")).outcome, (await SB.buy(deps({ held: false, paid: true }), "pkg")).outcome, bought.length],
+        ["failed", "failed", "already_paid", 0], "8m the app opens no store sheet while the other buys, with no answer, or when already covered");
+      t.eq([(await SB.buy(deps({ held: true }), "pkg")).outcome, bought], ["paid", ["pkg"]], "8n …and opens it once held");
+    }
+
+    // ── 9. A HOUSEHOLD THAT PAYS TWICE (audit H5) ───────────────────────────────────────────────────
+    {
+      const L = load(coupleDb()).lib;
+      const who = (role, provider, plan_key = "annual") => ({ user_id: role, role, provider, plan_key });
+      t.eq([
+        L.extraPayer([who("owner", "stripe"), who("partner", "stripe")]).role,
+        L.extraPayer([who("owner", "stripe"), who("partner", "app_store")]).role,
+        L.extraPayer([who("owner", "app_store"), who("partner", "stripe")]).role,
+        L.extraPayer([who("owner", "stripe", "founding_annual"), who("partner", "play_store")]).role,
+        L.extraPayer([who("owner", "play_store"), who("partner", "stripe", "founding_annual")]).role,
+        L.extraPayer([who("owner", "app_store"), who("partner", "play_store")]).role,
+        L.extraPayer([who("owner", "stripe")]),
+      ], ["partner", "owner", "partner", "partner", "owner", "partner", null],
+        "9a one rule picks the extra one: a founding price is kept, then a store's over ours (we can stop ours), then the owner's");
+      const subP = { user_id: P, ...PAID(), provider_subscription_id: "sub_P", cancel_at_period_end: false };
+      const db = coupleDb({ subscriptions: [{ user_id: O, ...PAID(), provider_subscription_id: "sub_O" }, subP] });
+      const st = fakeStripe();
+      const a = load(db, {}, {}, st);
+      const sp = await call(a.household, P, { action: "status" }, { stripePost: st.stripePost });
+      const so = await call(a.household, O, { action: "status" }, { stripePost: st.stripePost });
+      t.eq([sp.body.household.billing.your_extra, so.body.household.billing.your_extra], ["stripe", null], "9b both pay on the web: the partner is told theirs is the extra one; the owner is not");
+      const ended = st.calls.filter(([m, p]) => m === "POST" && p === "/subscriptions/sub_P");
+      t.eq(ended.map(([, , params]) => params), [{ cancel_at_period_end: true, metadata: { flourish_household_extra: "h1" } }],
+        "9c …and ours stops renewing: set to end at the end of the period it is paid for, marked as the household's extra");
+      t.ok(!st.calls.some(([, p]) => p === "/subscriptions/sub_O"), "9d the owner's, the one kept, is never touched");
+      t.eq([db.subscriptions.find((r) => r.user_id === P).support_flag, db.subscriptions.find((r) => r.user_id === O).support_flag || null], ["household_two_paid", null], "9e the extra one's row is flagged for support");
+      subP.cancel_at_period_end = true;
+      const n = st.calls.length;
+      await call(a.household, P, { action: "status" }, { stripePost: st.stripePost });
+      t.eq(st.calls.length, n, "9f asked again: nothing more is sent to Stripe (already set to end)");
+      const mixed = coupleDb({ subscriptions: [{ user_id: O, ...PAID(), provider_subscription_id: "sub_O2" }, { user_id: P, ...PAID("app_store") }] });
+      const st2 = fakeStripe();
+      const b = load(mixed, {}, {}, st2);
+      await call(b.household, O, { action: "status" }, { stripePost: st2.stripePost });
+      t.eq(st2.calls.map(([, p, params]) => [p, params.cancel_at_period_end]), [["/subscriptions/sub_O2", true]], "9g the web and the App Store: ours (the web's) is the one set to end");
+      const fstore = coupleDb({ subscriptions: [{ user_id: O, ...PAID(), plan_key: "founding_annual", provider_subscription_id: "sub_F" }, { user_id: P, ...PAID("play_store") }] });
+      const st3 = fakeStripe();
+      const c = load(fstore, {}, {}, st3);
+      const pc = await call(c.household, P, { action: "status" }, { stripePost: st3.stripePost });
+      t.eq([pc.body.household.billing.your_extra, st3.calls.length], ["play_store", 0], "9h a founding price on the web is kept: the Google Play one is the extra, its holder is told where to cancel, and nothing is sent to Stripe");
+      // Joining with a subscription of one's own: reconciled at once.
+      const st4 = fakeStripe();
+      const j = load(coupleDb({ subscriptions: [{ user_id: O, ...PAID(), provider_subscription_id: "sub_O4" }, { user_id: P, ...PAID(), provider_subscription_id: "sub_P4" }] }),
+        { rpc: { household_accept_invite: () => ({ data: { result: "joined", household_id: "h1" }, error: null }) } }, {}, st4);
+      await call(j.household, P, { action: "accept_invite", code: "ABC234", consent: true }, { stripePost: st4.stripePost });
+      t.eq(st4.calls.map(([, p]) => p), ["/subscriptions/sub_P4"], "9i a partner who joins already paying on the web: theirs is set to end straight away");
+      // Leaving: ours, set to end as the extra, is resumed; one the person cancelled themselves is left alone.
+      const st5 = fakeStripe({ get: async (p) => (p === "/subscriptions/sub_P" ? { id: "sub_P", status: "active", cancel_at_period_end: true, metadata: { flourish_household_extra: "h1" } }
+        : p === "/subscriptions/sub_O" ? { id: "sub_O", status: "active", cancel_at_period_end: true, metadata: {} } : undefined) });
+      const db5 = coupleDb({ subscriptions: [{ user_id: O, ...PAID(), provider_subscription_id: "sub_O", cancel_at_period_end: true }, { user_id: P, ...PAID(), provider_subscription_id: "sub_P", cancel_at_period_end: true, support_flag: "household_two_paid" }] });
+      const l = load(db5, { rpc: { household_leave: () => ({ data: { result: "left", remaining: 1 }, error: null }) } }, {}, st5);
+      await call(l.household, P, { action: "leave" }, { stripePost: st5.stripePost, stripeGet: st5.stripeGet });
+      t.eq(st5.calls.filter(([m]) => m === "POST").map(([, p, params]) => [p, params]), [["/subscriptions/sub_P", { cancel_at_period_end: false, metadata: { flourish_household_extra: "" } }]],
+        "9j leaving, the partner's subscription we had set to end is resumed; the owner's own cancellation is left as they chose");
+      t.eq(db5.subscriptions.find((r) => r.user_id === P).support_flag, null, "9k …and its support flag is cleared");
+      const st6 = fakeStripe({ get: async () => ({ id: "sub_P", status: "active", cancel_at_period_end: true, metadata: { flourish_household_extra: "h1" } }) });
+      const rm = load(coupleDb({ subscriptions: [{ user_id: P, ...PAID(), provider_subscription_id: "sub_P", cancel_at_period_end: true }] }),
+        { rpc: { household_remove_partner: () => ({ data: { result: "removed", partner: P }, error: null }) } }, {}, st6);
+      await call(rm.household, O, { action: "remove_partner" }, { stripePost: st6.stripePost, stripeGet: st6.stripeGet });
+      t.eq(st6.calls.filter(([m]) => m === "POST").map(([, p]) => p), ["/subscriptions/sub_P"], "9l removing the partner resumes theirs too");
+      const src = (f) => require("fs").readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
+      t.ok(/takeSeat\(admin, user_id, "stripe", sessionSubId \|\| null\);\n[\s\S]{0,400}await reconcileHouseholdBilling\(admin, user_id\);/.test(src("stripe-webhook.js"))
+        && /isLiveStripeStatus\(object\.status\)\) await reconcileHouseholdBilling/.test(src("stripe-webhook.js")), "9m Stripe's webhook reconciles after a paid checkout and a subscription that became live");
+      t.ok(/if \(r\.paid\) await reconcileHouseholdBilling\(admin, userId\);/.test(src("revenuecat-webhook.js")) && /if \(state\.paid\) await reconcileHouseholdBilling\(admin, user_id\);/.test(src("billing.js")),
+        "9n …and so do a store purchase reaching the server and the app's store sync");
+      t.ok(/peers\.length\) await household\.resumeHouseholdExtra\(admin, peers\)/.test(src("plaid.js")), "9o deleting an account resumes the partner's, if we had set it to end");
+    }
+
+    // ── 10. THE COACH: NO NAME REACHES THE AI PROVIDER (audit H4) ───────────────────────────────────
+    {
+      const COACH_PATH = require.resolve("../netlify/functions/coach.js");
+      const profile = { name: "Amanda Ford", partnerName: "Jordan Lee", kids: [{ name: "Riley" }] };
+      const consent = { ai_third_party_consent_at: "2026-10-01T00:00:00Z", ai_third_party_consent_revoked_at: null };
+      const db = coupleDb({
+        profiles: [{ user_id: O, ...ENDED_TRIAL, ...consent }, { user_id: P, ...ENDED_TRIAL, ...consent }],
+        subscriptions: [{ user_id: O, ...PAID() }],
+        household_data: [{ household_id: "h1", data: { core: { appData: { profile } } } }],
+      });
+      const rpcs = { increment_coach_usage: () => ({ data: 1, error: null }), increment_coach_usage_weekly: () => ({ data: 1, error: null }), increment_ai_usage_daily: () => ({ data: 1, error: null }) };
+      const sent = [];
+      const prevFetch = global.fetch;
+      global.fetch = async (url, init) => {
+        if (/api\.anthropic\.com/.test(String(url))) {
+          sent.push(init.body);
+          return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "Here is your week." }], stop_reason: "end_turn", usage: { output_tokens: 4 } }) };
+        }
+        return prevFetch(url, init);
+      };
+      try {
+        const ask = async (who, type, payload) => {
+          load(db, { rpc: rpcs }, { ANTHROPIC_API_KEY: "test-anthropic" });
+          delete require.cache[COACH_PATH];
+          return require(COACH_PATH).handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: `Bearer tok:${who}` }, body: JSON.stringify({ type, payload }) });
+        };
+        const names = /Amanda|Ford|Jordan|Lee\b|Riley/;
+        const context = "Household: Amanda Ford (employed) and Jordan Lee; child Riley. Amanda's chequing 1234567890 at amanda@example.test.";
+        const messages = [{ role: "user", content: "Should Jordan or Amanda pay Riley's camp? AMANDA thinks so." }, { role: "assistant", content: "Let's look." }, { role: "user", content: [{ type: "text", text: "jordan lee asks too" }] }];
+        const r1 = await ask(P, "chat", { context, messages });
+        const r2 = await ask(O, "checkin", { context, prompt: "Amanda Ford's check-in for Jordan" });
+        const r3 = await ask(P, "facilitator", { context, messages: [{ role: "user", content: "Start the meeting, Jordan and Amanda." }] });
+        t.eq([r1.statusCode, r2.statusCode, r3.statusCode, sent.length], [200, 200, 200, 3], "10a three coach requests, each sent to the provider once");
+        t.ok(sent.every((b) => !names.test(b)), `10b with both members' names (and a child's) in the profile, the context and the messages, neither name appears in any serialized provider request`);
+        const asPartner = JSON.parse(sent[0]);
+        t.ok(/Should you or partner pay child 1's camp\? partner thinks so\./.test(JSON.stringify(asPartner.messages)) && /you asks too/.test(JSON.stringify(asPartner.messages)),
+          "10c …roles from the asker's side: the partner asking is \"you\", the owner \"partner\"");
+        t.ok(!/1234567890|amanda@example/.test(sent.join(" ")) && /••••7890/.test(sent[0]), "10d …and no email address or full account number either");
+        const down = load(db, { rpc: rpcs, errors: { household_data: { code: "XX000", message: "upstream" } } }, { ANTHROPIC_API_KEY: "test-anthropic" });
+        delete require.cache[COACH_PATH];
+        const before = sent.length;
+        const r4 = await require(COACH_PATH).handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: `Bearer tok:${P}` }, body: JSON.stringify({ type: "chat", payload: { context, messages } }) });
+        t.eq([r4.statusCode, sent.length - before, !!down], [503, 0, true], "10e the names cannot be read: nothing is sent to the provider");
+        const CP = await import("../src/lib/coachPrivacy.js");
+        const R = require("../netlify/functions/_lib/coachRedact.js");
+        const samples = ["May Day pays in May 2027", "SAM and sam and Sam-Lee", "a 30 day window for Day", "Ford's card 4111 1111 1111 1111"];
+        const nm = (p) => CP.householdNames(p);
+        t.eq(samples.map((x) => R.redactNames(R.redactAccountNumbers(x), R.householdNames({ name: "May Day", partnerName: "Sam Lee", kids: [{ name: "Ford" }] }))),
+          samples.map((x) => CP.redactNames(CP.redactAccountNumbers(x), nm({ name: "May Day", partnerName: "Sam Lee", kids: [{ name: "Ford" }] }))),
+          "10f the server's name rules give exactly the app's answers");
+      } finally {
+        global.fetch = prevFetch;
       }
     }
   } catch (e) {

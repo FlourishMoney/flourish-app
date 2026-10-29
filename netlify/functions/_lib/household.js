@@ -7,7 +7,9 @@
 //   - who shares a household with this account (plaid.js lets a member use a bank the other linked;
 //     auth.js and billing.js let one subscription cover both);
 //   - the invite's secrets: a link token and a 6-character code, of which only SHA-256 hashes are stored;
-//   - the invite email, in its approved words (2026-10-29); it is never sent if a placeholder ever comes back.
+//   - the network a join comes from, as a keyed hash only (the attempt limits, migration 0031);
+//   - the invite email, in its approved words (2026-10-29); it is never sent if a placeholder ever comes back;
+//   - one purchase at a time (a hold), and what happens if a household ever pays twice (reconcileHouseholdBilling).
 //
 // UNTIL MIGRATIONS 0030 AND 0031 RUN, there is no household table. A read that finds the table (or the
 // function) missing answers "no household", so every existing path behaves exactly as before. Any other
@@ -20,6 +22,8 @@ const crypto = require("crypto");
 const { deriveEntitlement, isPaidSubscription } = require("./planRules");
 const { cleanEmail, isEmail } = require("./emailAddress");
 const { emailHtml } = require("./emailLayout");
+const { subjectKey } = require("./limiterKeys");
+const { stripeGet, stripePost } = require("./stripeApi");
 
 const householdEnabled = (env = process.env) => env.HOUSEHOLD_ENABLED === "true";
 
@@ -72,6 +76,16 @@ function newInviteSecrets() {
   return { token, code, tokenHash: sha256(token), codeHash: sha256(normalizeCode(code)) };
 }
 const isTokenShaped = (t) => typeof t === "string" && /^[A-Za-z0-9_-]{43}$/.test(t);
+
+// The network a request came from, for the join limits: a keyed hash (_lib/limiterKeys.js), never the address.
+// A request with no address, or no hashing secret, shares one bucket with every other such request, so a missing
+// header never means no limit.
+function netKeyOf(event, secret) {
+  const h = (event && event.headers) || {};
+  const ip = String(h["x-nf-client-connection-ip"] || h["x-forwarded-for"] || "").split(",")[0].trim();
+  const key = secret === undefined ? subjectKey("household-net", ip || "unknown") : subjectKey("household-net", ip || "unknown", secret);
+  return key || "household-net/none";
+}
 
 const APP_ORIGIN = (env = process.env) => (env.APP_ORIGIN || "https://flourishmoney.app").trim();
 const inviteUrl = (token, env = process.env) => `${APP_ORIGIN(env)}/?household_invite=${encodeURIComponent(token)}`;
@@ -158,10 +172,118 @@ async function householdCover(admin, userId, now = Date.now()) {
   }
 }
 
+// ── ONE PURCHASE AT A TIME (audit H5) ──────────────────────────────────────────────────────────────
+// Before a Stripe checkout is made, or the store app opens its purchase sheet, the buyer holds the household
+// (migration 0031 household_hold_purchase) for HOLD_MINUTES; a Stripe checkout made under a hold ends before it
+// (CHECKOUT_MINUTES, Stripe's shortest), so it cannot complete after. While the other member holds it, nothing is
+// sold. Answers { held, by_partner, household }. No household, or 0031 not run yet: held (nothing to share).
+// Throws on any other failed call: the caller sells nothing rather than risk two subscriptions.
+const HOLD_MINUTES = 32;
+const CHECKOUT_MINUTES = 31;
+async function holdPurchase(admin, userId, provider) {
+  const { data, error } = await admin.rpc("household_hold_purchase", { p_user: userId, p_provider: provider, p_ttl: `${HOLD_MINUTES} minutes` });
+  if (error) { if (isMissing(error)) return { held: true, by_partner: false, household: false }; throw new Error(`purchase hold: ${error.code || "error"}`); }
+  const r = (data && data.result) || "";
+  if (r === "no_household") return { held: true, by_partner: false, household: false };
+  if (r === "held") return { held: true, by_partner: false, household: true };
+  if (r === "held_by_partner") return { held: false, by_partner: true, household: true };
+  throw new Error(`purchase hold: ${r || "no_answer"}`);
+}
+
+// ── A HOUSEHOLD THAT PAYS TWICE (audit H5) ─────────────────────────────────────────────────────────
+// The hold and the checks make it rare, but it can happen: both people already paid before one joined, or a store
+// purchase made outside the app. Then exactly ONE of the two is the extra, by this rule, the same everywhere:
+//   1. a founding subscription is kept over a regular one (nobody loses the founding price);
+//   2. then a store subscription is kept over a Stripe one (the store's we cannot stop; ours we can);
+//   3. then the owner's is kept, and the partner's is the extra.
+// payers: [{ user_id, role, provider, plan_key }] (both paid). Pure. Answers the extra one, or null.
+function extraPayer(payers) {
+  if (!Array.isArray(payers) || payers.length < 2) return null;
+  const rank = (p) => [p.plan_key === "founding_annual" ? 1 : 0, (p.provider || "stripe") !== "stripe" ? 1 : 0, p.role === "owner" ? 1 : 0];
+  const [a, b] = payers;
+  const ra = rank(a), rb = rank(b);
+  for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] < rb[i] ? a : b;
+  return b;
+}
+
+// The members of this account's household who pay, with their rows: [{ user_id, role, row }]. Throws on a failed read.
+async function payersOf(admin, householdId, now = Date.now()) {
+  const out = [];
+  for (const m of await membersOf(admin, householdId)) {
+    const { data, error } = await admin.from("subscriptions")
+      .select("provider, status, current_period_end, plan_key, provider_subscription_id, cancel_at_period_end, support_flag, support_flag_at")
+      .eq("user_id", m.user_id).maybeSingle();
+    if (error) throw new Error(`subscription read: ${error.code || "error"}`);
+    if (isPaidSubscription(data, now)) out.push({ user_id: m.user_id, role: m.role, provider: data.provider || "stripe", plan_key: data.plan_key || null, row: data });
+  }
+  return out;
+}
+
+// Two paid plans in one household: logged; the extra one's row is flagged for support (support_flag, as a
+// store's double subscription is, migration 0022); the extra one's holder is shown the approved cancel-extra line
+// (household.js status: billing.your_extra, by the same rule); and if the extra is a Stripe subscription, OURS,
+// it is set to end at the end of the period it is paid for, so it is never charged again (nobody is charged twice
+// by us). It is marked in its Stripe metadata, so that if the two stop sharing a household it is resumed
+// (resumeHouseholdExtra). A store's subscription is the store's to stop: its holder is told where.
+// Never throws; answers { extra_user_id, provider, action } or null.
+const EXTRA_FLAG = "household_two_paid";
+async function reconcileHouseholdBilling(admin, userId, deps = {}) {
+  try {
+    const mine = await membershipOf(admin, userId);
+    if (!mine) return null;
+    const payers = await payersOf(admin, mine.household_id, deps.now);
+    const extra = extraPayer(payers);
+    if (!extra) return null;
+    console.error("[household] two paid plans in one household", { household: String(mine.household_id).slice(0, 8), extra_role: extra.role, extra_provider: extra.provider });
+    if (extra.row.support_flag !== EXTRA_FLAG) {
+      const { error } = await admin.from("subscriptions").update({ support_flag: EXTRA_FLAG, support_flag_at: new Date().toISOString() }).eq("user_id", extra.user_id);
+      if (error) console.error("[household] support flag:", error.code || "error");
+    }
+    let action = "told";
+    if (extra.provider === "stripe" && extra.row.provider_subscription_id && !extra.row.cancel_at_period_end) {
+      const post = deps.stripePost || stripePost;
+      const id = extra.row.provider_subscription_id;
+      await post(`/subscriptions/${encodeURIComponent(id)}`, { cancel_at_period_end: true, metadata: { flourish_household_extra: String(mine.household_id) } },
+        { idempotencyKey: `household-extra:${id}:${new Date().toISOString().slice(0, 10)}` });
+      // What Stripe now holds, written ahead of its webhook so the next look does not ask again.
+      const { error } = await admin.from("subscriptions").update({ cancel_at_period_end: true }).eq("user_id", extra.user_id);
+      if (error) console.error("[household] extra row:", error.code || "error");
+      action = "stripe_ends_at_period_end";
+    }
+    return { extra_user_id: extra.user_id, provider: extra.provider, action };
+  } catch (e) {
+    console.error("[household] reconcile:", e && (e.statusCode || e.message));
+    return null;
+  }
+}
+
+// After two people stop sharing a household: a Stripe subscription WE set to end because it was the extra one is
+// resumed, so neither loses a plan they pay for. Only ours (the metadata mark), only while it is still live and
+// still set to end. Never throws.
+async function resumeHouseholdExtra(admin, userIds, deps = {}) {
+  const get = deps.stripeGet || stripeGet;
+  const post = deps.stripePost || stripePost;
+  for (const uid of userIds || []) {
+    try {
+      const { data: row, error } = await admin.from("subscriptions")
+        .select("provider, status, current_period_end, provider_subscription_id, cancel_at_period_end, support_flag").eq("user_id", uid).maybeSingle();
+      if (error || !row || (row.provider || "stripe") !== "stripe" || !row.provider_subscription_id || !isPaidSubscription(row)) continue;
+      const sub = await get(`/subscriptions/${encodeURIComponent(row.provider_subscription_id)}`);
+      if (!sub || !sub.cancel_at_period_end || !(sub.metadata && sub.metadata.flourish_household_extra)) continue;
+      await post(`/subscriptions/${encodeURIComponent(row.provider_subscription_id)}`, { cancel_at_period_end: false, metadata: { flourish_household_extra: "" } });
+      if (row.support_flag === EXTRA_FLAG) await admin.from("subscriptions").update({ support_flag: null, support_flag_at: null }).eq("user_id", uid);
+    } catch (e) {
+      console.error("[household] resume extra:", e && (e.statusCode || e.message));
+    }
+  }
+}
+
 module.exports = {
   householdEnabled, INVITE_TTL_DAYS, INVITES_PER_DAY, CODE_ALPHABET, CODE_LENGTH,
   isMissing, membershipOf, membersOf, peerIdsOf,
-  sha256, normalizeCode, isCodeShaped, isTokenShaped, newInviteSecrets, inviteUrl, emailKey,
+  sha256, normalizeCode, isCodeShaped, isTokenShaped, newInviteSecrets, inviteUrl, emailKey, netKeyOf,
   INVITE_EMAIL, hasPlaceholder, inviteEmailPayload, sendInviteEmail,
   householdCover,
+  HOLD_MINUTES, CHECKOUT_MINUTES, holdPurchase,
+  EXTRA_FLAG, extraPayer, payersOf, reconcileHouseholdBilling, resumeHouseholdExtra,
 };
