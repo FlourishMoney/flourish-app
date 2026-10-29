@@ -419,6 +419,13 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 "Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",
+      // Couple mode (words approved by ChatGPT + Grok, 2026-10-29, used word for word): an app control (cancels the
+      // household invite), where to cancel a SECOND subscription the household does not need, how to link a joint
+      // account in the app so it is not counted twice, and the join limit. None is advice about the household's money.
+      "Cancel invite",
+      "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > Flourish Plus > Manage subscription.",
+      "If you share a joint account, only one of you should link it, or it will be counted twice.",
+      "Too many tries. Wait an hour, then try again.",
     ]);
     // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
     const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;
