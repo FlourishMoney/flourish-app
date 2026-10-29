@@ -56,6 +56,9 @@ function makeDb() {
   };
   const heldNow = () => db.seats.filter((s) => !s.released_at).length;
   const rpc = async (name, a = {}) => {
+    // Couple mode round 5: every checkout first records the buyer's one purchase attempt (0031 purchase_attempt_begin),
+    // which the real database grants a buyer with none live. Not recorded: these checks are about the seat functions.
+    if (name === "purchase_attempt_begin") return { data: { result: "held" }, error: null };
     db.rpcCalls.push(name);
     if (name === "founding_seats_taken") return { data: heldNow(), error: null };
     if (name === "founding_seat_take") {

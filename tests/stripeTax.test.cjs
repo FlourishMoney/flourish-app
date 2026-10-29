@@ -28,7 +28,9 @@ function load(sent) {
   const admin = {
     from: (table) => { const q = { select() { return q; }, eq() { return q; }, async upsert() { return { error: null }; },
       async maybeSingle() { return { data: table === "profiles" ? { founder_flag: true } : null, error: null }; } }; return q; },
-    rpc: async () => ({ data: null, error: null }),
+    // Couple mode round 5: every checkout first records the buyer's one purchase attempt (0031 purchase_attempt_begin),
+    // which the real database grants a buyer with none live. Every other function answers as before.
+    rpc: async (name) => ({ data: name === "purchase_attempt_begin" ? { result: "held" } : null, error: null }),
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "household@example.test", email_confirmed_at: "2026-10-01T00:00:00Z", app_metadata: { email_confirmation: "link" } } } }) } },
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };

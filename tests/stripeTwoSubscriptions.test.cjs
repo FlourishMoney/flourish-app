@@ -49,7 +49,9 @@ function makeDb() {
     return q;
   };
   const admin = {
-    from: api, rpc: async () => ({ data: null, error: null }),
+    // Couple mode round 5: every checkout records the buyer's one purchase attempt first (0031 purchase_attempt_begin),
+    // which the real database grants a buyer with none live. Every other function answers as before.
+    from: api, rpc: async (fn) => (fn === "purchase_attempt_begin" ? { data: { result: "held" }, error: null } : { data: null, error: null }),
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "x@example.invalid", email_confirmed_at: "2026-10-01T00:00:00Z" } } }), deleteUser: async () => ({ error: null }) } },
   };
   return { state, admin };

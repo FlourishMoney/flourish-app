@@ -72,7 +72,9 @@ async function billingFor(user, { founder = false, billing = true, seats = 0 } =
   const admin = {
     from: (table) => { const q = { select() { return q; }, eq() { return q; }, async upsert() { return { error: null }; },
       async maybeSingle() { return { data: table === "profiles" ? { founder_flag: founder } : null, error: null }; } }; return q; },
-    rpc: async (name, args) => ({ data: name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 7 : name === "founding_seats_taken" ? seats : null, error: null }),
+    // Couple mode round 5: every checkout first records the buyer's one purchase attempt (0031 purchase_attempt_begin),
+    // which the real database grants a buyer with none live.
+    rpc: async (name, args) => ({ data: name === "purchase_attempt_begin" ? { result: "held" } : name === "waitlist_founding_number_for_email" && args.p_email === HOLDER ? 7 : name === "founding_seats_taken" ? seats : null, error: null }),
     auth: { admin: { getUserById: async () => ({ data: { user } }) } },
   };
   require.cache[AUTH_PATH].exports = { ...real, getUserFromRequest: async () => ({ user_id: "u1", error: null }), getAdminClient: () => admin };
