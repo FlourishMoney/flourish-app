@@ -16,8 +16,8 @@
 --   household_purchase_holds ONE purchase attempt holds the household (a Stripe checkout,
 --                            or one tap in the store app); no other attempt, by either
 --                            person on any platform, may start until it ends: 32 minutes
---                            from when it began, 7 days for one the store calls pending, or
---                            sooner when the store's report (checked by the server) ends it
+--                            from when it began, or 7 days for one the store calls pending;
+--                            nothing ends it sooner (a paid purchase is answered by its paid row)
 --   plaid_account_owners     who linked each bank account (kept by the server from Plaid's
 --                            own answers), so cleanup never depends on a live Plaid row;
 --                            a sign-in deleted directly takes its rows with it (a trigger
@@ -30,8 +30,8 @@
 --                             the attempt limits); their personal keys go to their own
 --                             private row and their old user_data row is deleted
 --   household_hold_purchase   a purchase attempt holds the household; household_hold_pending
---                             keeps it while the store waits; household_release_store_purchase
---                             ends it on the store's own report (never on the app's word)
+--                             keeps it while the store waits (7 days at most); no function
+--                             ends a hold early (audit round 4 a3)
 --   household_disconnect_item a member disconnects a bank: what came from it leaves the
 --                             shared blob, then its plaid_items row goes, in one transaction
 --   household_leave           a member leaves: their banks and everything derived from
@@ -106,7 +106,7 @@ create table if not exists public.household_purchase_holds (
   user_id      uuid        not null references auth.users(id) on delete cascade,
   provider     text        not null check (provider in ('stripe', 'app_store', 'play_store')),
   attempt_id   text        not null,                 -- the one attempt holding it: a Stripe checkout id, or the app's random id
-  pending      boolean     not null default false,   -- the store said "pending": held until it reports (expires_at is the backstop)
+  pending      boolean     not null default false,   -- the store said "pending": held to its 7 days (expires_at)
   expires_at   timestamptz not null,                  -- fixed from created_at: 32 minutes, or 7 days once pending; never moved later
   created_at   timestamptz not null default now()
 );
@@ -299,11 +299,12 @@ end; $$;
 --                             (it can never complete), which a new checkout of theirs may replace. Nothing else
 --                             is replaced. A pending attempt is refused even to itself: the store is still on it.
 --   household_hold_pending    the store said the purchase is pending (Ask to Buy, a slow payment): a STORE hold
---                             lasts until the store reports it, p_backstop from when it began at most
---   household_release_store_purchase  the store reported (RevenueCat, the server's own sync): ends this
---                             person's hold on that store, if it began before the report. Never a web checkout's,
---                             never the other store's, never a newer attempt's (a late report of an older one).
--- The app never ends a hold: a sheet it says was cancelled or failed lapses on its own (billing.js store_hold).
+--                             lasts p_backstop from when it began
+-- NOTHING ENDS A HOLD EARLY (audit round 4 a3). No report says which attempt it is about (RevenueCat carries no
+-- attempt id, and the server's own sync has only its own clock), so an early release could end an unrelated,
+-- newer hold. Every hold ends at its fixed time. A purchase that went through needs no release: every check
+-- (billing.js) reads the paid row, and the other member's cover, before it looks at a hold. The app never ends
+-- a hold either: a sheet it says was cancelled or failed lapses on its own (billing.js store_hold).
 -- Answers jsonb: { result: 'held' | 'held_elsewhere' | 'no_household', ... }.
 create or replace function public.household_hold_purchase(p_user uuid, p_provider text, p_attempt text,
                                                           p_ttl interval default interval '32 minutes', p_replaces text default null)
@@ -352,23 +353,6 @@ begin
     returning expires_at into h.expires_at;
   end if;
   return jsonb_build_object('result', 'pending', 'expires_at', h.expires_at);
-end; $$;
-
--- The store reported this person's purchase (completed, cancelled, ended, not charged), as the server checked it
--- (RevenueCat's report, or the store's record the server fetched): their hold on THAT store ends, if it began no
--- later than the report. p_reported_at is when the store reported (RevenueCat's event time), never when it
--- reached us, so a report that arrives late cannot end a hold begun after it.
-create or replace function public.household_release_store_purchase(p_user uuid, p_provider text, p_reported_at timestamptz)
-returns jsonb language plpgsql security definer set search_path = public as $$
-declare n integer;
-begin
-  if p_provider is null or p_provider not in ('app_store', 'play_store') or p_reported_at is null then
-    return jsonb_build_object('result', 'not_held');
-  end if;
-  delete from public.household_purchase_holds
-   where user_id = p_user and provider = p_provider and created_at <= p_reported_at;
-  get diagnostics n = row_count;
-  return jsonb_build_object('result', case when n > 0 then 'released' else 'not_held' end);
 end; $$;
 
 -- 4. Leaving ---------------------------------------------------------------------
@@ -612,7 +596,6 @@ revoke all on function public.household_revoke_invite(uuid)                     
 revoke all on function public.household_accept_invite(uuid, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.household_hold_purchase(uuid, text, text, interval, text) from public, anon, authenticated;
 revoke all on function public.household_hold_pending(uuid, text, interval)          from public, anon, authenticated;
-revoke all on function public.household_release_store_purchase(uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.household_disconnect_item(uuid, text)                from public, anon, authenticated;
 revoke all on function public.household_strip_accounts(uuid, text[])               from public, anon, authenticated;
 revoke all on function public.household_strip_member_banks(uuid, uuid)              from public, anon, authenticated;
@@ -626,7 +609,6 @@ grant execute on function public.household_revoke_invite(uuid)                  
 grant execute on function public.household_accept_invite(uuid, text, text, text, text) to service_role;
 grant execute on function public.household_hold_purchase(uuid, text, text, interval, text) to service_role;
 grant execute on function public.household_hold_pending(uuid, text, interval)          to service_role;
-grant execute on function public.household_release_store_purchase(uuid, text, timestamptz) to service_role;
 grant execute on function public.household_disconnect_item(uuid, text)                to service_role;
 grant execute on function public.household_leave(uuid)                                 to service_role;
 grant execute on function public.household_remove_partner(uuid)                        to service_role;
@@ -658,7 +640,6 @@ grant execute on function public.household_remove_partner(uuid)                 
 -- drop function if exists public.household_drop_by(jsonb, text, text[]);
 -- drop function if exists public.household_disconnect_item(uuid, text);
 -- drop function if exists public.household_strip_accounts(uuid, text[]);
--- drop function if exists public.household_release_store_purchase(uuid, text, timestamptz);
 -- drop function if exists public.household_hold_pending(uuid, text, interval);
 -- drop function if exists public.household_hold_purchase(uuid, text, text, interval, text);
 -- drop function if exists public.household_accept_invite(uuid, text, text, text, text);

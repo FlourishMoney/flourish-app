@@ -128,9 +128,9 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
  * store's sheet opens, the server is asked to hold the household for that attempt (billing.js store_hold), so no
  * other attempt (the other member's, or this person's own on the website or the other store) can buy at the same
  * moment. Only { held: true } opens the sheet; anything else sells nothing. If the store answers "pending", the
- * server is told, which keeps the household held until the store reports (7 days at most).
+ * server is told, which keeps the household held for 7 days from the tap.
  * Round 3 a: the app never ENDS a hold. A cancelled or failed sheet tells the server nothing; its hold lapses on
- * its own (32 minutes from the tap), and only the store's own report, read by the server, ends one sooner. So one
+ * its own (32 minutes from the tap), and nothing ends one sooner (round 4: not a store's report either). So one
  * attempt id is kept across taps (deps.attempt) for ATTEMPT_MS: a tap after a cancelled sheet is the same attempt
  * again, and the person is not kept waiting on their own hold. 20 minutes leaves the store's sheet at least 12 of
  * the hold's 32; a tap after that is a new attempt, refused until the old hold lapses. A paid purchase starts afresh.

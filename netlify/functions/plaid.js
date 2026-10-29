@@ -309,7 +309,7 @@ exports.handler = async (event) => {
 
     // 5. get_investments
     if (action === "get_investments") {
-      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/investments/holdings/get", { access_token });
@@ -340,19 +340,30 @@ exports.handler = async (event) => {
           };
         });
 
+        // Couple mode (audit round 4): who linked every account these holdings name is recorded before any of them
+        // is returned, as get_accounts does. A record that cannot be written answers 503 and no holdings.
+        await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id,
+          [...(data.accounts || []).map((a) => a && a.account_id), ...holdings.map((h) => h.account_id)]);
         return ok({ holdings });
-      } catch {
+      } catch (err) {
+        if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
         return ok({ holdings: [] });
       }
     }
 
     // 6. get_liabilities
     if (action === "get_liabilities") {
-      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/liabilities/get", { access_token });
         const l = data.liabilities || {};
+        // Couple mode (audit round 4): who linked every account below is recorded before any of it is returned, as
+        // get_accounts does. A record that cannot be written answers 503 and no liabilities.
+        await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, [
+          ...(data.accounts || []).map((a) => a && a.account_id),
+          ...[...(l.credit || []), ...(l.mortgage || []), ...(l.student || [])].map((x) => x && x.account_id),
+        ]);
         return ok({
           credit: (l.credit || []).map(c => ({
             account_id: c.account_id,
@@ -377,6 +388,7 @@ exports.handler = async (event) => {
           })),
         });
       } catch (err) {
+        if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
         // Sprint Z #2: signal failure instead of empty arrays so the client keeps stale
         // liabilities (empty arrays were indistinguishable from a confirmed "no debt").
         return ok({ liabilitiesUnavailable: true, error_code: err.errorCode || null });
@@ -757,12 +769,14 @@ exports.handler = async (event) => {
 
       // 1c. COUPLE MODE: leave the household first, while this person's bank links still exist, so their banks
       // come out of the shared blob and the partner becomes the owner (migration 0031, household_leave). Critical:
-      // a partner must never keep a deleted person's accounts. Before 0031 runs there is nothing to leave.
+      // a partner must never keep a deleted person's accounts. Before 0031 runs, with the switch off, there is nothing
+      // to leave; with it on, a missing function stops the delete (audit round 4).
       {
         let peers = [];
         try { peers = await household.peerIdsOf(admin, user_id); } catch { peers = []; }
         const { error: hhErr } = await admin.rpc("household_leave", { p_user: user_id });
-        if (hhErr && !household.isMissing(hhErr)) {
+        // Only while the switch is off may a missing function mean "nothing to leave" (audit round 4).
+        if (hhErr && !household.legacyMissing(hhErr)) {
           console.error("[delete_account] household leave:", hhErr.code || "error");
           return stop("household");
         }
@@ -778,9 +792,10 @@ exports.handler = async (event) => {
       // this user, so "no such table" counts as done rather than trapping everyone in their account.
       // plaid_account_owners (couple mode): who linked which account, kept past a disconnect for the cleanups; the
       // household was left above, so it has done its work.
+      // With the switch on, a missing plaid_account_owners is a failure, not "nothing to delete" (audit round 4).
       for (const table of ["meeting_records", "subscriptions", "feedback", "plaid_account_owners"]) {
         const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
-        if (tErr && !missingTable(tErr)) {
+        if (tErr && !(table === "plaid_account_owners" ? household.legacyMissing(tErr) : missingTable(tErr))) {
           console.error(`[delete_account] ${table} delete:`, tErr.message);
           return stop(table);
         }

@@ -22,8 +22,8 @@
 //      invited address and per network, and an invite dies after 5 wrong tries; a code only works for its address;
 //   9  races: a remove at the same moment as a leave or an ownership change runs one after the other;
 //  10  one purchase at a time: ONE purchase attempt holds the household; any other attempt is refused, the same
-//      person's on another platform included; a pending store purchase holds it until the store reports; every
-//      hold's end is fixed from when its attempt began, and only that store's report, made after it began, ends it;
+//      person's on another platform included; a pending store purchase holds it for 7 days; every hold's end is
+//      fixed from when its attempt began, and nothing ends it sooner (only a member leaving takes their own with them);
 //  11  what a departed member's banks left behind (derived data) leaves with them;
 //  12  disconnecting a bank cleans the shared blob before its Plaid row goes, in one transaction; the server's
 //      record of who linked each account makes leave's cleanup work even after a bank went another way; a sign-in
@@ -401,14 +401,16 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
         "9i the owner removes the partner, then their account is deleted at once: the removed partner is not promoted, and no empty household is left behind");
     }
 
-    // 10 ONE PURCHASE AT A TIME (audit H5, round 2 a; round 3 a): one ATTEMPT holds the household, to a FIXED end -------
+    // 10 ONE PURCHASE AT A TIME (audit H5, round 2 a; rounds 3-4 a): one ATTEMPT holds the household, to a FIXED end ---
     {
       const hold = (u, prov, att, replaces) => svc(`household_hold_purchase('${u}', '${prov}', '${att}'${replaces ? `, interval '32 minutes', '${replaces}'` : ""})`).result;
       const ends = (h) => sql(`select expires_at from public.household_purchase_holds where household_id = '${h}'`);
       // Whether a hold ends exactly `iv` after its attempt began (compared as Postgres adds it, clock changes included).
       const lifeIs = (h, iv) => sql(`select expires_at = created_at + interval '${iv}' from public.household_purchase_holds where household_id = '${h}'`);
       const lapse = (h) => sql(`update public.household_purchase_holds set expires_at = now() - interval '1 minute' where household_id = '${h}'`);
-      const storeReport = (u, prov, at) => svc(`household_release_store_purchase('${u}', '${prov}', ${at})`).result;
+      // Every function in public whose body deletes holds, or is named for ending one (round 4 a3: only leaving does).
+      const holdEnders = () => sql(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and (p.prosrc ilike '%delete from public.household_purchase_holds%' or (p.proname ilike 'household%' and p.proname ilike '%release%'))`);
       const a = pair("b1");
       t.eq(hold(a.o, "stripe", "cs_1"), "held", "10a the owner starts a Stripe checkout: that attempt holds the household");
       t.eq(hold(a.p, "app_store", "p-ios-1"), "held_elsewhere", "10b the partner cannot start a purchase meanwhile");
@@ -424,8 +426,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq(hold(a.o, "stripe", "cs_2"), "held_elsewhere", "10f a second Stripe checkout of the same person is refused…");
       t.eq(hold(a.o, "stripe", "cs_2", "cs_1"), "held", "10g …unless it replaces their own checkout the server has just seen expire at Stripe (it can never complete)");
       t.eq(hold(a.p, "stripe", "cs_3", "cs_2"), "held_elsewhere", "10h nobody can replace someone else's checkout");
-      t.eq([sql("select to_regprocedure('public.household_release_purchase(uuid, text)') is null"), hold(a.p, "app_store", "p-ios-2")], ["t", "held_elsewhere"],
-        "10i nothing ends a hold on the app's word (round 3 a): there is no such call, and the checkout still holds the household");
+      t.eq([sql("select to_regprocedure('public.household_release_purchase(uuid, text)') is null"), sql("select to_regprocedure('public.household_release_store_purchase(uuid, text, timestamptz)') is null"),
+        holdEnders(), hold(a.p, "app_store", "p-ios-2")], ["t", "t", "household_leave_locked", "held_elsewhere"],
+        "10i nothing ends a hold early (rounds 3-4 a): no call on the app's word, none on a store's report; the only function that deletes one is a member leaving; the checkout still holds the household");
       lapse(a.h);   // a checkout cancelled or abandoned lapses on its own
       t.eq(hold(a.o, "app_store", "o-ios-2"), "held", "10j iOS…");
       t.eq(hold(a.o, "play_store", "o-and-2"), "held_elsewhere", "10k …then the Android app: refused");
@@ -437,19 +440,18 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       sql(`update public.household_purchase_holds set created_at = now() - interval '40 minutes' where household_id = '${a.h}'`);
       t.eq([hold(a.p, "stripe", "cs_4"), hold(a.o, "play_store", "o-and-3")], ["held_elsewhere", "held_elsewhere"], "10m a purchase pending for more than 32 minutes still holds the household against everyone");
       t.eq(svc(`household_hold_pending('${a.p}', 'p-ios-9')`).result, "not_held", "10n only the attempt that holds it can be marked pending");
-      t.eq([storeReport(a.o, "play_store", "now()"), storeReport(a.p, "app_store", "now()")], ["not_held", "not_held"], "10n2 a store report ends only that person's hold on that store: the other store's, or the other member's, ends nothing");
-      t.eq(storeReport(a.o, "app_store", "now()"), "released", "10o the store reports the pending purchase completed: the hold ends");
-      t.eq(hold(a.p, "stripe", "cs_5"), "held", "10p then the other may buy (the household being paid for stops them anyway: billing.js)");
-      // LATE REPORTS (round 3 a): RevenueCat's event time, not when it reached us.
-      t.eq([storeReport(a.o, "app_store", "now() - interval '1 hour'"), storeReport(a.p, "app_store", "now()"), storeReport(a.p, "play_store", "now()")], ["not_held", "not_held", "not_held"],
-        "10x a store report, late or not, never ends a web checkout's hold (Stripe holds end at Stripe or lapse)");
+      t.eq([hold(a.p, "stripe", "cs_5"), ends(a.h)], ["held_elsewhere", end3],
+        "10o whatever the store later says about it, the pending purchase holds to its fixed end: nothing ends it sooner (round 4 a3; a paid one is read first: billing.js)");
+      lapse(a.h);   // its 7 days are up
+      t.eq(hold(a.p, "stripe", "cs_5"), "held", "10p then the other may buy");
+      // A NEWER ATTEMPT (round 4 a3): an older purchase being reported, completed or not, can never clear it.
       lapse(a.h);
       t.eq(hold(a.o, "play_store", "o-and-4"), "held", "10y the owner taps a plan in the Android app: a newer store attempt…");
-      t.eq([storeReport(a.o, "play_store", "now() - interval '5 minutes'"), hold(a.p, "stripe", "cs_6")], ["not_held", "held_elsewhere"],
-        "10y2 …a late report of an older Google Play purchase (made before this attempt began) leaves it holding the household");
-      t.eq([storeReport(a.o, "stripe", "now()"), storeReport(a.o, "play_store", "null"), hold(a.p, "stripe", "cs_6")], ["not_held", "not_held", "held_elsewhere"],
-        "10y3 …so does a report for no store we sell in, or with no time");
-      t.eq(storeReport(a.o, "play_store", "now()"), "released", "10y4 a report from that store, made after the attempt began, ends it");
+      const endY = ends(a.h);
+      t.eq([hold(a.p, "stripe", "cs_6"), hold(a.o, "app_store", "o-ios-5"), ends(a.h), lifeIs(a.h, "32 minutes"), holdEnders()], ["held_elsewhere", "held_elsewhere", endY, "t", "household_leave_locked"],
+        "10y2 …holds the household against everyone, to its own fixed end (32 minutes from when it began); nothing about an older purchase can end it");
+      lapse(a.h);
+      t.eq(hold(a.p, "stripe", "cs_6"), "held", "10y3 …and once that end passes, the next attempt may hold");
       const c = pair("b3");
       t.eq(hold(c.o, "stripe", "cs_c1"), "held", "10z a web checkout holds the household…");
       const endC = ends(c.h);
@@ -468,8 +470,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq(svc(`household_hold_purchase('${S}', 'stripe', 'cs_s')`).result, "no_household", "10u someone in no household holds nothing");
       svc(`household_leave('${b.o}')`);
       t.eq(sql(`select count(*) from public.household_purchase_holds where household_id = '${b.h}'`), "0", "10v a member who leaves takes their hold with them");
-      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))) && /permission denied/.test(err(() => as(a.o, `select public.household_release_store_purchase('${a.o}', 'app_store', now())`))),
-        "10w nobody signed in reads the holds or ends one");
+      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))) && /permission denied/.test(err(() => as(a.o, "delete from public.household_purchase_holds")))
+        && /permission denied/.test(err(() => as(a.o, `select public.household_hold_pending('${a.o}', 'x-attempt-1')`))),
+        "10w nobody signed in reads the holds, deletes one, or marks one pending");
     }
 
     // 11 WHAT A DEPARTED MEMBER'S BANKS LEFT BEHIND (audit M7) ------------------------------------------------------

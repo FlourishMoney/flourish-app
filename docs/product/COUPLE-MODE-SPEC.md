@@ -2,6 +2,8 @@
 
 Branch `couple-mode` from main 7f02c1b (main 9247a43 merged in). Migrations `0030_couple_household.sql` and `0031_couple_household_private.sql` are written, **not run**. The words were approved by ChatGPT and Grok on 2026-10-29 (`COUPLE-MODE-WORDS.md`). The code audit's findings (ChatGPT, Grok, 2026-10-29) are fixed and mapped to their tests in `COUPLE-MODE-FIXES.md`.
 Ships dark: the server answers 404 until `HOUSEHOLD_ENABLED=true` (Netlify), and the app shows Settings > Household only when the server answers.
+
+**The switch is also the boundary for the migrations (audit round 4).** While `HOUSEHOLD_ENABLED` is off, a missing household table or function (Postgres 42P01 or 42883, PostgREST PGRST202 or PGRST205, a "schema cache" message) means 0030/0031 have not run, and every path behaves as it does today. Once it is on, the same error is a failure like any other, and everything fails closed: membership reads, purchase holds, the account record, disconnecting, the coach's names, billing and `/api/household` all answer 503 or 500 rather than "no household". Disconnecting may still delete a bank's row directly (without `household_disconnect_item`) only for someone a successful read shows is in no household. So the order is: run 0030, then 0031, then turn the switch on.
 So the 1.1.3 store build can carry it before the migration runs.
 
 ## How it works
@@ -28,7 +30,7 @@ So the 1.1.3 store build can carry it before the migration runs.
   - The server lets a member use an item linked by anyone in the same household.
   - Only the person who linked a bank can disconnect or reconnect it, because the Plaid consent is theirs.
   - Disconnecting is one transaction on the server (`household_disconnect_item`): what came from that bank leaves the shared blob, then its Plaid row goes.
-  - The server records who linked each bank account, from Plaid's own answers (`plaid_account_owners`). Leaving cleans up by that record, so it never depends on a Plaid row still being there.
+  - The server records who linked each bank account, from Plaid's own answers (`plaid_account_owners`), before it returns anything about that account: accounts, transactions, investments and liabilities. Leaving cleans up by that record, so it never depends on a Plaid row still being there. A record that cannot be written answers 503 with no bank data.
   - Each member has their own sync cursor (`plaid_item_cursors`), so one phone never consumes the other's new transactions.
 - **Leave, remove, delete.**
   - Either person can leave, and the owner can remove the partner. The person who goes loses database access in the same transaction.
@@ -43,8 +45,8 @@ So the 1.1.3 store build can carry it before the migration runs.
   - Trials stay per person: otherwise a new email every 14 days would be a free plan.
   - A covered partner is never offered or sold a plan: checkout returns 409 and the store screen gets paid:true.
   - One purchase ATTEMPT at a time (`household_purchase_holds`). A Stripe checkout (its session id), or one tap in the store app (a random id), holds the household for 32 minutes. Any other attempt is refused, whoever makes it and on any platform, the same person's included: the only thing replaced is that person's own earlier web checkout once Stripe says it has expired. A household's Stripe checkout ends after 31 minutes, before its hold; one refused is expired at Stripe at once.
-  - A store purchase the store calls pending holds the household until the store reports it completed, cancelled or failed (7 days at most).
-  - Every hold's end is fixed from when its attempt began (32 minutes, or 7 days once pending); asking again never moves it. The app never ends a hold: a cancelled or failed sheet lapses on its own, and the app keeps one attempt id for 20 minutes so a retry is the same attempt. Only the store's own report, as the server reads it (RevenueCat's webhook, or the app's sync), ends one sooner: that person's hold on that store, if it began no later than the report.
+  - A store purchase the store calls pending holds the household for 7 days from when the attempt began.
+  - Every hold's end is fixed from when its attempt began (32 minutes, or 7 days once pending); asking again never moves it. Nothing ends a hold sooner (audit round 4): not the app (a cancelled or failed sheet lapses on its own, and the app keeps one attempt id for 20 minutes so a retry is the same attempt), and not a store's report or the app's sync, which cannot say which attempt they are about. A purchase that went through needs no release: it is a paid row, and every check reads that, and the other member's cover, before it looks at a hold.
   - If a household still ends up paying twice (both paid before joining, or a store purchase made outside the app), one rule picks the extra one: a founding price is kept; then a store's over ours (we can stop ours, not the store's); then the owner's. The extra one's holder is told, in the approved line, where to cancel it; its row is flagged for support (`support_flag = 'household_two_paid'`); it is logged; and if it is ours (Stripe) it is set to end at the end of the period it is paid for, so we never charge it again. This runs after every paid Stripe or store event, when someone joins, and on the Household screen.
   - When the two stop sharing (leave, remove, account deleted), a Stripe subscription we had set to end as the extra one is resumed.
   - Founding: the household is only ever sold one plan, so it takes one seat. The founding-seats work (0029, other session) still counts seats per account. If both already held a seat before joining, see Risks.
@@ -71,7 +73,7 @@ So the 1.1.3 store build can carry it before the migration runs.
 RPCs (security definer, `search_path` fixed, execute for service_role only):
 - `household_create_invite`, `household_revoke_invite`
 - `household_accept_invite`
-- `household_hold_purchase`, `household_hold_pending`, `household_release_store_purchase`
+- `household_hold_purchase`, `household_hold_pending` (no function ends a hold early; leaving takes the leaver's own)
 - `household_disconnect_item`
 - `household_leave`, `household_remove_partner` (both through `household_leave_locked`, which nobody may call directly)
 

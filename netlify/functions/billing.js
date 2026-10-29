@@ -32,7 +32,7 @@ const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/st
 const { spotsLeft } = require("./_lib/foundingSeats");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
-const { householdCover, holdPurchase, holdPending, releaseStorePurchase, isAttemptId, membershipOf, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
+const { householdCover, holdPurchase, holdPending, isAttemptId, membershipOf, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
 const crypto = require("crypto");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
@@ -57,9 +57,9 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 //                 the store's purchase sheet for this attempt"; the household is held for THAT attempt
 //                 (_lib/household.js holdPurchase), so no other attempt, by either person on any platform, can buy
 //                 at the same moment. { held: true } lets the sheet open; anything else sells nothing.
-//                 state "pending": the store said the purchase is pending; the hold lasts until the store reports.
-//                 No other state is heard (round 3 a): the app never ends a hold; it lapses, or the store's report
-//                 ends it.
+//                 state "pending": the store said the purchase is pending; the hold lasts its 7 days.
+//                 No other state is heard (round 3 a): the app never ends a hold, and nothing else does either
+//                 (round 4 a3): every hold ends at its fixed time.
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
 const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]);
 
@@ -206,9 +206,9 @@ exports.handler = async (event) => {
       let state;
       if (action === "store_sync") {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
-        // COUPLE MODE: the store's record, as the server just read it, says this person pays: their hold on that store
-        // ends (never a web checkout's). In a household the other member already pays for, one is the extra.
-        if (state.paid) { await releaseStorePurchase(admin, user_id, state.provider, new Date().toISOString()); await reconcileHouseholdBilling(admin, user_id); }
+        // COUPLE MODE: in a household the other member already pays for, one is the extra. No hold is ended here
+        // (audit round 4 a3): a hold ends at its fixed time, and this paid row already answers every later check.
+        if (state.paid) await reconcileHouseholdBilling(admin, user_id);
       } else {
         state = { paid: isPaidSubscription(row), provider: row ? row.provider || "stripe" : null, plan_key: row ? row.plan_key : null, conflict: false, conflictKind: null };
       }
@@ -261,8 +261,8 @@ exports.handler = async (event) => {
     // household already paid for (by this person, or covered by the other member), or while the other member is
     // buying. A read or hold that fails sells nothing (503).
     // The app can say one thing more, "pending" (the store is waiting), which keeps a store hold to its 7 days. It can
-    // never END a hold (audit round 3 a): a sheet it says was cancelled or failed lapses on its own, and only the
-    // store's own report, as the server reads it (store_sync, revenuecat-webhook.js), ends one early. Any other
+    // never END a hold (audit round 3 a): a sheet it says was cancelled or failed lapses on its own. Nothing ends one
+    // early (round 4 a3); a purchase that went through is a paid row, which the checks below read first. Any other
     // state is refused, before anything is read.
     if (action === "store_hold") {
       const attempt = body.attempt_id;

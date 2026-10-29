@@ -14,13 +14,15 @@
 //   6  status: roles only, never a name or the other's email
 //   7  joins: the network goes to the database as a keyed hash only, the address is the account's own
 //   8  one purchase at a time: a Stripe checkout or a store purchase holds the household; the other is refused;
-//      the app can never end a hold, and a store's report ends only the hold it can be about
+//      nothing ends a hold early (the app, a store's report, the app's sync): a paid purchase is read first instead
 //   9  a household that pays twice: one is the extra, by one rule; its holder is told; ours stops renewing;
 //      leaving resumes it
 //  10  the coach: whatever the app sends, the request to the AI provider carries no member's name
-//  11  banks: disconnecting goes through the database's one-transaction cleanup; who linked each account is kept,
-//      and a record that cannot be written sends back no bank data
+//  11  banks: disconnecting goes through the database's one-transaction cleanup; who linked each account is kept
+//      (accounts, transactions, investments, liabilities), and a record that cannot be written sends back no bank data
 //  12  the coach takes text only: anything else is refused before any request to the provider
+//  13  the switch is the boundary (round 4): with HOUSEHOLD_ENABLED off a missing household table or function means
+//      "not run yet" and today's path goes on; with it on, the same error fails closed everywhere
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -103,7 +105,8 @@ function fakeSupabase(db, { errors = {}, rpc = {} } = {}) {
         const id = String(token || "").replace(/^tok:/, "");
         return EMAIL[id] ? { data: { user: { id, email: EMAIL[id], email_confirmed_at: "2026-10-01T00:00:00Z" } }, error: null } : { data: null, error: { message: "bad token" } };
       },
-      admin: { getUserById: async (id) => ({ data: { user: EMAIL[id] ? { id, email: EMAIL[id], email_confirmed_at: "2026-10-01T00:00:00Z" } : null } }) },
+      admin: { getUserById: async (id) => ({ data: { user: EMAIL[id] ? { id, email: EMAIL[id], email_confirmed_at: "2026-10-01T00:00:00Z" } : null } }),
+        deleteUser: async (id) => { log.writes.push(["auth.users", "delete", id]); return { data: null, error: null }; } },
     },
   };
   return { client, log };
@@ -138,6 +141,13 @@ function load(db, opts = {}, env = {}, stripe = null) {
 const post = (who, body, extra = {}) => ({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", ...(who ? { authorization: `Bearer tok:${who}` } : {}), ...extra }, body: JSON.stringify(body) });
 const call = async (fn, who, body, deps, extra) => { const r = await fn.handler(post(who, body, extra), {}, deps); return { code: r.statusCode, body: JSON.parse(r.body || "{}") }; };
 
+// RevenueCat's record of a paid App Store subscription (the app's store sync and the webhook read it).
+const RC_PAID = {
+  entitlements: { plus: { product_identifier: "app.flourishmoney.plus.monthly", expires_date: "2099-01-01T00:00:00Z", grace_period_expires_date: null, purchase_date: "2026-10-29T08:00:00Z" } },
+  subscriptions: { "app.flourishmoney.plus.monthly": { store: "app_store", period_type: "normal", expires_date: "2099-01-01T00:00:00Z", is_sandbox: false,
+    ownership_type: "PURCHASED", refunded_at: null, unsubscribe_detected_at: null, product_plan_identifier: null, grace_period_expires_date: null } },
+};
+
 // O and P share a household; S is a stranger with a bank of their own.
 const coupleDb = (over = {}) => ({
   household_members: [{ household_id: "h1", user_id: O, role: "owner", joined_at: "2026-10-29T10:00:00Z" }, { household_id: "h1", user_id: P, role: "partner", joined_at: "2026-10-29T11:00:00Z" }],
@@ -168,6 +178,13 @@ const coupleDb = (over = {}) => ({
     if (/\/transactions\/sync$/.test(u)) return { ok: true, json: async () => ({ added: [{ transaction_id: "tx-1", account_id: "acc-1", amount: 5, date: "2026-10-28", name: "Coffee" }], modified: [], removed: [], next_cursor: "next-1", has_more: false, accounts: [{ account_id: "acc-1", type: "depository" }] }) };
     if (/\/transactions\/get$/.test(u)) return { ok: true, json: async () => ({ transactions: [{ transaction_id: "tx-2", account_id: "acc-2", amount: 7, date: "2026-10-28", name: "Lunch" }], accounts: [{ account_id: "acc-2", type: "depository" }] }) };
     if (/\/item\/remove$/.test(u)) return { ok: true, json: async () => ({ removed: true }) };
+    if (/\/investments\/holdings\/get$/.test(u)) return { ok: true, json: async () => ({ accounts: [{ account_id: "inv-1", subtype: "tfsa" }],
+      holdings: [{ account_id: "inv-1", security_id: "sec-1", quantity: 2, institution_value: 200 }],
+      securities: [{ security_id: "sec-1", name: "Index fund", ticker_symbol: "IDX", type: "etf", close_price: 100, iso_currency_code: "CAD" }] }) };
+    if (/\/liabilities\/get$/.test(u)) return { ok: true, json: async () => ({ accounts: [{ account_id: "cc-1" }, { account_id: "mtg-1" }],
+      liabilities: { credit: [{ account_id: "cc-1", name: "Visa", last_statement_balance: 50, minimum_payment_amount: 10 }],
+        mortgage: [{ account_id: "mtg-1", name: "Home", outstanding_principal_balance: 1000, next_monthly_payment: 5 }], student: [] } }) };
+    if (/api\.revenuecat\.com\/v1\/subscribers\//.test(u)) return { ok: true, status: 200, json: async () => ({ subscriber: RC_PAID }) };
     return { ok: false, json: async () => ({ error_code: "UNEXPECTED", error_message: u }) };
   };
   try {
@@ -184,7 +201,9 @@ const coupleDb = (over = {}) => ({
       t.eq((await call(c.household, null, { action: "status" })).code, 401, "1d no session: 401");
       t.eq((await call(c.household, O, { action: "nope" })).code, 400, "1e an unknown action is refused");
       const d = load({}, { errors: { household_members: { code: "42P01", message: "relation \"public.household_members\" does not exist" } } });
-      t.eq((await call(d.household, O, { action: "status" })).code, 404, "1f before 0030 runs the feature is absent, so the app shows nothing");
+      t.eq((await call(d.household, O, { action: "status" })).code, 503, "1f the switch is on but 0030 has not run: 503 (the app shows nothing), never \"no household\" (round 4)");
+      const d2 = load({}, { errors: { household_members: { code: "42P01", message: "relation \"public.household_members\" does not exist" } } }, { HOUSEHOLD_ENABLED: "" });
+      t.eq([(await call(d2.household, O, { action: "status" })).code, d2.log.reads], [404, []], "1f2 with the switch off the feature is simply absent (404), and nothing is read");
     }
 
     // ── 2. INVITE ───────────────────────────────────────────────────────────────────────────────────
@@ -229,7 +248,7 @@ const coupleDb = (over = {}) => ({
       taken.log.rpc.forEach(([, x]) => codes.push(x.p_code_hash));
       t.eq([tr.code, new Set(codes).size], [200, 3], "2s a code already open elsewhere: a new one is made and tried");
       const missing = load({ household_members: [] }, { rpc: {} });
-      t.eq((await call(missing.household, O, { action: "create_invite", email: "partner@example.test", consent: true }, deps)).code, 404, "2t before 0031 runs: absent, not an error page");
+      t.eq((await call(missing.household, O, { action: "create_invite", email: "partner@example.test", consent: true }, deps)).code, 503, "2t the switch is on but 0031 has not run: 503, and no invite (round 4)");
     }
 
     // ── 3. JOIN ─────────────────────────────────────────────────────────────────────────────────────
@@ -282,9 +301,12 @@ const coupleDb = (over = {}) => ({
       plaidCalls.length = 0;
       await call(a.plaid, O, { action: "get_transactions", item_id: "item-O" });
       t.eq([plaidCalls.filter((c) => /sync/.test(c.path)).map((c) => c.cursor), a.db.plaid_items[0].next_cursor], [["cursor-O"], "next-1"], "4l the owner syncs from plaid_items as before");
-      const before = load(coupleDb(), { errors: { household_members: { code: "42P01", message: "relation does not exist" } } });
+      const before = load(coupleDb(), { errors: { household_members: { code: "42P01", message: "relation does not exist" } } }, { HOUSEHOLD_ENABLED: "" });
       t.eq([(await call(before.plaid, P, { action: "get_accounts", item_id: "item-O" })).code, (await call(before.plaid, O, { action: "get_accounts", item_id: "item-O" })).code], [400, 200],
-        "4m before 0030 runs there are no households: own banks only, exactly as today");
+        "4m with the switch off, before 0030 runs there are no households: own banks only, exactly as today");
+      const onBefore = load(coupleDb(), { errors: { household_members: { code: "42P01", message: "relation does not exist" } } });
+      t.eq([(await call(onBefore.plaid, P, { action: "get_accounts", item_id: "item-O" })).code, (await call(onBefore.plaid, O, { action: "get_accounts", item_id: "item-O" })).code], [400, 200],
+        "4m2 with it on, the same failed read never widens access either: the partner reaches nothing, the owner their own bank");
       const down = load(coupleDb(), { errors: { household_members: { code: "XX000", message: "upstream connect error" } } });
       t.eq((await call(down.plaid, P, { action: "get_accounts", item_id: "item-O" })).code, 400, "4n a failed household read never widens access");
       t.eq((await call(down.plaid, O, { action: "list_items" })).body.items.map((i) => i.item_id), ["item-O"], "4o …and the owner's own list still works");
@@ -317,8 +339,12 @@ const coupleDb = (over = {}) => ({
       t.eq((await blip.auth.getUserPlan(P)).status_unavailable, true, "5j a failed household read is \"unavailable\", never \"not paid\"");
       t.eq((await call(blip.billing, P, { action: "status" })).code, 503, "5k …billing status answers 503, and the app retries");
       t.eq((await call(blip.billing, O, { action: "status" })).body.paid, true, "5l the payer's own status never depends on the household read");
-      const pre = load(coupleDb({ subscriptions: [] }), { errors: { household_members: { code: "PGRST205", message: "Could not find the table in the schema cache" } } });
-      t.eq([(await pre.auth.getUserPlan(P)).unlimited, (await pre.auth.getUserPlan(P)).status_unavailable], [false, false], "5m before 0030 runs: exactly today's answer");
+      const pre = (on) => load(coupleDb({ subscriptions: [] }), { errors: { household_members: { code: "PGRST205", message: "Could not find the table in the schema cache" } } }, { HOUSEHOLD_ENABLED: on });
+      const preOff = pre("");
+      t.eq([(await preOff.auth.getUserPlan(P)).unlimited, (await preOff.auth.getUserPlan(P)).status_unavailable], [false, false], "5m with the switch off, before 0030 runs: exactly today's answer");
+      const preOn = pre("true");
+      t.eq([(await preOn.auth.getUserPlan(P)).status_unavailable, (await call(preOn.billing, P, { action: "status" })).code], [true, 503],
+        "5m2 with the switch on, the same missing table is \"unavailable\" (503, the app retries), never \"no household\" (round 4)");
     }
 
     // ── 6. STATUS: ROLES ONLY ───────────────────────────────────────────────────────────────────────
@@ -389,7 +415,11 @@ const coupleDb = (over = {}) => ({
       const sp4 = fakeStripe();
       const broken = load(coupleDb(), { rpc: { household_hold_purchase: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } }, env, sp4);
       t.eq([(await call(broken.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, expired(sp4)], [503, ["cs_1"]], "8g a hold that cannot be taken: nothing is sold (503), the checkout expired");
-      t.eq((await call(load(coupleDb(), { rpc: {} }, env, fakeStripe()).billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 200, "8h before 0031 runs there is nothing to hold: checkout as today");
+      t.eq((await call(load(coupleDb(), { rpc: {} }, { ...env, HOUSEHOLD_ENABLED: "" }, fakeStripe()).billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 200,
+        "8h with the switch off, before 0031 runs there is nothing to hold: checkout as today");
+      const sp8 = fakeStripe();
+      t.eq([(await call(load(coupleDb(), { rpc: {} }, env, sp8).billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, expired(sp8)], [503, ["cs_1"]],
+        "8h2 with the switch on, a hold function that is not there sells nothing (503), and the checkout just made is expired (round 4)");
       // The same person's own earlier checkout: replaced only once Stripe says it can no longer complete.
       const sp5 = fakeStripe({ get: async (p) => (p === "/checkout/sessions/cs_old" ? { id: "cs_old", status: "open" } : undefined),
         post: async (p) => (p === "/checkout/sessions/cs_old/expire" ? { id: "cs_old", status: "expired" } : undefined) });
@@ -416,7 +446,7 @@ const coupleDb = (over = {}) => ({
       t.eq((await call(sb.billing, P, { action: "store_hold", platform: "ios", attempt_id: A }, undefined, nat)).body, { held: false, paid: false, reason: "purchase_in_progress" },
         "8o the same person's web checkout holds it: no store sheet (Stripe then iOS)");
       const pend = load(coupleDb(), { rpc: { household_hold_pending: () => ({ data: { result: "pending" }, error: null }), household_release_purchase: () => ({ data: { result: "released" }, error: null }) } });
-      t.eq((await call(pend.billing, P, { action: "store_hold", attempt_id: A, state: "pending" }, undefined, nat)).body, { pending: true }, "8p the store says pending: the hold is kept until the store reports");
+      t.eq((await call(pend.billing, P, { action: "store_hold", attempt_id: A, state: "pending" }, undefined, nat)).body, { pending: true }, "8p the store says pending: the hold is kept for its 7 days");
       t.eq(pend.log.rpc[0], ["household_hold_pending", { p_user: P, p_attempt: A, p_backstop: "7 days" }], "8q …for this attempt, with 7 days as the backstop");
       const asked = pend.log.rpc.length, wrote = pend.log.writes.length;
       const rel = await call(pend.billing, P, { action: "store_hold", attempt_id: A, state: "released" }, undefined, nat);
@@ -431,27 +461,46 @@ const coupleDb = (over = {}) => ({
       t.eq([covered.body.held, covered.body.paid, covered.body.covered_by, sc.log.rpc.length], [false, true, "partner", 0], "8t already covered by the other member: no sheet, and nothing held");
       const blip = load(coupleDb(), { errors: { household_members: { code: "XX000", message: "upstream" } } });
       t.eq((await call(blip.billing, P, { action: "store_hold", attempt_id: A }, undefined, nat)).code, 503, "8u a household read that fails sells nothing (503)");
-      // The store's own report (round 3 a): RevenueCat names no attempt of ours, so it ends only the hold it can be
-      // about: this person's, on the store that reported, begun no later than the report's own time.
+      // Round 4 a3: NOTHING ENDS A HOLD EARLY. RevenueCat names no attempt of ours, and the app's sync has only the
+      // server's clock, so no report can say which hold it is about; every hold ends at its fixed time. A purchase
+      // that went through needs no release: it is a paid row, and every check reads that before it looks at a hold.
       const WH_PATH = require.resolve("../netlify/functions/revenuecat-webhook.js");
+      const heldRow = () => ({ household_id: "h1", user_id: P, provider: "app_store", attempt_id: A, pending: false, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-10-29T08:00:00Z" });
+      const anyRelease = { household_release_store_purchase: () => ({ data: { result: "released" }, error: null }), household_release_purchase: () => ({ data: { result: "released" }, error: null }) };
+      const holdCalls = (log) => log.rpc.filter(([fn]) => /hold|release/.test(fn)).length + log.writes.filter(([tbl]) => tbl === "household_purchase_holds").length;
       const hook = async (evt, sub) => {
-        const w = load(coupleDb(), { rpc: { household_release_store_purchase: () => ({ data: { result: "released" }, error: null }) } }, { REVENUECAT_WEBHOOK_AUTH: "Bearer test-rc" });
+        const w = load(coupleDb({ household_purchase_holds: [heldRow()] }), { rpc: anyRelease }, { REVENUECAT_WEBHOOK_AUTH: "Bearer test-rc" });
         delete require.cache[WH_PATH];
-        const r = await require(WH_PATH)._test.handle({ httpMethod: "POST", headers: { authorization: "Bearer test-rc" }, body: JSON.stringify({ event: { id: `rc-${evt.type}-${evt.store}-${evt.event_timestamp_ms}`, app_user_id: P, ...evt } }) },
-          { admin: w.admin, fetchSubscriber: async () => sub || { entitlements: {}, subscriptions: {} }, mayBuyFounding: async () => false, now: Date.now() });
-        return [r.statusCode, w.log.rpc.filter(([fn]) => /release/.test(fn))];
+        const r = await require(WH_PATH)._test.handle({ httpMethod: "POST", headers: { authorization: "Bearer test-rc" }, body: JSON.stringify({ event: { id: `rc-${evt.type}-${evt.store}`, app_user_id: P, event_timestamp_ms: Date.parse("2026-10-29T09:00:00Z"), ...evt } }) },
+          { admin: w.admin, fetchSubscriber: async () => sub, mayBuyFounding: async () => false, now: Date.now() });
+        const row = (w.db.subscriptions || []).find((x) => x.user_id === P);
+        return [r.statusCode, !!(row && row.status === "active"), holdCalls(w.log), w.db.household_purchase_holds.length];
       };
-      const T = Date.parse("2026-10-29T09:00:00Z");
-      t.eq(await hook({ type: "EXPIRATION", store: "APP_STORE", event_timestamp_ms: T }),
-        [200, [["household_release_store_purchase", { p_user: P, p_provider: "app_store", p_reported_at: "2026-10-29T09:00:00.000Z" }]]],
-        "8v a store report (a late one included) ends only this person's hold on THAT store, begun by the report's own time; never every hold of theirs, so a newer Stripe or store attempt stays held (sql 10x-10y4)");
-      t.eq([await hook({ type: "CANCELLATION", store: "PLAY_STORE", event_timestamp_ms: T }), await hook({ type: "BILLING_ISSUE", store: "MAC_APP_STORE", event_timestamp_ms: T })].map(([, r]) => r.map(([, a]) => a.p_provider)),
-        [["play_store"], ["app_store"]], "8v2 …Google Play's report for Google Play, the App Store's for the App Store");
-      t.eq([await hook({ type: "CANCELLATION", store: "STRIPE", event_timestamp_ms: T }), await hook({ type: "EXPIRATION", store: "APP_STORE" }), await hook({ type: "RENEWAL", store: "PLAY_STORE", event_timestamp_ms: T })].map(([c, r]) => [c, r.length]),
-        [[200, 0], [200, 0], [200, 0]], "8v3 a report from no store we sell in, with no time, or that ends no purchase ends nothing: the hold lapses on its own");
-      const src = (f) => require("fs").readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
-      t.ok(/if \(state\.paid\) \{ await releaseStorePurchase\(admin, user_id, state\.provider, new Date\(\)\.toISOString\(\)\);/.test(src("billing.js")) && !/releasePurchase\(|household_release_purchase/.test(src("billing.js") + src("revenuecat-webhook.js") + src("_lib/household.js")),
-        "8v4 the app's sync ends a hold only once the server has read the store's record (this person's hold on that store), and nothing anywhere releases a hold without naming the store");
+      const NONE = { entitlements: {}, subscriptions: {} };
+      const reports = [];
+      for (const [type, store, sub] of [["INITIAL_PURCHASE", "APP_STORE", RC_PAID], ["RENEWAL", "PLAY_STORE", RC_PAID], ["NON_RENEWING_PURCHASE", "MAC_APP_STORE", RC_PAID],
+        ["CANCELLATION", "APP_STORE", NONE], ["EXPIRATION", "PLAY_STORE", NONE], ["BILLING_ISSUE", "APP_STORE", NONE]]) reports.push(await hook({ type, store }, sub));
+      t.eq(reports, [[200, true, 0, 1], [200, true, 0, 1], [200, true, 0, 1], [200, false, 0, 1], [200, false, 0, 1], [200, false, 0, 1]],
+        "8v no store report ends a hold (round 4 a3): a purchase or renewal (the row now paid), a cancellation, an expiry or a failed charge, from either store, asks for no release, and the hold stays to its fixed end");
+      const sy = load(coupleDb({ household_purchase_holds: [heldRow()] }), { rpc: anyRelease }, { REVENUECAT_SECRET_KEY: "test-rc-secret" });
+      const synced = await call(sy.billing, P, { action: "store_sync" }, undefined, nat);
+      t.eq([synced.code, synced.body.paid, holdCalls(sy.log), sy.db.household_purchase_holds.length], [200, true, 0, 1],
+        "8v2 the app's own sync after a purchase: the row is written paid from RevenueCat's record, and no hold is ended");
+      const paidNow = load(coupleDb({ subscriptions: [{ user_id: P, ...PAID("app_store") }], household_purchase_holds: [heldRow()] }),
+        { rpc: hold({ result: "held_elsewhere", mine: true, provider: "app_store", attempt_id: A }) }, env, fakeStripe());
+      const buyer = await call(paidNow.billing, P, { action: "store_hold", platform: "ios", attempt_id: "store-next-attempt-1" }, undefined, nat);
+      const partner = await call(paidNow.billing, O, { action: "store_hold", platform: "android", attempt_id: "store-other-attempt-1" }, undefined, nat);
+      const web = await call(paidNow.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      const ps = await call(paidNow.billing, O, { action: "store_status" }, undefined, nat);
+      t.eq([buyer.body, [partner.body.held, partner.body.paid, partner.body.covered_by], [web.code, web.body.covered_by], ps.body.paid, holdCalls(paidNow.log)],
+        [{ held: false, paid: true, provider: "app_store" }, [false, true, "partner"], [409, "partner"], true, 0],
+        "8v3 …and needs none: with the purchase paid, the buyer is told they pay, the other member is covered in the store app and on the web, and no check even looks at the hold");
+      const src = (f) => require("fs").readFileSync(path.join(REPO, f), "utf8");
+      const code = ["netlify/functions/billing.js", "netlify/functions/revenuecat-webhook.js", "netlify/functions/_lib/household.js"].map(src).join("\n");
+      const sql = src("supabase/migrations/0031_couple_household_private.sql");
+      t.ok(!/household_release|releaseStorePurchase|releasePurchase|reportedHold/.test(code) && !/function public\.household_release/.test(sql)
+        && (sql.match(/delete from public\.household_purchase_holds/g) || []).length === 1 && /delete from public\.household_purchase_holds where household_id = p_household and user_id = p_user;/.test(sql),
+        "8v4 nothing anywhere ends a hold early: no release function in the database, none called by the server; the one delete is a member's own hold as they leave");
       // The app's side: one id per tap, and the store's answer told to the server for that id.
       const SB = await import("../src/lib/storeBilling.js");
       const run = async (holdAnswer, purchase) => {
@@ -553,7 +602,7 @@ const coupleDb = (over = {}) => ({
       const src = (f) => require("fs").readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
       t.ok(/takeSeat\(admin, user_id, "stripe", sessionSubId \|\| null\);\n[\s\S]{0,400}await reconcileHouseholdBilling\(admin, user_id\);/.test(src("stripe-webhook.js"))
         && /isLiveStripeStatus\(object\.status\)\) await reconcileHouseholdBilling/.test(src("stripe-webhook.js")), "9m Stripe's webhook reconciles after a paid checkout and a subscription that became live");
-      t.ok(/if \(r\.paid\) await reconcileHouseholdBilling\(admin, userId\);/.test(src("revenuecat-webhook.js")) && /if \(state\.paid\) \{ await releaseStorePurchase\(admin, user_id, state\.provider, new Date\(\)\.toISOString\(\)\); await reconcileHouseholdBilling\(admin, user_id\); \}/.test(src("billing.js")),
+      t.ok(/if \(r\.paid\) await reconcileHouseholdBilling\(admin, userId\);/.test(src("revenuecat-webhook.js")) && /if \(state\.paid\) await reconcileHouseholdBilling\(admin, user_id\);/.test(src("billing.js")),
         "9n …and so do a store purchase reaching the server and the app's store sync");
       t.ok(/peers\.length\) await household\.resumeHouseholdExtra\(admin, peers\)/.test(src("plaid.js")), "9o deleting an account resumes the partner's, if we had set it to end");
     }
@@ -623,9 +672,18 @@ const coupleDb = (over = {}) => ({
         "11a disconnecting a bank: Plaid revokes it, then the database cleans the shared blob and deletes the row, in one transaction");
       t.eq([a.log.writes.filter(([tbl, op]) => tbl === "plaid_items" && op === "delete").length, a.db.plaid_items.length], [0, 2], "11b …the function never deletes the row itself first");
       t.eq((await call(a.plaid, P, { action: "delete_item", item_id: "item-O" })).code, 400, "11c the partner cannot disconnect a bank the owner linked");
-      const before = load(coupleDb(), { rpc: {} });
+      const before = load(coupleDb(), { rpc: {} }, { HOUSEHOLD_ENABLED: "" });
       const r2 = await call(before.plaid, O, { action: "delete_item", item_id: "item-O" });
-      t.eq([r2.code, before.db.plaid_items.map((x) => x.item_id)], [200, ["item-S"]], "11d before 0031 runs: the row is deleted, as today");
+      t.eq([r2.code, before.db.plaid_items.map((x) => x.item_id)], [200, ["item-S"]], "11d with the switch off, before 0031 runs: the row is deleted, as today");
+      const onMember = load(coupleDb(), { rpc: {} });
+      t.eq([(await call(onMember.plaid, O, { action: "delete_item", item_id: "item-O" })).code, onMember.db.plaid_items.map((x) => x.item_id)], [500, ["item-O", "item-S"]],
+        "11d2 with the switch on and the cleanup function not there, a member's bank is never deleted around it: 500, and the bank stays (round 4)");
+      const onSolo = load(coupleDb(), { rpc: {} });
+      t.eq([(await call(onSolo.plaid, S, { action: "delete_item", item_id: "item-S" })).code, onSolo.db.plaid_items.map((x) => x.item_id)], [200, ["item-O"]],
+        "11d3 …someone a successful read shows is in no household: their row is deleted directly, as before");
+      const onBlind = load(coupleDb(), { rpc: {}, errors: { household_members: { code: "42P01", message: "relation does not exist" } } });
+      t.eq([(await call(onBlind.plaid, S, { action: "delete_item", item_id: "item-S" })).code, onBlind.db.plaid_items.length], [500, 2],
+        "11d4 …and when that read cannot be made (the membership table not there either), nothing is deleted");
       const failing = load(coupleDb(), { rpc: { household_disconnect_item: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } });
       t.eq([(await call(failing.plaid, O, { action: "delete_item", item_id: "item-O" })).code, failing.db.plaid_items.length], [500, 2], "11e a cleanup that fails deletes nothing (500): the bank stays linked and its data stays whole");
       const src = require("fs").readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8");
@@ -637,8 +695,10 @@ const coupleDb = (over = {}) => ({
       await call(w.plaid, P, { action: "get_transactions", item_id: "item-O" });
       t.eq((w.db.plaid_account_owners || []).map((x) => [x.user_id, x.item_id, x.account_id]), [[O, "item-O", "acc-1"]],
         "11g the partner reading the owner's bank records its accounts as the OWNER's (the one who linked it), once");
-      const none = load(coupleDb(), { errors: { plaid_account_owners: { code: "42P01", message: "relation does not exist" } } });
-      t.eq((await call(none.plaid, O, { action: "get_accounts", item_id: "item-O" })).code, 200, "11h before 0031 runs nothing is recorded, and the bank reads as today");
+      const none = (on) => load(coupleDb(), { errors: { plaid_account_owners: { code: "42P01", message: "relation does not exist" } } }, { HOUSEHOLD_ENABLED: on });
+      t.eq((await call(none("").plaid, O, { action: "get_accounts", item_id: "item-O" })).code, 200, "11h with the switch off, before 0031 runs nothing is recorded, and the bank reads as today");
+      t.eq(await call(none("true").plaid, O, { action: "get_accounts", item_id: "item-O" }), { code: 503, body: { error: "unavailable" } },
+        "11h2 with the switch on, the record's table not being there is a failure: 503, and no accounts (round 4)");
       // Round 3: a record of who linked the accounts that cannot be written sends back no bank data.
       const down = () => load(coupleDb(), { errors: { plaid_account_owners: { code: "XX000", message: "upstream" } } });
       const d1 = down();
@@ -657,6 +717,26 @@ const coupleDb = (over = {}) => ({
       t.eq([fb, fbOk.code, fbOk.body.transactions.length, (ok3.db.plaid_account_owners || []).map((x) => x.account_id)], [{ code: 503, body: { error: "unavailable" } }, 200, 1, ["acc-2"]],
         "11m …and when the sync finds nothing and the older call is used instead: recorded first (acc-2), or 503 with nothing");
       t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback", "plaid_account_owners"\]\)/.test(src), "11i deleting an account deletes its record of who linked what");
+      // Round 4: investments and liabilities name accounts too, so they record who linked them before returning any.
+      const iv = load(coupleDb());
+      const inv = await call(iv.plaid, P, { action: "get_investments", item_id: "item-O" });
+      t.eq([inv.code, inv.body.holdings.map((h) => h.account_id), (iv.db.plaid_account_owners || []).map((x) => [x.user_id, x.item_id, x.account_id])], [200, ["inv-1"], [[O, "item-O", "inv-1"]]],
+        "11n the partner reads the owner's investments: every account they name is recorded first, as the OWNER's");
+      const lb = load(coupleDb());
+      const lia = await call(lb.plaid, P, { action: "get_liabilities", item_id: "item-O" });
+      t.eq([lia.code, lia.body.credit.map((c) => c.account_id), lia.body.mortgage.map((m) => m.account_id), (lb.db.plaid_account_owners || []).map((x) => [x.user_id, x.account_id]).sort()],
+        [200, ["cc-1"], ["mtg-1"], [[O, "cc-1"], [O, "mtg-1"]]], "11o …and the owner's liabilities: the card and the mortgage are recorded first, as the owner's");
+      for (const [label, who] of [["the owner", O], ["the partner", P]]) {
+        const di = down(), dl = down();
+        t.eq([await call(di.plaid, who, { action: "get_investments", item_id: "item-O" }), await call(dl.plaid, who, { action: "get_liabilities", item_id: "item-O" })],
+          [{ code: 503, body: { error: "unavailable" } }, { code: 503, body: { error: "unavailable" } }],
+          `11p an ownership write that fails (${label} asking): get_investments and get_liabilities answer 503, with no holdings and no liabilities`);
+      }
+      const noTable = (on) => load(coupleDb(), { errors: { plaid_account_owners: { code: "PGRST205", message: "Could not find the table in the schema cache" } } }, { HOUSEHOLD_ENABLED: on });
+      const offI = await call(noTable("").plaid, O, { action: "get_investments", item_id: "item-O" }), offL = await call(noTable("").plaid, O, { action: "get_liabilities", item_id: "item-O" });
+      const onI = await call(noTable("true").plaid, O, { action: "get_investments", item_id: "item-O" }), onL = await call(noTable("true").plaid, O, { action: "get_liabilities", item_id: "item-O" });
+      t.eq([[offI.code, offI.body.holdings.length, offL.code, offL.body.credit.length], onI, onL], [[200, 1, 200, 1], { code: 503, body: { error: "unavailable" } }, { code: 503, body: { error: "unavailable" } }],
+        "11q the table not there: with the switch off both read as today; with it on, both are 503 with nothing (round 4)");
     }
 
     // ── 12. THE COACH TAKES TEXT ONLY (audit round 2 b) ─────────────────────────────────────────────
@@ -701,6 +781,100 @@ const coupleDb = (over = {}) => ({
         let threw = false;
         try { R.redactProviderBody({ messages: [{ role: "user", content: [{ type: "image", source: { data: "x" } }] }] }, []); } catch { threw = true; }
         t.ok(threw, "12d the last step before the provider refuses a non-text block too, whatever reached it");
+      } finally {
+        global.fetch = prevFetch;
+      }
+    }
+
+    // ── 13. THE SWITCH IS THE BOUNDARY (audit round 4) ──────────────────────────────────────────────
+    // A missing table, a missing function and a stale schema cache, as Postgres and PostgREST say them. With
+    // HOUSEHOLD_ENABLED off each one means "0030/0031 have not run": today's path goes on. With it on, each one is
+    // a failure: nothing answers "no household", "nothing to hold" or "nothing to record" for it.
+    {
+      const KINDS = [
+        { code: "42P01", message: "relation \"public.household_members\" does not exist" },
+        { code: "PGRST205", message: "Could not find the table 'public.household_members' in the schema cache" },
+        { code: "PGRST202", message: "Could not find the function public.household_hold_purchase in the schema cache" },
+        { code: "42883", message: "function public.household_hold_purchase(uuid, text, text, interval) does not exist" },
+        { code: "", message: "relation \"public.plaid_account_owners\" does not exist" },
+      ];
+      const settle = async (f) => { try { const v = await f(); return ["ok", v === undefined ? null : v]; } catch (e) { return ["threw", e && e.ownerRecord ? "ownerRecord" : "error"]; } };
+      const helpers = async (on, err) => {
+        const x = load(coupleDb(), { errors: { household_members: err, plaid_account_owners: err },
+          rpc: { household_hold_purchase: () => ({ data: null, error: err }), household_hold_pending: () => ({ data: null, error: err }) } }, { HOUSEHOLD_ENABLED: on });
+        const L = x.lib;
+        return [await settle(() => L.membershipOf(x.admin, O)), await settle(() => L.membersOf(x.admin, "h1")), await settle(() => L.peerIdsOf(x.admin, O)),
+          await settle(() => L.holdPurchase(x.admin, O, "stripe", "cs_attempt_1")), await settle(() => L.holdPending(x.admin, O, "store-attempt-1")),
+          await settle(() => L.recordAccountOwners(x.admin, O, "item-O", ["acc-1"]))];
+      };
+      const LEGACY = [["ok", null], ["ok", []], ["ok", []], ["ok", { held: true, household: false }], ["ok", false], ["ok", null]];
+      const CLOSED = [["threw", "error"], ["threw", "error"], ["threw", "error"], ["threw", "error"], ["threw", "error"], ["threw", "ownerRecord"]];
+      for (const err of KINDS) {
+        t.eq(await helpers("", err), LEGACY, `13a switch off, ${err.code || "a message only"}: membership, members, peers, the holds and the account record go on as before 0030/0031`);
+        t.eq(await helpers("true", err), CLOSED, `13b switch on, ${err.code || "a message only"}: every one of them throws (the account record as ownerRecord: 503)`);
+      }
+      const L0 = load(coupleDb(), {}, { HOUSEHOLD_ENABLED: "" }).lib;
+      t.eq([L0.legacyMissing({ code: "42P01" }), L0.legacyMissing({ code: "XX000", message: "upstream" }), L0.legacyMissing(null)], [true, false, false], "13c off: only a missing table or function is \"not run yet\"");
+      t.eq(load(coupleDb()).lib.legacyMissing({ code: "42P01" }), false, "13d on: nothing is");
+
+      // The endpoints that took those answers (billing.js store_hold and checkout, the store paywall, delete_account,
+      // the coach), with the household tables and functions not there.
+      const nat = { origin: "capacitor://localhost" };
+      const A = "store-0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+      const gone = { code: "42P01", message: "relation \"public.household_members\" does not exist" };
+      const bare = (on, stripe) => load(coupleDb(), { errors: { household_members: gone }, rpc: {} }, { HOUSEHOLD_ENABLED: on, STRIPE_PRICE_MONTHLY_CAD: "price_monthly" }, stripe || null);
+      // (Each stand-in is made just before its call: load() sets the switch for the whole process.)
+      const offHold = await call(bare("").billing, P, { action: "store_hold", attempt_id: A }, undefined, nat);
+      const onHold = bare("true");
+      t.eq([offHold.body, (await call(onHold.billing, P, { action: "store_hold", attempt_id: A }, undefined, nat)).code, onHold.log.rpc.length],
+        [{ held: true }, 503, 0], "13e store_hold: off, the sheet opens as before 0030; on, nothing is sold (503) and no hold is asked for");
+      const pendOn = load(coupleDb(), { rpc: {} });
+      t.eq((await call(pendOn.billing, P, { action: "store_hold", attempt_id: A, state: "pending" }, undefined, nat)).code, 503, "13f on, the pending function not there: 503, never \"not held\"");
+      const pendOff = load(coupleDb(), { rpc: {} }, { HOUSEHOLD_ENABLED: "" });
+      t.eq((await call(pendOff.billing, P, { action: "store_hold", attempt_id: A, state: "pending" }, undefined, nat)).body, { pending: false }, "13g off: \"not held\", as before 0031");
+      const spOff = fakeStripe(), spOn = fakeStripe();
+      const coOff = await call(bare("", spOff).billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      const coOn = await call(bare("true", spOn).billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      t.eq([coOff.code, coOn.code, spOn.calls.filter(([, p]) => p === "/checkout/sessions").length], [200, 503, 0],
+        "13h checkout: off, as before 0030; on, 503 before any checkout is made at Stripe");
+      t.eq([(await call(bare("").billing, P, { action: "store_status" }, undefined, nat)).code, (await call(bare("true").billing, P, { action: "store_status" }, undefined, nat)).code], [200, 503],
+        "13i the store paywall: off, as before; on, 503 (never \"not paid\")");
+      // delete_account: leaving the household comes first; with the switch on, its function not being there stops the delete.
+      const del = async (on) => {
+        const x = load(coupleDb(), { rpc: {} }, { HOUSEHOLD_ENABLED: on });
+        const r = await call(x.plaid, P, { action: "delete_account" });
+        return [r.code, (r.body.errors || []).map((e) => e.step), x.log.writes.some(([tbl]) => tbl === "auth.users")];
+      };
+      t.eq(await del("true"), [200, ["household"], false], "13j delete_account, switch on, household_leave not there: stopped at \"household\", the sign-in kept");
+      const offDel = await del("");
+      t.eq([offDel[1].includes("household"), offDel[2]], [false, true], "13k …off: nothing to leave before 0031, and the delete goes on as before");
+      const ownersGone = async (on) => {
+        const x = load(coupleDb({ household_members: [] }), { errors: { plaid_account_owners: { code: "PGRST205", message: "Could not find the table in the schema cache" } }, rpc: { household_leave: () => ({ data: { result: "not_member" }, error: null }) } }, { HOUSEHOLD_ENABLED: on });
+        const r = await call(x.plaid, S, { action: "delete_account" });
+        return [(r.body.errors || []).map((e) => e.step).includes("plaid_account_owners"), x.log.writes.some(([tbl]) => tbl === "auth.users")];
+      };
+      t.eq([await ownersGone(""), await ownersGone("true")], [[false, true], [true, false]],
+        "13l the account record's table not there: off, nothing to delete; on, the delete stops there and the sign-in is kept");
+      // The coach: the names are read through the household; with the switch on and the table not there, nothing is sent.
+      const COACH_PATH = require.resolve("../netlify/functions/coach.js");
+      const consent = { ai_third_party_consent_at: "2026-10-01T00:00:00Z", ai_third_party_consent_revoked_at: null };
+      const rpcs = { increment_coach_usage: () => ({ data: 1, error: null }), increment_coach_usage_weekly: () => ({ data: 1, error: null }), increment_ai_usage_daily: () => ({ data: 1, error: null }) };
+      const sent = [];
+      const prevFetch = global.fetch;
+      global.fetch = async (url, init) => {
+        if (/api\.anthropic\.com/.test(String(url))) { sent.push(init.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "Fine." }], stop_reason: "end_turn", usage: { output_tokens: 1 } }) }; }
+        return prevFetch(url, init);
+      };
+      try {
+        const ask = async (on) => {
+          const db = coupleDb({ profiles: [{ user_id: P, ...ENDED_TRIAL, ...consent }], subscriptions: [{ user_id: P, ...PAID() }], user_data: [{ user_id: P, data: { core: { appData: { profile: { name: "Jordan" } } } } }] });
+          load(db, { errors: { household_members: gone }, rpc: rpcs }, { HOUSEHOLD_ENABLED: on, ANTHROPIC_API_KEY: "test-anthropic" });
+          delete require.cache[COACH_PATH];
+          const before = sent.length;
+          const r = await require(COACH_PATH).handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: `Bearer tok:${P}` }, body: JSON.stringify({ type: "chat", payload: { messages: [{ role: "user", content: "hi" }] } }) });
+          return [r.statusCode, sent.length - before];
+        };
+        t.eq([await ask(""), await ask("true")], [[200, 1], [503, 0]], "13m the coach: off, the names come from the person's own data and it answers; on, the household read failing sends nothing (503)");
       } finally {
         global.fetch = prevFetch;
       }

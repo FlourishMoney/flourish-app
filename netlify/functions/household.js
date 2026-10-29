@@ -39,16 +39,16 @@ async function authEmail(admin, userId) {
 
 async function rpc(admin, fn, args) {
   const { data, error } = await admin.rpc(fn, args);
-  if (error) throw Object.assign(new Error(`${fn}: ${error.code || "error"}`), { missing: H.isMissing(error) });
+  if (error) throw new Error(`${fn}: ${error.code || "error"}`);
   return data || {};
 }
 
 // The status the app shows on Settings > Household. Roles only: the app knows "you" and "your partner".
 async function statusFor(admin, userId, deps = {}) {
-  // Read directly rather than through membershipOf, which answers "no household" for a missing table:
-  // here a missing table means the migrations have not run, so the app must not show the feature at all.
+  // Read directly rather than through membershipOf: any failed read here, a missing table included, is a 503 (this
+  // function answers only while HOUSEHOLD_ENABLED is on, when a missing table is a failure: audit round 4).
   const { data: mine, error: readErr } = await admin.from("household_members").select("household_id, role").eq("user_id", userId).maybeSingle();
-  if (readErr) throw Object.assign(new Error(`household read: ${readErr.code || "error"}`), { missing: H.isMissing(readErr) });
+  if (readErr) throw new Error(`household read: ${readErr.code || "error"}`);
   if (!mine) return { enabled: true, household: null };
   const members = await H.membersOf(admin, mine.household_id);
   let invite = null;
@@ -177,8 +177,8 @@ exports.handler = async (event, _ctx, deps = {}) => {
       return json(200, CORS, { ok: true });
     }
   } catch (e) {
-    // A missing table or function means 0030/0031 have not run: the feature is not there yet.
-    if (e && e.missing) return json(404, CORS, { error: "not_found" });
+    // Every failure is a 503, a missing table or function included (audit round 4): the switch is on, so 0030/0031
+    // not being there is a failure, never "the feature is not there yet" (that is the 404 above, while it is off).
     console.error("[household]", action, e && e.message);
     return json(503, CORS, { error: "unavailable" });
   }
