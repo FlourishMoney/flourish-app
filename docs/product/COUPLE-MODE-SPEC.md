@@ -1,6 +1,6 @@
 # Couple mode v1: spec and plan (2026-10-29)
 
-Branch `couple-mode` from main 7f02c1b. Migration `0030_couple_household.sql` is written, **not run**. New words are `[WORDS: id]`.
+Branch `couple-mode` from main 7f02c1b. Migrations `0030_couple_household.sql` and `0031_couple_household_private.sql` are written, **not run**. The words were approved by ChatGPT and Grok on 2026-10-29 (`COUPLE-MODE-WORDS.md`).
 Ships dark: the server answers 404 until `HOUSEHOLD_ENABLED=true` (Netlify), and the app shows Settings > Household only when the server answers.
 So the 1.1.3 store build can carry it before the migration runs.
 
@@ -78,10 +78,10 @@ Two read helpers are used inside the policies (`is_household_member` and `shares
   - The merge, coach roles, and the absence of FLRSH.
 
 ## Risks
-1. **Joint accounts:** if both people link the same joint account, it counts twice (different Plaid items). v1 does not detect this. The [WORDS] at link time can warn; real de-duplication is a follow-up.
+1. **Joint accounts:** if both people link the same joint account, it counts twice (different Plaid items). v1 does not detect this. A note in Connected Banks warns (`household.bank.joint_note`); real de-duplication is a follow-up.
 2. **Last-writer-wins inside one section:** if both people edit the same section in the same few seconds, one edit is lost. That needs both apps open at once. Versions plus the per-section merge cover everything else.
 3. **A removed partner's phone** keeps its last cached screen until it next talks to the server (open or foreground). Then it is wiped. No new data reaches it.
 4. **Founding seats:** if both people already held a seat before joining, the seat count (other session's 0029) still shows two. Fix after both merge: count seats per household (one line, given to that session).
-5. **The partner's own data is replaced when they join, not merged.** The consent screen must say so ([WORDS]).
+5. **The partner's own data is replaced when they join, not merged.** The partner's consent screen says so (`household.consent.partner.body`).
 6. **`user_data` has no migration.** The SQL test stands in for it with production's shape; this must be checked against production before running 0030.
 7. **The same migration number 0029 is already used by two open branches.** Mine is 0030, so it must run after whatever 0029 lands.

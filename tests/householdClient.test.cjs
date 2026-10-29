@@ -132,12 +132,16 @@ const O = "owner-id", P = "partner-id";
     const owner = render({ info: { enabled: true, household: { role: "owner", members: [{ role: "owner", you: true }, { role: "partner", you: false }], invite: null } } });
     t.ok(owner.includes(W.removeButton) && owner.includes(W.leaveButton) && !owner.includes(W.inviteButton), "6f the owner of a full household: remove or leave, no third invite");
     const pending = render({ info: { enabled: true, household: { role: "owner", members: [{ role: "owner", you: true }], invite: { email: "partner@example.test", expires_at: "2026-11-05T12:00:00Z" } } } });
-    t.ok(pending.includes(W.invitePending) && pending.includes("partner@example.test") && pending.includes(W.revokeInvite) && !/[A-Z0-9]{6}\b(?![^[]*\])/.test(pending.replace(/\[WORDS:[^\]]*\]/g, "").replace(/partner@example\.test|\d{4}/g, "")),
+    const pendingHtml = app.render(app.h(app.HouseholdSection, { onInvite: noop, onRevoke: noop, onAccept: noop, onLeave: noop, onRemove: noop, onClearLinkToken: noop,
+      info: { enabled: true, household: { role: "owner", members: [{ role: "owner", you: true }], invite: { email: "partner@example.test", expires_at: "2026-11-05T12:00:00Z" } } } }));
+    t.ok(pending.includes(W.invitePending) && pending.includes("partner@example.test") && pending.includes(`${W.inviteExpires} November 5, 2026`) && pending.includes(W.revokeInvite) && !/data-household-code/.test(pendingHtml),
       "6g an open invite: to whom, until when, a way to cancel it, and never its code again");
     const settingsText = (info) => textOf(app.render(app.h(app.Settings, { data: { profile: { name: "Sam" }, accounts: [], bills: [], debts: [], goals: [] }, setAppData: noop, setScreen: noop, onClose: noop,
       household: { info, linkToken: null, onInvite: noop, onRevoke: noop, onAccept: noop, onLeave: noop, onRemove: noop, onClearLinkToken: noop } })));
-    t.ok(settingsText({ enabled: true, household: null }).includes(W.rowLabel), "6h Settings shows Household while the server answers for it");
-    t.ok(!settingsText({ enabled: false }).includes("[WORDS:") && !settingsText(null).includes("[WORDS:"), "6i …and nothing at all while it is off or not yet asked");
+    const on = settingsText({ enabled: true, household: null });
+    t.ok(on.includes(`${W.rowLabel} ${W.rowSubNone}`), "6h Settings shows Household while the server answers for it");
+    t.ok([settingsText({ enabled: false }), settingsText(null)].every((x) => !x.includes(W.rowSubNone) && !x.includes(W.rowSubPending) && !x.includes(W.rowSubShared)),
+      "6i …and nothing at all while it is off or not yet asked");
     const covered = textOf(app.render(app.h(app.Settings, { data: { profile: {}, accounts: [], bills: [], debts: [], goals: [] }, setAppData: noop, setScreen: noop, onClose: noop,
       billingUi: { show: true, mode: "manage" }, onOpenUpgrade: noop, coveredByPartner: true })));
     t.ok(covered.includes(W.coveredByPartner) && !covered.includes("Manage subscription") && !covered.includes("See plans"), "6j covered by the partner: told so, with nothing to manage or buy");
@@ -148,23 +152,86 @@ const O = "owner-id", P = "partner-id";
     const src = fs.readdirSync(path.join(ROOT, "src", "lib")).map((f) => read("src", "lib", f)).join("\n") + read("src", "App.jsx");
     t.ok(!/FLRSH/.test(src), "7a no made-up join code anywhere in the app");
     t.ok(!/HOUSEHOLD_ENABLED/.test(src) && !/householdCode|setHousehold\(/.test(src), "7b no mock household tab, flag or state");
-    const words = Object.entries(HW.HOUSEHOLD_WORDS).flatMap(([k, v]) => (typeof v === "string" ? [v] : Object.values(v)));
-    t.ok(words.length >= 50 && words.every((w) => /^\[WORDS: [a-z0-9_.]+\]$/.test(w)), `7c every household line is a placeholder until approved (${words.length})`);
+    // The approved words (ChatGPT + Grok, 2026-10-29), held to docs/product/COUPLE-MODE-WORDS.md word for word.
+    const KEY_IDS = {
+    "rowLabel": "settings.household.row",
+    "rowSubNone": "settings.household.sub.none",
+    "rowSubPending": "settings.household.sub.pending",
+    "rowSubShared": "settings.household.sub.shared",
+    "intro": "household.intro",
+    "inviteButton": "household.invite.button",
+    "ownerConsentTitle": "household.consent.owner.title",
+    "ownerConsentBody": "household.consent.owner.body",
+    "ownerConsentAgree": "household.consent.owner.agree",
+    "emailLabel": "household.invite.email_label",
+    "sendInvite": "household.invite.send",
+    "inviteSent": "household.invite.sent",
+    "emailNotSent": "household.invite.email_not_sent",
+    "codeLabel": "household.invite.code_label",
+    "codeOnce": "household.invite.code_once",
+    "invitePending": "household.invite.pending",
+    "inviteExpires": "household.invite.expires",
+    "revokeInvite": "household.invite.revoke",
+    "newInvite": "household.invite.new",
+    "joinLabel": "household.join.code_label",
+    "joinButton": "household.join.button",
+    "partnerConsentTitle": "household.consent.partner.title",
+    "partnerConsentBody": "household.consent.partner.body",
+    "partnerConsentAgree": "household.consent.partner.agree",
+    "membersTitle": "household.members.title",
+    "you": "household.members.you",
+    "yourPartner": "household.members.partner",
+    "roleOwner": "household.role.owner",
+    "rolePartner": "household.role.partner",
+    "joined": "household.members.joined",
+    "leaveButton": "household.leave.button",
+    "leaveTitle": "household.leave.confirm.title",
+    "leaveBody": "household.leave.confirm.body",
+    "leaveBodyAlone": "household.leave.confirm.body_alone",
+    "leaveConfirm": "household.leave.confirm.button",
+    "removeButton": "household.remove.button",
+    "removeTitle": "household.remove.confirm.title",
+    "removeBody": "household.remove.confirm.body",
+    "removeConfirm": "household.remove.confirm.button",
+    "coveredByPartner": "household.billing.covered_by_partner",
+    "extraStripe": "household.billing.cancel_extra.stripe",
+    "extraAppStore": "household.billing.cancel_extra.app_store",
+    "extraPlayStore": "household.billing.cancel_extra.play_store",
+    "bankLinkedByPartner": "household.bank.linked_by_partner",
+    "bankJointNote": "household.bank.joint_note",
+    "errors.invalid_email": "household.error.invalid_email",
+    "errors.own_email": "household.error.own_email",
+    "errors.too_many_invites": "household.error.too_many_invites",
+    "errors.household_full": "household.error.household_full",
+    "errors.email_not_confirmed": "household.error.email_not_confirmed",
+    "errors.invalid": "household.error.invalid",
+    "errors.expired": "household.error.expired",
+    "errors.used": "household.error.used",
+    "errors.wrong_account": "household.error.wrong_account",
+    "errors.in_another_household": "household.error.in_another_household",
+    "errors.too_many_attempts": "household.error.too_many_attempts",
+    "errors.generic": "household.error.generic"
+    };
+    const code = Object.fromEntries(Object.entries(KEY_IDS).map(([k, id]) => [id, k.startsWith("errors.") ? HW.HOUSEHOLD_WORDS.errors[k.slice(7)] : HW.HOUSEHOLD_WORDS[k]]));
     const L = await (async () => { const p = require.resolve("../netlify/functions/_lib/household.js"); delete require.cache[p]; return require(p); })();
-    const emailWords = Object.values(L.INVITE_EMAIL).flat();
-    t.ok(emailWords.every((w) => /^\[WORDS: household\.email\.[a-z_]+\]$/.test(w)), "7d the invite email's lines too");
+    for (const k of ["subject", "intro", "button", "code", "expires", "ignore"]) code[`household.email.${k}`] = L.INVITE_EMAIL[k];
+    code["household.email.footer"] = L.INVITE_EMAIL.footer.join(" ");
+    const keys = Object.keys(HW.HOUSEHOLD_WORDS).filter((k) => k !== "errors").length + Object.keys(HW.HOUSEHOLD_WORDS.errors).length;
+    t.eq([keys, Object.keys(KEY_IDS).length, Object.keys(code).length], [57, 57, 64], "7c 57 lines in the app and 7 in the email, every one known by its id");
     const doc = read("docs", "product", "COUPLE-MODE-WORDS.md");
-    const ids = [...words, ...emailWords].map((w) => w.slice(8, -1));
-    const missing = ids.filter((id) => !doc.includes(`\`${id}\``));
-    t.eq(missing, [], "7e every id is in docs/product/COUPLE-MODE-WORDS.md");
-    const rows = [...doc.matchAll(/^\| `([a-z0-9_.]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)];
-    t.eq(rows.length, ids.length, "7f …once each, with where it shows, the facts it must state and its limit");
-    t.ok(rows.every((r) => r[2].trim() && r[3].trim() && /\d/.test(r[4])), "7g every row says where, what, and a length limit");
+    const rows = [...doc.matchAll(/^\| `([a-z0-9_.]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)];
+    t.eq([rows.length, new Set(rows.map((r) => r[1])).size], [64, 64], "7d the doc lists 64 lines, each id once");
+    const approved = Object.fromEntries(rows.map((r) => [r[1], r[4].trim()]));
+    t.eq(Object.keys(code).filter((id) => code[id] !== approved[id]), [], "7e every line in the code is its approved line in the doc, word for word");
+    t.eq(rows.filter((r) => !(r[2].trim() && r[3].trim() && r[4].trim().length <= Number(r[5]))).map((r) => r[1]), [], "7f every row says where it shows and its facts, and its line is within its limit");
+    t.ok(Object.values(code).every((w) => typeof w === "string" && w.trim() && !/\[WORDS:/.test(w)) && !/\[WORDS:/.test(doc), "7g no placeholder is left in the code's lines or in the doc");
+    t.ok(!/\u2014/.test(Object.values(code).join(" ")), "7g2 no em dash in any household line (the dash rule)");
     const app = read("src", "App.jsx");
     t.ok(!/\[WORDS:/.test(app), "7h no placeholder is written into App.jsx itself: the lines come from lib/householdWords.js");
     const libDir = path.join(ROOT, "src", "lib");
-    const housed = fs.readdirSync(libDir).filter((f) => /household/i.test(f) && f !== "householdWords.js" && /\[WORDS:/.test(read("src", "lib", f)));
-    t.eq(housed, [], "7i no other household file in src/lib carries a placeholder: the one list is lib/householdWords.js");
+    const housed = fs.readdirSync(libDir).filter((f) => /household/i.test(f) && /\[WORDS:/.test(read("src", "lib", f)));
+    const server = ["household.js", "_lib/household.js"].filter((f) => /\[WORDS:\s*[a-z]/.test(read("netlify", "functions", ...f.split("/"))));
+    t.eq([housed, server], [[], []], "7i no household file in src/lib or netlify/functions carries a placeholder");
   }
 
   t.summary("householdClient.test");

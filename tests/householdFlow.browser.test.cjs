@@ -23,7 +23,6 @@ const MOCK = require("./_mockSupabase.cjs");
 const ROOT = path.join(__dirname, "..");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
 const TOKEN = "HhInviteToken_0123456789abcdefghijklmnopqrs"; // 43 characters, as the server makes them
-const W = (id) => `[WORDS: ${id}]`;
 
 function blob(bills, name) {
   const b = MOCK.emptyBlob();
@@ -35,6 +34,8 @@ function blob(bills, name) {
 
 (async () => {
   const t = create();
+  // The approved words (2026-10-29), found on the page exactly as the app writes them.
+  const { HOUSEHOLD_WORDS: HW } = await import("../src/lib/householdWords.js");
   let playwright;
   try { playwright = require("playwright"); } catch { t.ok(false, "playwright is installed"); t.summary("HOUSEHOLD FLOW (browser)"); return; }
   // The stand-in's state, per scenario.
@@ -129,7 +130,8 @@ function blob(bills, name) {
       await settings(page);
       await page.getByText("Connected Banks", { exact: false }).first().waitFor();
       const all = await text(page);
-      t.ok(!all.includes("[WORDS:"), "1a feature off: no household line (and no placeholder) anywhere in Settings");
+      t.ok(![HW.rowSubNone, HW.rowSubPending, HW.rowSubShared, HW.intro].some((w) => all.includes(w)) && (await page.getByText(HW.rowLabel, { exact: true }).count()) === 0 && !all.includes("[WORDS:"),
+        "1a feature off: no Household row and no household line anywhere in Settings");
       t.ok(!/FLRSH/.test(all), "1b …and no old made-up join code");
       t.ok(S.actions.some((a) => a.action === "status"), "1c (the app asked /api/household, which answered 404)");
       await ctx.close();
@@ -141,21 +143,21 @@ function blob(bills, name) {
       const { ctx, page } = await open();
       await ready(page);
       await settings(page);
-      await page.getByText(W("settings.household.row")).first().click();
-      await page.getByText(W("household.intro")).first().waitFor();
+      await page.getByText(HW.rowLabel, { exact: true }).first().click();
+      await page.getByText(HW.intro, { exact: true }).first().waitFor();
       t.eq(await page.locator("input[type=email]").count(), 0, "2a Household opens on what it is, with no address field yet");
-      await page.getByRole("button", { name: W("household.invite.button") }).click();
-      await page.getByText(W("household.consent.owner.body")).first().waitFor();
+      await page.getByRole("button", { name: HW.inviteButton, exact: true }).click();
+      await page.getByText(HW.ownerConsentBody, { exact: true }).first().waitFor();
       t.eq(await page.locator("input[type=email]").count(), 0, "2b the consent screen comes before the address field");
-      await page.getByRole("button", { name: W("household.consent.owner.agree") }).click();
+      await page.getByRole("button", { name: HW.ownerConsentAgree, exact: true }).click();
       await page.locator("input[type=email]").fill("partner@example.test");
       const writesBefore = S.userDataWrites;
-      await page.getByRole("button", { name: W("household.invite.send") }).click();
+      await page.getByRole("button", { name: HW.sendInvite, exact: true }).click();
       await page.getByText("ABC234").first().waitFor();
       const sent = S.actions.find((a) => a.action === "create_invite");
       t.eq([sent && sent.email, sent && sent.consent], ["partner@example.test", true], "2c the invite goes with the owner's consent and the address typed");
       const all = await text(page);
-      t.ok(all.includes(W("household.invite.code_once")) && all.includes(W("household.invite.email_not_sent")), "2d the code is shown once, and the owner is told the email did not go");
+      t.ok(all.includes(HW.codeOnce) && all.includes(HW.emailNotSent), "2d the code is shown once, and the owner is told the email did not go");
       await page.waitForTimeout(3500);                     // the debounced save
       t.ok(S.patches.length >= 1 && S.patches[0] === 1, `2e from now on the app saves to the household's blob, over the version it read (${S.patches.join(",")})`);
       t.eq(S.userDataWrites, writesBefore, "2f …and never to its own user_data row");
@@ -168,10 +170,10 @@ function blob(bills, name) {
       reset({ userData: blob([{ id: "pb", name: "Partner own bill", amount: 40, freq: "monthly", date: 3 }], "Jo"),
         household: { data: blob([{ id: "hb", name: "Mortgage", amount: 2100, freq: "monthly", date: 1 }], "Sam"), version: 5, updated_at: "2026-10-29T12:00:00.000Z" } });
       const { ctx, page } = await open(`/?household_invite=${TOKEN}`);
-      await page.getByText(W("household.consent.partner.body")).first().waitFor({ timeout: 40000 });
+      await page.getByText(HW.partnerConsentBody, { exact: true }).first().waitFor({ timeout: 40000 });
       t.ok(!page.url().includes("household_invite"), "3a the link's token leaves the address bar");
       t.ok(!(await text(page)).includes("Mortgage"), "3b nothing of the household is shown before the partner agrees");
-      await page.getByRole("button", { name: W("household.consent.partner.agree") }).click();
+      await page.getByRole("button", { name: HW.partnerConsentAgree, exact: true }).click();
       await page.waitForURL((u) => true, { timeout: 5000 }).catch(() => {});
       await ready(page);
       await page.waitForTimeout(1500);

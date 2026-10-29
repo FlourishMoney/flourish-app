@@ -5,7 +5,7 @@
 // themselves (RLS, expiry, single use, two adults) are proved in a real Postgres: household.sql.test.cjs.
 //   1  /api/household is absent (404) until HOUSEHOLD_ENABLED is "true", and refuses anyone not signed in
 //   2  invite: consent first; the link token never comes back and only hashes reach the database; the code is
-//      shown once; the email is never sent while its words are placeholders; 5 invites a day
+//      shown once; the email goes once, in the approved words, and never with a placeholder; 5 invites a day
 //   3  join: consent first; the address is the account's own, never the body's; results map to clear codes
 //   4  banks: a member reads a bank the other linked, keeps their own sync cursor, never revokes it; a
 //      stranger reaches nothing; a failed household read never widens access
@@ -167,16 +167,20 @@ const coupleDb = (over = {}) => ({
       t.eq([args.p_owner, args.p_email_key], [O, "partner@example.test"], "2g the owner is the signed-in account, the address the cleaned one");
       t.eq(args.p_code_hash, sha(r.body.invite.code), "2h only the code's SHA-256 reaches the database");
       t.ok(/^[0-9a-f]{64}$/.test(args.p_token_hash) && !JSON.stringify(r.body).includes(args.p_token_hash), "2i only the link token's hash is stored, and neither token nor hash comes back");
-      t.eq([r.body.invite.email_sent, sent.length], [false, 0], "2j the email is not sent while its words are placeholders, even with a key");
+      // The words are approved (2026-10-29): the invite goes, to the stand-in for Resend (deps.fetch), never anywhere real.
+      const mail = sent.length === 1 ? JSON.parse(sent[0][1].body) : {};
+      t.eq([r.body.invite.email_sent, sent.length, sent[0] && sent[0][0], sent[0] && sent[0][1].headers["Idempotency-Key"]], [true, 1, "https://api.resend.com/emails", "household-invite:inv-1"],
+        "2j the invite email is sent once, to Resend, keyed to the invite so a retry never sends twice");
+      t.eq([mail.to, mail.subject], [["partner@example.test"], a.lib.INVITE_EMAIL.subject], "2k …to the partner's address, with the approved subject");
+      t.ok(/\?household_invite=[A-Za-z0-9_-]{43}\b/.test(mail.text) && mail.text.includes(`${a.lib.INVITE_EMAIL.code} ${r.body.invite.code}`) && mail.text.includes(`${a.lib.INVITE_EMAIL.expires} November 5, 2026`),
+        "2l …carrying the link, the code after its line, and the end date after its line");
+      t.ok(!a.lib.hasPlaceholder(mail) && !/\u2014/.test(mail.text + mail.html), "2m …with no placeholder and no em dash");
+      t.ok(!/owner@example|\$|balance/i.test(mail.text) && !mail.text.includes(O), "2n …and no name, no address of the owner, no account and no amount");
       const payload = a.lib.inviteEmailPayload("partner@example.test", a.lib.inviteUrl("T".repeat(43)), "ABC234", "2026-11-05T12:00:00Z");
-      t.ok(a.lib.hasPlaceholder(payload), "2k (the email still carries [WORDS: …] placeholders)");
-      t.eq(payload.text.includes("https://flourishmoney.app/?household_invite=" + "T".repeat(43)) && payload.text.includes("ABC234"), true, "2l the email carries the link and the code");
-      t.ok(!/Owner|owner@example|\$|balance/i.test(payload.text.replace(/\[WORDS:[^\]]*\]/g, "")), "2m …and no name, no address of the owner and no amount");
-      const words = Object.fromEntries(Object.entries(a.lib.INVITE_EMAIL).map(([k, v]) => [k, Array.isArray(v) ? ["Footer"] : "Approved"]));
-      const approved = a.lib.inviteEmailPayload("partner@example.test", a.lib.inviteUrl("T".repeat(43)), "ABC234", "2026-11-05T12:00:00Z", words);
-      t.eq(await a.lib.sendInviteEmail(approved, "k1", { env: { RESEND_API_KEY: "re_x" }, fetchImpl: deps.fetch }), true, "2n with approved words and a key, it is sent (to Resend)");
-      t.eq([sent.length, sent[0][0]], [1, "https://api.resend.com/emails"], "2o …once, to Resend");
-      t.eq(await a.lib.sendInviteEmail(approved, "k2", { env: {}, fetchImpl: deps.fetch }), false, "2p no key: not sent");
+      const pending = { ...a.lib.INVITE_EMAIL, intro: "[WORDS: household.email.intro]" };
+      const withPlaceholder = a.lib.inviteEmailPayload("partner@example.test", a.lib.inviteUrl("T".repeat(43)), "ABC234", "2026-11-05T12:00:00Z", pending);
+      t.eq([await a.lib.sendInviteEmail(withPlaceholder, "k1", { env: { RESEND_API_KEY: "re_x" }, fetchImpl: deps.fetch }), sent.length], [false, 1], "2o a placeholder that ever comes back stops the email");
+      t.eq([await a.lib.sendInviteEmail(payload, "k2", { env: {}, fetchImpl: deps.fetch }), sent.length], [false, 1], "2p no key: not sent");
       const busy = load({ household_members: [], household_invites: Array.from({ length: 5 }, (_, i) => ({ id: `i${i}`, created_by: O, created_at: new Date().toISOString() })) },
         { rpc: { household_create_invite: () => ({ data: { result: "invited" }, error: null }) } });
       t.eq((await call(busy.household, O, { action: "create_invite", email: "partner@example.test", consent: true }, deps)).code, 429, "2q a sixth invite in a day is refused (each is an email)");

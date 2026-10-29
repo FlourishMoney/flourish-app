@@ -7,7 +7,7 @@
 //   - who shares a household with this account (plaid.js lets a member use a bank the other linked;
 //     auth.js and billing.js let one subscription cover both);
 //   - the invite's secrets: a link token and a 6-character code, of which only SHA-256 hashes are stored;
-//   - the invite email, whose words are not approved yet: it is never sent while a [WORDS: ...] remains.
+//   - the invite email, in its approved words (2026-10-29); it is never sent if a placeholder ever comes back.
 //
 // UNTIL MIGRATIONS 0030 AND 0031 RUN, there is no household table. A read that finds the table (or the
 // function) missing answers "no household", so every existing path behaves exactly as before. Any other
@@ -78,17 +78,17 @@ const inviteUrl = (token, env = process.env) => `${APP_ORIGIN(env)}/?household_i
 const emailKey = (email) => cleanEmail(email);
 
 // ── THE INVITE EMAIL ─────────────────────────────────────────────────────────────────────────────────
-// Every line is a placeholder until Amanda approves the words (docs/product/COUPLE-MODE-WORDS.md).
+// The approved words (ChatGPT + Grok, 2026-10-29; docs/product/COUPLE-MODE-WORDS.md), word for word.
 // The email states no amount, no balance and no name: only that an invite exists, the link, the code
-// and when it ends.
+// and when it ends. hasPlaceholder still stops any email that ever carries a "[WORDS:" again.
 const INVITE_EMAIL = Object.freeze({
-  subject: "[WORDS: household.email.subject]",
-  intro: "[WORDS: household.email.intro]",
-  button: "[WORDS: household.email.button]",
-  code: "[WORDS: household.email.code]",
-  expires: "[WORDS: household.email.expires]",
-  ignore: "[WORDS: household.email.ignore]",
-  footer: ["[WORDS: household.email.footer]"],
+  subject: "You're invited to share a household on flourish",
+  intro: "You've been invited to share a household on flourish. You'll both see and edit the same money, including linked bank accounts. Nothing changes until you agree in the app.",
+  button: "Open the invite",
+  code: "Using the iPhone or Android app? Enter this code in Settings > Household:",
+  expires: "This invite works once and ends on",
+  ignore: "Not expecting this? Ignore this email and nothing will change.",
+  footer: ["flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. Questions? hello@flourishmoney.app"],
 });
 const hasPlaceholder = (v) => /\[WORDS:/.test(JSON.stringify(v));
 
