@@ -1,11 +1,11 @@
 // tests/foundingSeats.sql.test.cjs
 // -----------------------------------------------------------------------------
-// THE FIRST 50 WHO SUBSCRIBE, IN A REAL POSTGRES (migration 0029, Amanda's decision 2026-10-29).
+// THE FIRST 50 WHO SUBSCRIBE, IN A REAL POSTGRES (migration 0032, Amanda's decision 2026-10-29).
 //
 // Every migration in supabase/migrations up to 0028 runs, in order, in a throwaway Postgres cluster started for
 // this test and removed when it ends, on the same small stand-in for Supabase as tests/foundingLedger.sql.test.cjs.
 // A database with founding subscriptions already paid is seeded, then:
-//   0  0029's read-only dry run lists exactly the seats its backfill then records;
+//   0  0032's read-only dry run lists exactly the seats its backfill then records;
 //   1  the backfill: every household that paid for founding holds a seat (live, or ended without a refund we can
 //      see), in the order it subscribed; never a regular plan, a test address, a beta founder, or a founding row
 //      that never ran; the waitlist ledger is not touched;
@@ -16,7 +16,7 @@
 //   4  a refund gives the seat back (by provider when one is named), once; the seat is not taken again;
 //   5  concurrent payments at the last seats are counted one after another: none lost, over_cap exactly right;
 //   6  nothing is readable or callable from the browser roles;
-//   7  a second run of 0029 changes nothing; its rollback removes it and leaves the rest as it was.
+//   7  a second run of 0032 changes nothing; its rollback removes it and leaves the rest as it was.
 // Postgres comes from FOUNDING_PG_BIN, Homebrew (postgresql@17) or the copy GitHub's Ubuntu runner ships
 // (/usr/lib/postgresql/*/bin). Without one the suite fails rather than passing on nothing.
 // -----------------------------------------------------------------------------
@@ -30,8 +30,8 @@ const { execFileSync, spawn } = require("child_process");
 
 const ROOT = path.join(__dirname, "..");
 const MIGRATIONS = path.join(ROOT, "supabase", "migrations");
-const M29 = path.join(MIGRATIONS, "0029_founding_seats.sql");
-const SRC29 = fs.readFileSync(M29, "utf8");
+const M32 = path.join(MIGRATIONS, "0032_founding_seats.sql");
+const SRC32 = fs.readFileSync(M32, "utf8");
 
 const SUPABASE_STUB = `
 do $$ begin
@@ -62,9 +62,9 @@ create extension if not exists pgcrypto schema extensions;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 `;
 
-// A block from 0029's footer, uncommented: the lines after `from` up to the next blank comment line.
+// A block from 0032's footer, uncommented: the lines after `from` up to the next blank comment line.
 function footerBlock(from) {
-  const lines = SRC29.slice(SRC29.indexOf(from)).split("\n").slice(1);
+  const lines = SRC32.slice(SRC32.indexOf(from)).split("\n").slice(1);
   const out = [];
   for (const l of lines) { if (!l.startsWith("-- ")) break; out.push(l.slice(3)); }
   return out.join("\n");
@@ -99,7 +99,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
   const release = (id, provider = null, db = "t") => sql(`select public.founding_seat_release('${id}', 'refund', ${provider ? lit(provider) : "null"})`, db);
   const held = (db = "t") => Number(sql("select public.founding_seats_taken()", db));
   const files = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
-  const before29 = files.filter((f) => f < "0029");
+  const before32 = files.filter((f) => f < "0032");
   let started = false;
   try {
     execFileSync(path.join(bin, "initdb"), ["-D", path.join(dir, "data"), "-U", "postgres", "-A", "trust"], { env, stdio: "ignore" });
@@ -113,9 +113,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       for (const f of list) { try { file(path.join(MIGRATIONS, f), db); } catch (e) { failed.push(`${f}: ${String(e.stderr || e.message).split("\n").find((l) => /ERROR/.test(l)) || ""}`); } }
       return failed;
     };
-    t.eq(build("t", before29), [], `0a every migration before 0029 applies in order (${before29.length}, the last ${before29[before29.length - 1]})`);
+    t.eq(build("t", before32), [], `0a every migration before 0032 applies in order (${before32.length}, the last ${before32[before32.length - 1]})`);
 
-    // ── The database before 0029: founding subscriptions already paid ────────────────────────────────
+    // ── The database before 0032: founding subscriptions already paid ────────────────────────────────
     for (let i = 1; i <= 5; i++) sql(`insert into public.waitlist (email) values ('w${i}@example.ca')`);
     const A = account("a.web.founder@example.ca");     subscribe(A, { locked: "2026-10-26 15:00:00+00" });                        // web, live
     const B = account("b.ended@example.ca");           subscribe(B, { status: "canceled", ended: "2026-10-28 09:00:00+00", updated: "2026-10-26 16:00:00+00" }); // ended
@@ -130,10 +130,10 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     // ── 0. the dry run ───────────────────────────────────────────────────────────────────────────────
     const dry = sql(footerBlock("-- READ-ONLY DRY RUN")).split("\n").map((l) => l.split("|")[0]);
     t.eq(dry, [A, B, C, P], "0b the dry run lists the four households that paid for founding, in the order they subscribed");
-    t.ok(/does not exist/.test(fails("select public.founding_seats_taken()") || ""), "0d before 0029 the count does not exist: the server cannot count, and offers founding to nobody");
+    t.ok(/does not exist/.test(fails("select public.founding_seats_taken()") || ""), "0d before 0032 the count does not exist: the server cannot count, and offers founding to nobody");
 
     // ── 1. the backfill ──────────────────────────────────────────────────────────────────────────────
-    file(M29);
+    file(M32);
     t.eq(sql("select string_agg(user_id::text || ':' || provider || ':' || source || ':' || over_cap, ',' order by taken_at) from public.founding_seats"),
       [`${A}:stripe:backfill:false`, `${B}:stripe:backfill:false`, `${C}:app_store:backfill:false`, `${P}:play_store:backfill:false`].join(","),
       "1a every household that paid for founding holds a seat, on its own provider, in the order it subscribed (an ended one too)");
@@ -168,7 +168,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/check/.test(fails(`update public.founding_seats set release_reason = 'lost' where user_id = '${H}'`) || ""), "4g a release is a refund or nothing");
 
     // ── 5. concurrent payments at the last seats ────────────────────────────────────────────────────
-    t.eq(build("c", files), [], "5a (a second database, every migration applied, 0029 included)");
+    t.eq(build("c", files), [], "5a (a second database, every migration applied, 0032 included)");
     for (let k = 1; k <= 47; k++) take(account(`c${k}@example.ca`, "c"), "stripe", "c");
     const racers = [];
     for (let k = 1; k <= 8; k++) racers.push(account(`race${k}@example.ca`, "c"));
@@ -192,9 +192,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
 
     // ── 7. a second run, and the rollback ────────────────────────────────────────────────────────────
     const snap = sql("select string_agg(user_id || ':' || coalesce(released_at::text, '-'), ',' order by user_id) from public.founding_seats");
-    file(M29);
-    t.eq(sql("select string_agg(user_id || ':' || coalesce(released_at::text, '-'), ',' order by user_id) from public.founding_seats"), snap, "7a a second run of 0029 changes nothing (the backfill skips accounts that already hold a row, refunded ones too)");
-    // (Accounts confirmed since still take ledger numbers through 0025's trigger: 0029 leaves that alone.)
+    file(M32);
+    t.eq(sql("select string_agg(user_id || ':' || coalesce(released_at::text, '-'), ',' order by user_id) from public.founding_seats"), snap, "7a a second run of 0032 changes nothing (the backfill skips accounts that already hold a row, refunded ones too)");
+    // (Accounts confirmed since still take ledger numbers through 0025's trigger: 0032 leaves that alone.)
     const ledgerNow = sql("select coalesce(string_agg(position || ':' || email_key, ',' order by position), '') from public.waitlist_founding_ledger");
     sql(footerBlock("-- ROLLBACK"));
     t.eq(sql("select count(*) from pg_proc where proname like 'founding_seat%'") + " " + sql("select to_regclass('public.founding_seats') is null"), "0 t", "7b the rollback removes the table and its functions");

@@ -9,10 +9,10 @@
  *
  * THE FIRST 50 WHO SUBSCRIBE (Amanda, 2026-10-29). A seat is held by a household whose founding subscription's
  * first payment succeeded, on the website, the App Store or Google Play, and given back by a refund
- * (migration 0029, founding_seats_taken()). Waitlist numbers are not counted. At 50 the answer is 0, and the
+ * (migration 0032, founding_seats_taken()). Waitlist numbers are not counted. At 50 the answer is 0, and the
  * founding price is offered nowhere (_lib/foundingCohort.js asks the same count).
  *
- * If the count cannot be read (no env, Supabase down or slow, 0029 not applied yet, a reply that is not a whole
+ * If the count cannot be read (no env, Supabase down or slow, 0032 not applied yet, a reply that is not a whole
  * number) it answers 503 {"error":"unavailable"} and the landing page shows no number. The answer still says
  * whether signup is open. It never answers with a remembered or default figure older than 60 s.
  *
@@ -44,7 +44,7 @@ function headersFor(event, ok) {
   };
 }
 
-// The founding seats held (0029), or null. One RPC call with the service role; the answer is a bare number.
+// The founding seats held (0032), or null. One RPC call with the service role; the answer is a bare number.
 async function readSeatsTaken(supabaseUrl, secretKey) {
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);

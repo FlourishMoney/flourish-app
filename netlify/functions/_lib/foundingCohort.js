@@ -4,7 +4,7 @@
 //
 // The founding price is $79.99 a year plus tax, "for as long as you stay subscribed". It goes to the first 50
 // households who subscribe to it, on the website, the App Store or Google Play (_lib/foundingSeats.js,
-// migration 0029). A waitlist number no longer grants it, and no one's is held. In order:
+// migration 0032). A waitlist number no longer grants it, and no one's is held. In order:
 //   1. ENDED IS FINAL. An account that has had a founding subscription that ended
 //      (subscriptions.founding_ended_at, stamped by the webhook) is offered the regular prices only.
 //   2. BETA FOUNDERS. A beta tester flagged as a founder (profiles.founder_flag) keeps the founding price
@@ -14,7 +14,7 @@
 //      offers nothing to a household that pays, and checkout refuses a second subscription).
 // Everyone else, and everyone once 50 seats are held, is offered the regular prices.
 //
-// A SEAT is taken when a founding subscription's first payment succeeds, and given back by a refund (0029). The
+// A SEAT is taken when a founding subscription's first payment succeeds, and given back by a refund (0032). The
 // offer counts seats, never waitlist numbers: the waitlist ledger (0014, 0025) is kept as it is and not read here.
 //
 // THE SERVER DECIDES. The client sends a plan key and nothing else; it is told whether the founding price is
@@ -24,7 +24,7 @@
 // address confirmed on creation (app_metadata.email_confirmation "auto": an invite code while signup was shut)
 // was never proved by its owner and is not offered the founding price.
 //
-// FAILS CLOSED. If the seats cannot be counted (0029 not applied, the read failed) or the address is a test
+// FAILS CLOSED. If the seats cannot be counted (0032 not applied, the read failed) or the address is a test
 // address, the answer is "no": the regular prices are still offered. Offering a price we then cannot honour is
 // worse than not offering it.
 // -----------------------------------------------------------------------------
@@ -33,7 +33,7 @@
 const { FOUNDING_SEAT_LIMIT, seatsTaken } = require("./foundingSeats");
 
 // The size of the founding cohort: how many households may hold a founding seat. One place
-// (_lib/foundingSeats.js, migration 0029 carry the same 50). See docs/ops/BILLING-SETUP.md.
+// (_lib/foundingSeats.js, migration 0032 carry the same 50). See docs/ops/BILLING-SETUP.md.
 const FOUNDING_COHORT_LIMIT = FOUNDING_SEAT_LIMIT;
 
 // Sign-ups from these domains are Flourish's own tests, never households (Amanda, 2026-10-14). A

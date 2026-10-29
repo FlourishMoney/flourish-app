@@ -4,7 +4,7 @@
 //
 // In a store app that sells, the existing plans screen opens by itself once per account, as soon as the account is
 // in the app, when the server offers it the founding price (since 2026-10-29: any confirmed address while founding
-// seats are left, migration 0029) and it has no paid plan. Founding annual is first. It can be closed; it never opens by itself again for that account.
+// seats are left, migration 0032) and it has no paid plan. Founding annual is first. It can be closed; it never opens by itself again for that account.
 //   1  founding + confirmed + unpaid: opens, once, with Founding annual first
 //   2  not founding (seats full, or the address not confirmed): no change
 //   3  already paid (any provider, a founding switch, a web subscription in collection): never opens
@@ -29,7 +29,7 @@ const U1 = "11111111-1111-4111-8111-111111111111", U2 = "22222222-2222-4222-8222
 const HOLDER = "holder@example.ca", NOBODY = "nobody@example.ca";
 const LATER = new Date(Date.now() + 200 * 86400000).toISOString();
 
-// A service-role client with `seats` founding seats held (0029) and a ledger behind waitlist_founding_number_for_email.
+// A service-role client with `seats` founding seats held (0032) and a ledger behind waitlist_founding_number_for_email.
 function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptions = [], seats = 0 } = {}) {
   const db = { subscriptions: subscriptions.map((r) => ({ ...r })), profiles: [] };
   const from = (name) => {

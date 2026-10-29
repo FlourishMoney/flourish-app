@@ -40,7 +40,7 @@ const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
 const EMAIL_LINE = () => "[WORDS: welcome-founding-line]";
 
 // Run the real endpoint against a stubbed Supabase. `supabase` decides the answer to the seat count
-// (0029's founding_seats_taken, a bare number): seats, or a status, a thrown error, or a body that is not a count.
+// (0032's founding_seats_taken, a bare number): seats, or a status, a thrown error, or a body that is not a count.
 async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GET", now = 1e12, mod } = {}) {
   const calls = [], logs = [];
   const realFetch = global.fetch, realError = console.error;
@@ -87,7 +87,7 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     t.ok(/max-age=60/.test(ok.res.headers["Cache-Control"]) && /max-age=60/.test(ok.res.headers["Netlify-CDN-Cache-Control"]), "1b a good answer is cached for 60 s");
     t.eq(ok.calls.length, 1, "1c one read of Supabase");
     t.ok(ok.calls[0].method === "POST" && ok.calls[0].body === "{}" && ok.calls[0].headers.apikey === "test-service-role", "1d …one call with the service role and no input, so no row comes back at all");
-    t.ok(/\/rest\/v1\/rpc\/founding_seats_taken$/.test(ok.calls[0].url), "1e …of the founding seats held (0029): households whose founding payment succeeded, less refunds");
+    t.ok(/\/rest\/v1\/rpc\/founding_seats_taken$/.test(ok.calls[0].url), "1e …of the founding seats held (0032): households whose founding payment succeeded, less refunds");
     t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 64 } })).body), '{"spotsLeft":0,"openSignup":false}', "1f 64 seats held (a store race past 50): 0 left, never below 0");
     t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 0 } })).body), '{"spotsLeft":50,"openSignup":false}', "1g no seat held yet: 50 left");
     t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 1 } })).body), '{"spotsLeft":49,"openSignup":false}', "1g2 one seat held: 49 left");
@@ -99,7 +99,7 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     delete process.env.OPEN_SIGNUP;
     const fails = {
       "no Supabase env": { env: false },
-      "Supabase 404 (0029 not applied: no founding_seats_taken)": { supabase: { status: 404 } },
+      "Supabase 404 (0032 not applied: no founding_seats_taken)": { supabase: { status: 404 } },
       "Supabase 400": { supabase: { status: 400 } },
       "Supabase 500": { supabase: { status: 500 } },
       "a body that is not a count": { supabase: { json: "12" } },
@@ -377,9 +377,9 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     const ok = await callEndpoint({ supabase: { seats: 24 } });
     t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 seats held: 26 spots left (with main's openSignup flag)");
     t.ok(/rpc\/founding_seats_taken$/.test(ok.calls[0].url) && ok.calls.length === 1, "8r …counted once, from the seats");
-    // Before 0029 runs there is no count to read: 503, and the landing shows no number. 0029 runs before the deploy.
+    // Before 0032 runs there is no count to read: 503, and the landing shows no number. 0032 runs before the deploy.
     const pre = await callEndpoint({ supabase: { status: 404 } });
-    t.eq([pre.res.statusCode, pre.calls.length], [503, 1], "8s before 0029: no number, never a guess and never the ledger's count");
+    t.eq([pre.res.statusCode, pre.calls.length], [503, 1], "8s before 0032: no number, never a guess and never the ledger's count");
     // Step 11b (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
     const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
     const listed = (sql.match(/update public\.waitlist_founding_ledger l set void_at = now\(\), void_reason = 'test'\s+where l\.position in [\s\S]*?;/g) || []);

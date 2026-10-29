@@ -42,7 +42,7 @@ function fakeAdmin(state) {
   const norm = (e) => String(e || "").replace(/\s+/g, "").toLowerCase();
   const rpc = async (name, args) => {
     // waitlist_founding_number_for_email (0017). This file's fixtures never void a number or pass 50.
-    if (name === "founding_seats_taken") return { data: state.seats || 0, error: null };   // 0029 (2026-10-29)
+    if (name === "founding_seats_taken") return { data: state.seats || 0, error: null };   // 0032 (2026-10-29)
     if (name !== "waitlist_founding_number_for_email") return { data: null, error: { message: "no such function" } };
     const hits = (state.rows.waitlist || []).filter(r => norm(r.email) === norm(args.p_email) && norm(args.p_email)
       && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1);
@@ -120,7 +120,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     t.eq([cohort.isFoundingPosition(0), cohort.isFoundingPosition(53)], [false, true], "2d 0 is not a founding number; 53 is, when the database issued it after voided test numbers");
     t.eq(cohort.isFoundingPosition(null), false, "2e a position that could not be established is NOT a founding position");
 
-    // The seats held decide (0029), not the waitlist position: 49 held, one left; 50 held, none.
+    // The seats held decide (0032), not the waitlist position: 49 held, one left; 50 held, none.
     const ask = async (email, seats) => {
       const state = { rows: { waitlist: waitlist(60), subscriptions: [] }, user: confirmed(email), seats };
       const billing = loadBilling({ state });

@@ -94,7 +94,7 @@ function userIdFrom(object) {
   return object?.metadata?.user_id || object?.client_reference_id || null;
 }
 
-// A FOUNDING SEAT (2026-10-29, migration 0029): the first 50 households who subscribe to the founding price hold
+// A FOUNDING SEAT (2026-10-29, migration 0032): the first 50 households who subscribe to the founding price hold
 // one. Taken when a founding checkout completes with its first payment made ("paid"; "no_payment_required" too, a
 // promotion code that covers it, since that household holds the price all the same), never for "unpaid".
 function foundingCheckoutPaid(session) {

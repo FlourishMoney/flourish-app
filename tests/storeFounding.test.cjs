@@ -34,7 +34,7 @@ const U1 = "11111111-1111-4111-8111-111111111111";
 const HOLDER = "holder@example.ca", NOBODY = "nobody@example.ca";
 
 // A service-role client with a founding ledger behind waitlist_founding_number_for_email (0025) and `seats`
-// founding seats held (0029).
+// founding seats held (0032).
 function fakeAdmin({ email, confirmedByLink = true, position = null, subscriptions = [], profile = null, seats = 0 } = {}) {
   const db = { subscriptions: subscriptions.map((r) => ({ ...r })), profiles: profile ? [{ user_id: U1, ...profile }] : [] };
   const from = (name) => {

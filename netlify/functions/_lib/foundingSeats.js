@@ -1,7 +1,7 @@
 // netlify/functions/_lib/foundingSeats.js
 // -----------------------------------------------------------------------------
 // THE FOUNDING SEATS (Amanda, 2026-10-29): the founding price goes to the first 50 households who subscribe to
-// it, on the website, the App Store or Google Play. Migration 0029 holds the seats and the rules; this file is
+// it, on the website, the App Store or Google Play. Migration 0032 holds the seats and the rules; this file is
 // how the functions ask it.
 //   seatsTaken     how many seats are held now, or null when it cannot be read (the caller fails closed)
 //   takeSeat       a founding subscription's first payment succeeded (stripe-webhook.js, the store sync)
@@ -12,9 +12,9 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const FOUNDING_SEAT_LIMIT = 50;   // the same 50 as _lib/foundingCohort.js FOUNDING_COHORT_LIMIT and 0029
+const FOUNDING_SEAT_LIMIT = 50;   // the same 50 as _lib/foundingCohort.js FOUNDING_COHORT_LIMIT and 0032
 
-// PostgREST's answers for "that function does not exist": 0029 not applied yet.
+// PostgREST's answers for "that function does not exist": 0032 not applied yet.
 function functionMissing(error) {
   const code = error && error.code;
   return code === "PGRST202" || code === "42883";
@@ -40,9 +40,9 @@ async function spotsLeft(admin) {
 }
 
 /**
- * The first payment of this account's founding subscription succeeded: take its seat (once; 0029 ignores a
+ * The first payment of this account's founding subscription succeeded: take its seat (once; 0032 ignores a
  * second call, a test address and a beta founder). Returns { taken, seats, overCap } or { skipped: true } when
- * 0029 is not applied yet (its backfill records the seat when it runs). Any other failure throws, so the
+ * 0032 is not applied yet (its backfill records the seat when it runs). Any other failure throws, so the
  * webhook answers 5xx and the provider retries.
  */
 async function takeSeat(admin, userId, provider, ref = null) {

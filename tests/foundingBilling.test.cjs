@@ -5,7 +5,7 @@
 // The founding price ($79.99 a year plus tax, "for as long as you stay subscribed") is sold to:
 //   • a beta tester flagged as a founder (profiles.founder_flag), outside the 50; or
 //   • any signed-in account whose address is confirmed (not on creation) and not at a test domain, while fewer
-//     than 50 founding seats are held (migration 0029: a seat per household whose founding subscription's first
+//     than 50 founding seats are held (migration 0032: a seat per household whose founding subscription's first
 //     payment succeeded, given back by a refund);
 // and never to an account whose founding subscription has ended. A waitlist number neither grants nor is
 // needed for it. Everyone else is offered the regular prices ($11.99 a month, $99.99 a year). The server
@@ -116,7 +116,7 @@ function fakeAdmin(state) {
       l.ended_at = "2026-11-01T00:00:00Z";
       return { data: 1, error: null };
     }
-    // Migration 0029, as it counts and takes seats (a test address and a beta founder never take one).
+    // Migration 0032, as it counts and takes seats (a test address and a beta founder never take one).
     if (name === "founding_seats_taken") {
       if (state.seatError) return { data: null, error: { message: state.seatError, code: state.seatErrorCode } };
       return { data: state.seats.filter(x => !x.released_at).length, error: null };
@@ -262,7 +262,7 @@ async function deliver(state, id, type, object, created = T) {
     founding(r, "4c the 60th household on the waitlist");
     const src = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingCohort.js"), "utf8").replace(/\/\/.*$/gm, "");
     t.ok(/await seatsTaken\(admin\)/.test(src) && /held < FOUNDING_COHORT_LIMIT/.test(src) && /\.from\("subscriptions"\)\.select\("founding_ended_at"\)\.eq\("user_id", user_id\)\.maybeSingle\(\)/.test(src),
-      "4d the rule counts seats (0029) and reads only this account's own subscription row");
+      "4d the rule counts seats (0032) and reads only this account's own subscription row");
   }
 
   // ── 5. the server decides ────────────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ async function deliver(state, id, type, object, created = T) {
 
   // ── 6. fails closed ──────────────────────────────────────────────────────────────────────────
   {
-    notFounding(await asAccount({ seatError: "function founding_seats_taken does not exist", user: acct("h1@example.test") }), "6a the seats cannot be counted (0029 not applied)");
+    notFounding(await asAccount({ seatError: "function founding_seats_taken does not exist", user: acct("h1@example.test") }), "6a the seats cannot be counted (0032 not applied)");
     const unconfirmed = await asAccount({ user: acct("h1@example.test", null) });
     notFounding(unconfirmed, "6b an unconfirmed email");
     t.eq(unconfirmed.state.rpcCalls.length, 0, "6c …which is not even counted");

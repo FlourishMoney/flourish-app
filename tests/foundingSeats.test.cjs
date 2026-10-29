@@ -1,10 +1,10 @@
 // tests/foundingSeats.test.cjs
 // -----------------------------------------------------------------------------
-// THE FIRST 50 HOUSEHOLDS WHO SUBSCRIBE (Amanda's decision, 2026-10-29; migration 0029, _lib/foundingSeats.js).
+// THE FIRST 50 HOUSEHOLDS WHO SUBSCRIBE (Amanda's decision, 2026-10-29; migration 0032, _lib/foundingSeats.js).
 //
 // The founding price goes to the first 50 households who subscribe to it, on the website, the App Store or Google
 // Play. A waitlist number no longer grants it. The real billing.js, stripe-webhook.js and revenuecat-webhook.js run
-// against a stand-in database whose seats behave as 0029's functions do (tests/foundingSeats.sql.test.cjs runs the
+// against a stand-in database whose seats behave as 0032's functions do (tests/foundingSeats.sql.test.cjs runs the
 // SQL itself):
 //   1  a seat per household whose founding subscription's first payment succeeded, from each of the three: a paid
 //      Stripe checkout, an App Store purchase, a Google Play purchase; once each, however often the provider
@@ -33,7 +33,7 @@ const LATER = "2027-10-29T15:00:00Z";
 const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const isTestDomain = (e) => /@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$/.test(String(e || "").replace(/\s+/g, "").toLowerCase());
 
-// The stand-in database. Seats as 0029: one per account, never for a test address, a beta founder or an account
+// The stand-in database. Seats as 0032: one per account, never for a test address, a beta founder or an account
 // that does not exist; past 50 recorded with over_cap; a release by provider when one is named.
 function makeDb() {
   const db = { users: {}, rows: { subscriptions: [], billing_events: [], profiles: [] }, seats: [], rpcCalls: [] };

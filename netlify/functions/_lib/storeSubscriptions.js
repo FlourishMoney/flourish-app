@@ -100,7 +100,7 @@ function acceptSandboxFor(user, env = process.env) {
  * whatever RevenueCat's "plus" entitlement currently points at: a promotional grant or another source must not
  * stand in for, or cancel, a real store purchase. The live one with the latest expiry wins; activeCount says how
  * many are live (more than one is a household paying twice, which sync reports).
- * Two more answers for the founding seats (migration 0029): sandbox (the chosen purchase is a sandbox one, the
+ * Two more answers for the founding seats (migration 0032): sandbox (the chosen purchase is a sandbox one, the
  * App Review account's: never a seat), and foundingRefunds (the stores whose founding purchase was refunded).
  */
 function storeRowFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = false } = {}) {
@@ -269,8 +269,8 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   const { error: writeErr } = await admin.from("subscriptions").upsert({ user_id: userId, ...next }, { onConflict: "user_id" });
   if (writeErr) throw new Error(`subscriptions write: ${writeErr.message}`);
   if (flag) await tellSupport(flag, next.provider);
-  // A FOUNDING SEAT (2026-10-29, migration 0029): a paid founding store purchase holds one, taken the first time
-  // the server sees it (0029 ignores every later call). Past 50, a purchase made at the same moment as the last
+  // A FOUNDING SEAT (2026-10-29, migration 0032): a paid founding store purchase holds one, taken the first time
+  // the server sees it (0032 ignores every later call). Past 50, a purchase made at the same moment as the last
   // seat, it is honoured and logged (_lib/foundingSeats.js), and support sees founding_not_eligible above.
   // Never a sandbox purchase: the App Review account's are let through for access, not as households.
   if (next.plan_key === "founding_annual" && isPaidSubscription(next, now) && !sandbox) await takeSeat(admin, userId, next.provider, null);

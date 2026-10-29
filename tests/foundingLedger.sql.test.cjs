@@ -16,7 +16,7 @@
 //   3  who never holds a seat: test rows and test addresses (also when marked later, which frees the seat),
 //      beta founders, accounts confirmed on creation, accounts never confirmed;
 //   4  checkout's own rule (_lib/foundingCohort.js mayBuyFoundingPrice) against this database: since 2026-10-29
-//      (the first 50 who subscribe, migration 0029) it no longer reads this ledger: every confirmed household
+//      (the first 50 who subscribe, migration 0032) it no longer reads this ledger: every confirmed household
 //      while seats are left, number or not; never a test address; a beta founder still through the flag;
 //   5  a second run of 0025 changes nothing, and founding_accounts_start() runs once;
 //   6  concurrent confirmations and joins never share a number, and the cap holds under the race;

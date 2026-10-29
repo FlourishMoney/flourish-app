@@ -7,7 +7,7 @@
 //   1  the lookup waitlist_founding_number_for_email, and 0016's name is the same answer (kept: the founding
 //      email names a number; since 2026-10-29 it no longer decides who may buy the founding price);
 //   2  checkout (billing.js) gives founding_annual only through mayBuyFoundingPrice, which counts founding
-//      seats (0029), never the ledger;
+//      seats (0032), never the ledger;
 //   3  the waitlist form's "spots full" check counts the REAL holders; the landing count counts seats;
 //   4  the waitlist trigger and confirmed accounts issue through one function, under 0014's lock, with one cap;
 //   5  the migration never alters auth.users (Supabase's auth admin owns it), runs as one transaction, numbers
@@ -48,7 +48,7 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
 
   // 3. One count: the real holders.
   t.ok(/\/rest\/v1\/rpc\/founding_seats_taken/.test(read("netlify", "functions", "founding.js")) && !/waitlist_founding_ledger/.test(read("netlify", "functions", "founding.js")),
-    "3a /api/founding counts founding seats (0029), not the ledger");
+    "3a /api/founding counts founding seats (0032), not the ledger");
   t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position&void_at=is\.null/.test(read("netlify", "functions", "beta.js")), "3b the waitlist form's spots-full check counts the same");
   t.ok(/insert into public\.waitlist_founding_ledger \(position, email_key, source, user_id\)/.test(fnBody("founding_issue_for_key")), "3c accounts' numbers are rows in that same ledger");
 

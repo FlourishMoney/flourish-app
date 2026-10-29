@@ -1,4 +1,4 @@
--- 0029_founding_seats.sql
+-- 0032_founding_seats.sql
 -- -----------------------------------------------------------------------------
 -- THE FOUNDING 50 ARE THE FIRST 50 HOUSEHOLDS WHO SUBSCRIBE (Amanda, 2026-10-29).
 --

@@ -7,7 +7,7 @@
 //     confirmed by clicking the link we email, "auto" when it was confirmed on creation;
 //   • once OPEN_SIGNUP is on, nobody is confirmed on creation, coded or not;
 //   • _lib/foundingCohort.js offers the founding price to an account whose address is confirmed, never to one
-//     confirmed on creation ("auto"), while fewer than 50 founding seats are held (migration 0029). A waitlist
+//     confirmed on creation ("auto"), while fewer than 50 founding seats are held (migration 0032). A waitlist
 //     number no longer decides it.
 // Pinned end to end from the real signup to the real billing status and checkout:
 //   1. a coded signup gets no founding price until its address is verified, then gets it;

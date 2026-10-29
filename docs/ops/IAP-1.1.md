@@ -119,7 +119,7 @@ ledger of 50 shared with the website (0025), the price locked while continuously
 34. Introductory Offers: **none**. Do not add one (why, below).
 35. In the `Flourish` group (steps 1 to 23): Levels → put monthly and annual on the **same level** (one service at two prices; one at a time)
 36. NEVER use **Remove from Sale** on the founding annual, not even once all 50 founding seats are held.
-37. When the 50th founding seat is held (50 households have paid for founding, migration 0029; the landing page shows 0 left): the founding annual →
+37. When the 50th founding seat is held (50 households have paid for founding, migration 0032; the landing page shows 0 left): the founding annual →
     Subscription Prices → change the price in every country or region to the regular annual price (Canada:
     `CAD 99.99`) → when asked, choose to **keep existing subscribers at their current price**. Founding households
     then renew at CAD 79.99 for as long as they stay subscribed; nobody new can buy it at that price.
@@ -203,7 +203,7 @@ ChatGPT and Grok before they ship.
 19. `founding` → base plan settings → **Resubscribe**: off (so a founding household that lets its subscription lapse cannot buy the founding price back from the Play Store; the price is locked only while continuously subscribed)
 20. **Activate**
 21. `monthly`, `annual`, `founding`: **no offer** on any of them. Do not add one.
-22. When the 50th founding seat is held (50 households have paid for founding, migration 0029; the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
+22. When the 50th founding seat is held (50 households have paid for founding, migration 0032; the landing page shows 0 left): `founding` → **Deactivate**. Founding households keep renewing; nobody new can buy it.
 23. Play Console → Monetize with Play → Monetization setup → Real-time developer notifications → Topic name: the topic RevenueCat shows (step D5)
 24. Play Console → Settings → License testing → add each tester's Google account → License response: `RESPOND_NORMALLY` (their purchases are test purchases, never charged)
 
