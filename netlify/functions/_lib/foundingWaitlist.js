@@ -19,6 +19,7 @@
 "use strict";
 
 const { FOUNDING_COHORT_LIMIT, TEST_EMAIL_DOMAINS, isTestEmail, isFoundingPosition } = require("./foundingCohort");
+const { pendingWords } = require("./pendingWords");
 
 // The same 50 as billing, from one place.
 const FOUNDING_WAITLIST_LIMIT = FOUNDING_COHORT_LIMIT;
@@ -47,10 +48,8 @@ function welcomePositionFor(row) {
 // still one of the first 50 real ones, so it is told that, with no number.
 function foundingWelcomeLine(position) {
   if (!isFoundingPosition(position)) return null;
-  const first = position <= FOUNDING_WAITLIST_LIMIT
-    ? `You're founding household #${position} of ${FOUNDING_WAITLIST_LIMIT}.`
-    : `You're one of the first ${FOUNDING_WAITLIST_LIMIT} founding households.`;
-  return `${first} We'll email your link to the founding price when payments open on October 26.`;
+  // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, _lib/pendingWords.js)
+  return pendingWords("welcome-founding-line");
 }
 
 module.exports = { FOUNDING_WAITLIST_LIMIT, TEST_EMAIL_DOMAINS, spotsLeftFromCount, countFromContentRange, isFoundingPosition, isTestEmail, welcomePositionFor, foundingWelcomeLine };

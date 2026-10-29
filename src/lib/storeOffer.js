@@ -31,7 +31,8 @@ export const STORE_DISCLOSURE = Object.freeze({
 });
 
 // Approved 2026-10-20. The founding plan's card.
-export const FOUNDING_LINE = "For the first 50 founding members. Your price stays the same while you stay subscribed.";
+// (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+export const FOUNDING_LINE = pendingWords("store-founding-line");
 
 /** The words for one plan. plan: "monthly" | "annual" | "founding_annual". */
 export function offerCopy({ plan, priceString, platform = "ios" }) {
@@ -94,8 +95,9 @@ export function trialKeepShown({ status = null, inTrial = false, closable = fals
 // Store, B2 for Google Play. Never on the website (Settings renders the card only in a selling store build), never
 // without a founding spot, never once the household is on Founding annual. tests/privacyAndWords.test.cjs.
 export const FOUNDING_SPOT_LINE = Object.freeze({
-  app_store: "You hold a founding spot. Founding annual is a separate plan, so to avoid being charged for two, cancel your current plan in your Apple Account settings first. You keep access until it ends, then choose Founding annual in See plans.",
-  play_store: "You hold a founding spot. To avoid being charged during a plan change, cancel your current plan in Google Play under Subscriptions first. You keep access until it ends, then choose Founding annual in See plans.",
+  // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+  app_store: pendingWords("store-founding-spot-line-ios"),
+  play_store: pendingWords("store-founding-spot-line-android"),
 });
 
 /** B1 or B2 for this store status, or null. */

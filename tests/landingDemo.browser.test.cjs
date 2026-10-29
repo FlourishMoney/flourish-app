@@ -283,7 +283,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(!p.pill && order.every((k, i) => i === 0 || p[k].top >= p[order[i - 1]].bottom - 1),
       `6a at 390px the hero reads: H1, subline, the $1,944 card, the main button, its line, the badges, the read-only line, the founding line, then the price box (${order.map(k => Math.round(p[k].top)).join(", ")})`);
     t.eq(m.texts, ["Try flourish free for 14 days", "Every feature free for 14 days. Also on iPhone and Android.", "🔒 Bank connections are read-only. flourish can't move your money.",
-      "Founding price: $79.99 a year plus tax for the first 50 households on the founding list. 35 of 50 left."], "6a2 …word for word, with the live count");
+      "[WORDS: founding-list-line | spots left: 35]"], "6a2 …word for word, with the live count (2026-10-29: words to come)");
     t.ok(p.main.bottom <= 844 && p.main.height >= 44, `6b the whole main button is on the first screen (its bottom at ${Math.round(p.main.bottom)}px of 844)`);
     t.ok(p.card.top < 844, `6b2 …and so is the card's top (at ${Math.round(p.card.top)}px of 844)`);
     t.ok(m.pad >= 16 && [p.main, p.box, p.demo].every(b => b.left >= m.pad - 0.5 && b.right <= 390 - m.pad + 0.5) && m.scrollW <= 390,
@@ -472,14 +472,14 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   }
   {
     const { ctx, page, seen } = await landingAt({ open: true, spots: 35, src: "ig" });
-    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
+    await page.getByRole("button", { name: "[WORDS: founding-join-button]" }).first().waitFor();
     const v = await look(page);
-    t.eq([v.buttons, v.lines, v.inputs], [["Join the founding list"], [FOUNDING_LINE], 1], "11d open, spots left: one founding list form, \"Join the founding list\", with its small print");
+    t.eq([v.buttons, v.lines, v.inputs], [["[WORDS: founding-join-button]"], [FOUNDING_LINE], 1], "11d open, spots left: one founding list form, its button (words to come), with its small print");
     const top = await page.evaluate(() => ({ mains: [...document.querySelectorAll(".fll-main")].map(b => b.textContent.trim()),
       inBox: !!document.querySelector(".fll-founding .fll-capture .fll-input"), free: (document.querySelector(".fll-founding .fll-join-note") || {}).textContent || null,
       label: (() => { const l = document.querySelector(".fll-founding label.fll-label"); return l && [l.textContent, getComputedStyle(l).display !== "none" && l.getBoundingClientRect().height > 0, l.getAttribute("for") === document.querySelector(".fll-founding .fll-input").id]; })() }));
-    t.eq([top.mains, top.inBox, top.free, top.label], [["Try flourish free for 14 days", "Try flourish free for 14 days"], true, "Joining is free. No payment now.", ["Email address", true, true]],
-      "11d2 …the main button top and bottom; the form inside the price box, \"Joining is free. No payment now.\" above it, and a visible \"Email address\" label");
+    t.eq([top.mains, top.inBox, top.free, top.label], [["Try flourish free for 14 days", "Try flourish free for 14 days"], true, "[WORDS: founding-join-note]", ["Email address", true, true]],
+      "11d2 …the main button top and bottom; the form inside the price box, its note above it (words to come), and a visible \"Email address\" label");
     t.eq([v.cta2, v.promise, /Join the waitlist/.test(await page.evaluate(() => document.body.innerText))], [false, false, false], "11e …no \"Be first to know\", no launch promise, no \"Join the waitlist\" anywhere");
     // After the launch the box drops what the page already says (Oct 22): on a phone, the card's rows, the standard
     // price, then the founding list form.
@@ -489,14 +489,14 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(v.block && v.block.includes("Paid on flourishmoney.app, and it works in the iPhone and Android apps too.") && !/Payments open October 26|Join the waitlist\.|How founding spots work|The first 50 households on the waitlist/.test(v.block),
       "11f2 …the card's terms unchanged, and none of the removed lines anywhere in the box");
     const pill = await page.evaluate(() => ({ pill: !!document.querySelector(".fll-founding-card .fll-fc-pill"), card: !!document.querySelector(".fll-founding-card"),
-      counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50/g) || []).length }));
+      counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50|spots left: \d+/g) || []).length }));
     t.eq([pill.card, pill.pill, pill.counts], [true, false, 1], "11f3 phone: the founding card has no \"35 of 50 left\" pill; the founding line is the one count");
     await page.locator(".fll-founding .fll-input").fill("new.household@example.test");
-    await page.getByRole("button", { name: "Join the founding list" }).first().click();
+    await page.getByRole("button", { name: "[WORDS: founding-join-button]" }).first().click();
     await page.locator(".fll-done .fll-done-b").waitFor();
     t.eq(seen.joins.map(j => [j.consentVersion, j.placement, j.src]), [["2026-10-22", "hero", "ig"]], "11g the signup carries the new small print's version, 2026-10-22, and the visit's src");
     t.eq(await page.evaluate(() => [document.querySelector(".fll-done .fll-done-t").textContent, document.querySelector(".fll-done .fll-done-b").textContent]),
-      ["Your founding spot is saved", "We'll email you your founding price link."], "11h the thank-you: \"Your founding spot is saved\" / \"We'll email you your founding price link.\"");
+      ["[WORDS: founding-join-success-title]", "[WORDS: founding-join-success-body]"], "11h the thank-you: its title and line (words to come)");
     t.eq([seen.founding, seen.status], [1, 0], "11i one /api/founding read, no signup_status call");
     await page.getByRole("button", { name: "Try flourish free for 14 days" }).first().click();
     await page.getByText("Create your free account").waitFor();
@@ -513,7 +513,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.locator(".fll-found-line").waitFor();
     const d = await page.evaluate(() => { const b = document.querySelector(".fll-founding"), f = b.querySelector(".fll-capture");
       return { lines: b.innerText.slice(0, b.innerText.indexOf(f.innerText)).split("\n").map(x => x.trim()).filter(Boolean), live: !!b.querySelector("[data-founding-live]"),
-        counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50/g) || []).length }; });
+        counts: (document.querySelector(".fll-hero").innerText.match(/\d+ of 50|spots left: \d+/g) || []).length }; });
     t.eq(d.lines, ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.",
       "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax."], "11t desktop: the box reads heading, founding price, standard price, then the form");
     t.eq([d.live, d.counts], [false, 1], "11u …no count line in the box: the founding line under the badges is the one count");
@@ -524,12 +524,12 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const { ctx, page, seen } = await landingAt({ open: true, spots: 1 });
     await page.unroute("**/api/beta");
     await page.route("**/api/beta", r => { seen.joins.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: '{"joined":false,"spotsFull":true}' }); });
-    await page.getByRole("button", { name: "Join the founding list" }).first().waitFor();
+    await page.getByRole("button", { name: "[WORDS: founding-join-button]" }).first().waitFor();
     await page.locator(".fll-founding .fll-input").fill("late.household@example.test");
-    await page.getByRole("button", { name: "Join the founding list" }).first().click();
-    await page.getByText("The founding spots just filled up").waitFor();
+    await page.getByRole("button", { name: "[WORDS: founding-join-button]" }).first().click();
+    await page.getByText("[WORDS: founding-join-full-title]").waitFor();
     const done = await page.evaluate(() => { const d = document.querySelector(".fll-founding .fll-done"); return [d.querySelector(".fll-done-t").textContent, d.querySelector(".fll-done-b").textContent, [...d.querySelectorAll("button")].map(b => b.textContent.trim())]; });
-    t.eq(done, ["The founding spots just filled up", "You can still create your account at flourishmoney.app.", ["Create your account"]], "11n spots filled while the form was open: the title, the line and the button, in place of the thank-you");
+    t.eq(done, ["[WORDS: founding-join-full-title]", "[WORDS: founding-join-full-body]", ["Create your account"]], "11n spots filled while the form was open: the title, the line and the button, in place of the thank-you");
     await page.locator(".fll-founding .fll-done").getByRole("button", { name: "Create your account" }).click();
     await page.getByText("Create your free account").waitFor();
     t.ok(await page.locator('input[type="password"]').first().isVisible(), "11o …and the button opens sign-up");
@@ -556,7 +556,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       return box ? { button: btn.textContent.trim(), line: line.textContent.trim(), h: r(btn).height, under: r(line).top >= r(btn).bottom && r(line).top - r(btn).bottom <= 16,
         buttons: [...document.querySelectorAll("button")].filter(b => b.textContent.trim() === "Create your account").length } : null;
     });
-    t.eq(cta && [cta.button, cta.line, cta.buttons], ["Create your account", "Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.", 1],
+    t.eq(cta && [cta.button, cta.line, cta.buttons], ["Create your account", "[WORDS: founding-full-account-line]", 1],
       "11k …the hero shows one button, \"Create your account\", with the approved line under it");
     t.ok(cta && cta.h >= 44 && cta.under, `11l …a full tap target (${cta && Math.round(cta.h)}px), the line directly under it`);
     await page.getByRole("button", { name: "Create your account" }).click();
@@ -607,14 +607,14 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       t.ok(first.mainWithH1 === true && first.main && first.form, `12a ${tag}: the main button is there in the same render as the headline, with the founding list form`);
       if (mode === "late") {
         await page.waitForTimeout(1800);
-        const before = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50/g) || []).length }));
+        const before = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50|spots left: \d+/g) || []).length }));
         t.ok(!answered && !before.line && before.counts === 0, `12b ${tag}: before the answer, no count line and no number anywhere`);
         await page.locator(".fll-found-line").waitFor({ timeout: 8000 });
         const after = await page.evaluate(() => ({ line: document.querySelector(".fll-found-line").textContent.trim(), at: window.__seen.line }));
-        t.ok(answered && after.line.endsWith("35 of 50 left.") && after.at >= 3000, `12c ${tag}: the count line appears only once 35 arrives (at ${after.at} ms)`);
+        t.ok(answered && after.line.includes("spots left: 35") && after.at >= 3000, `12c ${tag}: the count line appears only once 35 arrives (at ${after.at} ms)`);
       } else {
         await page.waitForTimeout(2500);
-        const v = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50/g) || []).length,
+        const v = await page.evaluate(() => ({ line: !!document.querySelector(".fll-found-line"), counts: (document.body.innerText.match(/\d+ of 50|spots left: \d+/g) || []).length,
           main: document.querySelectorAll(".fll-main").length, card: !!document.querySelector(".fll-hero-card img") }));
         t.ok(!v.line && v.counts === 0 && v.main === 2 && v.card, `12d ${tag}: the trial-first page stays, both main buttons, and no count line or number at all`);
       }

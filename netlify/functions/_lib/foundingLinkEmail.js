@@ -45,6 +45,7 @@ const { mayEmailWaitlistRow, foundingEmailKindFor } = require("./waitlistConsent
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
 const { FOUNDING_COHORT_LIMIT, isFoundingPosition } = require("./foundingCohort");
 const { emailHtml } = require("./emailLayout");
+const { pendingWords, holdsPendingWords } = require("./pendingWords");
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 5000;
@@ -64,7 +65,8 @@ const STORE_BADGES = Object.freeze([
 ]);
 const FROM = "Flourish <hello@flourishmoney.app>";
 const REPLY_TO = "hello@flourishmoney.app";
-const SUBJECT = "Your founding price is ready";
+// (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, _lib/pendingWords.js) The sweep is off.
+const SUBJECT = pendingWords("founding-email-subject");
 const LAUNCH_SUBJECT = "flourish has launched in Canada";
 
 // The landing page's founding price sentence, word for word. The one price in this email.
@@ -76,17 +78,14 @@ const WHY_LINE = "You're receiving this because you joined the waitlist at flour
 // THE STORE LINES, approved word for word 2026-10-27 (ChatGPT and Grok agreed): docs/product/FOUNDING-STORE-EMAIL-WORDS.md.
 const FOUNDING_EMAIL_PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed.";
 const FOUNDING_BUTTON_LABEL = "Get the app";
-const FOUNDING_STORE_STEPS_LINE = "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.";
-const FOUNDING_COMPUTER_LINE = "On a computer? You can subscribe on our website with this same email:";
+const FOUNDING_STORE_STEPS_LINE = pendingWords("founding-email-store-steps");
+const FOUNDING_COMPUTER_LINE = pendingWords("founding-email-computer");
 
 function foundingLinkParagraphs(position) {
   return [
     "Payments for flourish are open.",
-    // Never a number above 50 (Amanda, 2026-10-14, the welcome email's rule): a number past 50 was issued
-    // after test numbers were voided (migration 0025) and is still one of the first 50 real households.
-    position <= FOUNDING_COHORT_LIMIT
-      ? `You're founding household #${position} of ${FOUNDING_COHORT_LIMIT}, and your founding price is ready:`
-      : `You're one of the first ${FOUNDING_COHORT_LIMIT} founding households, and your founding price is ready:`,
+    // The household's founding number is no longer named (2026-10-29): the words are to come.
+    pendingWords("founding-email-position"),
     FOUNDING_EMAIL_PRICE_LINE,
     `Your link: ${FOUNDING_GET_URL}`,
     { badges: STORE_BADGES },
@@ -175,6 +174,7 @@ async function sendFoundingLinkEmail(to, row, opts = {}) {
   if (!key) return { sent: false, reason: "no_api_key" };
   const payload = foundingLinkEmailPayload(to, row, opts);
   if (!payload) return { sent: false, reason: "not_eligible" };
+  if (holdsPendingWords(payload)) { console.error("[founding-link] email not sent", "words_to_come"); return { sent: false, reason: "words_to_come" }; }
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
   let res;

@@ -98,6 +98,7 @@ import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, 
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
+import { pendingWords } from "./lib/pendingWords.js";
 import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, TRIAL_KEEP_COPY, trialConfirmBody, trialKeepShown, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
 import { FOUNDING_PLANS_SHOWN_KEY, foundingPlansAutoOpen, foundingPlansShown, rememberFoundingPlansShown, paywallPlanOrder } from "./lib/foundingPlans.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
@@ -15051,8 +15052,9 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
     return (
       <div className="fll-capture fll-done">
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
-        <div className="fll-done-t">The founding spots just filled up</div>
-        <div className="fll-done-b">You can still create your account at flourishmoney.app.</div>
+        {/* The words that assumed a waitlist number are to come (2026-10-29, lib/pendingWords.js). */}
+        <div className="fll-done-t">{pendingWords("founding-join-full-title")}</div>
+        <div className="fll-done-b">{pendingWords("founding-join-full-body")}</div>
         {onCreateAccount && <button type="button" className="fll-btn" onClick={onCreateAccount}>Create your account</button>}
       </div>
     );
@@ -15062,8 +15064,8 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
       <div className="fll-capture fll-done">
         <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
         <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
-        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : founding ? "Your founding spot is saved" : "You're on the list"}</div>
-        <div className="fll-done-b">{founding ? "We'll email you your founding price link." : "We'll email you when flourish launches in Canada."}</div>
+        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : founding ? pendingWords("founding-join-success-title") : "You're on the list"}</div>
+        <div className="fll-done-b">{founding ? pendingWords("founding-join-success-body") : "We'll email you when flourish launches in Canada."}</div>
       </div>
     );
   }
@@ -15073,7 +15075,7 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       {/* The trial-first landing (approved Oct 22): inside the price box, one line above the form, and a visible
           label on every email box. */}
-      {founding && <p className="fll-join-note">Joining is free. No payment now.</p>}
+      {founding && <p className="fll-join-note">{pendingWords("founding-join-note")}</p>}
       <label className="fll-label" htmlFor={`fll-email-${tag}`}>Email address</label>
       <div className="fll-form">
         <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email" id={`fll-email-${tag}`}
@@ -15081,7 +15083,7 @@ function WaitlistForm({ source = "landing", founding = false, onCreateAccount = 
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
         <button className="fll-btn" onClick={submit} disabled={busy}>
-          {busy ? "Joining…" : founding ? "Join the founding list" : "Join the waitlist"}
+          {busy ? "Joining…" : founding ? pendingWords("founding-join-button") : "Join the waitlist"}
         </button>
         {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
             unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
@@ -15862,7 +15864,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                   <div className="fll-capture fll-account">
                     <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
                     <button type="button" className="fll-btn" onClick={goSignup}>Create your account</button>
-                    <p className="fll-consent">Subscriptions are paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.</p>
+                    <p className="fll-consent">{pendingWords("founding-full-account-line")}</p>
                   </div>
                 )}
                 <StoreBadges/>

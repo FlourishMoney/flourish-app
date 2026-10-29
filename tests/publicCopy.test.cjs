@@ -116,8 +116,10 @@ const FORBIDDEN = [
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const NEW_LINES = ["Know what's safe to spend", "until payday.",
       "Rent, hydro, the Visa minimum, takeout tonight? flourish accounts for bills due before payday, your minimum debt payments, a buffer and a savings amount, then shows what's safe to spend. You can see how it adds up.",
-      "Try flourish free for 14 days", "Every feature free for 14 days. Also on iPhone and Android.", "Joining is free. No payment now.", "Join the founding list", "Email address", "More videos"];
+      "Try flourish free for 14 days", "Every feature free for 14 days. Also on iPhone and Android.", "Email address", "More videos"];
     t.ok(NEW_LINES.every(l => app.includes(l)), "2e every new landing line is in the page, word for word");
+    // 2026-10-29: the founding list form's two lines are words to come (docs/product/FOUNDING-SEATS-WORDS.md rows 11, 12).
+    t.ok(app.includes('pendingWords("founding-join-note")') && app.includes('pendingWords("founding-join-button")'), "2e2 …and the founding list form's two lines are words to come");
     t.eq(NEW_LINES.filter(l => /[\u2014\u2013]/.test(l) || FORBIDDEN.some(([rx]) => rx.test(l))), [], "2f …none has an em or en dash, or makes a browser, download or PWA claim");
   }
 

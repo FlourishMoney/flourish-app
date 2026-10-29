@@ -11,6 +11,7 @@
 // and null hides the line. There is no default, no estimate, no last-known figure.
 // -----------------------------------------------------------------------------
 import { getPricing, formatPrice } from "./pricing.js";
+import { pendingWords } from "./pendingWords.js";
 
 export const FOUNDING_HOUSEHOLDS = 50;
 export const FOUNDING_ENDPOINT = "/api/founding";
@@ -55,8 +56,8 @@ export function foundingLiveLine(spotsLeft) {
 export function foundingListLine(spotsLeft) {
   const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
   if (n === null) return null;
-  const p = getPricing("CA");
-  return `Founding price: ${formatPrice(p.foundingAnnual)} a year plus tax for the first ${FOUNDING_HOUSEHOLDS} households on the founding list. ${n} of ${FOUNDING_HOUSEHOLDS} left.`;
+  // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+  return pendingWords("founding-list-line", n);
 }
 
 // THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line

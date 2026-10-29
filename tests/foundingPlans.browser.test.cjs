@@ -161,7 +161,7 @@ function installStore([platform, uid]) {
       t.eq(await plans(page), [["founding_annual", true], ["monthly", false]], "1b Founding annual first, marked as the chosen plan, then Monthly");
       const text = await page.locator(DIALOG).innerText();
       t.ok(/Founding annual\s*\$79\.99 a year/.test(text) && /\$11\.99 a month/.test(text) && text.indexOf("Founding annual") < text.indexOf("Monthly"), "1c the store's own prices");
-      t.ok(text.includes("Payment is charged to your Apple Account when you confirm.") && /For the first 50 founding members\./.test(text), "1d the approved disclosure and founding line are on it");
+      t.ok(text.includes("Payment is charged to your Apple Account when you confirm.") && text.includes("[WORDS: store-founding-line]"), "1d the approved disclosure and the founding line (words to come, 2026-10-29) are on it");
       t.eq(await page.locator(`${DIALOG} button[aria-label="Close"]`).count(), 1, "1e it has a visible close button");
       await page.waitForTimeout(600);
       await shot(page, "ios-founding-plans-auto-open.png");

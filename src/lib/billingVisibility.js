@@ -19,6 +19,7 @@
 // Pure: every input is passed in, so the gate can test a native shell and a 404 offline.
 // -----------------------------------------------------------------------------
 
+import { pendingWords } from "./pendingWords.js";
 import { getPricing, formatPrice } from "./pricing.js";
 
 // A Capacitor shell, by either signal. getPlatform() is the direct answer; the URL scheme is the
@@ -134,7 +135,8 @@ export function billingReturnNotice(search) {
 // "founding_price_not_available" when this account may not have the founding price (no founding spot on
 // its email, or a founding subscription that has ended); retrying never changes that, so it gets its own
 // words. "founding_cohort_full" is an older name for the same refusal. Anything else is worth a retry.
-export const FOUNDING_REFUSED_TEXT = "The founding price isn't available to this account. It goes to the email address that holds a founding spot on the waitlist, and not after a founding subscription has ended. Monthly and annual are still available.";
+// (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+export const FOUNDING_REFUSED_TEXT = pendingWords("checkout-founding-refused");
 export function checkoutErrorText({ status, error } = {}) {
   if (status === 403 && (error === "founding_price_not_available" || error === "founding_cohort_full")) return FOUNDING_REFUSED_TEXT;
   if (error === "signed_out") return "Sign in again to continue.";

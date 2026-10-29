@@ -81,17 +81,19 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
     t.ok(today.includes("Join the waitlist") && today.includes(TODAY_LINE) && !today.includes("founding"), "4a today's form: \"Join the waitlist\" and today's line");
     const html = A.render(A.h(A.WaitlistForm, { source: "hero", founding: true }));
     const txt = textOf(html);
-    t.ok(txt.includes("Join the founding list") && !txt.includes("Join the waitlist") && !txt.includes("Get my founding spot"), "4b the founding list form: \"Join the founding list\"");
-    t.ok(txt.indexOf("Joining is free. No payment now.") >= 0 && txt.indexOf("Joining is free. No payment now.") < txt.indexOf("Join the founding list") && !today.includes("No payment now"),
-      "4b2 …with \"Joining is free. No payment now.\" above its button (the founding form only)");
+    // 2026-10-29 (the first 50 who subscribe): the founding list form's words are to come (docs/product/FOUNDING-SEATS-WORDS.md 11 to 16).
+    const JB = "[WORDS: founding-join-button]", JN = "[WORDS: founding-join-note]";
+    t.ok(txt.includes(JB) && !txt.includes("Join the waitlist") && !txt.includes("Get my founding spot"), "4b the founding list form: its button (words to come)");
+    t.ok(txt.indexOf(JN) >= 0 && txt.indexOf(JN) < txt.indexOf(JB) && !today.includes(JN),
+      "4b2 …with its note above the button (the founding form only)");
     t.ok(/<label class="fll-label" for="fll-email-hero">Email address<\/label>/.test(html) && /id="fll-email-hero"/.test(html) && /Email address/.test(A.render(A.h(A.WaitlistForm, { source: "calendar" }))),
       "4b3 a visible \"Email address\" label on the email box, in both forms");
     t.ok(txt.includes(FOUNDING_LINE) && !txt.includes(TODAY_LINE), "4c …and the founding spot line under it, word for word");
     t.ok(/<a class="fll-contact-link" href="#contact"[^>]*>Contact<\/a> below\./.test(html), "4d …with \"Contact\" linking to the page's Contact block");
     const form = APP.slice(APP.indexOf("function WaitlistForm("), APP.indexOf("\n}\n", APP.indexOf("function WaitlistForm(")));
-    t.ok(/\{founding \? "We'll email you your founding price link\." : "We'll email you when flourish launches in Canada\."\}/.test(form),
-      "4e the thank-you after the founding spot form: \"We'll email you your founding price link.\"");
-    t.ok(/\{busy \? "Joining…" : founding \? "Join the founding list" : "Join the waitlist"\}/.test(form), "4f the button's words in both modes");
+    t.ok(/\{founding \? pendingWords\("founding-join-success-body"\) : "We'll email you when flourish launches in Canada\."\}/.test(form),
+      "4e the thank-you after the founding list form: words to come; today's form unchanged");
+    t.ok(/\{busy \? "Joining…" : founding \? pendingWords\("founding-join-button"\) : "Join the waitlist"\}/.test(form), "4f the button's words in both modes");
   }
 
   // ── 5. the landing ──────────────────────────────────────────────────────────────────────────────
@@ -116,9 +118,9 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
 
   // ── 6. all 50 taken: "Create your account" (approved by ChatGPT and Grok, 2026-10-15) ──────────────
   const hero = auth.slice(auth.indexOf('<div className="fll-hero-form">'), auth.indexOf("<FoundingOffer", auth.indexOf('<div className="fll-hero-form">')));
-  t.ok(/\{waitlistArea === "account" && \(\s*<div className="fll-capture fll-account">\s*<style dangerouslySetInnerHTML=\{\{ __html: WAITLIST_FORM_CSS \}\}\/>\s*<button type="button" className="fll-btn" onClick=\{goSignup\}>Create your account<\/button>\s*<p className="fll-consent">Subscriptions are paid and used on flourishmoney\.app\. Not yet available in the iPhone and Android apps\.<\/p>\s*<\/div>\s*\)\}/.test(hero),
-    "6a the hero, only when all 50 are taken: one button, \"Create your account\", that opens sign-up, and the approved line under it");
-  t.eq((APP.match(/>Create your account</g) || []).length, 2, "6b …the only such buttons: this one, and the one under \"The founding spots just filled up\" (section 8)");
+  t.ok(/\{waitlistArea === "account" && \(\s*<div className="fll-capture fll-account">\s*<style dangerouslySetInnerHTML=\{\{ __html: WAITLIST_FORM_CSS \}\}\/>\s*<button type="button" className="fll-btn" onClick=\{goSignup\}>Create your account<\/button>\s*<p className="fll-consent">\{pendingWords\("founding-full-account-line"\)\}<\/p>\s*<\/div>\s*\)\}/.test(hero),
+    "6a the hero, only when all 50 are taken: one button, \"Create your account\", that opens sign-up, and the line under it (words to come)");
+  t.eq((APP.match(/>Create your account</g) || []).length, 2, "6b …the only such buttons: this one, and the one under the founding list's \"spots filled up\" message (section 8)");
   t.ok(/const goSignup = \(\) => \{ setMode\("signup"\);[^}]*setShowAuth\(true\); \};/.test(auth), "6c goSignup is the sign-up opener the page already uses");
 
   // ── 7. no hold (2026-10-22): the trial-first page from the first paint; the answer, when it comes, decides ──
@@ -131,17 +133,17 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
   const FO = await import("../src/lib/foundingOffer.js");
   t.eq([FO.foundingListLine(null), FO.foundingListLine(undefined), FO.foundingListLine("35"), FO.foundingListLine(0)], [null, null, null, null],
     "7d the count line: none before a real number (no placeholder, no made-up count), and none at 0");
-  t.eq(FO.foundingListLine(35), "Founding price: $79.99 a year plus tax for the first 50 households on the founding list. 35 of 50 left.", "7e …and the whole line once 35 is read");
+  t.eq(FO.foundingListLine(35), "[WORDS: founding-list-line | spots left: 35]", "7e …and the whole line once 35 is read (words to come, with the count in them)");
 
   // ── 8. the two post-launch messages (approved by ChatGPT and Grok, 2026-10-15) ───────────────────────
   {
     const form = APP.slice(APP.indexOf("function WaitlistForm("), APP.indexOf("\n}\n", APP.indexOf("function WaitlistForm(")));
     t.ok(/if \(data\.spotsFull === true\) setStatus\("full"\);\s*else if \(data\.joined\)/.test(form), "8a the server saying the spots filled up comes first, before \"joined\"");
-    t.ok(/if \(status === "full"\) \{[\s\S]{0,260}<div className="fll-done-t">The founding spots just filled up<\/div>\s*<div className="fll-done-b">You can still create your account at flourishmoney\.app\.<\/div>\s*\{onCreateAccount && <button type="button" className="fll-btn" onClick=\{onCreateAccount\}>Create your account<\/button>\}/.test(form),
-      "8b in place of the thank-you: the title, the line and \"Create your account\", word for word");
-    t.ok(/\{status === "already" \? "You're already on the list!" : founding \? "Your founding spot is saved" : "You're on the list"\}/.test(form),
-      "8c the thank-you title after \"Get my founding spot\": \"Your founding spot is saved\"; before launch unchanged");
-    t.ok(/\{founding \? "We'll email you your founding price link\." : "We'll email you when flourish launches in Canada\."\}/.test(form), "8d …the line under it unchanged");
+    t.ok(/if \(status === "full"\) \{[\s\S]{0,260}<div className="fll-done-t">\{pendingWords\("founding-join-full-title"\)\}<\/div>\s*<div className="fll-done-b">\{pendingWords\("founding-join-full-body"\)\}<\/div>\s*\{onCreateAccount && <button type="button" className="fll-btn" onClick=\{onCreateAccount\}>Create your account<\/button>\}/.test(form),
+      "8b in place of the thank-you: the title and the line (words to come) and \"Create your account\"");
+    t.ok(/\{status === "already" \? "You're already on the list!" : founding \? pendingWords\("founding-join-success-title"\) : "You're on the list"\}/.test(form),
+      "8c the thank-you title after the founding list form: words to come; today's form unchanged");
+    t.ok(/\{founding \? pendingWords\("founding-join-success-body"\) : "We'll email you when flourish launches in Canada\."\}/.test(form), "8d …and the line under it");
   }
 
   t.summary("landingWaitlist.test");

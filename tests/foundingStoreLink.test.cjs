@@ -12,6 +12,9 @@
 // (In a real browser, each device's way: tests/foundingStoreLink.browser.test.cjs.)
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
+const { sample: sampleWords } = require("./_sampleWords.cjs");
+require("./_sampleWords.cjs").useSampleWords();
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -36,22 +39,29 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
     "1a the doc lists six lines: the button, the steps line, the computer line, the price line, and the page's two");
   const section = (id) => doc.split(`### \`${id}\``)[1].split(/\n### |\n## /)[0];
   const approved = Object.fromEntries(docIds.map((id) => [id, (section(id).match(/^- \*\*Approved:\*\* "(.+)"$/m) || [])[1]]));
+  // 2026-10-29 (the first 50 who subscribe): three lines tied the price to this email address; their words are to come.
+  const SUPERSEDED = ["founding-email-store-steps", "founding-email-computer", "get-website"];
+  t.eq(docIds.filter((id) => /\*\*Superseded 2026-10-29\*\*/.test(section(id))), SUPERSEDED, "1a2 the doc marks the three superseded lines, and keeps what they were");
   const where = { "founding-email-button": E.FOUNDING_BUTTON_LABEL, "founding-email-store-steps": E.FOUNDING_STORE_STEPS_LINE, "founding-email-computer": E.FOUNDING_COMPUTER_LINE, "founding-email-price": E.FOUNDING_EMAIL_PRICE_LINE };
   for (const id of docIds) {
     const line = approved[id], sec = section(id), limit = +((sec.match(/\*\*Limit:\*\* (\d+) characters/) || [])[1] || 0);
-    const count = (emailSrc.split(JSON.stringify(line)).length - 1) + (page.split(`>${line}<`).length - 1);
-    t.ok(!!line && count === 1 && (!(id in where) || where[id] === line), `1b ${id}: the approved line is in the code exactly once${id in where ? ", as the email's own" : ", on the page"}`);
+    const count = SUPERSEDED.includes(id)
+      ? (emailSrc.split(`pendingWords("${id}")`).length - 1) + (page.split(`>${line}<`).length - 1)
+      : (emailSrc.split(JSON.stringify(line)).length - 1) + (page.split(`>${line}<`).length - 1);
+    const placeholder = SUPERSEDED.includes(id) && line === `[WORDS: ${id}]`;
+    t.ok(!!line && count === 1 && (SUPERSEDED.includes(id) ? placeholder && (!(id in where) || where[id] === sampleWords(id)) : (!(id in where) || where[id] === line)),
+      `1b ${id}: ${SUPERSEDED.includes(id) ? "its placeholder is in the code exactly once" : "the approved line is in the code exactly once"}${id in where ? ", as the email's own" : ", on the page"}`);
     t.ok(/\*\*Where:\*\*/.test(sec) && /\*\*Facts it must state/.test(sec) && limit > 0 && line.length <= limit, `1d ${id}: where it shows, its facts, and within its limit (${line && line.length}/${limit})`);
   }
-  t.ok(!/\[WORDS:/.test(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}`) && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => /\[WORDS:/.test(read("src", "lib", f))),
-    "1c no [WORDS: placeholder is left: the email, the device link's page and script, App.jsx, src/lib");
+  const leftOver = (src) => [...src.matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
+  t.ok(leftOver(`${emailSrc}\n${script}\n${read("src", "App.jsx")}`).length === 0 && leftOver(page).every((id) => SUPERSEDED.includes(id))
+    && !fs.readdirSync(path.join(ROOT, "src", "lib")).filter((f) => f !== "pendingWords.js").some((f) => /\[WORDS:/.test(read("src", "lib", f))),
+    "1c no [WORDS: placeholder is left but the superseded ones: the email, the device link's page and script, App.jsx, src/lib (words to come live in lib/pendingWords.js)");
   const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0].split("**Facts it must state")[1] || "";
   const order = ["same email address this message went to", "tap the confirmation link", "open **See plans** and choose **Founding annual**"].map((s) => steps.indexOf(s));
   t.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2], "1e the steps line's facts: same email, then the confirmation link, then See plans and Founding annual, in that order");
   t.ok(/\*\*in place of Annual\*\*, not first/.test(steps) && /Monthly, then Founding annual/.test(steps), "1f …and that the store apps show Founding annual in place of Annual, not first");
-  const said = ["email address this message was sent to", "tap the confirmation link", "open See plans and choose Founding annual"].map((x) => E.FOUNDING_STORE_STEPS_LINE.indexOf(x));
-  t.ok(said.every((i) => i >= 0) && said[0] < said[1] && said[1] < said[2] && !/\bfirst\b|at the top|selected/i.test(E.FOUNDING_STORE_STEPS_LINE),
-    "1e2 the approved steps line says the three, in that order, and never that Founding annual is first or selected");
+  t.eq(E.FOUNDING_STORE_STEPS_LINE, sampleWords("founding-email-store-steps"), "1e2 the steps line is words to come (2026-10-29: it said to use the same email address)");
   t.ok(/flagged on 2026-10-27: the landing sentence was no longer all true/.test(doc) && /"Paid on flourishmoney\.app"/.test(doc), "1g the price line's flag stays on record: \"Paid on flourishmoney.app\" is not the email's way to pay");
 
   // ── 2. The email's order ─────────────────────────────────────────────────────────────────────

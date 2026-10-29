@@ -35,7 +35,9 @@ const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. 
 const REGULAR_LINE = "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.";
 const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
-const EMAIL_LINE = (n) => `You're founding household #${n} of 50. We'll email your link to the founding price when payments open on October 26.`;
+// 2026-10-29 (the first 50 who subscribe): the welcome email's founding line no longer names a number; its words are to
+// come (docs/product/FOUNDING-SEATS-WORDS.md row 21). It was "You're founding household #N of 50. We'll email your link…".
+const EMAIL_LINE = () => "[WORDS: welcome-founding-line]";
 
 // Run the real endpoint against a stubbed Supabase. `supabase` decides the answer to the seat count
 // (0029's founding_seats_taken, a bare number): seats, or a status, a thrown error, or a body that is not a count.
@@ -216,14 +218,14 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "4a the heading and all three lines are the approved words");
     const pricing = fs.readFileSync(path.join(REPO, "src", "lib", "foundingOffer.js"), "utf8");
     t.ok(!/\d+\.\d{2}/.test(pricing), "4b …with every price read from pricing.js, none typed in the block");
-    t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, word for word");
+    t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, one line for every founding number (words to come)");
     t.eq([0, -1, null, undefined, "7", 7.5].map(W.foundingWelcomeLine), [null, null, null, null, null, null], "4d …and no line for a row without a founding number");
     // Amanda, 2026-10-14: never a number above 50. A number past 50 (issued after test numbers were
     // voided, 0017) is still one of the first 50 real households, and is told exactly that.
-    const PAST_50 = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
-    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: \"one of the first 50 founding households\"");
+    const PAST_50 = EMAIL_LINE();
+    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: the same line");
     t.ok([51, 53, 62].every((n) => !W.foundingWelcomeLine(n).includes(String(n))), "4d3 …and the number itself is never shown");
-    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50 still reads \"#50 of 50\"");
+    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50: the same line");
     let A = {};
     try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.AuthScreen) {

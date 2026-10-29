@@ -15,6 +15,9 @@
 //   5  readable: every colour pair the layout uses clears 4.5:1 as designed AND inverted (a client's forced dark mode)
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails refuse to send a "[WORDS: id]" placeholder (2026-10-29): sample words stand in (tests/_sampleWords.cjs).
+const { sample: sampleWords } = require("./_sampleWords.cjs");
+require("./_sampleWords.cjs").useSampleWords();
 const { create } = require("./_runner.cjs");
 
 const decode = (s) => s.replace(/&quot;/g, "\"").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
