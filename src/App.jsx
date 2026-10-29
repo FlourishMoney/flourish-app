@@ -106,7 +106,9 @@ import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportC
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData } from "./lib/persistence.js";
+import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
+import { HOUSEHOLD_STAMP_KEY, HOUSEHOLD_INVITE_KEY, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -732,6 +734,19 @@ async function callPlaid(action, params={}, options={}) {
   const _finalErr = (lastErr || new Error("Network error. Please check your connection."));
   captureError(_finalErr, { area: "plaid", extra: { action } });
   throw _finalErr;
+}
+
+// Couple mode: Settings > Household (netlify/functions/household.js). { status, data }; status 0 = no answer.
+// A 404 means the feature is not switched on (or its migrations have not run): the app shows nothing for it.
+async function callHousehold(action, params = {}) {
+  const jwt = await getJwt();
+  if (!jwt) return { status: 401, data: {} };
+  try {
+    const res = await fetch(`${API_BASE}/api/household`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    return { status: res.status, data };
+  } catch { return { status: 0, data: {} }; }
 }
 
 // Phase D1: persist Plaid Item to Supabase via authenticated server call.
@@ -10246,9 +10261,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 
 
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
-// Household/partner sharing is hidden until a real multi-user backend exists (audit: it was mock — fake
-// "FLRSH1" code, any join "succeeds", overview showed only the local user). Code retained; flip to re-enable.
-const HOUSEHOLD_ENABLED = false;
+// Couple mode (2026-10-29): the old mock household tab (a made-up join code, a join that always "succeeded")
+// is gone. The real one is Settings > Household (HouseholdSection below; docs/product/COUPLE-MODE-SPEC.md).
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
@@ -10482,10 +10496,8 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
-function Family({data,setAppData,household,setHousehold,setScreen,tourActive=false}){
+function Family({data,setAppData,setScreen,tourActive=false}){
   const [tab,setTab]=useState("meeting");
-  const [householdTab,setHouseholdTab]=useState("join");
-  const [householdCode,setHouseholdCode]=useState("");
   const [started,setStarted]=useState(false);
   const [checks,setChecks]=useState({});
   const [notes,setNotes]=useState({});
@@ -10657,7 +10669,6 @@ function Family({data,setAppData,household,setHousehold,setScreen,tourActive=fal
   const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
   const healthNote=healthPartial?` (${HEALTH_SCORE_PARTIAL_SHORT})`:""; // prompt 3d: say when a score is on 5 of 6 parts
   const soonBills=_ss.soonBills||[];
-  const householdCode_gen="FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
 
   const meetingMetrics=isCouple?[
     {id:"bills",icon:"📅",title:"Review upcoming bills together",desc:"Open Plan Ahead. Any surprises?",
@@ -10725,7 +10736,7 @@ function Family({data,setAppData,household,setHousehold,setScreen,tourActive=fal
     {(()=>{
       // Step 10: Kids entry point removed from primary UI. Since prompt 3d /kids redirects to / as well;
       // the code (KidsMiniSite, the tab==="kids" block below) is kept, unrendered, for the future family add-on.
-      const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])];
+      const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"]];
       // Truth-fix item 1: a single selected tab reads as a dead control. Hide the row unless it holds ≥2 tabs.
       if(meetTabs.length<2) return null;
       return <div style={{display:"flex",gap:6}}>
@@ -12167,9 +12178,112 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null}){
+// ─── HOUSEHOLD (couple mode v1) ─────────────────────────────────────────────────
+// Settings > Household: the owner invites ONE partner (an email link, and a 6-character code for the store
+// apps), the partner joins, either leaves, the owner removes the partner. Both see a consent screen first.
+// Every word is a placeholder until approved (lib/householdWords.js); roles only, never the other person's name.
+// The app shows this only when /api/household answers (the server switch on, migrations 0030 + 0031 run).
+function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLeave, onRemove, onClearLinkToken }) {
+  const W = HOUSEHOLD_WORDS;
+  const [step, setStep] = useState(linkToken ? "partner-consent" : null);
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [joinBy, setJoinBy] = useState(linkToken ? { token: linkToken } : null);
+  const [made, setMade] = useState(null);          // the invite just sent: its code is shown this once
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (linkToken) { setJoinBy({ token: linkToken }); setStep("partner-consent"); } }, [linkToken]);
+  const hh = info && info.household;
+  const members = (hh && hh.members) || [];
+  const alone = !hh || members.length < 2;
+  const day = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }); } catch { return ""; } };
+  const txt = { color: C.mutedHi, fontSize: 13, lineHeight: 1.6, fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const strong = { color: C.cream, fontSize: 14, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const input = { width: "100%", boxSizing: "border-box", background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", minHeight: LAYOUT.minTap, color: C.cream, fontSize: 16, fontFamily: "inherit", outline: "none" };
+  const gap = { marginTop: GAP.textToControl };
+  const run = async (fn) => { setBusy(true); setError(null); try { const r = await fn(); if (r && r.error) setError(householdErrorLine(r.error)); return r; } finally { setBusy(false); } };
+
+  if (step === "owner-consent" || step === "partner-consent") {
+    const owner = step === "owner-consent";
+    return <div data-household-consent={owner ? "owner" : "partner"}>
+      <div style={strong}>{owner ? W.ownerConsentTitle : W.partnerConsentTitle}</div>
+      <div style={{ ...txt, marginTop: 6 }}>{owner ? W.ownerConsentBody : W.partnerConsentBody}</div>
+      {error && <div role="alert" style={{ ...txt, color: C.orange, ...gap }}>{error}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, ...gap }}>
+        <Btn label={owner ? W.ownerConsentAgree : W.partnerConsentAgree} disabled={busy} small onClick={async () => {
+          if (owner) { setStep("email"); return; }
+          const r = await run(() => onAccept(joinBy || {}));
+          if (r && r.ok) { onClearLinkToken && onClearLinkToken(); }
+        }}/>
+        <Btn label="Cancel" outline small color={C.mutedHi} disabled={busy} onClick={() => { setStep(null); setError(null); if (!owner) { setJoinBy(null); onClearLinkToken && onClearLinkToken(); } }}/>
+      </div>
+    </div>;
+  }
+
+  if (step === "email") {
+    return <div data-household-invite-form="">
+      <label style={{ ...txt, display: "block" }}>{W.emailLabel}
+        <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...input, marginTop: 6 }}/>
+      </label>
+      {error && <div role="alert" style={{ ...txt, color: C.orange, ...gap }}>{error}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, ...gap }}>
+        <Btn label={W.sendInvite} small disabled={busy || !email.trim()} onClick={async () => {
+          const r = await run(() => onInvite(email));
+          if (r && r.ok) { setMade(r.invite); setStep(null); setEmail(""); }
+        }}/>
+        <Btn label="Cancel" outline small color={C.mutedHi} disabled={busy} onClick={() => { setStep(null); setError(null); }}/>
+      </div>
+    </div>;
+  }
+
+  const pending = made || (hh && hh.invite);
+  return <div data-household-section="">
+    {!hh && <div style={txt}>{W.intro}</div>}
+    {hh && members.length >= 2 && <div data-household-members="">
+      <div style={strong}>{W.membersTitle}</div>
+      {members.map((m, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: i < members.length - 1 ? `1px solid ${C.border}` : "none" }}>
+        <span style={{ ...strong, minWidth: 0 }}>{m.you ? W.you : W.yourPartner}</span>
+        <span style={{ ...txt, textAlign: "right" }}>{m.role === "owner" ? W.roleOwner : W.rolePartner}{m.joined_at ? ` · ${W.joined} ${day(m.joined_at)}` : ""}</span>
+      </div>)}
+      {hh.billing && hh.billing.your_extra && <div data-household-extra-sub="" style={{ ...txt, ...gap }}>{extraSubscriptionLine(hh.billing.your_extra)}</div>}
+    </div>}
+    {pending && alone && <div data-household-pending="" style={gap}>
+      <div style={txt}>{made ? W.inviteSent : W.invitePending}</div>
+      <div style={{ ...strong, wordBreak: "break-all" }}>{pending.email}</div>
+      {pending.expires_at && <div style={txt}>{W.inviteExpires} {day(pending.expires_at)}</div>}
+      {made && made.email_sent === false && <div style={{ ...txt, ...gap }}>{W.emailNotSent}</div>}
+      {made && made.code && <div data-household-code="" style={gap}>
+        <div style={txt}>{W.codeLabel}</div>
+        <div style={{ color: C.cream, fontSize: 28, fontWeight: 800, letterSpacing: 6, fontFamily: "ui-monospace,Menlo,monospace" }}>{made.code}</div>
+        <div style={txt}>{W.codeOnce}</div>
+      </div>}
+    </div>}
+    {error && <div role="alert" style={{ ...txt, color: C.orange, ...gap }}>{error}</div>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, ...gap }}>
+      {(!hh || (hh.role === "owner" && alone)) && <Btn label={pending ? W.newInvite : W.inviteButton} small disabled={busy} onClick={() => { setError(null); setStep("owner-consent"); }}/>}
+      {pending && alone && hh && hh.role === "owner" && <Btn label={W.revokeInvite} outline small color={C.mutedHi} disabled={busy} onClick={async () => { const r = await run(onRevoke); if (r && r.ok) setMade(null); }}/>}
+      {hh && hh.role === "owner" && members.length >= 2 && <Btn label={W.removeButton} outline small color={C.orange} disabled={busy} onClick={async () => {
+        if (!(await confirmModal({ title: W.removeTitle, message: W.removeBody, confirmLabel: W.removeConfirm, destructive: true }))) return;
+        await run(onRemove);
+      }}/>}
+      {hh && <Btn label={W.leaveButton} outline small color={C.orange} disabled={busy} onClick={async () => {
+        if (!(await confirmModal({ title: W.leaveTitle, message: alone ? W.leaveBodyAlone : W.leaveBody, confirmLabel: W.leaveConfirm, destructive: true }))) return;
+        await run(onLeave);
+      }}/>}
+    </div>
+    {!hh && <div data-household-join="" style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+      <label style={{ ...txt, display: "block" }}>{W.joinLabel}
+        <input value={code} onChange={e => setCode(e.target.value.toUpperCase().slice(0, 8))} autoCapitalize="characters" autoComplete="one-time-code" style={{ ...input, marginTop: 6, letterSpacing: 4, fontFamily: "ui-monospace,Menlo,monospace" }}/>
+      </label>
+      <div style={gap}><Btn label={W.joinButton} small disabled={busy || code.replace(/[^A-Za-z0-9]/g, "").length !== 6} onClick={() => { setError(null); setJoinBy({ code }); setStep("partner-consent"); }}/></div>
+    </div>}
+  </div>;
+}
+
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
-  const [activeSection,setActiveSection]=useState(null);
+  // Couple mode: a link's invite opens Settings straight on Household (HouseholdSection).
+  const [activeSection,setActiveSection]=useState(()=>household?.linkToken && household?.info?.enabled ? "household" : null);
   const [showFeedback,setShowFeedback]=useState(false); // tester suggestions item 6
   const [showWhatsNew,setShowWhatsNew]=useState(false); // tester suggestions item 7
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
@@ -12235,7 +12349,6 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         budgets: data.budgets || {},
         accounts: data.accounts || [],
         transactions: data.transactions || [],
-        household: data.household || null,
         // The household's forecast corrections: edited or skipped deposits and bills, "from this date on"
         // changes, expected money in or out, their daily spend figure, and which deposits are not income.
         forecastEdits: data.forecastEdits || {},
@@ -12384,6 +12497,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more",                             key:"goals"},
         {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile?.status||"single"} · ${data.profile?.hasKids?"has kids":"no kids"}`, key:"family"},
         {icon:"home",   color:C.teal,  label:"Dashboard",           sub:"Show or hide cards",                                key:"dashboard"},
+        // Couple mode: only while /api/household answers (the server switch on, migrations 0030 + 0031 run).
+        ...(household?.info?.enabled ? [{icon:"users", color:C.green, label:HOUSEHOLD_WORDS.rowLabel, key:"household",
+          sub: household.info.household?.members?.length >= 2 ? HOUSEHOLD_WORDS.rowSubShared : household.info.household?.invite ? HOUSEHOLD_WORDS.rowSubPending : HOUSEHOLD_WORDS.rowSubNone}] : []),
       ].map((item,i)=>{
         const isActive = activeSection === item.key;
         return (
@@ -12403,7 +12519,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             </div>
             <span style={{color:isActive?item.color:C.muted,fontSize:16,fontWeight:300,transition:"transform .2s",transform:isActive?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
           </div>
-          {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} setAppData={setAppData} navToScreen={navToScreen} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
+          {isActive&&item.key==="household"&&<div style={{background:C.card,border:`1px solid ${item.color}33`,borderRadius:"0 0 18px 18px",padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${item.color}22`}}>
+            <HouseholdSection info={household.info} linkToken={household.linkToken} onInvite={household.onInvite} onRevoke={household.onRevoke} onAccept={household.onAccept} onLeave={household.onLeave} onRemove={household.onRemove} onClearLinkToken={household.onClearLinkToken}/>
+          </div>}
+          {isActive&&item.key!=="household"&&<SettingsSectionContent sectionKey={item.key} data={data} setAppData={setAppData} navToScreen={navToScreen} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
         </div>
       );})}
     {/* Notifications preference section removed — toggles persisted nothing and there is no notification system yet (see audit). */}
@@ -12436,6 +12555,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
               <div style={{width:28,height:28,borderRadius:8,background:C.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🏦</div>
               <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.institution_name || "Your Bank"}</div>
             </div>
+            {b.linked_by ? <span data-bank-linked-by="partner" style={{color:C.muted,fontSize:13,textAlign:"right",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{HOUSEHOLD_WORDS.bankLinkedByPartner}</span> :
             <button onClick={async () => {
               if (!(await confirmModal({title:`Disconnect ${b.institution_name || "this bank"}?`,confirmLabel:"Disconnect",destructive:true}))) return;
               const jwt = await getJwt();
@@ -12452,6 +12572,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
               if (!removed) return;                        // only touch local state on a confirmed server delete
               // FIX 2: last bank → the existing offboarding path (disconnectBank) revokes+verifies every
               // item and resets local accounts, so don't also filter here (would double-clear).
+              // Couple mode: the partner's banks stay, so this is the last bank only if nobody else's is listed.
               if (bankItems.length === 1) { onDisconnectBank?.(); return; }
               // One of several banks: delete_item removed the plaid_items row + revoked the token, but
               // this bank's account objects still linger in appData.accounts. Drop the accounts tied to
@@ -12461,9 +12582,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
                 const kept = (prev.accounts || []).filter(a => a._item !== b.item_id);
                 return { ...prev, accounts: kept, bankConnected: kept.some(a => a.institution !== "Manual") };
               });
-            }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
+            }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>}
           </div>
         ))}
+        {household?.info?.household?.members?.length >= 2 && <div data-bank-joint-note="" style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{HOUSEHOLD_WORDS.bankJointNote}</div>}
         <button onClick={onAddBank} style={{width:"100%",marginTop:GAP.textToControl,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           {bankItems && bankItems.length ? "+ Connect Another Bank" : "+ Connect a Bank"}
         </button>
@@ -12476,11 +12598,13 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
-          {billingUi.mode==="manage"
+          {coveredByPartner ? HOUSEHOLD_WORDS.coveredByPartner
+            : billingUi.mode==="manage"
             ? "Change your card or cancel."
             : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
         </div>
-        <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
+        {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
+        {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
       </div>
     )}
     {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
@@ -12822,7 +12946,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   const buildContext = (userText = "")=>{
     const txns = (data.transactions||[]).slice(0,40);
     const accounts = data.accounts||[];
-    const profile = data.profile||{};
+    // Couple mode: roles are the asker's own. The partner asking sees their employment as "you" (lib/household.js).
+    const profile = coachProfileFor(data.profile||{}, data.householdRole);
     const country = profile.country||"CA";
     const prov = sanitizeField(profile.province||"", 40);
     const _toMoCtx = toMonthly; // Bug 1: canonical converter
@@ -16951,8 +17076,11 @@ export default function FlourishApp(){
   // transactions: they move to the loan-activity store once, here, before anything reads them.
   const [appData,setAppData]=useState(()=>moveSavedLoanActivity(saved)?.appData||null);
   const [loginFromConfirm,setLoginFromConfirm]=useState(false);
+  // Couple mode: "owner" or "partner" while this account shares a household, else null. The coach's roles are
+  // the viewer's own ("you" is whoever is asking), so the partner's names and employment are swapped for them.
+  const [householdRole,setHouseholdRole]=useState(()=>{ try { return JSON.parse(localStorage.getItem(HOUSEHOLD_STAMP_KEY)||"null")?.role||null; } catch { return null; } });
   // Audit 2026-10-26 B2: every request to /api/coach replaces the household's names with roles (coachPrivacy.js).
-  setCoachNames(appData?.profile);
+  setCoachNames(coachProfileFor(appData?.profile, householdRole));
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
   // annual bills so their cadence phase persists (monthly uses day-of-month, no anchor needed).
   useEffect(() => {
@@ -17047,13 +17175,26 @@ export default function FlourishApp(){
   const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
   // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
   const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
-  const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
   // surface hidden while BILLING_ENABLED is unset.
   const [showUpgrade,setShowUpgrade]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
+  // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
+  // link's invite token kept while the person signs in (sessionStorage, never synced; lib/household.js).
+  const [householdInfo,setHouseholdInfo]=useState(null);
+  const [householdLinkToken,setHouseholdLinkToken]=useState(()=>{
+    try {
+      const t = inviteTokenFromSearch(window.location.search);
+      if (t) {
+        sessionStorage.setItem(HOUSEHOLD_INVITE_KEY, t);
+        const u = new URL(window.location.href); u.searchParams.delete("household_invite");
+        window.history.replaceState(window.history.state, "", u.toString());   // the token leaves the address bar
+      }
+      return t || sessionStorage.getItem(HOUSEHOLD_INVITE_KEY) || null;
+    } catch { return null; }
+  });
   const [billingNotice,setBillingNotice]=useState(null);
   // The plan the profiles row last gave (derivePlan), and whether the server's billing status says this
   // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
@@ -17455,6 +17596,8 @@ export default function FlourishApp(){
   const syncErrorRef = useRef(false);
   const syncFailRef  = useRef(0);
   const saverRef     = useRef(null);
+  const householdRef = useRef(null);   // couple mode: { id, role, version, base } while this account shares a household
+  const latestStateRef = useRef(null); // couple mode: the latest { onboarded, appData, checkInBonus }, for a merge on return
   const accessTokenRef = useRef(null); // Sprint Z2 #12: latest JWT, cached for the synchronous pagehide keepalive beacon
   const [syncError, setSyncError] = useState(false);
   // (5) one-time "backed up" banner after a local→DB migration upload.
@@ -17513,10 +17656,56 @@ export default function FlourishApp(){
   ) : null;
 
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
+  // ── Couple mode: the household's shared blob (lib/household.js, persistence.js saveHouseholdData) ──
+  // householdRef: { id, role, version, base } while this account is in a household, else null. `base` is the
+  // blob this device last read or wrote, so a save that finds a newer version merges instead of overwriting.
+  const readHouseholdStamp = () => { try { return JSON.parse(localStorage.getItem(HOUSEHOLD_STAMP_KEY) || "null"); } catch { return null; } };
+  const writeHouseholdStamp = (v) => { try { if (v) localStorage.setItem(HOUSEHOLD_STAMP_KEY, JSON.stringify(v)); else localStorage.removeItem(HOUSEHOLD_STAMP_KEY); } catch {} };
+  const householdPayload = ({ onboarded: ob, appData: ad, checkInBonus: cb }, userId) => {
+    const hh = householdRef.current;
+    const slimAppData = ad ? { ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) } : ad;
+    return { userId, householdId: hh.id, blob: buildHouseholdBlob({ onboarded: ob, slimAppData, checkInBonus: cb },
+      { userId, householdId: hh.id, nowIso: new Date().toISOString(), sideKeys: readSideKeys(), base: hh.base }) };
+  };
+  // This account is no longer in the household it held (left on another phone, or removed): nothing of the
+  // household stays on this device. Reloading starts it again from the server (lib/household.js "left").
+  const householdGone = () => {
+    console.log("[persist] no longer a member of this household: clearing this device");
+    householdRef.current = null;
+    try { saverRef.current?.discard?.(); } catch {}
+    clearAllUserLocal();
+    try { window.location.reload(); } catch {}
+  };
+  const saveHousehold = async ({ userId, householdId, blob }) => {
+    let toWrite = blob;
+    for (let i = 0; i < 3; i++) {
+      const hh = householdRef.current;
+      if (!hh || hh.id !== householdId) return { ok: false };          // left or switched meanwhile: dropped
+      const r = await saveHouseholdData(supabase, householdId, toWrite, hh.version);
+      if (r.ok) { householdRef.current = { ...hh, version: r.version, base: toWrite }; return { ok: true }; }
+      if (!r.conflict) return r;
+      // A newer version, or this account can no longer see the row: read again to tell which.
+      let remote;
+      try { remote = await fetchHouseholdData(supabase, householdId); } catch (e) { return { ok: false, error: e }; }
+      if (!remote) { householdGone(); return { ok: false }; }
+      const merged = mergeHouseholdBlobs(hh.base, toWrite, remote.blob);
+      householdRef.current = { ...hh, version: remote.version, base: remote.blob };
+      applyHouseholdBlob(merged, userId, { keepSynced: true });
+      toWrite = merged;
+    }
+    return { ok: false, error: new Error("household_conflict") };
+  };
+  // The pending save, sent now and awaited (before the server copies this account's data into a new household).
+  const flushSaveNow = async () => {
+    const pending = saverRef.current?.peek?.();
+    if (!pending) return;
+    saverRef.current?.discard?.();
+    if (pending.householdId) await saveHousehold(pending); else await upsertUserData(supabase, pending.userId, pending.blob);
+  };
   const getSaver = () => {
     if (!saverRef.current) {
-      saverRef.current = makeDebouncedSaver(async ({ userId, blob }) => {
-        const { ok, error: persistErr } = await upsertUserData(supabase, userId, blob);
+      saverRef.current = makeDebouncedSaver(async ({ userId, blob, householdId }) => {
+        const { ok, error: persistErr } = householdId ? await saveHousehold({ userId, householdId, blob }) : await upsertUserData(supabase, userId, blob);
         console.log("[persist] save complete", { ok });
         if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
         else { if (persistErr) captureError(new Error(`persist:${persistErr?.code || "unknown"}`), { area: "persist" }); if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); } } // Sprint Z #10 + Phase D #1: code-only, never the raw PostgrestError (its `details` can echo the row payload)
@@ -17531,7 +17720,6 @@ export default function FlourishApp(){
     const c = (blob && blob.core) || {};
     if (c.appData !== undefined) setAppData(c.appData);
     setOnboarded(!!c.onboarded);
-    setHousehold(c.household ?? null);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
     // AFTER writeSideKeys, which restores flourish_plan: derive from the plan the blob just brought
@@ -17543,6 +17731,52 @@ export default function FlourishApp(){
       setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
       setAiCoachEnabled(localStorage.getItem("flourish_ai_coach_enabled") !== "0");
     } catch {}
+  };
+
+  // The household's blob, applied as applyBlob applies a user_data row: the shared keys and THIS person's own
+  // (lib/household.js sideKeysForMember), never the other person's consent. keepSynced: the bank transactions
+  // this device already holds stay (lib/household.js keepSyncedTransactions).
+  const applyHouseholdBlob = (blob, userId, { keepSynced = false } = {}) => {
+    const c = (blob && blob.core) || {};
+    if (c.appData !== undefined) setAppData((prev) => (keepSynced ? keepSyncedTransactions(c.appData, prev) : c.appData));
+    setOnboarded(!!c.onboarded);
+    setCheckInBonus(c.checkInBonus || 0);
+    writeSideKeys(sideKeysForMember(blob, userId));
+    setIsPremium(isPremiumOrFounder() || isTrialActive());
+    try {
+      setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
+      setAiCoachEnabled(localStorage.getItem("flourish_ai_coach_enabled") !== "0");
+    } catch {}
+  };
+
+  // Couple mode, at sign-in: which data this device loads (lib/household.js householdHydratePlan). A member loads the
+  // household's blob (the usual newer-wins decision, or the household's outright on a device that did not hold it);
+  // a device whose person left is cleared. Answers "cancelled", "reset" (this device's data was dropped) or "ok".
+  // Throws when the household's row cannot be read, so the save gate stays closed for the session.
+  const hydrateHousehold = async (membership, userId, { preSavedAt, preHasReal, isCancelled }) => {
+    const hhPlan = householdHydratePlan({ membership, stampId: readHouseholdStamp()?.id || null });
+    const reset = hhPlan === "join" || hhPlan === "left";
+    if (reset) {
+      // This device's data is not the household's (just joined, another phone, or left): drop it, never push it.
+      console.log("[persist] household changed for this device:", hhPlan);
+      try { saverRef.current?.discard?.(); } catch {}
+      clearAllUserLocal();
+      setAppData(null); setOnboarded(false); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
+    }
+    if (!membership) { householdRef.current = null; writeHouseholdStamp(null); setHouseholdRole(null); return reset ? "reset" : "ok"; }
+    const remoteH = await fetchHouseholdData(supabase, membership.household_id);
+    if (isCancelled()) return "cancelled";
+    if (!remoteH) throw new Error("household row not readable"); // never write a household this session cannot read
+    householdRef.current = { id: membership.household_id, role: membership.role, version: remoteH.version, base: remoteH.blob };
+    writeHouseholdStamp({ id: membership.household_id, role: membership.role });
+    setHouseholdRole(membership.role);
+    const decision = reset ? { apply: true, pushLocal: false, reason: "joined" }
+      : decideHydrate({ remoteUpdatedAt: remoteH.updatedAt, localSavedAt: preSavedAt, localHasRealData: preHasReal });
+    console.log("[persist] household hydrate decision", { ...decision, plan: hhPlan });
+    const snap = loadState() || {};
+    if (decision.apply) applyHouseholdBlob(remoteH.blob, userId, { keepSynced: hhPlan === "same" });
+    else if (decision.pushLocal && !snap.appData?.demo) getSaver().schedule(householdPayload(snap, userId));
+    return reset ? "reset" : "ok";
   };
 
   // ── Supabase auth session check ────────────────────────────────
@@ -17625,21 +17859,29 @@ export default function FlourishApp(){
     if (localUid && localUid !== user.id) {
       console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
-      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
+      setAppData(null); setOnboarded(false); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
     }
     // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
     // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —
     // which made local always outrank the remote and skipped applyBlob for a valid server row.
     const preSnap    = loadState() || {};
-    const preSavedAt = preSnap.savedAt || null;
-    const preHasReal = hasRealLocalData(preSnap.appData);
+    let preSavedAt = preSnap.savedAt || null;
+    let preHasReal = hasRealLocalData(preSnap.appData);
     (async ()=>{
       // Round-3: the App Review account gets the same populated household, matched by the hash of
       // its email (the address is not in the code). Decided before any DB read; the save gate stays
       // closed throughout, exactly as for the screenshot account.
       if (await isReviewAccount(user.email)) { if (!cancelled) loadSampleHousehold(); return; }
       try {
-        const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
+        // COUPLE MODE: does this account share a household, and does this device hold it (lib/household.js
+        // householdHydratePlan)? null before 0030 runs, so every account goes on exactly as before; a read that
+        // fails throws, and the save gate stays closed, as for user_data below.
+        const membership = await readMembership(supabase, user.id);
+        if (cancelled) return;
+        const hh = await hydrateHousehold(membership, user.id, { preSavedAt, preHasReal, isCancelled: () => cancelled });
+        if (hh === "cancelled") return;
+        if (hh === "reset") { preSavedAt = null; preHasReal = false; }
+        const remote = membership ? null : await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
         console.log("[persist] hydrate fetched", { hasRow: !!remote, cancelled });
         if (cancelled) return;
         const snap = loadState() || {};
@@ -17650,7 +17892,9 @@ export default function FlourishApp(){
         });
         // Instrumentation gap this bug hid in: log the decision AND whether the row was applied.
         console.log("[persist] hydrate decision", { ...decision, remoteUpdatedAt: remote?.updatedAt || null, localSavedAt: preSavedAt, localHasRealData: preHasReal });
-        if (remote) {
+        if (membership) {
+          // the household blob was decided above; a member's own user_data row is not read or written
+        } else if (remote) {
           if (decision.apply) { applyBlob(remote.blob); console.log("[persist] applyBlob APPLIED remote row"); }  // DB wins
           else if (decision.pushLocal && !snap.appData?.demo) { console.log("[persist] applyBlob SKIPPED. Local newer, pushing local up"); getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); } // local newer → push up (Sprint Z #15: never push demo data; upsert's safety net also refuses it)
         } else if (snap.appData && !snap.appData.demo) {
@@ -17699,14 +17943,109 @@ export default function FlourishApp(){
     // preserves the previous genuine stamp. savedAt has exactly ONE reader (the hydrate comparison),
     // so gating it cannot affect the save path.
     const stampSavedAt = hasRealLocalData(appData);
-    saveState({onboarded,appData,household,isPremium,checkInBonus, ...(stampSavedAt ? { savedAt:nowIso } : {}), ...(user?.id ? { userId: user.id } : {})});
+    saveState({onboarded,appData,isPremium,checkInBonus, ...(stampSavedAt ? { savedAt:nowIso } : {}), ...(user?.id ? { userId: user.id } : {})});
+    latestStateRef.current = { onboarded, appData, checkInBonus };
     const gateOpen = !!user && hydratedUidRef.current === user?.id && !appData?.demo; // never sync demo/sample data to the DB
     console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydratedUid: hydratedUidRef.current, gateOpen });
     if (gateOpen) {
       console.log("[persist] → scheduling DB save");
-      getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
+      // Couple mode: a member saves the household's blob, never their own user_data row.
+      if (householdRef.current) getSaver().schedule(householdPayload({ onboarded, appData, checkInBonus }, user.id));
+      else getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }
-  }, [onboarded,appData,household,isPremium,checkInBonus,user]);
+  }, [onboarded,appData,isPremium,checkInBonus,user]);
+  // Couple mode: back in front, a member picks up what the other person saved meanwhile (merged, never
+  // overwritten), and a member who was removed is cleared off this device at once.
+  useEffect(()=>{
+    const onVis = async ()=>{
+      if (document.visibilityState !== "visible") return;
+      const hh = householdRef.current;
+      if (!hh || !user || hydratedUidRef.current !== user.id) return;
+      let remote;
+      try { remote = await fetchHouseholdData(supabase, hh.id); } catch { return; }
+      if (!remote) { householdGone(); return; }
+      const cur = householdRef.current;
+      if (!cur || cur.id !== hh.id || remote.version === cur.version) return;
+      const local = householdPayload(latestStateRef.current, user.id).blob;
+      householdRef.current = { ...cur, version: remote.version, base: remote.blob };
+      applyHouseholdBlob(mergeHouseholdBlobs(cur.base, local, remote.blob), user.id, { keepSynced: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>document.removeEventListener("visibilitychange", onVis);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Couple mode: Settings > Household (HouseholdSection) ──
+  const refreshHousehold = async ()=>{
+    if (!user) return;
+    const r = await callHousehold("status");
+    if (r.status === 200) setHouseholdInfo(r.data);
+    else if (r.status === 404) setHouseholdInfo({ enabled: false });
+  };
+  useEffect(()=>{ if (user && hydrated) refreshHousehold(); }, [user, hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A link's invite: once signed in and loaded, Settings opens on Household with the partner's consent screen.
+  const linkOpenedRef = useRef(false);
+  useEffect(()=>{
+    if (linkOpenedRef.current || !user || !hydrated || !householdLinkToken || !householdInfo?.enabled) return;
+    linkOpenedRef.current = true;
+    setShowSettings(true);
+  }, [user, hydrated, householdLinkToken, householdInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clearHouseholdLink = ()=>{ try { sessionStorage.removeItem(HOUSEHOLD_INVITE_KEY); } catch {} setHouseholdLinkToken(null); };
+  // Joining, leaving or being removed changes whose data this device holds: it is cleared and loaded again.
+  const restartForHousehold = ()=>{
+    householdRef.current = null;
+    try { saverRef.current?.discard?.(); } catch {}
+    clearAllUserLocal();
+    try { window.location.reload(); } catch {}
+  };
+  const householdActions = {
+    onInvite: async (email)=>{
+      await flushSaveNow();                                   // the server copies this account's saved data
+      const r = await callHousehold("create_invite", { email, consent: true });
+      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      if (!householdRef.current && r.data.household_id) {
+        // The owner's own data is now the household's: this device saves there from now on.
+        const remote = await fetchHouseholdData(supabase, r.data.household_id).catch(()=>null);
+        if (remote) {
+          householdRef.current = { id: r.data.household_id, role: "owner", version: remote.version, base: remote.blob };
+          writeHouseholdStamp({ id: r.data.household_id, role: "owner" });
+          setHouseholdRole("owner");
+          applyHouseholdBlob(remote.blob, user.id, { keepSynced: true });
+        }
+      }
+      await refreshHousehold();
+      return { ok: true, invite: r.data.invite };
+    },
+    onRevoke: async ()=>{ const r = await callHousehold("revoke_invite"); await refreshHousehold(); return r.status === 200 ? { ok: true } : { error: r.data?.error || "generic" }; },
+    onAccept: async ({ token, code } = {})=>{
+      const r = await callHousehold("accept_invite", { ...(token ? { token } : { code }), consent: true });
+      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      clearHouseholdLink();
+      restartForHousehold();
+      return { ok: true };
+    },
+    onLeave: async ()=>{
+      const r = await callHousehold("leave");
+      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      restartForHousehold();
+      return { ok: true };
+    },
+    onRemove: async ()=>{
+      const r = await callHousehold("remove_partner");
+      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      // The partner's banks left the shared blob on the server: pick that up now.
+      const hh = householdRef.current;
+      const remote = hh ? await fetchHouseholdData(supabase, hh.id).catch(()=>null) : null;
+      if (remote && householdRef.current) {
+        const local = householdPayload(latestStateRef.current, user.id).blob;
+        const cur = householdRef.current;
+        householdRef.current = { ...cur, version: remote.version, base: remote.blob };
+        applyHouseholdBlob(mergeHouseholdBlobs(remote.blob, local, remote.blob), user.id, { keepSynced: true });
+      }
+      await refreshHousehold();
+      return { ok: true };
+    },
+    onClearLinkToken: clearHouseholdLink,
+  };
   // Activation (2026-10-15): the app was opened (the server keeps it only on day 1 and day 7 after
   // signup), and the household has a data source. Same gate as the save above: a signed-in account whose
   // data has loaded, never the demo. Each is sent once (app_open once a day): lib/activation.js.
@@ -17748,6 +18087,18 @@ export default function FlourishApp(){
       if (isBlobEmpty(payload.blob)) return false;          // never beacon empty/demo: the read-then-decide safety net can't run one-shot
       const token = accessTokenRef.current;
       if (!token) return false;                              // no JWT → would 401; let the normal flush handle it
+      if (payload.householdId) {
+        // Couple mode: only over the version this device read (a newer one is merged by the awaited flush).
+        const hh = householdRef.current;
+        if (!hh || hh.id !== payload.householdId) return false;
+        fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/household_data?household_id=eq.${encodeURIComponent(hh.id)}&version=eq.${encodeURIComponent(hh.version)}`, {
+          method: "PATCH",
+          keepalive: true,
+          headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
+        }).catch(()=>{});
+        return true;
+      }
       fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_data?on_conflict=user_id`, {
         method: "POST",
         keepalive: true,
@@ -18413,7 +18764,7 @@ export default function FlourishApp(){
       return unreadNotifCount(appData, readIds);   // the same count the panel shows
     } catch { return 0; }
   })();
-  const dataWithHousehold={...appData,household,isPremium};
+  const dataWithHousehold={...appData,isPremium,householdRole};
 
   // ── Pass isOnline down to AICoach + reset helper ──────────────
   const handleReset = () => { clearState(); window.location.reload(); };
@@ -18476,7 +18827,10 @@ export default function FlourishApp(){
   const disconnectBank = async ()=>{
     const jwt = await getJwt();
     if(!jwt) return;
-    const items = await getUserItems();
+    // Couple mode: the banks the other member linked are theirs to disconnect, not this person's (plaid.js).
+    const listed = await getUserItems();
+    const theirs = new Set(listed.filter(it => it.linked_by).map(it => it.item_id));
+    const items = listed.filter(it => !it.linked_by);
     // Sprint D Fix: VERIFY the server actually removed each item. Previously every failure was
     // swallowed by console.warn (which production strips) and the UI claimed success regardless —
     // so a failed delete left the plaid_items row ACTIVE while the user believed they'd disconnected.
@@ -18488,12 +18842,17 @@ export default function FlourishApp(){
     }
     // Confirm against server truth rather than trusting the loop.
     let remaining = [];
-    try { remaining = await getUserItems(); } catch { remaining = failed; }
+    try { remaining = (await getUserItems()).filter(it => !it.linked_by); } catch { remaining = failed; }
     if (remaining.length > 0) {
       alertModal({ message: `We couldn't fully disconnect ${remaining.length === 1 ? "your bank" : "all your banks"}. Please try again. Your bank is still connected.` });
       return;   // do NOT claim disconnection or clear local accounts while the server still has items
     }
     setNeedsReconnect(false);
+    if (theirs.size) {
+      // The other member's banks stay in the household; only this person's accounts go.
+      setAppData(d=>{ const kept=(d.accounts||[]).filter(a=>!a._item||theirs.has(a._item)); return {...d, accounts: kept, bankConnected: kept.some(a=>a.institution!=="Manual")}; });
+      return;
+    }
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
   };
 
@@ -18599,7 +18958,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
@@ -18640,7 +18999,7 @@ export default function FlourishApp(){
       // included, so say what actually happened and when it lifts, not that the feature is missing.
       return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen} tourActive={tourShown}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} tourActive={tourShown}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
@@ -18779,7 +19138,6 @@ input,button,select,textarea { font-family:inherit; }
               <div style={{width:32,height:32,borderRadius:99,background:C.green+"22",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}><Icon id="user" size={15} color={C.green} strokeWidth={1.5}/></div>
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
-                {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
                 {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
                     "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
                 {/* H13: a household on the trial is not called Plus; the countdown above names the trial. */}
@@ -18807,7 +19165,6 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} aria-label="Notifications" style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
               {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:textOn(C.red),fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}

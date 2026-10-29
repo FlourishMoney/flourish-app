@@ -1,0 +1,163 @@
+// tests/householdClient.test.cjs
+// -----------------------------------------------------------------------------
+// COUPLE MODE IN THE APP (docs/product/COUPLE-MODE-SPEC.md): the pure rules (src/lib/household.js), the
+// household's saves (src/lib/persistence.js), the screens (src/App.jsx HouseholdSection, Settings), and the words.
+//   1  consent is each person's own: one person's AI or Plaid consent never stands for the other's
+//   2  two saves at once keep both people's changes (a section only one changed keeps theirs)
+//   3  which data a device loads: solo / same / join / left
+//   4  the coach: roles only, and the asker's own roles (the partner asking is "you")
+//   5  saving over a version: a newer one is reported, not overwritten; an empty blob never replaces the data
+//   6  the screens: consent first; roles, never names or addresses; the row only while the server answers
+//   7  the old mock is gone; every household word is a placeholder, in one file, listed in the words doc
+// -----------------------------------------------------------------------------
+"use strict";
+const { create } = require("./_runner.cjs");
+const fs = require("fs");
+const path = require("path");
+const { loadApp, textOf } = require("./_renderApp.cjs");
+
+const ROOT = path.join(__dirname, "..");
+const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
+const O = "owner-id", P = "partner-id";
+
+(async () => {
+  const t = create();
+  const H = await import("../src/lib/household.js");
+  const PS = await import("../src/lib/persistence.js");
+  const CP = await import("../src/lib/coachPrivacy.js");
+  const HW = await import("../src/lib/householdWords.js");
+
+  // ── 1. CONSENT IS EACH PERSON'S OWN ─────────────────────────────────────────────────────────────
+  {
+    const copied = { userId: O, sideKeys: { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_custom_cats: "[\"Pets\"]", flourish_plaid_consented_at: "2026-10-01" } };
+    t.eq(H.personalSideKeysOf(copied, O), { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_plaid_consented_at: "2026-10-01" },
+      "1a a blob copied from the owner's own row: the owner's consent is the owner's");
+    t.eq(H.personalSideKeysOf(copied, P), {}, "1b …and NOT the partner's: the owner's yes to Anthropic or Plaid never stands for them");
+    t.eq(H.sideKeysForMember(copied, P), { flourish_custom_cats: "[\"Pets\"]" }, "1c the partner gets the shared keys only");
+    const built = H.buildHouseholdBlob({ onboarded: true, slimAppData: { bills: [] }, checkInBonus: 0 },
+      { userId: P, householdId: "h1", sideKeys: { flourish_ai_third_party_consent: "0", flourish_custom_cats: "[]" }, base: copied });
+    t.eq(built.personal, { [O]: { flourish_ai_third_party_consent: "1", flourish_ai_disclosure_seen: "1", flourish_plaid_consented_at: "2026-10-01" }, [P]: { flourish_ai_third_party_consent: "0" } },
+      "1d the partner's save keeps the owner's consent as the owner's and records their own beside it");
+    t.eq(built.sideKeys, { flourish_custom_cats: "[]" }, "1e …and no personal key in the shared ones");
+    t.eq(H.sideKeysForMember(built, O).flourish_ai_third_party_consent, "1", "1f the owner still reads their own yes");
+    t.eq(H.sideKeysForMember(built, P).flourish_ai_third_party_consent, "0", "1g the partner reads their own no");
+    t.ok(H.PERSONAL_SIDE_KEYS.includes("flourish_ai_coach_enabled") && H.PERSONAL_SIDE_KEYS.includes("flourish_plaid_consented_at"), "1h the coach switch and the Plaid consent time are personal");
+  }
+
+  // ── 2. TWO SAVES AT ONCE ────────────────────────────────────────────────────────────────────────
+  {
+    const base = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" }, personal: { [O]: { flourish_plan: "trial" } } };
+    const local = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 120 }], goals: [{ id: "g1" }], debts: [] } }, sideKeys: { flourish_streak: "1" }, personal: { [O]: { flourish_plan: "trial" } } };
+    const remote = { core: { onboarded: true, checkInBonus: 0, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }, { id: "g2" }], debts: [] } }, sideKeys: { flourish_streak: "2" }, personal: { [O]: { flourish_plan: "trial" }, [P]: { flourish_plan: "free" } } };
+    const m = H.mergeHouseholdBlobs(base, local, remote);
+    t.eq(m.core.appData.bills, [{ id: "b1", amount: 120 }], "2a this phone's change to the bills is kept");
+    t.eq(m.core.appData.goals, [{ id: "g1" }, { id: "g2" }], "2b …and the other person's new goal too");
+    t.eq(m.sideKeys.flourish_streak, "2", "2c a shared key only the other changed keeps their change");
+    t.eq(m.personal[P], { flourish_plan: "free" }, "2d the other person's own keys are carried, untouched");
+    const both = H.mergeHouseholdBlobs(base, local, { ...remote, core: { ...remote.core, appData: { ...remote.core.appData, bills: [{ id: "b1", amount: 90 }] } } });
+    t.eq(both.core.appData.bills, [{ id: "b1", amount: 120 }], "2e both changed the same section: the later save (this one) wins");
+    const gone = H.mergeHouseholdBlobs(base, local, { ...remote, core: { ...remote.core, appData: { bills: [{ id: "b1", amount: 100 }], goals: [{ id: "g1" }] } } });
+    t.eq(Object.keys(gone.core.appData).sort(), ["bills", "goals"], "2f a section the other person removed stays removed when this phone did not touch it");
+    const keep = H.keepSyncedTransactions({ accounts: [{ id: "a1", _item: "i1" }], transactions: [{ id: "m1", account_id: "cash" }] },
+      { accounts: [{ id: "a1", _item: "i1" }, { id: "a2", _item: "i2" }], transactions: [{ id: "p1", account_id: "a1" }, { id: "p2", account_id: "a2" }, { id: "m1", account_id: "cash" }] });
+    t.eq(keep.transactions.map((x) => x.id), ["p1", "m1"], "2g the bank's transactions this phone holds stay for accounts still in the household, and go with an account that left");
+  }
+
+  // ── 3. WHICH DATA A DEVICE LOADS ────────────────────────────────────────────────────────────────
+  {
+    const plan = (membership, stampId) => H.householdHydratePlan({ membership, stampId });
+    t.eq([plan(null, null), plan({ household_id: "h1" }, "h1"), plan({ household_id: "h1" }, null), plan({ household_id: "h2" }, "h1"), plan(null, "h1")],
+      ["solo", "same", "join", "join", "left"], "3a not in one: solo; the same one: same; a new one or another phone: join; left or removed: left");
+    const appSrc = read("src", "App.jsx");
+    const helper = appSrc.slice(appSrc.indexOf("const hydrateHousehold = async"), appSrc.indexOf("// ── Supabase auth session check"));
+    t.ok(/const reset = hhPlan === "join" \|\| hhPlan === "left";\n    if \(reset\) \{[\s\S]*clearAllUserLocal\(\);/.test(helper), "3b join or left: this device's data is dropped first");
+    t.ok(/reset \? \{ apply: true, pushLocal: false/.test(helper), "3c …and on joining the household's data is loaded, never this device's pushed over it");
+    t.ok(/if \(!remoteH\) throw/.test(helper), "3d a member who cannot read the household's row never writes this session");
+  }
+
+  // ── 4. THE COACH: ROLES, THE ASKER'S OWN ────────────────────────────────────────────────────────
+  {
+    const profile = { name: "Sam Rivera", partnerName: "Jo", lifeStages: ["selfemployed"], partnerLifeStages: ["t4"], birthYear: "1980", status: "couple" };
+    t.eq(H.coachProfileFor(profile, "owner"), profile, "4a the owner asking: the profile as it is");
+    const asP = H.coachProfileFor(profile, "partner");
+    t.eq([asP.lifeStages, asP.partnerLifeStages, asP.birthYear], [["t4"], ["selfemployed"], ""], "4b the partner asking: their employment is \"you\", the owner's \"your partner\", and the owner's age is not theirs");
+    const body = JSON.parse(CP.coachRequestBody({ message: "Should Sam Rivera or Jo pay the card?" }, CP.householdNames(asP)));
+    t.eq(body.message, "Should partner or you pay the card?", "4c names the partner types become roles from THEIR side");
+    const appSrc = read("src", "App.jsx");
+    t.ok(/const profile = coachProfileFor\(data\.profile\|\|\{\}, data\.householdRole\);/.test(appSrc), "4d the coach's context is built from the asker's side");
+    t.ok(/setCoachNames\(coachProfileFor\(appData\?\.profile, householdRole\)\);/.test(appSrc), "4e …and so is the register that turns names into roles");
+    t.ok(/- Name: not shared; call them "you"/.test(appSrc) && !/Name: \$\{/.test(appSrc), "4f the context still never carries a name");
+  }
+
+  // ── 5. SAVING OVER A VERSION ────────────────────────────────────────────────────────────────────
+  {
+    const calls = [];
+    const fake = (answer) => ({ from: (table) => { const q = { _t: table, _f: {},
+      select() { return q; }, eq(k, v) { q._f[k] = v; return q; }, update(d) { q._u = d; return q; },
+      maybeSingle: async () => answer.read || { data: null, error: null },
+      then(res, rej) { calls.push([table, q._u ? "update" : "select", { ...q._f }]); return Promise.resolve(answer.write || { data: [], error: null }).then(res, rej); } }; return q; } });
+    const blob = { core: { appData: { bills: [{ id: "b1" }] } } };
+    const ok = await PS.saveHouseholdData(fake({ write: { data: [{ version: 8, updated_at: "x" }], error: null } }), "h1", blob, 7);
+    t.eq([ok, calls.pop()], [{ ok: true, version: 8, updatedAt: "x" }, ["household_data", "update", { household_id: "h1", version: 7 }]], "5a a save goes only over the version read, and returns the new one");
+    t.eq(await PS.saveHouseholdData(fake({ write: { data: [], error: null } }), "h1", blob, 7), { ok: false, conflict: true }, "5b a newer version (or no longer a member): reported, nothing overwritten");
+    const empty = { core: { appData: { bills: [] } } };
+    t.eq((await PS.saveHouseholdData(fake({ read: { data: { data: blob, updated_at: "x", version: 7 }, error: null } }), "h1", empty, 7)).refused, true, "5c an empty blob never replaces a household's real data");
+    t.eq(await PS.readMembership(fake({ read: { data: null, error: { code: "PGRST205", message: "Could not find the table 'public.household_members' in the schema cache" } } }), "u"), null,
+      "5d before 0030 runs there is no household: every account goes on as before");
+    let threw = false;
+    try { await PS.readMembership(fake({ read: { data: null, error: { code: "XX000", message: "upstream" } } }), "u"); } catch { threw = true; }
+    t.ok(threw, "5e any other failed read throws, so the save gate stays closed");
+  }
+
+  // ── 6. THE SCREENS ──────────────────────────────────────────────────────────────────────────────
+  {
+    const app = loadApp(["HouseholdSection", "Settings"]);
+    const W = HW.HOUSEHOLD_WORDS;
+    const noop = () => {};
+    const render = (props) => textOf(app.render(app.h(app.HouseholdSection, { onInvite: noop, onRevoke: noop, onAccept: noop, onLeave: noop, onRemove: noop, onClearLinkToken: noop, ...props })));
+    const none = render({ info: { enabled: true, household: null } });
+    t.ok(none.includes(W.intro) && none.includes(W.inviteButton) && none.includes(W.joinLabel), "6a not in a household: what it is, Invite, and a code to join with");
+    t.ok(!none.includes(W.ownerConsentBody) && !none.includes(W.emailLabel), "6b …no address field before the owner's consent");
+    const link = render({ info: { enabled: true, household: null }, linkToken: "x".repeat(43) });
+    t.ok(link.includes(W.partnerConsentTitle) && link.includes(W.partnerConsentBody) && link.includes(W.partnerConsentAgree), "6c a link opens on the partner's consent screen");
+    const two = render({ info: { enabled: true, household: { role: "partner", members: [{ role: "partner", you: true, joined_at: "2026-10-29T10:00:00Z" }, { role: "owner", you: false, joined_at: "2026-10-28T10:00:00Z" }], invite: null, billing: { your_extra: "app_store" } } } });
+    t.ok(two.includes(W.you) && two.includes(W.yourPartner) && two.includes(W.roleOwner) && two.includes(W.leaveButton) && !two.includes(W.removeButton),
+      "6d two members: you and your partner by role; the partner may leave, only the owner removes");
+    t.ok(two.includes(W.extraAppStore), "6e a partner who also pays in the App Store is told where to cancel theirs");
+    const owner = render({ info: { enabled: true, household: { role: "owner", members: [{ role: "owner", you: true }, { role: "partner", you: false }], invite: null } } });
+    t.ok(owner.includes(W.removeButton) && owner.includes(W.leaveButton) && !owner.includes(W.inviteButton), "6f the owner of a full household: remove or leave, no third invite");
+    const pending = render({ info: { enabled: true, household: { role: "owner", members: [{ role: "owner", you: true }], invite: { email: "partner@example.test", expires_at: "2026-11-05T12:00:00Z" } } } });
+    t.ok(pending.includes(W.invitePending) && pending.includes("partner@example.test") && pending.includes(W.revokeInvite) && !/[A-Z0-9]{6}\b(?![^[]*\])/.test(pending.replace(/\[WORDS:[^\]]*\]/g, "").replace(/partner@example\.test|\d{4}/g, "")),
+      "6g an open invite: to whom, until when, a way to cancel it, and never its code again");
+    const settingsText = (info) => textOf(app.render(app.h(app.Settings, { data: { profile: { name: "Sam" }, accounts: [], bills: [], debts: [], goals: [] }, setAppData: noop, setScreen: noop, onClose: noop,
+      household: { info, linkToken: null, onInvite: noop, onRevoke: noop, onAccept: noop, onLeave: noop, onRemove: noop, onClearLinkToken: noop } })));
+    t.ok(settingsText({ enabled: true, household: null }).includes(W.rowLabel), "6h Settings shows Household while the server answers for it");
+    t.ok(!settingsText({ enabled: false }).includes("[WORDS:") && !settingsText(null).includes("[WORDS:"), "6i …and nothing at all while it is off or not yet asked");
+    const covered = textOf(app.render(app.h(app.Settings, { data: { profile: {}, accounts: [], bills: [], debts: [], goals: [] }, setAppData: noop, setScreen: noop, onClose: noop,
+      billingUi: { show: true, mode: "manage" }, onOpenUpgrade: noop, coveredByPartner: true })));
+    t.ok(covered.includes(W.coveredByPartner) && !covered.includes("Manage subscription") && !covered.includes("See plans"), "6j covered by the partner: told so, with nothing to manage or buy");
+  }
+
+  // ── 7. THE OLD MOCK IS GONE; THE WORDS ──────────────────────────────────────────────────────────
+  {
+    const src = fs.readdirSync(path.join(ROOT, "src", "lib")).map((f) => read("src", "lib", f)).join("\n") + read("src", "App.jsx");
+    t.ok(!/FLRSH/.test(src), "7a no made-up join code anywhere in the app");
+    t.ok(!/HOUSEHOLD_ENABLED/.test(src) && !/householdCode|setHousehold\(/.test(src), "7b no mock household tab, flag or state");
+    const words = Object.entries(HW.HOUSEHOLD_WORDS).flatMap(([k, v]) => (typeof v === "string" ? [v] : Object.values(v)));
+    t.ok(words.length >= 50 && words.every((w) => /^\[WORDS: [a-z0-9_.]+\]$/.test(w)), `7c every household line is a placeholder until approved (${words.length})`);
+    const L = await (async () => { const p = require.resolve("../netlify/functions/_lib/household.js"); delete require.cache[p]; return require(p); })();
+    const emailWords = Object.values(L.INVITE_EMAIL).flat();
+    t.ok(emailWords.every((w) => /^\[WORDS: household\.email\.[a-z_]+\]$/.test(w)), "7d the invite email's lines too");
+    const doc = read("docs", "product", "COUPLE-MODE-WORDS.md");
+    const ids = [...words, ...emailWords].map((w) => w.slice(8, -1));
+    const missing = ids.filter((id) => !doc.includes(`\`${id}\``));
+    t.eq(missing, [], "7e every id is in docs/product/COUPLE-MODE-WORDS.md");
+    const rows = [...doc.matchAll(/^\| `([a-z0-9_.]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)];
+    t.eq(rows.length, ids.length, "7f …once each, with where it shows, the facts it must state and its limit");
+    t.ok(rows.every((r) => r[2].trim() && r[3].trim() && /\d/.test(r[4])), "7g every row says where, what, and a length limit");
+    const app = read("src", "App.jsx");
+    t.ok(!/\[WORDS:/.test(app), "7h no placeholder is written into App.jsx itself: the lines come from lib/householdWords.js");
+  }
+
+  t.summary("householdClient.test");
+})();

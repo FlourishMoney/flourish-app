@@ -136,7 +136,7 @@ exports.handler = async (event, _ctx, deps = {}) => {
       const payload = H.inviteEmailPayload(to, H.inviteUrl(secrets.token, env), secrets.code, made.expires_at);
       const emailSent = await H.sendInviteEmail(payload, `household-invite:${made.invite_id}`, { env, fetchImpl: deps.fetch || fetch });
       // The code is shown to the owner once, now, to share in person or by message; only its hash is kept.
-      return json(200, CORS, { ok: true, household_created: !!made.created, invite: { email: to, expires_at: made.expires_at, code: secrets.code, email_sent: emailSent } });
+      return json(200, CORS, { ok: true, household_created: !!made.created, household_id: made.household_id, invite: { email: to, expires_at: made.expires_at, code: secrets.code, email_sent: emailSent } });
     }
 
     if (action === "revoke_invite") {

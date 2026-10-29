@@ -210,3 +210,48 @@ export function makeDebouncedSaver(saveFn, delayMs = 2000) {
     discard() { pending = null; if (timer) { clearTimeout(timer); timer = null; } }, // Sprint Z2 #12: drop pending after a beacon consumed it
   };
 }
+
+// ── Couple mode (v1): the household's shared blob (public.household_data, migration 0030) ─────────────
+// src/lib/household.js says what goes in it and how two saves are merged; these three are the I/O.
+// Before 0030 runs the tables do not exist: readMembership answers null (no household), so every account
+// goes on exactly as before. Any other failed read THROWS, so the caller keeps its save gate closed.
+const MISSING_TABLE = new Set(["42P01", "PGRST205"]);
+const isMissingTable = (e) => !!e && (MISSING_TABLE.has(e.code) || /does not exist|schema cache/i.test(String(e.message || "")));
+
+// { household_id, role } or null. RLS: a signed-in user reads only their own household's rows.
+export async function readMembership(sb, userId) {
+  const { data, error } = await sb.from("household_members").select("household_id, role").eq("user_id", userId).maybeSingle();
+  if (error) { if (isMissingTable(error)) return null; throw error; }
+  return data || null;
+}
+
+// { blob, updatedAt, version } or null when this account cannot see the row (it is no longer a member).
+export async function fetchHouseholdData(sb, householdId) {
+  const { data, error } = await sb.from("household_data").select("data, updated_at, version").eq("household_id", householdId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { blob: data.data, updatedAt: data.updated_at, version: data.version };
+}
+
+// Saves only over the version this device read. { ok: true, version } | { ok: false, conflict: true } (someone saved
+// in between, or this account is no longer a member: the caller reads again to tell which) | { ok: false, error }.
+// The same safety net as upsertUserData: an empty blob never replaces a household's real data.
+export async function saveHouseholdData(sb, householdId, blob, expectedVersion) {
+  try {
+    if (isBlobEmpty(blob)) {
+      let existing;
+      try { existing = await fetchHouseholdData(sb, householdId); } catch { existing = undefined; }
+      if (existing === undefined || (existing && !isBlobEmpty(existing.blob))) {
+        console.error("[persist] REFUSED: would overwrite the household's data with empty local state", { verified: existing !== undefined });
+        return { ok: false, refused: true };
+      }
+    }
+    const { data, error } = await sb.from("household_data")
+      .update({ data: blob, schema_version: (blob && blob.schemaVersion) || PERSIST_SCHEMA_VERSION })
+      .eq("household_id", householdId).eq("version", expectedVersion)
+      .select("version, updated_at");
+    if (error) { console.error("[persist] household save failed:", error.message); return { ok: false, error }; }
+    if (!Array.isArray(data) || data.length === 0) return { ok: false, conflict: true };
+    return { ok: true, version: data[0].version, updatedAt: data[0].updated_at };
+  } catch (e) { console.error("[persist] household save threw:", e?.message || e); return { ok: false, error: e }; }
+}
