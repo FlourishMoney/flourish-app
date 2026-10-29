@@ -1,4 +1,6 @@
-# Couple mode: the words (APPROVED 2026-10-29)
+# Couple mode: the words (APPROVED 2026-10-29; one line still to come)
+
+**Still to come (audit round 5, 2026-10-29):** `household.error.purchase_in_progress`. Its row below carries the facts and the limit, and its line is the placeholder until it is approved. The production build and every store build refuse to ship while it is one (`scripts/check-pending-words.mjs`).
 
 **Approved by ChatGPT and Grok (both AGREE), 2026-10-29.** The source is `~/Documents/Flourish/couple-mode/COUPLE-MODE-WORDS-APPROVED.md`, used word for word. In the code they live in two places:
 - the app: `src/lib/householdWords.js`;
@@ -7,7 +9,7 @@
 `tests/householdClient.test.cjs` checks three things:
 - each approved line below is in the code word for word, once;
 - each is within its limit;
-- no placeholder is left.
+- no placeholder is left, except the lines listed above as still to come.
 
 The email is never sent if a placeholder ever comes back.
 
@@ -76,6 +78,7 @@ House rules:
 | `household.error.wrong_account` | Join by link, error | That invite is for another address. Sign in with the address it was sent to. | That invite is for a different email. Sign in with the address it was sent to. | 90 |
 | `household.error.in_another_household` | Join, error | You are already in a household. Leave it first. | You're already in a household. Leave it first to join this one. | 70 |
 | `household.error.too_many_attempts` | Join, error | Too many tries; wait an hour and try again. | Too many tries. Wait an hour, then try again. | 60 |
+| `household.error.purchase_in_progress` | Invite or join, error (Settings > Household: Send invite, Join household, or opening an invite link) | Shown when this person has started a purchase that has not finished: a plan they tapped in the iPhone or Android app, whose store sheet may still be open (up to 32 minutes from the tap), or a store purchase the store said is pending, such as Ask to Buy (up to 7 days from the tap, or until the store completes it). Nothing changed: no invite was sent, and they have not joined. Finish or cancel that purchase, then try again; a cancelled one clears within about 30 minutes. It exists so one household is never charged twice. A web checkout never causes it (the server ends an unfinished one itself), and neither does a purchase that went through. Roles only: no amount, no name. | [WORDS: household.error.purchase_in_progress] | 90 |
 | `household.error.generic` | Any household action, error | Something went wrong; nothing changed. Try again. | Something went wrong and nothing changed. Please try again. | 70 |
 | `household.email.subject` | Invite email, subject | Someone invited you to share their Flourish household (no name). | You're invited to share a household on flourish | 70 |
 | `household.email.intro` | Invite email, first paragraph | You were invited to share a household on Flourish: you will both see and edit the same money, including linked bank accounts. Nothing happens until you agree in the app. | You've been invited to share a household on flourish. You'll both see and edit the same money, including linked bank accounts. Nothing changes until you agree in the app. | 260 |

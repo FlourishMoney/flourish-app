@@ -197,8 +197,10 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.ok(/\[context\.production\]\s*\n\s*command\s*=\s*"npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml), "6o the production web deploy runs it, on the site and the functions");
     t.ok(/&& node scripts\/check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]), "6p every store build runs it last");
     const srcFiles = (d) => fs.readdirSync(path.join(REPO, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? srcFiles(path.join(d, e.name)) : [path.join(d, e.name)]);
-    const holders = srcFiles("src").filter((f) => /\.(js|jsx)$/.test(f) && /\[WORDS:\s*[a-z0-9-]+/.test(read(f)));
-    t.eq(holders, [], "6q no placeholder is left in the app (the words were approved 2026-10-29)");
+    // The words still to come (tests/_pendingWords.cjs) are the only exception; 6n-6p keep them from shipping.
+    const { strayPlaceholders } = require("./_pendingWords.cjs");
+    const holders = srcFiles("src").filter((f) => /\.(js|jsx)$/.test(f) && /\[WORDS:\s*[a-z0-9-]+/.test(read(f)) && strayPlaceholders(read(f)).length);
+    t.eq(holders, [], "6q no placeholder is left in the app (the words were approved 2026-10-29), but the words still to come");
   }
 
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];

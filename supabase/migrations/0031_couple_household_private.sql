@@ -18,6 +18,10 @@
 --                            person on any platform, may start until it ends: 32 minutes
 --                            from when it began, or 7 days for one the store calls pending;
 --                            nothing ends it sooner (a paid purchase is answered by its paid row)
+--   purchase_attempts        EVERY buyer's one purchase attempt, alone or in a household (audit
+--                            round 5), with the same fixed ends; while it is live they cannot
+--                            create or join a household, so a purchase begun alone never
+--                            completes inside one that already pays
 --   plaid_account_owners     who linked each bank account (kept by the server from Plaid's
 --                            own answers), so cleanup never depends on a live Plaid row;
 --                            a sign-in deleted directly takes its rows with it (a trigger
@@ -32,6 +36,10 @@
 --   household_hold_purchase   a purchase attempt holds the household; household_hold_pending
 --                             keeps it while the store waits (7 days at most); no function
 --                             ends a hold early (audit round 4 a3)
+--   purchase_attempt_begin    every purchase starts here (round 5): this person's one attempt,
+--                             and for a member the household's hold too; purchase_attempt_pending,
+--                             purchase_attempt_clear (only an attempt the server has seen can no
+--                             longer charge)
 --   household_disconnect_item a member disconnects a bank: what came from it leaves the
 --                             shared blob, then its plaid_items row goes, in one transaction
 --   household_leave           a member leaves: their banks and everything derived from
@@ -111,6 +119,19 @@ create table if not exists public.household_purchase_holds (
   created_at   timestamptz not null default now()
 );
 
+-- EVERY BUYER'S ONE PURCHASE ATTEMPT (audit round 5), alone or in a household: a Stripe checkout (its session id)
+-- or one tap in the store app (the app's random id). The same fixed ends as a household's hold: 32 minutes from when
+-- it began, or 7 days once the store calls it pending. While it is live this person starts no other purchase, and
+-- cannot create or join a household (household_create_invite, household_accept_invite: purchase_in_progress).
+create table if not exists public.purchase_attempts (
+  user_id      uuid        primary key references auth.users(id) on delete cascade,
+  provider     text        not null check (provider in ('stripe', 'app_store', 'play_store')),
+  attempt_id   text        not null,
+  pending      boolean     not null default false,   -- the store said "pending": 7 days from created_at
+  expires_at   timestamptz not null,                  -- fixed from created_at, as the household hold's
+  created_at   timestamptz not null default now()
+);
+
 -- Who linked each bank account, from Plaid's own answers (plaid.js records it whenever Plaid lists an item's
 -- accounts). No foreign key on purpose: the record outlives the plaid_items row, so a bank disconnected some
 -- other way, or a sign-in deleted, still tells leave's cleanup which accounts were whose. Deleted with the
@@ -129,32 +150,44 @@ alter table public.household_join_attempts  enable row level security;
 alter table public.plaid_item_cursors       enable row level security;
 alter table public.household_purchase_holds enable row level security;
 alter table public.plaid_account_owners     enable row level security;
+alter table public.purchase_attempts        enable row level security;
 -- No policies on purpose: a browser never reaches these rows.
 revoke all on table public.household_invites        from anon, authenticated;
 revoke all on table public.household_join_attempts  from anon, authenticated;
 revoke all on table public.plaid_item_cursors       from anon, authenticated;
 revoke all on table public.household_purchase_holds from anon, authenticated;
 revoke all on table public.plaid_account_owners     from anon, authenticated;
+revoke all on table public.purchase_attempts        from anon, authenticated;
 grant all privileges on table public.household_invites        to service_role;
 grant all privileges on table public.household_join_attempts  to service_role;
 grant all privileges on table public.plaid_item_cursors       to service_role;
 grant all privileges on table public.household_purchase_holds to service_role;
 grant all privileges on table public.plaid_account_owners     to service_role;
+grant all privileges on table public.purchase_attempts        to service_role;
 
 -- 2. The owner invites ---------------------------------------------------------
 -- Makes the household the first time (owner, consent time, and the owner's own blob copied
 -- in as the shared one), cancels any open invite, and records the new one. Answers jsonb:
 --   { result: 'invited', household_id, invite_id, expires_at, created }   or
---   { result: 'not_owner' | 'household_full' | 'code_taken' }
+--   { result: 'not_owner' | 'household_full' | 'code_taken' }   or
+--   { result: 'purchase_in_progress', provider, attempt_id, pending }: the owner has a live purchase attempt (round 5)
 create or replace function public.household_create_invite(p_owner uuid, p_email_key text, p_token_hash text, p_code_hash text,
                                                           p_ttl interval default interval '7 days')
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  hid uuid; r text; n integer; inv uuid; exp timestamptz; made boolean := false;
+  hid uuid; r text; n integer; inv uuid; exp timestamptz; made boolean := false; pa public.purchase_attempts%rowtype;
 begin
+  -- This person's purchase lock FIRST, as every purchase_attempt_* function takes it (round 5): a purchase starting
+  -- and this call never interleave.
+  perform pg_advisory_xact_lock(hashtext('purchase:' || p_owner::text));
   perform pg_advisory_xact_lock(hashtext('household:' || p_owner::text));
   select household_id, role into hid, r from public.household_members where user_id = p_owner;
   if hid is not null and r <> 'owner' then return jsonb_build_object('result', 'not_owner'); end if;
+  -- A purchase this person started and has not finished: no household is made or invited to until it ends.
+  select * into pa from public.purchase_attempts where user_id = p_owner and expires_at > now();
+  if pa.user_id is not null then
+    return jsonb_build_object('result', 'purchase_in_progress', 'provider', pa.provider, 'attempt_id', pa.attempt_id, 'pending', pa.pending);
+  end if;
   if hid is null then
     insert into public.households (created_by, owner_consented_at) values (p_owner, now()) returning id into hid;
     insert into public.household_members (household_id, user_id, role, consented_at) values (hid, p_owner, 'owner', now());
@@ -224,11 +257,12 @@ create or replace function public.household_accept_invite(p_user uuid, p_email_k
                                                           p_net_key text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  inv public.household_invites%rowtype; mine uuid; n integer; target text; outcome text;
+  inv public.household_invites%rowtype; mine uuid; n integer; target text; outcome text; pa public.purchase_attempts%rowtype;
   user_limit constant integer := 10; target_limit constant integer := 10; net_limit constant integer := 30;
   invite_tries constant integer := 5;
 begin
   target := encode(sha256(convert_to(coalesce(p_email_key, ''), 'UTF8')), 'hex');
+  perform pg_advisory_xact_lock(hashtext('purchase:' || p_user::text));   -- first, as purchase_attempt_begin (round 5)
   perform pg_advisory_xact_lock(hashtext('household_join:user:' || p_user::text));
   perform pg_advisory_xact_lock(hashtext('household_join:target:' || target));
   if p_net_key is not null then perform pg_advisory_xact_lock(hashtext('household_join:net:' || p_net_key)); end if;
@@ -273,6 +307,12 @@ begin
   select count(*) into n from public.household_members where household_id = inv.household_id;
   if n = 0 then return jsonb_build_object('result', 'invalid'); end if;
   if n >= 2 then return jsonb_build_object('result', 'household_full'); end if;
+  -- A purchase this person started and has not finished (round 5): they join once it ends, so a checkout or a store
+  -- sheet opened alone can never complete inside a household that already pays. Not a failed try: nothing is counted.
+  select * into pa from public.purchase_attempts where user_id = p_user and expires_at > now();
+  if pa.user_id is not null then
+    return jsonb_build_object('result', 'purchase_in_progress', 'provider', pa.provider, 'attempt_id', pa.attempt_id, 'pending', pa.pending);
+  end if;
   insert into public.household_members (household_id, user_id, role, consented_at) values (inv.household_id, p_user, 'partner', now());
   update public.household_invites set used_at = now(), used_by = p_user where id = inv.id;
   -- The partner's own keys (their AI and Plaid consent) go to their own private row. Their old user_data row is
@@ -353,6 +393,95 @@ begin
     returning expires_at into h.expires_at;
   end if;
   return jsonb_build_object('result', 'pending', 'expires_at', h.expires_at);
+end; $$;
+
+-- 3c. Every buyer's purchase attempt (audit round 5) ---------------------------------------------------------
+-- A purchase begun ALONE had no hold: a person could open a Stripe checkout or a store sheet, then create or join a
+-- household that already pays, then finish it, and the household paid twice. Now every buyer, alone or not, has at
+-- most one live attempt (purchase_attempts), with the household hold's fixed ends: 32 minutes from when it began, or
+-- 7 days once the store calls it pending (a store attempt only, set once). Asking again for the same attempt keeps its
+-- end; a pending one is refused even to itself. While one is live, creating or joining a household is refused.
+-- ONE LOCK PER PERSON: pg_advisory_xact_lock on 'purchase:' || their id, taken FIRST by every function here and by
+-- household_create_invite and household_accept_invite. So a purchase starting and a join never interleave: whichever
+-- takes the lock second sees the other (a join sees the attempt and is refused; a purchase sees the membership and is
+-- held against the household, and billing.js reads the household's cover again after it).
+--   purchase_attempt_begin    the one call billing.js makes before any purchase. For a member it also takes the
+--                             household's hold (household_hold_purchase), and is refused while the OTHER member has
+--                             a live attempt of their own. Nothing is written unless all of it says yes. p_replaces:
+--                             this person's own earlier Stripe checkout, once the server has seen it expire.
+--   purchase_attempt_pending  the store said pending: this attempt, and its household hold, keep 7 days from the start.
+--   purchase_attempt_clear    the server has seen that this attempt can no longer charge (Stripe says the checkout
+--                             expired or completed, or the store's purchase is on the row): that one attempt, by its
+--                             id, ends. Only /api/household calls it, just before it creates or joins. It never ends
+--                             a household's hold (those still end only at their fixed time).
+-- Answers jsonb: { result: 'held', expires_at } | { result: 'held_elsewhere', mine, provider, attempt_id, pending }.
+create or replace function public.purchase_attempt_begin(p_user uuid, p_provider text, p_attempt text,
+                                                         p_ttl interval default interval '32 minutes', p_replaces text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare a public.purchase_attempts%rowtype; other public.purchase_attempts%rowtype; hid uuid; hh jsonb; exp timestamptz;
+        again boolean := false;
+begin
+  if coalesce(p_attempt, '') = '' then raise exception 'attempt_required' using errcode = 'check_violation'; end if;
+  if p_provider is null or p_provider not in ('stripe', 'app_store', 'play_store') then
+    raise exception 'provider_required' using errcode = 'check_violation';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('purchase:' || p_user::text));
+  select * into a from public.purchase_attempts where user_id = p_user for update;
+  if a.user_id is not null and a.expires_at > now() then
+    if a.attempt_id = p_attempt and a.provider = p_provider and not a.pending then
+      again := true;                                                   -- the same attempt: its end stays where it was
+    elsif not (p_replaces is not null and a.attempt_id = p_replaces and a.provider = 'stripe' and p_provider = 'stripe' and not a.pending) then
+      return jsonb_build_object('result', 'held_elsewhere', 'mine', true, 'provider', a.provider, 'attempt_id', a.attempt_id, 'pending', a.pending);
+    end if;
+  end if;
+  select household_id into hid from public.household_members where user_id = p_user;
+  if hid is not null then
+    perform 1 from public.households where id = hid for update;
+    -- The other member's own live attempt refuses this one too (round 5, 3): a household purchase checks both.
+    select pa.* into other from public.purchase_attempts pa join public.household_members m on m.user_id = pa.user_id
+     where m.household_id = hid and pa.user_id <> p_user and pa.expires_at > now() limit 1;
+    if other.user_id is not null then
+      return jsonb_build_object('result', 'held_elsewhere', 'mine', false, 'provider', other.provider, 'pending', other.pending);
+    end if;
+    hh := public.household_hold_purchase(p_user, p_provider, p_attempt, p_ttl, p_replaces);
+    if coalesce(hh ->> 'result', '') <> 'held' and coalesce(hh ->> 'result', '') <> 'no_household' then return hh; end if;
+  end if;
+  if again then return jsonb_build_object('result', 'held', 'expires_at', a.expires_at, 'again', true); end if;
+  exp := now() + p_ttl;
+  insert into public.purchase_attempts (user_id, provider, attempt_id, pending, expires_at, created_at)
+  values (p_user, p_provider, p_attempt, false, exp, now())
+  on conflict (user_id) do update set provider = excluded.provider, attempt_id = excluded.attempt_id, pending = false,
+                                      expires_at = excluded.expires_at, created_at = excluded.created_at;
+  return jsonb_build_object('result', 'held', 'expires_at', exp);
+end; $$;
+
+create or replace function public.purchase_attempt_pending(p_user uuid, p_attempt text, p_backstop interval default interval '7 days')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare a public.purchase_attempts%rowtype;
+begin
+  perform pg_advisory_xact_lock(hashtext('purchase:' || p_user::text));
+  select * into a from public.purchase_attempts
+   where user_id = p_user and attempt_id = p_attempt and provider in ('app_store', 'play_store') and expires_at > now()
+   for update;
+  if a.user_id is null then return jsonb_build_object('result', 'not_held'); end if;
+  if not a.pending then
+    update public.purchase_attempts set pending = true, expires_at = created_at + p_backstop
+     where user_id = p_user
+    returning expires_at into a.expires_at;
+  end if;
+  perform public.household_hold_pending(p_user, p_attempt, p_backstop);   -- a member's household hold, the same attempt
+  return jsonb_build_object('result', 'pending', 'expires_at', a.expires_at);
+end; $$;
+
+create or replace function public.purchase_attempt_clear(p_user uuid, p_attempt text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  if coalesce(p_attempt, '') = '' then return jsonb_build_object('result', 'not_held'); end if;
+  perform pg_advisory_xact_lock(hashtext('purchase:' || p_user::text));
+  delete from public.purchase_attempts where user_id = p_user and attempt_id = p_attempt;
+  get diagnostics n = row_count;
+  return jsonb_build_object('result', case when n > 0 then 'cleared' else 'not_held' end);
 end; $$;
 
 -- 4. Leaving ---------------------------------------------------------------------
@@ -596,6 +725,9 @@ revoke all on function public.household_revoke_invite(uuid)                     
 revoke all on function public.household_accept_invite(uuid, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.household_hold_purchase(uuid, text, text, interval, text) from public, anon, authenticated;
 revoke all on function public.household_hold_pending(uuid, text, interval)          from public, anon, authenticated;
+revoke all on function public.purchase_attempt_begin(uuid, text, text, interval, text) from public, anon, authenticated;
+revoke all on function public.purchase_attempt_pending(uuid, text, interval)        from public, anon, authenticated;
+revoke all on function public.purchase_attempt_clear(uuid, text)                    from public, anon, authenticated;
 revoke all on function public.household_disconnect_item(uuid, text)                from public, anon, authenticated;
 revoke all on function public.household_strip_accounts(uuid, text[])               from public, anon, authenticated;
 revoke all on function public.household_strip_member_banks(uuid, uuid)              from public, anon, authenticated;
@@ -609,6 +741,9 @@ grant execute on function public.household_revoke_invite(uuid)                  
 grant execute on function public.household_accept_invite(uuid, text, text, text, text) to service_role;
 grant execute on function public.household_hold_purchase(uuid, text, text, interval, text) to service_role;
 grant execute on function public.household_hold_pending(uuid, text, interval)          to service_role;
+grant execute on function public.purchase_attempt_begin(uuid, text, text, interval, text) to service_role;
+grant execute on function public.purchase_attempt_pending(uuid, text, interval)        to service_role;
+grant execute on function public.purchase_attempt_clear(uuid, text)                    to service_role;
 grant execute on function public.household_disconnect_item(uuid, text)                to service_role;
 grant execute on function public.household_leave(uuid)                                 to service_role;
 grant execute on function public.household_remove_partner(uuid)                        to service_role;
@@ -624,8 +759,9 @@ grant execute on function public.household_remove_partner(uuid)                 
 --          has_function_privilege('authenticated', 'public.household_accept_invite(uuid, text, text, text, text)', 'execute'),
 --          has_function_privilege('service_role', 'public.household_accept_invite(uuid, text, text, text, text)', 'execute'),
 --          has_table_privilege('authenticated', 'public.household_purchase_holds', 'select'),
---          has_function_privilege('service_role', 'public.household_leave_locked(uuid, uuid)', 'execute');
--- Expected after: false, false, false, true, false, false.
+--          has_function_privilege('service_role', 'public.household_leave_locked(uuid, uuid)', 'execute'),
+--          has_table_privilege('authenticated', 'public.purchase_attempts', 'select');
+-- Expected after: false, false, false, true, false, false, false.
 -- ============================================================================
 -- ROLLBACK
 -- ============================================================================
@@ -640,12 +776,16 @@ grant execute on function public.household_remove_partner(uuid)                 
 -- drop function if exists public.household_drop_by(jsonb, text, text[]);
 -- drop function if exists public.household_disconnect_item(uuid, text);
 -- drop function if exists public.household_strip_accounts(uuid, text[]);
+-- drop function if exists public.purchase_attempt_clear(uuid, text);
+-- drop function if exists public.purchase_attempt_pending(uuid, text, interval);
+-- drop function if exists public.purchase_attempt_begin(uuid, text, text, interval, text);
 -- drop function if exists public.household_hold_pending(uuid, text, interval);
 -- drop function if exists public.household_hold_purchase(uuid, text, text, interval, text);
 -- drop function if exists public.household_accept_invite(uuid, text, text, text, text);
 -- drop function if exists public.household_revoke_invite(uuid);
 -- drop function if exists public.household_create_invite(uuid, text, text, text, interval);
 -- drop table if exists public.plaid_account_owners;
+-- drop table if exists public.purchase_attempts;
 -- drop table if exists public.household_purchase_holds;
 -- drop table if exists public.plaid_item_cursors;
 -- drop table if exists public.household_join_attempts;

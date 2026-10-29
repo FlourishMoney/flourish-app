@@ -130,11 +130,16 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     fs.writeFileSync(path.join(dir, "c31.sql"), footerCheck(M31));
     t.eq(file(path.join(dir, "c30.sql")), "f|t|t|f|f|t|f|f", "1a 0030: anon nothing; signed in: select the blob, update its data only, never its version, never insert a member; no anon on the private rows, and nobody moves one");
     t.ok(/Expected after: false, true, true, false, false, true, false, false\./.test(M30), "1b …which is what 0030's footer says to expect");
-    t.eq(file(path.join(dir, "c31.sql")), "f|f|f|t|f|f", "1c 0031: nobody signed in reaches the invites, the cursors or the holds, or calls the join; the service role does, but never the inner leave");
-    t.ok(/Expected after: false, false, false, true, false, false\./.test(M31), "1d …which is what 0031's footer says to expect");
+    t.eq(file(path.join(dir, "c31.sql")), "f|f|f|t|f|f|f", "1c 0031: nobody signed in reaches the invites, the cursors, the holds or the purchase attempts, or calls the join; the service role does, but never the inner leave");
+    t.ok(/Expected after: false, false, false, true, false, false, false\./.test(M31), "1d …which is what 0031's footer says to expect");
     const fnRoles = sql(`select string_agg(p.proname || ':' || has_function_privilege('authenticated', p.oid, 'execute')::text, ',' order by p.proname)
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'household\\_%'`);
     t.ok(fnRoles.split(",").every((x) => x.endsWith(":false")), `1e no household_* function is callable by a signed-in user (${fnRoles})`);
+    const attemptFns = sql(`select string_agg(p.proname || ':' || has_function_privilege('authenticated', p.oid, 'execute')::text || ':' || has_function_privilege('anon', p.oid, 'execute')::text
+      || ':' || has_function_privilege('service_role', p.oid, 'execute')::text, ',' order by p.proname)
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'purchase\\_attempt\\_%'`);
+    t.eq(attemptFns, "purchase_attempt_begin:false:false:true,purchase_attempt_clear:false:false:true,purchase_attempt_pending:false:false:true",
+      "1f the purchase-attempt functions (round 5): the service role only");
 
     // Four people. O owns the household, P is invited, S is a stranger, T is a third adult.
     const id = (email) => sql(`insert into auth.users (email, email_confirmed_at) values ('${email}', now()) returning id`);
@@ -600,6 +605,112 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq([tries(X13), sql(`select count(*) from public.household_join_attempts where target_key = encode(sha256(convert_to('z13@example.test', 'UTF8')), 'hex')`)], ["6", "0"],
         "13c the opener's own tries are counted (their account, their network), never against the invited address");
       t.eq(svc(`household_accept_invite('${Z13}', 'z13@example.test', 'tok-13', null, 'net-13b')`).result, "joined", "13d the person it was sent to still joins by it");
+    }
+
+    // 14 EVERY BUYER'S ONE PURCHASE ATTEMPT (audit round 5) ----------------------------------------------------------
+    // A purchase begun ALONE now has an attempt too, with the household hold's fixed ends; while it lives, the person
+    // cannot create or join a household, so it can never complete inside one that already pays.
+    {
+      const begin = (u, prov, att, replaces) => svc(`purchase_attempt_begin('${u}', '${prov}', '${att}'${replaces ? `, interval '32 minutes', '${replaces}'` : ""})`);
+      const attempt = (u) => sql(`select coalesce((select provider || ',' || attempt_id || ',' || pending::text from public.purchase_attempts where user_id = '${u}' and expires_at > now()), 'none')`);
+      const ends = (u) => sql(`select expires_at from public.purchase_attempts where user_id = '${u}'`);
+      const lifeIs = (u, iv) => sql(`select expires_at = created_at + interval '${iv}' from public.purchase_attempts where user_id = '${u}'`);
+      const lapse = (u) => sql(`update public.purchase_attempts set expires_at = now() - interval '1 minute' where user_id = '${u}'`);
+      const holds = (h) => sql(`select count(*) from public.household_purchase_holds where household_id = '${h}' and expires_at > now()`);
+      const households = () => sql(`select count(*) from public.households`);
+
+      // Alone: the attempt itself.
+      const A = who("solo-a");
+      t.eq([begin(A, "stripe", "cs_solo_1").result, attempt(A), lifeIs(A, "32 minutes")], ["held", "stripe,cs_solo_1,false", "t"],
+        "14a someone in no household starts a web checkout: their one attempt is recorded, 32 minutes from when it began");
+      const endA = ends(A);
+      t.eq([begin(A, "stripe", "cs_solo_1").result, ends(A)], ["held", endA], "14b the same attempt again: held, its end unchanged");
+      const other = begin(A, "app_store", "store-solo-1");
+      t.eq([other.result, other.mine, other.provider, other.attempt_id], ["held_elsewhere", true, "stripe", "cs_solo_1"],
+        "14c alone, a second purchase while the first lives (web then iPhone) is refused: one attempt per person");
+      t.eq([begin(A, "stripe", "cs_solo_2").result, begin(A, "stripe", "cs_solo_2", "cs_solo_1").result, attempt(A)], ["held_elsewhere", "held", "stripe,cs_solo_2,false"],
+        "14d …a second web checkout replaces the first only as its own expired one (the server checks Stripe first)");
+
+      // Alone, web checkout, then JOIN a paying household: refused while it lives.
+      const J = { o: who("join14-owner") };   // an owner on their own, so there is room to join
+      sql(`insert into public.subscriptions (user_id, provider, status, current_period_end, plan_key) values ('${J.o}', 'stripe', 'active', now() + interval '20 days', 'annual')
+           on conflict (user_id) do update set status = 'active'`);
+      const Bj = who("solo-b");
+      svc(`household_create_invite('${J.o}', 'solo-b@example.test', 'tok-14b', 'code-14b')`);
+      begin(Bj, "stripe", "cs_b_1");
+      const refused = svc(`household_accept_invite('${Bj}', 'solo-b@example.test', 'tok-14b', null)`);
+      t.eq([refused.result, refused.provider, refused.attempt_id, memberRole(Bj), tries(Bj)], ["purchase_in_progress", "stripe", "cs_b_1", "none", "0"],
+        "14e alone with a web checkout open, they try to join a household that pays: refused (purchase_in_progress, naming the checkout for the server to expire), not a member, and not counted as a failed try");
+      t.eq(sql(`select (used_at is null)::text from public.household_invites where token_hash = 'tok-14b'`), "true", "14f …and the invite is still unused");
+      t.eq(svc(`purchase_attempt_clear('${Bj}', 'cs_other')`).result, "not_held", "14g an attempt is cleared only by its own id…");
+      t.eq([svc(`purchase_attempt_clear('${Bj}', 'cs_b_1')`).result, attempt(Bj)], ["cleared", "none"], "14h …which the server does once Stripe says that checkout has expired");
+      t.eq(svc(`household_accept_invite('${Bj}', 'solo-b@example.test', 'tok-14b', null)`).result, "joined", "14i then the join goes through: the old checkout can no longer charge");
+
+      // Alone, store purchase (or pending), then join: refused until it ends.
+      const K = { o: who("join14k-owner") };
+      const Ck = who("solo-c");
+      svc(`household_create_invite('${K.o}', 'solo-c@example.test', 'tok-14c', 'code-14c')`);
+      begin(Ck, "app_store", "store-c-1");
+      t.eq(svc(`household_accept_invite('${Ck}', 'solo-c@example.test', 'tok-14c', null)`).result, "purchase_in_progress", "14j alone with an iPhone purchase sheet open, they try to join: refused");
+      t.eq([svc(`purchase_attempt_pending('${Ck}', 'store-c-1')`).result, lifeIs(Ck, "7 days"), svc(`household_accept_invite('${Ck}', 'solo-c@example.test', 'tok-14c', null)`).result],
+        ["pending", "t", "purchase_in_progress"], "14k the store says pending: the attempt keeps 7 days from when it began, and the join is still refused");
+      const endC = ends(Ck);
+      t.eq([svc(`purchase_attempt_pending('${Ck}', 'store-c-1')`).result, ends(Ck), begin(Ck, "app_store", "store-c-1").result], ["pending", endC, "held_elsewhere"],
+        "14l pending again changes nothing; the pending attempt asking again is refused (the store is still on it)");
+      t.eq(svc(`purchase_attempt_pending('${Ck}', 'cs_none')`).result, "not_held", "14m only the live store attempt can be made pending");
+      lapse(Ck);
+      t.eq(svc(`household_accept_invite('${Ck}', 'solo-c@example.test', 'tok-14c', null)`).result, "joined", "14n once it has ended, the join goes through");
+      const Dk = who("solo-d");
+      t.eq([begin(Dk, "stripe", "cs_d_1").result, svc(`purchase_attempt_pending('${Dk}', 'cs_d_1')`).result, lifeIs(Dk, "32 minutes")], ["held", "not_held", "t"],
+        "14o a web checkout can never be made pending: its end stays 32 minutes");
+
+      // Alone, checkout, then CREATE a household: the same protection.
+      const E = who("solo-e");
+      const before = households();
+      begin(E, "play_store", "store-e-1");
+      const made = svc(`household_create_invite('${E}', 'e-partner@example.test', 'tok-14e', 'code-14e')`);
+      t.eq([made.result, made.provider, households(), memberRole(E)], ["purchase_in_progress", "play_store", before, "none"],
+        "14p alone with an Android purchase open, they try to invite a partner: refused, and no household is made");
+      lapse(E);
+      t.eq(svc(`household_create_invite('${E}', 'e-partner@example.test', 'tok-14e', 'code-14e')`).result, "invited", "14q once it has ended, the invite is made");
+
+      // In a household: the attempt holds the household too, and each member's attempt refuses the other's.
+      const H = pair("hh14");
+      t.eq([begin(H.o, "stripe", "cs_h_1").result, attempt(H.o), holds(H.h)], ["held", "stripe,cs_h_1,false", "1"],
+        "14r a member's purchase records their attempt AND holds the household, in one transaction");
+      t.eq([begin(H.p, "app_store", "store-h-1").result, attempt(H.p)], ["held_elsewhere", "none"], "14s the other member cannot start one meanwhile, and nothing of theirs is written");
+      // The backstop (round 5, 3): an attempt of a member's own refuses the other even with no household hold, the
+      // window a join could only have reached before the database refused joins with a live attempt.
+      const W = pair("win14"), Ww = who("win14-third");
+      sql(`insert into public.purchase_attempts (user_id, provider, attempt_id, pending, expires_at, created_at) values ('${W.p}', 'app_store', 'store-w-1', false, now() + interval '20 minutes', now())`);
+      const wo = begin(W.o, "stripe", "cs_w_1");
+      t.eq([wo.result, wo.mine, holds(W.h), attempt(W.o)], ["held_elsewhere", false, "0", "none"],
+        "14t a household purchase checks every member's own attempt as well as the household's hold: the owner is refused while the partner's store purchase lives");
+      t.eq(begin(Ww, "stripe", "cs_ww_1").result, "held", "14u …and someone outside the household is never held by it");
+
+      // The one lock: an attempt starting and a join never interleave.
+      const R = pair("race14"), Rb = who("race14-b");
+      sql(`delete from public.household_members where user_id = '${R.p}'`);
+      svc(`household_create_invite('${R.o}', 'race14-b@example.test', 'tok-14r', 'code-14r')`);
+      const slow = slowly(`set role service_role; select public.purchase_attempt_begin('${Rb}', 'app_store', 'store-race-1')`);
+      await pause(300);
+      const raced = svc(`household_accept_invite('${Rb}', 'race14-b@example.test', 'tok-14r', null)`);
+      const began = json((await slow).out);
+      t.eq([began && began.result, raced.result, memberRole(Rb)], ["held", "purchase_in_progress", "none"],
+        "14v a store purchase starts while the same person joins: the join waits for the purchase's lock, then sees the attempt and is refused");
+      lapse(Rb);
+      const slow2 = slowly(`set role service_role; select public.household_accept_invite('${Rb}', 'race14-b@example.test', 'tok-14r', null)`);
+      await pause(300);
+      const second = begin(Rb, "stripe", "cs_race_2");
+      const joined = json((await slow2).out);
+      t.eq([joined && joined.result, second.result, holds(R.h)], ["joined", "held", "1"],
+        "14w …the other way round, the purchase waits for the join, then holds the household it joined (billing.js then reads the household's cover again)");
+
+      t.ok(/permission denied/.test(err(() => as(A, "select count(*) from public.purchase_attempts"))) && /permission denied/.test(err(() => anon("select count(*) from public.purchase_attempts")))
+        && /permission denied/.test(err(() => as(A, `select public.purchase_attempt_clear('${A}', 'cs_solo_2')`))),
+        "14x nobody signed in, and nobody anonymous, reads the attempts or clears one");
+      sql(`delete from auth.users where id = '${A}'`);
+      t.eq(sql(`select count(*) from public.purchase_attempts where user_id = '${A}'`), "0", "14y a deleted sign-in takes its attempt with it");
     }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));

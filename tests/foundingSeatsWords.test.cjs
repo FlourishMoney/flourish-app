@@ -53,13 +53,17 @@ const HOLD = /\[WORDS:\s*[a-z0-9-]+/;
   t.eq(["trial-confirm-body", "founding-list-line"].map((id) => /\{n\}/.test(line[id])), [true, true], "2h the two counted lines carry {n}");
   t.eq(P.pendingWords("founding-list-line", 35), line["founding-list-line"].replace("{n}", "35"), "2i …and the live count goes in its place");
 
-  // 3. No placeholder left.
+  // 3. No placeholder left, but the words still to come (tests/_pendingWords.cjs: couple mode's, listed in
+  // docs/product/COUPLE-MODE-WORDS.md; none of these founding lines). The production build's guard refuses them all.
+  const { pendingWordIds, strayPlaceholders } = require("./_pendingWords.cjs");
+  const pending = pendingWordIds();
   const built = [...walk("src"), ...walk("netlify"), ...walk("public"), "index.html"].filter((f) => /\.(js|jsx|mjs|cjs|html|json)$/.test(f));
-  t.eq(built.filter((f) => HOLD.test(read(f))), [], "3a no [WORDS: placeholder in src/, netlify/, public/ or index.html");
+  t.eq(built.filter((f) => HOLD.test(read(f)) && strayPlaceholders(read(f), pending).length), [], "3a no [WORDS: placeholder in src/, netlify/, public/ or index.html, but the words still to come");
+  t.ok(!pending.some((id) => rows.some((r) => r.id === id)), "3a2 …and none of those is a founding-seats line");
   const { execFileSync } = require("child_process");
   let guard = 0;
   try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-  t.eq(guard, 0, "3b the production build's guard finds none");
+  t.eq(guard, pending.length ? 1 : 0, "3b the production build's guard refuses the build while any word is still to come, and finds none once all are in");
 
   // 4. The founding list form is gone.
   const APP = read("src", "App.jsx");

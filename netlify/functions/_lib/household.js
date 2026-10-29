@@ -9,7 +9,8 @@
 //   - the invite's secrets: a link token and a 6-character code, of which only SHA-256 hashes are stored;
 //   - the network a join comes from, as a keyed hash only (the attempt limits, migration 0031);
 //   - the invite email, in its approved words (2026-10-29); it is never sent if a placeholder ever comes back;
-//   - one purchase at a time (a hold), and what happens if a household ever pays twice (reconcileHouseholdBilling).
+//   - one purchase at a time: every buyer's one attempt and a household's hold, and what happens if a household
+//     ever pays twice (reconcileHouseholdBilling).
 //
 // UNTIL MIGRATIONS 0030 AND 0031 RUN, there is no household table. While HOUSEHOLD_ENABLED is off, a read that
 // finds the table (or the function) missing answers "no household", so every existing path behaves exactly as
@@ -177,15 +178,17 @@ async function householdCover(admin, userId, now = Date.now()) {
   }
 }
 
-// ── ONE PURCHASE AT A TIME (audit H5, round 2 a) ───────────────────────────────────────────────────
-// ONE purchase attempt holds the household (migration 0031): a Stripe checkout (its session id) or one tap in
-// the store app (a random id the app makes). Any other attempt is refused while it holds, whoever makes it and on
-// whatever platform. A Stripe checkout made under a hold ends at CHECKOUT_MINUTES, before the hold (HOLD_MINUTES);
-// a store purchase the store calls pending holds the household for PENDING_BACKSTOP_DAYS. Every hold's end is fixed
-// from when its attempt began; asking again never moves it (audit round 3 a), and nothing ends it early (round 4
-// a3): no report says which attempt it is about. A purchase that went through is a paid row, which every check
-// reads before it looks at a hold. Only a member of a household is held: for everyone else nothing is stored.
-//   holdPurchase  { held, household, mine, provider, attempt_id }; attempt_id only for one's own blocking attempt
+// ── ONE PURCHASE AT A TIME (audit H5, round 2 a; round 5) ──────────────────────────────────────────
+// Every purchase is one ATTEMPT (migration 0031): a Stripe checkout (its session id) or one tap in the store app (a
+// random id the app makes). EVERY buyer, alone or in a household, has at most one live attempt (round 5:
+// purchase_attempts), and a member's attempt also holds the household, so any other attempt is refused while it
+// lives: the same person's on another platform, and the other member's. While a person has one, they cannot create
+// or join a household (0031: purchase_in_progress), so a purchase begun alone never completes inside a household
+// that already pays. A Stripe checkout ends at CHECKOUT_MINUTES, before its attempt (HOLD_MINUTES); a store purchase
+// the store calls pending keeps it for PENDING_BACKSTOP_DAYS. Every end is fixed from when the attempt began; asking
+// again never moves it (audit round 3 a), and nothing ends a household's hold early (round 4 a3). A purchase that
+// went through is a paid row, which every check reads before it looks at an attempt.
+//   holdPurchase  { held } | { held: false, mine, provider, attempt_id }; attempt_id only for one's own attempt
 // Throws on any other failed call: the caller sells nothing rather than risk two subscriptions.
 const HOLD_MINUTES = 32;
 const CHECKOUT_MINUTES = 31;
@@ -194,19 +197,47 @@ const isAttemptId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{8,100}$/.tes
 async function holdPurchase(admin, userId, provider, attemptId, { replaces = null } = {}) {
   const args = { p_user: userId, p_provider: provider, p_attempt: attemptId, p_ttl: `${HOLD_MINUTES} minutes` };
   if (replaces) args.p_replaces = replaces;
-  const { data, error } = await admin.rpc("household_hold_purchase", args);
+  const { data, error } = await admin.rpc("purchase_attempt_begin", args);
   if (error) { if (legacyMissing(error)) return { held: true, household: false }; throw new Error(`purchase hold: ${error.code || "error"}`); }
   const r = (data && data.result) || "";
-  if (r === "no_household") return { held: true, household: false };
-  if (r === "held") return { held: true, household: true };
-  if (r === "held_elsewhere") return { held: false, household: true, mine: !!data.mine, provider: data.provider || null, attempt_id: data.attempt_id || null };
+  if (r === "held") return { held: true };
+  if (r === "held_elsewhere") return { held: false, mine: !!data.mine, provider: data.provider || null, attempt_id: data.mine ? data.attempt_id || null : null };
   throw new Error(`purchase hold: ${r || "no_answer"}`);
 }
-// The store said the purchase is pending: the hold lasts PENDING_BACKSTOP_DAYS from its start. true when it was this attempt's.
+// The store said the purchase is pending: the attempt (and a member's household hold) lasts PENDING_BACKSTOP_DAYS
+// from its start. true when it was this person's live store attempt.
 async function holdPending(admin, userId, attemptId) {
-  const { data, error } = await admin.rpc("household_hold_pending", { p_user: userId, p_attempt: attemptId, p_backstop: `${PENDING_BACKSTOP_DAYS} days` });
+  const { data, error } = await admin.rpc("purchase_attempt_pending", { p_user: userId, p_attempt: attemptId, p_backstop: `${PENDING_BACKSTOP_DAYS} days` });
   if (error) { if (legacyMissing(error)) return false; throw new Error(`purchase pending: ${error.code || "error"}`); }
   return !!data && data.result === "pending";
+}
+// Creating or joining a household was refused because this person has a live attempt (refusal: the 0031 answer,
+// { provider, attempt_id, pending }). An attempt that can no longer charge is cleared, by its id, so the caller may
+// ask once more (round 5); true when it was. Only these, checked here and now:
+//   a Stripe checkout: an open one is expired at Stripe; one Stripe then says is expired, or has completed (the
+//     purchase went through: the household then reconciles two paid plans, as when both paid before joining);
+//   a store purchase: the person's own row now holds a live subscription from that store (the purchase, a pending
+//     one included, went through). A store sheet still open, or a pending purchase the store has not settled, is not
+//     cleared: the person waits for it to end (32 minutes, or 7 days once pending).
+// Throws when Stripe or the database can't be asked (the caller answers 503, and nothing changes).
+async function settlePurchaseAttempt(admin, userId, refusal, deps = {}) {
+  const attempt = refusal && refusal.attempt_id;
+  if (!attempt) return false;
+  let done = false;
+  if (refusal.provider === "stripe") {
+    const get = deps.stripeGet || stripeGet, post = deps.stripePost || stripePost;
+    let session = await get(`/checkout/sessions/${encodeURIComponent(attempt)}`);
+    if (session && session.status === "open") session = await post(`/checkout/sessions/${encodeURIComponent(attempt)}/expire`, {});
+    done = !!session && (session.status === "expired" || session.status === "complete");
+  } else if (refusal.provider === "app_store" || refusal.provider === "play_store") {
+    const { data: row, error } = await admin.from("subscriptions").select("provider, status, current_period_end").eq("user_id", userId).maybeSingle();
+    if (error) throw new Error(`subscription read: ${error.code || "error"}`);
+    done = !!row && row.provider === refusal.provider && isPaidSubscription(row);
+  }
+  if (!done) return false;
+  const { data, error } = await admin.rpc("purchase_attempt_clear", { p_user: userId, p_attempt: attempt });
+  if (error) throw new Error(`purchase clear: ${error.code || "error"}`);
+  return !!data && data.result === "cleared";
 }
 // ── WHO LINKED EACH BANK ACCOUNT (audit round 2 c) ─────────────────────────────────────────────────
 // Recorded from Plaid's own answers whenever plaid.js lists an item's accounts, against the person who linked the
@@ -339,7 +370,7 @@ module.exports = {
   sha256, normalizeCode, isCodeShaped, isTokenShaped, newInviteSecrets, inviteUrl, emailKey, netKeyOf,
   INVITE_EMAIL, hasPlaceholder, inviteEmailPayload, sendInviteEmail,
   householdCover,
-  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending,
+  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending, settlePurchaseAttempt,
   recordAccountOwners, disconnectItem,
   EXTRA_FLAG, extraPayer, payersOf, reconcileHouseholdBilling, resumeHouseholdExtra,
 };

@@ -43,6 +43,16 @@ async function rpc(admin, fn, args) {
   return data || {};
 }
 
+// A purchase this person started and has not finished stops them creating or joining a household (0031, audit round
+// 5): the database answers purchase_in_progress. One that can no longer charge (a checkout Stripe says has expired,
+// after we expire it, or completed; a store purchase now on their own row) is cleared by its id, and the call is
+// made once more (_lib/household.js settlePurchaseAttempt). Anything else stays purchase_in_progress.
+async function settledRpc(admin, userId, deps, fn, args) {
+  let r = await rpc(admin, fn, args);
+  if (r.result === "purchase_in_progress" && await H.settlePurchaseAttempt(admin, userId, r, deps)) r = await rpc(admin, fn, args);
+  return r;
+}
+
 // The status the app shows on Settings > Household. Roles only: the app knows "you" and "your partner".
 async function statusFor(admin, userId, deps = {}) {
   // Read directly rather than through membershipOf: any failed read here, a missing table included, is a 503 (this
@@ -123,7 +133,7 @@ exports.handler = async (event, _ctx, deps = {}) => {
       let made = null, secrets = null;
       for (let i = 0; i < 3 && !made; i++) {
         secrets = H.newInviteSecrets();
-        const r = await rpc(admin, "household_create_invite", { p_owner: user_id, p_email_key: H.emailKey(to), p_token_hash: secrets.tokenHash, p_code_hash: secrets.codeHash });
+        const r = await settledRpc(admin, user_id, deps, "household_create_invite", { p_owner: user_id, p_email_key: H.emailKey(to), p_token_hash: secrets.tokenHash, p_code_hash: secrets.codeHash });
         if (r.result === "code_taken") continue;
         if (r.result !== "invited") return json(409, CORS, { error: r.result || "not_invited" });
         made = r;
@@ -148,7 +158,7 @@ exports.handler = async (event, _ctx, deps = {}) => {
       if (!own) return json(403, CORS, { error: "email_not_confirmed" });
       // The attempt limits are the database's (0031): per account, per invited address and per network (a keyed
       // hash, never the address), each failed try recorded in the same transaction as its answer.
-      const r = await rpc(admin, "household_accept_invite", {
+      const r = await settledRpc(admin, user_id, deps, "household_accept_invite", {
         p_user: user_id, p_email_key: H.emailKey(own),
         p_token_hash: byToken ? H.sha256(body.token) : null,
         p_code_hash: byToken ? null : H.sha256(H.normalizeCode(body.code)),
@@ -156,7 +166,7 @@ exports.handler = async (event, _ctx, deps = {}) => {
       });
       if (r.result === "joined") await H.reconcileHouseholdBilling(admin, user_id, deps);   // both already paying: one is the extra
       if (r.result === "joined" || r.result === "already_member") return json(200, CORS, { ok: true, result: r.result });
-      const code = r.result === "too_many_attempts" ? 429 : r.result === "household_full" || r.result === "in_another_household" ? 409 : 400;
+      const code = r.result === "too_many_attempts" ? 429 : ["household_full", "in_another_household", "purchase_in_progress"].includes(r.result) ? 409 : 400;
       return json(code, CORS, { error: r.result || "invalid" });
     }
 

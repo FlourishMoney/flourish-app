@@ -3,7 +3,8 @@
 // COUPLE MODE: every word the app shows for it, as approved (ChatGPT + Grok, 2026-10-29), word for word.
 // Each id, where it shows, the facts it states, the approved line and its limit: docs/product/COUPLE-MODE-WORDS.md.
 // The server's email words are in netlify/functions/_lib/household.js INVITE_EMAIL (the same doc).
-// tests/householdClient.test.cjs holds the code and the doc to the same lines, and fails on any placeholder.
+// tests/householdClient.test.cjs holds the code and the doc to the same lines, and fails on any placeholder but the
+// ones the doc lists as still to come (one, since audit round 5).
 // -----------------------------------------------------------------------------
 
 export const HOUSEHOLD_WORDS = Object.freeze({
@@ -71,6 +72,9 @@ export const HOUSEHOLD_WORDS = Object.freeze({
     wrong_account: "That invite is for a different email. Sign in with the address it was sent to.",
     in_another_household: "You're already in a household. Leave it first to join this one.",
     too_many_attempts: "Too many tries. Wait an hour, then try again.",
+    // Still to come (audit round 5): the facts and its limit are in docs/product/COUPLE-MODE-WORDS.md. The production
+    // build refuses to ship while it is a placeholder (scripts/check-pending-words.mjs).
+    purchase_in_progress: "[WORDS: household.error.purchase_in_progress]",
     generic: "Something went wrong and nothing changed. Please try again.",
   }),
 });

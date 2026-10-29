@@ -53,10 +53,11 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
       `1b ${id}: the approved line is in the code exactly once${id in where ? ", as the email's own" : ", on the page"}${SUPERSEDED.includes(id) ? " (approved again 2026-10-29)" : ""}`);
     t.ok(/\*\*Where:\*\*/.test(sec) && /\*\*Facts it must state/.test(sec) && limit > 0 && line.length <= limit, `1d ${id}: where it shows, its facts, and within its limit (${line && line.length}/${limit})`);
   }
-  const leftOver = (src) => [...src.matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
-  t.ok(leftOver(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}\n${read("netlify", "functions", "_lib", "pendingWords.js")}`).length === 0
-    && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => /\[WORDS:\s*[a-z0-9-]+/.test(read("src", "lib", f))),
-    "1c no [WORDS: placeholder is left: the email and its words, the device link's page and script, App.jsx, src/lib");
+  // The words still to come (tests/_pendingWords.cjs: couple mode's, listed in its words doc) are the only exception.
+  const { strayPlaceholders } = require("./_pendingWords.cjs");
+  t.ok(strayPlaceholders(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}\n${read("netlify", "functions", "_lib", "pendingWords.js")}`).length === 0
+    && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => strayPlaceholders(read("src", "lib", f)).length),
+    "1c no [WORDS: placeholder is left: the email and its words, the device link's page and script, App.jsx, src/lib (but the words still to come)");
   const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0].split("**Facts it must state")[1] || "";
   const order = ["same email address this message went to", "tap the confirmation link", "open **See plans** and choose **Founding annual**"].map((s) => steps.indexOf(s));
   t.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2], "1e the steps line's facts: same email, then the confirmation link, then See plans and Founding annual, in that order");
