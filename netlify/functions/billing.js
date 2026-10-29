@@ -29,6 +29,7 @@ const { stripePost } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
+const { spotsLeft } = require("./_lib/foundingSeats");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 
@@ -133,8 +134,8 @@ exports.handler = async (event) => {
 
   try {
     // What the client is allowed to know: whether billing is on, whether this household is already
-    // paying, and whether the founding price is available to THEM. No price ids, no amounts (those
-    // come from src/lib/pricing.js), and no count of how many slots are gone.
+    // paying, and whether the founding price is available to THEM. No price ids and no amounts (those
+    // come from src/lib/pricing.js).
     if (action === "status") {
       // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
       // shown the plans because the database blinked. Retried first, as getUserPlan does.
@@ -220,7 +221,9 @@ exports.handler = async (event) => {
         web_attention: webAttention,
         // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
         period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
-        founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular },
+        // spots_left (2026-10-29): founding spots left, the same public figure the landing shows (/api/founding),
+        // for the plans screen's words while the founding price is offered; null otherwise.
+        founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
       });
     }
 
@@ -246,8 +249,9 @@ exports.handler = async (event) => {
       const user = await authUser(admin, user_id);
 
       // The founding rule is enforced HERE, not only in what the screen offers. A client can post
-      // this action directly; only the plan key is read from it. Ended, beta founder and waitlist
-      // number are all looked up for this account (_lib/foundingCohort.js).
+      // this action directly; only the plan key is read from it. Ended, beta founder, a confirmed address
+      // and the seats held are all checked again now, as this checkout is created (_lib/foundingCohort.js):
+      // at 50 seats it is refused, whatever the screen showed a moment ago.
       if (planKey === "founding_annual" && !(await mayBuyFoundingPrice(admin, user_id, user))) {
         // Refused outright rather than downgraded to the standard price: charging someone
         // $99.99 when they clicked $79.99 is worse than an error they can read.

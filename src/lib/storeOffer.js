@@ -14,8 +14,10 @@
 // EVERY LINE HERE IS APPROVED WORD FOR WORD, 2026-10-20 (ChatGPT and Grok agreed): the disclosures, the three links
 // and the founding line first, then the rest of the paywall, the outcomes and the Settings lines, with three changes
 // (no "exactly"; "Try Restore purchases again shortly."; the website never named). tests/iapApprovedCopy.test.cjs
-// pins each. Do not reword them here. FOUNDING_SWITCH_COPY below is still unwritten.
+// pins each. Do not reword them here. FOUNDING_SWITCH_COPY below is still unwritten, and TRIAL_KEEP_COPY is to come.
 // -----------------------------------------------------------------------------
+
+import { pendingWords } from "./pendingWords.js";
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
 
@@ -29,7 +31,8 @@ export const STORE_DISCLOSURE = Object.freeze({
 });
 
 // Approved 2026-10-20. The founding plan's card.
-export const FOUNDING_LINE = "For the first 50 founding members. Your price stays the same while you stay subscribed.";
+// (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+export const FOUNDING_LINE = pendingWords("store-founding-line");
 
 /** The words for one plan. plan: "monthly" | "annual" | "founding_annual". */
 export function offerCopy({ plan, priceString, platform = "ios" }) {
@@ -60,6 +63,31 @@ export function storeDisclosure(platform) {
 //   bodyCancelled                 the same, once the regular plan will not renew (it is already cancelled)
 export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settingsButton: null, title: null, body: null, bodyCancelled: null });
 
+// KEEP THE TRIAL (2026-10-29, Amanda). The founding plans screen (1.1.3) opens by itself for every account the server
+// offers the founding price to. Under the plans, small print (link) lets a household in its 14-day trial say "not
+// now": it opens a confirm (title, body) with two buttons, stay (back to the plans) and leave (close the plans and
+// keep the trial). The body states the live founding spots left ({n}, store_status founding.spots_left), and the
+// facts: the founding price is first come, first served among people who subscribe; it is not held for them; they
+// can still choose it later if spots remain. The words are still to come (lib/pendingWords.js).
+export const TRIAL_KEEP_COPY = Object.freeze({
+  link: pendingWords("trial-link"),
+  title: pendingWords("trial-confirm-title"),
+  stay: pendingWords("trial-confirm-stay"),
+  leave: pendingWords("trial-confirm-leave"),
+});
+/** The confirm's body with the live spots left, or null when there is no count to state (then no link shows). */
+export function trialConfirmBody(spotsLeft) {
+  return Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= 50 ? pendingWords("trial-confirm-body", spotsLeft) : null;
+}
+/**
+ * Does the trial link show under the plans? Only on the founding plans screen (the server offers the founding price
+ * and says how many spots are left), to a household in its trial (there is a trial to keep), when it can be closed.
+ */
+export function trialKeepShown({ status = null, inTrial = false, closable = false, foundingCard = false } = {}) {
+  return !!(inTrial && closable && foundingCard && status && status.paid !== true && status.founding && status.founding.available === true
+    && trialConfirmBody(status.founding.spots_left) !== null);
+}
+
 // APPROVED 2026-10-21 (ChatGPT and Grok agreed), word for word: Settings' Subscription card in a store app, for an
 // account that holds a founding spot while it pays for a regular store plan (store_status founding.held_on_regular_plan,
 // netlify/functions/billing.js: paid, monthly or annual, in the App Store or Google Play, and still offered the founding
@@ -67,8 +95,9 @@ export const FOUNDING_SWITCH_COPY = Object.freeze({ settingsLine: null, settings
 // Store, B2 for Google Play. Never on the website (Settings renders the card only in a selling store build), never
 // without a founding spot, never once the household is on Founding annual. tests/privacyAndWords.test.cjs.
 export const FOUNDING_SPOT_LINE = Object.freeze({
-  app_store: "You hold a founding spot. Founding annual is a separate plan, so to avoid being charged for two, cancel your current plan in your Apple Account settings first. You keep access until it ends, then choose Founding annual in See plans.",
-  play_store: "You hold a founding spot. To avoid being charged during a plan change, cancel your current plan in Google Play under Subscriptions first. You keep access until it ends, then choose Founding annual in See plans.",
+  // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+  app_store: pendingWords("store-founding-spot-line-ios"),
+  play_store: pendingWords("store-founding-spot-line-android"),
 });
 
 /** B1 or B2 for this store status, or null. */

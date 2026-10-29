@@ -81,7 +81,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
     "3b main_tap is sent; the server's own counts cannot be sent by the page");
   t.eq(Object.keys(sent[1].body).sort(), ["action", "event", "src"], "3c the page sends the event and the src, nothing else");
   const app = read("src", "App.jsx");
-  t.ok(/useEffect\(\(\) => \{ if \(!isNativeApp\(\)\) countLandingViewOnce\(\{ base: API_BASE \}\); \}, \[\]\);/.test(app), "3d the landing counts its view, on the web only");
+  t.ok(/useEffect\(\(\) => \{ if \(!isNativeApp\(\)\) \{ captureWaitlistSrc\(\); countLandingViewOnce\(\{ base: API_BASE \}\); \} \}, \[\]\);/.test(app),
+    "3d the landing counts its view, on the web only, after keeping the visit's ?src= (the founding list form did that until 2026-10-29)");
   t.ok(/body: JSON\.stringify\(\{ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc\(\) \}\)/.test(app), "3e the signup carries the visit's src");
   t.ok(!/googletagmanager|google-analytics|gtag\(|fbq\(|plausible\.io|clarity\.ms|hotjar|segment\.com|mixpanel/i.test(app + read("index.html")), "3f no third-party tracker in the app or the page");
   // 2026-10-26: cookieless website analytics (Plausible) on the public pages only, and only through one module

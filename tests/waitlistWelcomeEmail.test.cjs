@@ -17,6 +17,8 @@
 // function actually sends, in the order it sends it. No network, no Supabase, no Resend.
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 require("./_blobsStub.cjs").install(); // join_waitlist is metered (H3); this suite is not about the limiter
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
@@ -179,7 +181,8 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
   // Amanda's decision, 2026-10-06: a row the database gave a founding position (1 to 50, migration 0014)
   // gets one line, second, after the thanks. 2j above still holds for every other row.
   {
-    const LINE = "You're founding household #7 of 50. We'll email your link to the founding price when payments open on October 26.";
+    // 2026-10-29: the line no longer names a number or promises a held price; its words are to come.
+    const LINE = emailWords("welcome-founding-line");
     const p = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 7 }] } })).payload;
     const unsubUrl = (/Unsubscribe with one click: (\S+)$/.exec(p.text) || [])[1];
     t.eq(p.text, [EXPECTED_PARAGRAPHS[0], LINE, ...EXPECTED_PARAGRAPHS.slice(1), WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),
@@ -189,11 +192,10 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     // (issued after test numbers were voided, 0017) are "one of the first 50 founding households".
     {
       const at50 = (await run({ insert: { ok: true, status: 201, body: [{ id: 43, founding_position: 50 }] } })).payload;
-      t.ok(at50.text.includes("You're founding household #50 of 50. ") && at50.html.includes("You're founding household #50 of 50. "), "2n2 #50: \"You're founding household #50 of 50.\"");
+      t.ok(at50.text.split("\n\n")[1] === LINE && !/#50/.test(at50.text + at50.html), "2n2 #50: the same line, and no number");
       for (const pos of [51, 54]) {
         const q = (await run({ insert: { ok: true, status: 201, body: [{ id: 44, founding_position: pos }] } })).payload;
-        const PAST = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
-        t.ok(q.text.split("\n\n")[1] === PAST && q.html.includes(`>${PAST}</p>`), `2n3 #${pos}: "You're one of the first 50 founding households.", second paragraph, text and HTML`);
+        t.ok(q.text.split("\n\n")[1] === LINE && q.html.includes(`>${LINE}</p>`), `2n3 #${pos}: the same line, second paragraph, text and HTML`);
         t.ok(!q.text.includes(`#${pos}`) && !q.html.includes(`#${pos}`) && !new RegExp(`\\b${pos}\\b`).test(q.text.split("\n\n")[1]), `2n4 #${pos}: the number is not shown anywhere`);
       }
     }

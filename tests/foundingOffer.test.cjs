@@ -30,28 +30,31 @@ const GRANTS = path.join(REPO, "supabase", "migrations", "0015_waitlist_founding
 const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(p); };
 const stripSql = (src) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/gm, " ");
 
-const HEADING = "Founding price for the first 50 households";
-const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app, and it works in the iPhone and Android apps too.";
+const HEADING = "Founding price for the first 50 households who subscribe";   // A, approved 2026-10-29
+const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Available on the website and in the iPhone and Android apps.";   // D, approved 2026-10-29
 const REGULAR_LINE = "Standard price for everyone else: $99.99 a year or $11.99 a month, plus tax.";
 const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
-const EMAIL_LINE = (n) => `You're founding household #${n} of 50. We'll email your link to the founding price when payments open on October 26.`;
+// 2026-10-29 (the first 50 who subscribe): the welcome email's founding line no longer names a number; its words are to
+// come (docs/product/FOUNDING-SEATS-WORDS.md row 21). It was "You're founding household #N of 50. We'll email your link…".
+const EMAIL_LINE = () => "The founding price goes to the first 50 households who subscribe, so joining the list doesn't hold a spot. You can subscribe now on the website or in the iPhone and Android apps.";
 
-// Run the real endpoint against a stubbed Supabase. `supabase` decides the answer to the count read.
-async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, method = "GET", now = 1e12, mod } = {}) {
+// Run the real endpoint against a stubbed Supabase. `supabase` decides the answer to the seat count
+// (0032's founding_seats_taken, a bare number): seats, or a status, a thrown error, or a body that is not a count.
+async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GET", now = 1e12, mod } = {}) {
   const calls = [], logs = [];
   const realFetch = global.fetch, realError = console.error;
   const prev = [process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY];
   if (env) { process.env.SUPABASE_URL = "https://example.supabase.co"; process.env.SUPABASE_SECRET_KEY = "test-service-role"; }
   else { delete process.env.SUPABASE_URL; delete process.env.SUPABASE_SECRET_KEY; }
   global.fetch = async (url, o = {}) => {
-    calls.push({ url: String(url), method: o.method || "GET", headers: o.headers || {} });
+    calls.push({ url: String(url), method: o.method || "GET", headers: o.headers || {}, body: o.body });
     if (supabase.throws) throw Object.assign(new Error("boom"), { name: supabase.throws });
-    const status = supabase.noVoidColumn && /void_at=/.test(String(url)) ? 400 : supabase.status;
+    const status = supabase.status;
     return {
       ok: !status || status < 300, status: status || 200,
-      headers: { get: (h) => (h.toLowerCase() === "content-range" ? (supabase.range === undefined ? null : supabase.range) : null) },
-      json: async () => { throw new Error("the endpoint must not read a body"); },
+      headers: { get: () => null },
+      json: async () => { if ("json" in supabase) { if (supabase.json instanceof Error) throw supabase.json; return supabase.json; } return supabase.seats; },
     };
   };
   console.error = (...a) => logs.push(a.join(" "));
@@ -80,16 +83,14 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     // landing learns both from this one call.
     delete process.env.OPEN_SIGNUP;
     const ok = await callEndpoint();
-    t.eq([ok.res.statusCode, JSON.stringify(ok.body)], [200, '{"spotsLeft":13,"openSignup":false}'], "1a 37 eligible rows read: 13 spots left, the one number, and that signup is shut");
+    t.eq([ok.res.statusCode, JSON.stringify(ok.body)], [200, '{"spotsLeft":13,"openSignup":false}'], "1a 37 founding seats held: 13 spots left, the one number, and that signup is shut");
     t.ok(/max-age=60/.test(ok.res.headers["Cache-Control"]) && /max-age=60/.test(ok.res.headers["Netlify-CDN-Cache-Control"]), "1b a good answer is cached for 60 s");
     t.eq(ok.calls.length, 1, "1c one read of Supabase");
-    t.ok(ok.calls[0].method === "HEAD" && ok.calls[0].headers.Prefer === "count=exact", "1d …a HEAD with count=exact, so no row comes back at all");
-    t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position&void_at=is\.null$/.test(ok.calls[0].url), "1e …of the real holders: numbers issued (the ledger, which is never freed) and not void (0017)");
-    t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/64" } })).body), '{"spotsLeft":0,"openSignup":false}', "1f 64 eligible rows: 0 left, never below 0");
-    const empty = await callEndpoint({ supabase: { range: "*/0" } });
-    t.ok(empty.res.statusCode === 503 && JSON.stringify(empty.body) === '{"error":"unavailable","openSignup":false}' && empty.res.headers["Cache-Control"] === "no-store",
-      "1g an empty ledger (start() has not run yet) is unavailable, never \"50 left\"");
-    t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/1" } })).body), '{"spotsLeft":49,"openSignup":false}', "1g2 one number issued: 49 left");
+    t.ok(ok.calls[0].method === "POST" && ok.calls[0].body === "{}" && ok.calls[0].headers.apikey === "test-service-role", "1d …one call with the service role and no input, so no row comes back at all");
+    t.ok(/\/rest\/v1\/rpc\/founding_seats_taken$/.test(ok.calls[0].url), "1e …of the founding seats held (0032): households whose founding payment succeeded, less refunds");
+    t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 64 } })).body), '{"spotsLeft":0,"openSignup":false}', "1f 64 seats held (a store race past 50): 0 left, never below 0");
+    t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 0 } })).body), '{"spotsLeft":50,"openSignup":false}', "1g no seat held yet: 50 left");
+    t.eq(JSON.stringify((await callEndpoint({ supabase: { seats: 1 } })).body), '{"spotsLeft":49,"openSignup":false}', "1g2 one seat held: 49 left");
     process.env.OPEN_SIGNUP = "true";
     t.eq(JSON.stringify((await callEndpoint()).body), '{"spotsLeft":13,"openSignup":true}', "1g3 signup open: the answer says so");
     t.eq(JSON.stringify((await callEndpoint({ env: false })).body), '{"error":"unavailable","openSignup":true}', "1g4 …even when the count cannot be read");
@@ -98,10 +99,13 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     delete process.env.OPEN_SIGNUP;
     const fails = {
       "no Supabase env": { env: false },
-      "Supabase 400 (migration 0014 not applied: no is_test column)": { supabase: { status: 400 } },
+      "Supabase 404 (0032 not applied: no founding_seats_taken)": { supabase: { status: 404 } },
+      "Supabase 400": { supabase: { status: 400 } },
       "Supabase 500": { supabase: { status: 500 } },
-      "no Content-Range header": { supabase: { range: undefined } },
-      "a Content-Range with no total": { supabase: { range: "0-0/*" } },
+      "a body that is not a count": { supabase: { json: "12" } },
+      "a negative count": { supabase: { json: -1 } },
+      "a fraction": { supabase: { json: 3.5 } },
+      "unreadable JSON": { supabase: { json: new Error("not json") } },
       "a timeout": { supabase: { throws: "AbortError" } },
       "a network failure": { supabase: { throws: "TypeError" } },
     };
@@ -114,10 +118,10 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
 
     // The cache: 60 s, and a failure never replaces a good answer with an invented one.
     const mod = fresh(FN);
-    const a = await callEndpoint({ mod, now: 1e12, supabase: { range: "*/10" } });
-    const b = await callEndpoint({ mod, now: 1e12 + 59_000, supabase: { range: "*/11" } });
+    const a = await callEndpoint({ mod, now: 1e12, supabase: { seats: 10 } });
+    const b = await callEndpoint({ mod, now: 1e12 + 59_000, supabase: { seats: 11 } });
     const c = await callEndpoint({ mod, now: 1e12 + 60_000, supabase: { status: 500 } });
-    const d = await callEndpoint({ mod, now: 1e12 + 61_000, supabase: { range: "*/12" } });
+    const d = await callEndpoint({ mod, now: 1e12 + 61_000, supabase: { seats: 12 } });
     t.eq([a.body.spotsLeft, b.body.spotsLeft, b.calls.length], [40, 40, 0], "1j within 60 s the cached answer is sent without a new read");
     t.eq([c.res.statusCode, c.calls.length, d.body.spotsLeft], [503, 1, 38], "1k after 60 s it reads again; a failed read is a 503, not the old figure, and the next good read is fresh");
 
@@ -201,7 +205,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(trig.indexOf("if new.is_test then") < trig.indexOf("insert into public.waitlist_founding_ledger"), "3b …and never enters the ledger, so it never uses up one of the 50");
     t.ok(/from public\.waitlist w\s+where not w\.is_test/.test(sql.slice(sql.indexOf("function public.waitlist_founding_start()"))), "3c …and the backfill leaves test rows out");
     const ep = fs.readFileSync(FN, "utf8");
-    t.ok(/waitlist_founding_ledger\?select=position/.test(ep), "3d …and so does the spots-left count, which counts only numbers issued");
+    t.ok(/rpc\/founding_seats_taken/.test(ep) && !/waitlist_founding_ledger/.test(ep), "3d the spots-left count counts founding seats, never waitlist rows (2026-10-29)");
     t.eq([W.spotsLeftFromCount(0), W.spotsLeftFromCount(37), W.spotsLeftFromCount(50), W.spotsLeftFromCount(51), W.spotsLeftFromCount(-1), W.spotsLeftFromCount(3.5), W.spotsLeftFromCount(null)],
       [50, 13, 0, 0, null, null, null], "3e spots left is max(0, 50 - eligible rows), and null for anything that is not a count");
     const raw = fs.readFileSync(MIG, "utf8") + fs.readFileSync(GRANTS, "utf8");
@@ -214,22 +218,23 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "4a the heading and all three lines are the approved words");
     const pricing = fs.readFileSync(path.join(REPO, "src", "lib", "foundingOffer.js"), "utf8");
     t.ok(!/\d+\.\d{2}/.test(pricing), "4b …with every price read from pricing.js, none typed in the block");
-    t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, word for word");
+    t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, one line for every founding number (words to come)");
     t.eq([0, -1, null, undefined, "7", 7.5].map(W.foundingWelcomeLine), [null, null, null, null, null, null], "4d …and no line for a row without a founding number");
     // Amanda, 2026-10-14: never a number above 50. A number past 50 (issued after test numbers were
     // voided, 0017) is still one of the first 50 real households, and is told exactly that.
-    const PAST_50 = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
-    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: \"one of the first 50 founding households\"");
+    const PAST_50 = EMAIL_LINE();
+    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: the same line");
     t.ok([51, 53, 62].every((n) => !W.foundingWelcomeLine(n).includes(String(n))), "4d3 …and the number itself is never shown");
-    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50 still reads \"#50 of 50\"");
+    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50: the same line");
     let A = {};
     try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.AuthScreen) {
       const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
       // Before any answer the landing is the trial-first page (2026-10-22): the block follows the hero's column (the
-      // main button, its lines and the badges) and holds the founding list form and its consent line.
-      const formAt = html.indexOf('class="fll-hero-form"'), offerAt = html.indexOf('class="fll-founding"'), consentAt = html.indexOf('id="fll-consent-hero"'), demoAt = html.indexOf('class="fll-hero-demo"');
-      t.ok(formAt > 0 && offerAt > formAt && consentAt > offerAt && demoAt > consentAt, "4e the block comes right after the hero's column, holds the form and its consent line, and comes before the demo column");
+      // main button, its lines and the badges). It holds no form since 2026-10-29 (the founding list form is gone).
+      const formAt = html.indexOf('class="fll-hero-form"'), offerAt = html.indexOf('class="fll-founding"'), demoAt = html.indexOf('class="fll-hero-demo"');
+      t.ok(formAt > 0 && offerAt > formAt && demoAt > offerAt && !html.slice(offerAt, demoAt).includes('id="fll-consent-hero"') && !html.slice(offerAt, demoAt).includes("<input"),
+        "4e the block comes right after the hero's column and before the demo column, with no form in it");
       const app4 = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       // The trial-first landing (approved Oct 22): on a phone, the $1,944 card comes straight after the subline, then the
       // main button and its lines, then this block.
@@ -303,7 +308,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       t.ok(!/How founding spots work/.test(tA) && !tA.includes("The first 50 households on the waitlist get the founding price. Joining is free.") && !/data-founding-live/.test(after),
         "7f after the launch: no \"How founding spots work\", no join line, no count line in the box");
       t.ok(tA.includes(HEADING) && tA.includes(PRICE_LINE) && tA.includes(REGULAR_LINE) && /<h2 class="fll-founding-h fll-fo-desk" id="fll-founding-h">/.test(after),
-        "7g …and still the desktop heading, the founding price with \"Paid on flourishmoney.app, and it works in the iPhone and Android apps too.\", and the standard price");
+        "7g …and still the desktop heading, the founding price with \"Available on the website and in the iPhone and Android apps.\", and the standard price");
     }
     t.ok(/className=\{`fll-founding-live\$\{spotsLeft > 0 \? " fll-fo-desk" : ""\}`\}/.test(comp),
       "7e the \"X of 50 founding spots left\" line is desktop only; \"spots are full\" shows at every width");
@@ -369,16 +374,13 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       const e = f.replace(/[()]/g, "\\$&");
       t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(sql) && !new RegExp(`grant execute on function public\\.${e}`).test(sql), `8p2 ${f}: nobody calls it directly`);
     }
-    // Spots left = 50 - real holders.
-    const ok = await callEndpoint({ supabase: { range: "0-23/24" } });
-    t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 real holders (28 issued, 4 void): 26 spots left (with main's openSignup flag)");
-    t.ok(/void_at=is\.null/.test(ok.calls[0].url), "8r …counted from the numbers that are not void");
-    // Before 0025 runs (the deploy comes first): no void_at column, and the count is every number issued, the
-    // figure the landing shows today, so it keeps its founding form (a 503 would put the pre-launch form back).
-    const pre = await callEndpoint({ supabase: { noVoidColumn: true, range: "0-32/33" } });
-    t.eq([pre.res.statusCode, JSON.stringify(pre.body)], [200, '{"spotsLeft":17,"openSignup":false}'], "8s before 0025 (no void_at column): today's count, every number issued (33 issued, 17 left)");
-    t.ok(/void_at=is\.null$/.test(pre.calls[0].url) && /select=position$/.test(pre.calls[1].url) && pre.calls.length === 2, "8s2 …asked for the real holders first, then once for every number");
-    t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s3 a 400 to both questions is still no number, never a guess");
+    // Spots left = 50 - founding seats held (2026-10-29; the ledger is no longer counted).
+    const ok = await callEndpoint({ supabase: { seats: 24 } });
+    t.eq(JSON.stringify(ok.body), '{"spotsLeft":26,"openSignup":false}', "8q 24 seats held: 26 spots left (with main's openSignup flag)");
+    t.ok(/rpc\/founding_seats_taken$/.test(ok.calls[0].url) && ok.calls.length === 1, "8r …counted once, from the seats");
+    // Before 0032 runs there is no count to read: 503, and the landing shows no number. 0032 runs before the deploy.
+    const pre = await callEndpoint({ supabase: { status: 404 } });
+    t.eq([pre.res.statusCode, pre.calls.length], [503, 1], "8s before 0032: no number, never a guess and never the ledger's count");
     // Step 11b (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
     const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
     const listed = (sql.match(/update public\.waitlist_founding_ledger l set void_at = now\(\), void_reason = 'test'\s+where l\.position in [\s\S]*?;/g) || []);

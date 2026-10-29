@@ -18,6 +18,8 @@
 //   6. The wiring: the schedule, the App, and the welcome line that promised it.
 // -----------------------------------------------------------------------------
 "use strict";
+// The emails' founding words, approved 2026-10-29 (docs/product/FOUNDING-SEATS-WORDS.md).
+const { pendingWords: emailWords } = require("../netlify/functions/_lib/pendingWords.js");
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -102,15 +104,15 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
   const payload = E.foundingLinkEmailPayload(ADDRESS, ROW);
   {
     t.ok(payload !== null, "2a a founding household with current consent gets the email");
-    t.eq(payload.subject, "Your founding price is ready", "2b the subject");
+    t.eq(payload.subject, emailWords("founding-email-subject"), "2b the subject");
     t.eq(E.foundingLinkParagraphs(7), [
       "Payments for flourish are open.",
-      "You're founding household #7 of 50, and your founding price is ready:",
+      emailWords("founding-email-position"),               // 2026-10-29: the founding number is no longer named; words to come
       "$79.99 a year plus tax, for as long as you stay subscribed.",
       "Your link: https://flourishmoney.app/get?ref=founding",
       { badges: E.STORE_BADGES },
-      "Create your account in the app with the email address this message was sent to, and tap the confirmation link we send you. Then open See plans and choose Founding annual. It shows where Annual usually is.",
-      { small: "On a computer? You can subscribe on our website with this same email:", url: "https://flourishmoney.app/?checkout=founding" },
+      emailWords("founding-email-store-steps"),
+      { small: emailWords("founding-email-computer"), url: "https://flourishmoney.app/?checkout=founding" },
       "Questions? Just reply to this email.",
       "Amanda, founder of flourish",
     ], "2c the words, exactly (changing one is a deliberate edit here)");
@@ -178,10 +180,10 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     // founding link email, and the number itself is never shown (Amanda, 2026-10-14).
     {
       const p53 = E.foundingLinkEmailPayload(ADDRESS, { ...ROW, founding_position: 53 });
-      t.ok(p53 && p53.text.includes("You're one of the first 50 founding households, and your founding price is ready:") && !/#53|\b53\b/.test(p53.text) && !/#53/.test(p53.html),
-        "4a2 number 53 (past 50, after voided test numbers): the founding link email, saying \"one of the first 50\" and never the number");
+      t.ok(p53 && p53.text.includes(emailWords("founding-email-position")) && !/#53|\b53\b/.test(p53.text) && !/#53/.test(p53.html),
+        "4a2 number 53 (past 50, after voided test numbers): the founding link email, never the number");
       const p50 = E.foundingLinkEmailPayload(ADDRESS, { ...ROW, founding_position: 50 });
-      t.ok(p50 && p50.text.includes("You're founding household #50 of 50, and your founding price is ready:"), "4a3 number 50 still reads \"#50 of 50\"");
+      t.ok(p50 && !/#50 of 50/.test(p50.text) && p50.text.includes(emailWords("founding-email-position")), "4a3 number 50: no number named either (2026-10-29: the line is words to come)");
     }
     const sk = process.env.SUPABASE_SECRET_KEY;
     delete process.env.SUPABASE_SECRET_KEY;
@@ -332,7 +334,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     const srcFiles = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
     t.ok(!/FOUNDING_LINK_EMAIL|VITE_FOUNDING/.test(srcFiles), "6h the send switch is a server variable: never in src/, never VITE_");
     const welcome = require(path.join(LIB, "foundingWaitlist.js")).foundingWelcomeLine(7);
-    t.ok(/We'll email your link to the founding price when payments open on October 26\./.test(welcome), "6i the welcome email's promise this email keeps is still there");
+    t.eq(welcome, emailWords("welcome-founding-line"), "6i the welcome email's founding line is words to come (2026-10-29: it promised a link to a held price)");
   }
 
   process.env = savedEnv;

@@ -18,6 +18,7 @@
 // that clean. The lines describe the trial and the free plan only.
 // -----------------------------------------------------------------------------
 import { FREE_TIER_LIMITS } from "./usageLimits.js";
+import { pendingWords } from "./pendingWords.js";
 
 // The free plan's bank limit. netlify/functions/plaid.js enforces it (exchange_token and migrate_items);
 // tests/nativeFreePlanLine.test.cjs reads the cap there so the two cannot drift.
@@ -70,4 +71,5 @@ export const STORE_TERMS_SECTION_7_IAP =
   "The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). " +
   "Cancelling takes effect at the end of the current period. " +
   "Refunds for purchases made in the apps are handled by Apple or Google under their own policies. " +
-  "The founding price is for the first 50 founding members and stays the same while that subscription stays active.";
+  // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+  pendingWords("terms-7-founding");

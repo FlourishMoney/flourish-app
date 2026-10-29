@@ -41,6 +41,7 @@ const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 const { IDENTITY_TEXT } = require("./waitlistConsent");
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
 const { foundingWelcomeLine } = require("./foundingWaitlist");
+const { holdsPendingWords } = require("./pendingWords");
 
 const WELCOME_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
@@ -106,6 +107,12 @@ async function sendWelcomeEmail(to, rowId, foundingPosition) {
   const payload = welcomeEmailPayload(to, rowId, foundingPosition);
   if (!payload) {
     console.error("[waitlist] welcome email skipped", "no_unsubscribe_link");
+    return false;
+  }
+  // Words still to come (the founding line, 2026-10-29) are never sent: welcomed_at stays null, and the sweep sends
+  // it once the words are in.
+  if (holdsPendingWords(payload)) {
+    console.error("[waitlist] welcome email skipped", "words_to_come");
     return false;
   }
   // Resend de-duplicates on Idempotency-Key, so a replayed request (a retried POST from the client, a

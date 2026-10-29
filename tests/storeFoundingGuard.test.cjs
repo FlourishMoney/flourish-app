@@ -4,7 +4,8 @@
 //
 // The founding annual is an App Store subscription group of its own (docs/ops/IAP-1.1.md item 6), and Apple lets one
 // person hold a subscription in each group at the same time. So:
-//   1  a household holding a founding position while a regular store subscription is live (a free month included)
+//   1  a household the founding price is offered to (2026-10-29: confirmed, while founding seats are left) while a
+//      regular store subscription is live (a free month included)
 //      is told so by the server (store_status founding.held_on_regular_plan), and is never offered the founding
 //      price on top: the paywall in that state sells nothing and opens the store's own manage-subscriptions screen
 //      (Apple's sheet, Google Play's page), never a cancel flow of ours; Settings is the way in (once the founder's
@@ -35,7 +36,7 @@ const SOON = new Date(NOW + 20 * 86400000).toISOString();
 const U1 = "11111111-1111-4111-8111-111111111111";
 const HOLDER = "holder@example.ca";
 
-function fakeAdmin({ email = HOLDER, position = 12, subscriptions = [] } = {}) {
+function fakeAdmin({ email = HOLDER, position = 12, subscriptions = [], seats = 0 } = {}) {
   const db = { subscriptions: subscriptions.map((r) => ({ user_id: U1, ...r })) };
   const calls = { upserts: [], updates: [] };
   const from = (name) => {
@@ -52,7 +53,8 @@ function fakeAdmin({ email = HOLDER, position = 12, subscriptions = [] } = {}) {
   };
   return {
     from, db, calls,
-    rpc: async (fn, args) => fn === "waitlist_founding_number_for_email" ? { data: args.p_email === email && position ? position : null, error: null } : { data: null, error: null },
+    rpc: async (fn, args) => fn === "waitlist_founding_number_for_email" ? { data: args.p_email === email && position ? position : null, error: null }
+      : fn === "founding_seats_taken" ? { data: seats, error: null } : { data: null, error: null },
     auth: { admin: { getUserById: async () => ({ data: { user: { id: U1, email, email_confirmed_at: "2026-10-17T00:00:00Z", app_metadata: { email_confirmation: "link" } } }, error: null }) } },
   };
 }
@@ -76,23 +78,23 @@ const sub = (key, o = {}) => ({ store: o.store || "app_store", period_type: o.pe
   process.env.IAP_ENABLED = "true";
   const status = async (admin) => JSON.parse((await loadBilling(admin).handler(post({ action: "store_status" }))).body);
 
-  // ── 1. The server says when a founding holder is on a live regular store plan. ───────────────────────
+  // ── 1. The server says when a household offered founding is on a live regular store plan. ─────────────
   {
     const monthly = { provider: "app_store", status: "active", plan_key: "monthly", current_period_end: SOON, cancel_at_period_end: false };
     const s1 = await status(fakeAdmin({ subscriptions: [monthly] }));
     t.eq([s1.paid, s1.founding.available, s1.founding.held_on_regular_plan], [true, false, { renews: true, period_end: SOON }],
-      "1a a founding holder paying a regular store plan: still paid, never offered the founding price on top, told it holds one (renewing, until when)");
+      "1a a household offered the founding price, paying a regular store plan: still paid, never offered it on top, told it could switch (renewing, until when)");
     const trial = await status(fakeAdmin({ subscriptions: [{ ...monthly, status: "trialing", plan_key: "annual" }] }));
     t.eq(trial.founding.held_on_regular_plan && trial.founding.held_on_regular_plan.renews, true, "1b …a regular plan in its free month counts too (the trial would turn into a charge)");
     const off = await status(fakeAdmin({ subscriptions: [{ ...monthly, cancel_at_period_end: true }] }));
     t.eq(off.founding.held_on_regular_plan, { renews: false, period_end: SOON }, "1c …and once it is cancelled in the store it says it will not renew, still live until its end");
-    const nobody = await status(fakeAdmin({ position: null, subscriptions: [monthly] }));
+    const nobody = await status(fakeAdmin({ seats: 50, subscriptions: [monthly] }));
     const founder = await status(fakeAdmin({ subscriptions: [{ ...monthly, plan_key: "founding_annual" }] }));
     const web = await status(fakeAdmin({ subscriptions: [{ ...monthly, provider: "stripe" }] }));
     const unpaid = await status(fakeAdmin({ subscriptions: [] }));
     t.eq([nobody.founding.held_on_regular_plan, founder.founding.held_on_regular_plan, web.founding.held_on_regular_plan, unpaid.founding.held_on_regular_plan, unpaid.founding.available],
       [null, null, null, null, true],
-      "1d not for a household without a position, one already on the founding plan, one paying on the website, or one paying nothing (who is simply offered the founding price)");
+      "1d not once 50 founding seats are held, nor for one already on the founding plan, one paying on the website, or one paying nothing (who is simply offered the founding price)");
 
     t.eq([C.foundingSwitch(s1), C.foundingSwitch(off), C.foundingSwitch(unpaid)], [{ renews: true, periodEnd: SOON }, { renews: false, periodEnd: SOON }, null], "1e the app reads that answer (foundingSwitch)");
     let bought = 0;

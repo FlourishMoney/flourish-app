@@ -21,6 +21,7 @@
 // email (which lands on /confirmed) and then signing in still ends at checkout.
 // -----------------------------------------------------------------------------
 import { billingIsOn } from "./billingVisibility.js";
+import { pendingWords } from "./pendingWords.js";
 
 export const FOUNDING_LINK_PARAM = "checkout";
 export const FOUNDING_LINK_VALUE = "founding";
@@ -29,9 +30,10 @@ export const FOUNDING_LINK_PENDING_KEY = "flourish_founding_link_at";
 export const FOUNDING_LINK_TTL_MS = 7 * 86400000;
 
 // Shown on the sign-in card when the link brought them there.
-export const FOUNDING_SIGN_IN_NOTE = "Your founding price is matched to the email address you joined the waitlist with. Sign in, or create your account, with that address.";
+// (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
+export const FOUNDING_SIGN_IN_NOTE = pendingWords("founding-signin-note");
 // Shown on the checkout screen when the link brought them there and this account has no founding price.
-export const FOUNDING_NOT_MATCHED_NOTE = "The founding price is matched to the email address that joined the waitlist. If you joined with a different address, sign in with that one.";
+export const FOUNDING_NOT_MATCHED_NOTE = pendingWords("founding-not-matched-note");
 
 // Does this query string carry the founding link?
 export function foundingLinkInUrl(search) {

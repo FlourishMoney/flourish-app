@@ -153,7 +153,7 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
 
   // ── 5. migration 0028 ──────────────────────────────────────────────────────────────────────
   const files = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_/.test(f)).sort();
-  t.eq(files[files.length - 1], "0028_onboarding_counts.sql", "5a 0028 is the newest migration");
+  t.eq(files.filter((f) => f >= "0028"), ["0028_onboarding_counts.sql", "0032_founding_seats.sql"], "5a 0028 is in place, and only 0032 (the founding seats, 2026-10-29) came after it");
   const sql = read("supabase", "migrations", "0028_onboarding_counts.sql");
   const table = sql.slice(sql.indexOf("create table if not exists public.onboarding_counts"), sql.indexOf("alter table public.onboarding_counts"));
   t.eq([...table.matchAll(/^\s+(\w+)\s+(date|text|integer)\b/gm)].map((m) => m[1]), ["cohort_day", "event", "detail", "count"], "5b four columns: day, event, detail, count; no account id, amount or free text");
