@@ -99,6 +99,7 @@ import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
 import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
+import { FOUNDING_PLANS_SHOWN_KEY, foundingPlansAutoOpen, foundingPlansShown, rememberFoundingPlansShown, paywallPlanOrder } from "./lib/foundingPlans.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -13987,6 +13988,9 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
     if(r.outcome==="paid" || r.outcome==="already_paid" || r.outcome==="charged_twice"){
       try{ const s = await askStore("store_status"); if(s) onResolved(s); }catch{ /* the next status call settles it */ }
     }
+    // A confirmed purchase closes it (1.1.3). In the 14-day trial the household was already entitled, so the
+    // entitlement close in App never fired and the plans stayed up with nothing said; the approved "paid" line is none.
+    if(r.outcome==="paid" && onClose) onClose();
   };
   const doBuy = async (planKey, pkg)=>{ if(busy) return; setBusy(planKey); setOutcome(null); try{ await finish(await storeBuy(deps, pkg)); } finally { setBusy(null); } };
   const doRestore = async ()=>{ if(busy) return; setBusy("restore"); setOutcome(null); try{ await finish(await storeRestore(deps)); } finally { setBusy(null); } };
@@ -13995,7 +13999,9 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   const waiting = outcome==="pending" || outcome==="unconfirmed";
   const doCheck = async ()=>{ if(busy) return; setBusy("check"); try{ await finish(await confirmWithServer(deps, { tries: 2 })); } finally { setBusy(null); } };
 
-  const cards = pkgs ? [["monthly",pkgs.monthly],["annual",pkgs.annual],["founding_annual",pkgs.founding]].filter(([,p])=>!!p).map(([plan,p])=>({
+  // Founding annual first, and marked as the chosen plan, when it is offered (1.1.3, lib/foundingPlans.js); otherwise
+  // Monthly then Annual, as before. Each plan's own button opens the store's sheet in one tap.
+  const cards = pkgs ? paywallPlanOrder(pkgs).map(([plan,p])=>({
     plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, platform }),
   })).filter(c=>!!c.copy) : [];
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
@@ -14020,7 +14026,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         {!held && loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
           {!held && cards.map(({plan,pkg,copy})=>(
-            <div key={plan} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px"}}>
+            <div key={plan} data-plan={plan} data-selected={plan==="founding_annual"?"":undefined} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold:C.border}`,borderRadius:16,padding:"16px 18px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
@@ -17367,6 +17373,20 @@ export default function FlourishApp(){
   // apps follow the web's rules, the 14-day account trial and then the free plan, so nothing is ever shut behind it.
   // A confirmed subscription closes it.
   useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
+  // THE ONE EXCEPTION (1.1.3, Amanda 2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is asked
+  // straight away. The plans screen opens by itself once per account, as soon as the account is in the app, with
+  // Founding annual first; it can be closed, and See plans opens it any time after. Declared after the effect above
+  // so that, when both run, this one has the last word. Every other household: nothing opens on its own.
+  const foundingOpenedRef = useRef(new Set());
+  useEffect(()=>{
+    const store = deviceStorage();
+    const shown = !!user?.id && (foundingOpenedRef.current.has(user.id) || foundingPlansShown(store, user.id));
+    if(!foundingPlansAutoOpen({ storeBilling, userId: user?.id, askedFor: storeAskedFor, status: storeStatus,
+      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown })) return;
+    foundingOpenedRef.current.add(user.id);
+    rememberFoundingPlansShown(store, user.id);
+    setPaywallUp(true);
+  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
@@ -18298,6 +18318,20 @@ export default function FlourishApp(){
     return ()=>clearTimeout(timer);
   },[appData?.bankConnected, isPremium]);
 
+  // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
+  // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
+  // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
+  // Terms and Privacy open inside the overlay, so nothing behind it unmounts. Defined before the early returns because
+  // the founding plans screen (1.1.3) can open by itself over onboarding and the first-number screen as well.
+  const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
+    <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+      {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
+        : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
+        : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
+            onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
+    </div>
+  ) : null;
   // ── Legal screens — always accessible, even before auth/onboarding ──
   // These render ABOVE the app shell, so the shell's background wrapper never mounts. Both screens
   // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
@@ -18347,7 +18381,7 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding
+  if(!onboarded)return <><Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
     onComplete={d=>{
@@ -18365,11 +18399,11 @@ export default function FlourishApp(){
       });
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}
-    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>;
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
-  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
-    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>;
+  if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
+    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
@@ -18527,28 +18561,17 @@ export default function FlourishApp(){
   // fast-follow): preserving the stamp lets the NEXT login detect a DIFFERENT user and wipe
   // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
   // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
+  // It also keeps FOUNDING_PLANS_SHOWN_KEY (1.1.3, lib/foundingPlans.js): the founding plans screen opens by itself once
+  // per account, and signing out and back in is the same account.
   const signOut = async ()=>{
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
 
-  // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
-  // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
-  // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
-  // Terms and Privacy open inside the overlay, so nothing behind it unmounts.
-  const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
-    <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
-      {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
-        : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
-        : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
-            onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
-            onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
-    </div>
-  ) : null;
   // Version 1.1: Settings' Subscription card, in a selling build only.
   const storeSubscription = storeBilling ? {
     line: subscriptionLine(storeStatus, { entitled: storeEntitled }),
