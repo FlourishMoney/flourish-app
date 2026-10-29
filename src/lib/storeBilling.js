@@ -121,12 +121,19 @@ export async function confirmWithServer(deps, { tries = 5, delayMs = 1500 } = {}
  *   pending       the store is waiting (Ask to Buy, a slow payment); access follows when it completes
  *   failed        the store refused it (a declined payment, a store problem)
  *   unconfirmed   the store took it but the server has not confirmed yet ("Check again" / Restore)
- * deps: serverStatus(), serverHold(), purchasePackage(pkg), serverSync(), sleep(ms)
+ * deps: serverStatus(), serverHold(attemptId, state?), purchasePackage(pkg), serverSync(), sleep(ms), newAttemptId()
  *
- * COUPLE MODE (audit H5): just before the store's sheet opens, the server is asked to hold the household for this
- * purchase (billing.js store_hold), so the other member cannot buy at the same moment on another platform. Only
- * { held: true } opens the sheet; the other member buying, a household already paid for, or no answer sells nothing.
+ * COUPLE MODE (audit H5, round 2 a): each tap is one purchase ATTEMPT, with an id of its own. Just before the
+ * store's sheet opens, the server is asked to hold the household for that attempt (billing.js store_hold), so no
+ * other attempt (the other member's, or this person's own on the website or the other store) can buy at the same
+ * moment. Only { held: true } opens the sheet; anything else sells nothing. Then the server is told how the store
+ * answered: "pending" keeps the household held until the store reports; cancelled or failed ends the hold (a
+ * completed purchase ends it on the server, once the store confirms it).
  */
+const randomAttemptId = () => {
+  try { if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") return `store-${globalThis.crypto.randomUUID()}`; } catch { /* fall through */ }
+  return `store-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+};
 export async function buy(deps, pkg) {
   let status = null;
   try { status = await deps.serverStatus(); } catch { status = null; }
@@ -135,18 +142,25 @@ export async function buy(deps, pkg) {
   if (status.paid) return { outcome: "already_paid", provider: status.provider || null };
   if (status.web_attention) return { outcome: "web_attention", provider: "stripe" };
   if (!pkg) return { outcome: "failed", reason: "no_package" };
+  const attempt = deps.serverHold ? (deps.newAttemptId || randomAttemptId)() : null;
   if (deps.serverHold) {
     let hold = null;
-    try { hold = await deps.serverHold(); } catch { hold = null; }
+    try { hold = await deps.serverHold(attempt); } catch { hold = null; }
     if (!hold) return { outcome: "failed", reason: "hold_unavailable" };
-    if (!hold.held) return hold.paid ? { outcome: "already_paid", provider: hold.provider || null } : { outcome: "failed", reason: "partner_buying" };
+    if (!hold.held) return hold.paid ? { outcome: "already_paid", provider: hold.provider || null } : { outcome: "failed", reason: "purchase_in_progress" };
   }
+  // How the store answered, told to the server for this attempt; never holds up what the person sees.
+  const tell = async (state) => {
+    if (!deps.serverHold) return;
+    for (let i = 0; i < 3; i++) { try { if (await deps.serverHold(attempt, state)) return; } catch { /* try again */ } }
+  };
   try {
     await deps.purchasePackage(pkg);
   } catch (e) {
     const code = e && (e.code != null ? String(e.code) : "");
-    if (code === CANCELLED || (e && e.userCancelled === true)) return { outcome: "cancelled" };
-    if (code === PENDING) return { outcome: "pending" };
+    if (code === CANCELLED || (e && e.userCancelled === true)) { await tell("released"); return { outcome: "cancelled" }; }
+    if (code === PENDING) { await tell("pending"); return { outcome: "pending" }; }
+    await tell("released");
     return { outcome: "failed", reason: "store_refused" };
   }
   return confirmWithServer(deps);

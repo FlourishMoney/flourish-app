@@ -233,9 +233,9 @@ exports.handler = async (event) => {
               if (!rKey || rKey !== dedupeKey) continue;
               try { await plaid("/item/remove", { access_token: r.access_token }); }
               catch (revErr) { console.warn("[exchange_token dedupe: item/remove failed]", r.item_id, revErr.message); }
-              const { error: delErr } = await admin
-                .from("plaid_items").delete().eq("user_id", user_id).eq("item_id", r.item_id);
-              if (delErr) console.error("[exchange_token dedupe: row delete failed]", r.item_id, delErr.message);
+              // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
+              try { await household.disconnectItem(admin, user_id, r.item_id); }
+              catch (delErr) { console.error("[exchange_token dedupe: row delete failed]", r.item_id, delErr.message); }
             }
           }
         }
@@ -249,9 +249,11 @@ exports.handler = async (event) => {
 
     // 3. get_accounts
     if (action === "get_accounts") {
-      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       const data = await plaid("/accounts/get", { access_token });
+      // Couple mode (audit round 2 c): who linked each account, from Plaid's own answer, for the cleanups.
+      await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, (data.accounts || []).map((a) => a.account_id));
       return ok({
         accounts: data.accounts.map(a => ({
           id:      a.account_id,
@@ -289,6 +291,7 @@ exports.handler = async (event) => {
         const fallback = await getTransactions(access_token, startDate, endDate);
         result = { transactions: fallback, removed: [], truncated: false, full: true };
       }
+      await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, result.transactions.map((t) => t && t.account_id));
 
       return ok({
         transactions: result.transactions,
@@ -518,13 +521,11 @@ exports.handler = async (event) => {
       } catch (revErr) {
         console.warn("[item/remove failed]", revErr.message);
       }
-      // Delete row
-      const { error: delErr } = await admin
-        .from("plaid_items")
-        .delete()
-        .eq("user_id", user_id)
-        .eq("item_id", item_id);
-      if (delErr) {
+      // Couple mode (audit round 2 c): what came from this bank leaves the household's shared blob, under the
+      // household's lock and while the row still says whose bank it is, then the row goes: one transaction
+      // (_lib/household.js disconnectItem). Not in a household: the row is deleted, as before.
+      try { await household.disconnectItem(admin, user_id, item_id); }
+      catch (delErr) {
         console.error("[delete_item]", delErr.message);
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to disconnect bank." }) };
       }
@@ -565,9 +566,9 @@ exports.handler = async (event) => {
         // Duplicate (older, since we ordered newest-first) → revoke + delete.
         try { await plaid("/item/remove", { access_token: r.access_token }); }
         catch (revErr) { console.warn("[collapse: item/remove failed]", r.item_id, revErr.message); }
-        const { error: delErr } = await admin
-          .from("plaid_items").delete().eq("user_id", user_id).eq("item_id", r.item_id);
-        if (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
+        // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
+        try { await household.disconnectItem(admin, user_id, r.item_id); }
+        catch (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         collapsed.push({ item_id: r.item_id, institution_name: r.institution_name });
       }
       return ok({ collapsed, kept });
@@ -770,7 +771,9 @@ exports.handler = async (event) => {
       // CRITICALLY: if either fails, we stop with the bank links and the sign-in still in place, so a
       // retry finishes the job. A table that does not exist in this database yet holds nothing for
       // this user, so "no such table" counts as done rather than trapping everyone in their account.
-      for (const table of ["meeting_records", "subscriptions", "feedback"]) {
+      // plaid_account_owners (couple mode): who linked which account, kept past a disconnect for the cleanups; the
+      // household was left above, so it has done its work.
+      for (const table of ["meeting_records", "subscriptions", "feedback", "plaid_account_owners"]) {
         const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
         if (tErr && !missingTable(tErr)) {
           console.error(`[delete_account] ${table} delete:`, tErr.message);

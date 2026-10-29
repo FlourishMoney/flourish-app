@@ -13114,7 +13114,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             type: "chat",
             payload: {
               context: buildContext(text),
-              messages: newMessages.map(m=>({role:m.role, content:m.content})),
+              // Only the conversation itself: the day dividers (role "system") are the screen's, never the coach's.
+              messages: newMessages.filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role, content:String(m.content??"")})),
             },
             ...storeBillingFields(storeBillingBuild()),   // version 1.1 store builds only (lib/storeBilling.js)
           }),
@@ -14105,7 +14106,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
 
   const deps = {
     serverStatus: ()=>askStore("store_status"),
-    serverHold: ()=>askStore("store_hold", { platform }),
+    serverHold: (attempt_id, state)=>askStore("store_hold", { platform, attempt_id, ...(state ? { state } : {}) }),
     serverSync: ()=>askStore("store_sync"),
     purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
     restorePurchases: ()=>purchases.restorePurchases(),

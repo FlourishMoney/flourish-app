@@ -17,6 +17,8 @@
 //   9  a household that pays twice: one is the extra, by one rule; its holder is told; ours stops renewing;
 //      leaving resumes it
 //  10  the coach: whatever the app sends, the request to the AI provider carries no member's name
+//  11  banks: disconnecting goes through the database's one-transaction cleanup; who linked each account is kept
+//  12  the coach takes text only: anything else is refused before any request to the provider
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -53,8 +55,10 @@ function fakeSupabase(db, { errors = {}, rpc = {} } = {}) {
       if (st.op === "delete") { const gone = hit(); db[table] = rows().filter((r) => !gone.includes(r)); log.writes.push([table, "delete"]); return { data: null, error: null }; }
       if (st.op === "upsert") {
         const keys = (st.conflict || "").split(",").filter(Boolean);
-        const same = rows().find((r) => keys.length && keys.every((k) => r[k] === st.payload[k]));
-        if (same) Object.assign(same, st.payload); else rows().push({ ...st.payload });
+        for (const one of Array.isArray(st.payload) ? st.payload : [st.payload]) {   // one row or a list, as supabase-js takes
+          const same = rows().find((r) => keys.length && keys.every((k) => r[k] === one[k]));
+          if (same) Object.assign(same, one); else rows().push({ ...one });
+        }
         log.writes.push([table, "upsert", st.payload]); return { data: null, error: null };
       }
       // Only the columns asked for, as PostgREST answers: a token not selected is not in the answer.
@@ -348,49 +352,87 @@ const coupleDb = (over = {}) => ({
       t.eq(a.log.rpc.map(([, x]) => x.p_email_key), Array(5).fill("partner@example.test"), "7d the code is looked up only among invites to the account's own confirmed address");
     }
 
-    // ── 8. ONE PURCHASE AT A TIME (audit H5) ────────────────────────────────────────────────────────
+    // ── 8. ONE PURCHASE ATTEMPT AT A TIME (audit H5, round 2 a) ───────────────────────────────────
     {
       const env = { STRIPE_PRICE_MONTHLY_CAD: "price_monthly" };
-      const hold = (result) => ({ household_hold_purchase: (args) => ({ data: { result }, error: null }) });
+      const hold = (answer) => ({ household_hold_purchase: (args) => ({ data: typeof answer === "function" ? answer(args) : answer, error: null }) });
+      const expired = (sp) => sp.calls.filter(([m, p]) => m === "POST" && /\/checkout\/sessions\/[^/]+\/expire$/.test(p)).map(([, p]) => p.split("/")[3]);
       const sp1 = fakeStripe();
-      const busy = load(coupleDb(), { rpc: hold("held_by_partner") }, env, sp1);
+      const busy = load(coupleDb(), { rpc: hold({ result: "held_elsewhere", mine: false, provider: "app_store" }) }, env, sp1);
       const r1 = await call(busy.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
-      t.eq([r1.code, r1.body.error, sp1.calls.filter(([, p]) => p === "/checkout/sessions").length], [409, "purchase_in_progress", 0], "8a the partner is buying (any platform): the owner's checkout is refused and no checkout is made");
-      t.eq(busy.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1], { p_user: O, p_provider: "stripe", p_ttl: "32 minutes" }, "8b …the hold asked for is this account's, for Stripe, for 32 minutes");
+      t.eq([r1.code, r1.body.error, r1.body.url || null], [409, "purchase_in_progress", null], "8a another attempt holds the household (the partner's, in the App Store): the owner's checkout is refused");
+      t.eq(expired(sp1), ["cs_1"], "8b …and the checkout just made for it is expired at Stripe at once, so it can never complete");
+      t.eq(busy.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1], { p_user: O, p_provider: "stripe", p_attempt: "cs_1", p_ttl: "32 minutes" },
+        "8c the hold is asked for THIS attempt: the checkout's own id, for Stripe, for 32 minutes");
       const sp2 = fakeStripe();
-      const free = load(coupleDb(), { rpc: hold("held") }, env, sp2);
+      const free = load(coupleDb(), { rpc: hold({ result: "held" }) }, env, sp2);
       const before = Math.floor(Date.now() / 1000);
       const r2 = await call(free.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
       const session = sp2.calls.find(([, p]) => p === "/checkout/sessions");
-      t.eq([r2.code, !!session], [200, true], "8c holding the household, the owner's checkout is made");
-      t.ok(session && session[2].expires_at >= before + 31 * 60 && session[2].expires_at <= before + 31 * 60 + 5, "8d …and it ends after 31 minutes, before the hold does (32), so it cannot complete once the other may buy");
+      t.eq([r2.code, r2.body.url, expired(sp2)], [200, "https://checkout.stripe.test/cs_1", []], "8d holding the household, the owner's checkout is handed back");
+      t.ok(session && session[2].expires_at >= before + 31 * 60 && session[2].expires_at <= before + 31 * 60 + 5, "8e …and it ends after 31 minutes, before its hold does (32)");
       const sp3 = fakeStripe();
-      const solo = load(coupleDb({ household_members: [] }), { rpc: hold("no_household") }, env, sp3);
-      await call(solo.billing, S, { action: "create_checkout_session", plan_key: "monthly" });
-      t.ok(!("expires_at" in sp3.calls.find(([, p]) => p === "/checkout/sessions")[2]), "8e no household: the checkout is exactly as before (no shortened life)");
-      const broken = load(coupleDb(), { rpc: { household_hold_purchase: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } }, env, fakeStripe());
-      t.eq((await call(broken.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 503, "8f a hold that cannot be taken: nothing is sold (503)");
-      const before0031 = load(coupleDb(), { rpc: {} }, env, fakeStripe());
-      t.eq((await call(before0031.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 200, "8g before 0031 runs there is no household to hold: checkout as today");
-      const notMember = load(coupleDb({ household_members: [] }), { rpc: { household_hold_purchase: () => { throw new Error("must not be asked"); } } }, env, fakeStripe());
-      t.eq([(await call(notMember.billing, S, { action: "create_checkout_session", plan_key: "monthly" })).code, notMember.log.rpc.length], [200, 0], "8g2 someone in no household is never held: no hold is even asked for");
+      const solo = load(coupleDb({ household_members: [] }), { rpc: { household_hold_purchase: () => { throw new Error("must not be asked"); } } }, env, sp3);
+      const r3 = await call(solo.billing, S, { action: "create_checkout_session", plan_key: "monthly" });
+      t.eq([r3.code, "expires_at" in sp3.calls.find(([, p]) => p === "/checkout/sessions")[2], solo.log.rpc.length], [200, false, 0], "8f someone in no household: the checkout is exactly as before, and nothing is held");
+      const sp4 = fakeStripe();
+      const broken = load(coupleDb(), { rpc: { household_hold_purchase: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } }, env, sp4);
+      t.eq([(await call(broken.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, expired(sp4)], [503, ["cs_1"]], "8g a hold that cannot be taken: nothing is sold (503), the checkout expired");
+      t.eq((await call(load(coupleDb(), { rpc: {} }, env, fakeStripe()).billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, 200, "8h before 0031 runs there is nothing to hold: checkout as today");
+      // The same person's own earlier checkout: replaced only once Stripe says it can no longer complete.
+      const sp5 = fakeStripe({ get: async (p) => (p === "/checkout/sessions/cs_old" ? { id: "cs_old", status: "open" } : undefined),
+        post: async (p) => (p === "/checkout/sessions/cs_old/expire" ? { id: "cs_old", status: "expired" } : undefined) });
+      const again = load(coupleDb(), { rpc: hold((a) => (a.p_replaces === "cs_old" ? { result: "held" } : { result: "held_elsewhere", mine: true, provider: "stripe", attempt_id: "cs_old" })) }, env, sp5);
+      const r5 = await call(again.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      t.eq([r5.code, expired(sp5), again.log.rpc.filter(([fn]) => fn === "household_hold_purchase").map(([, a]) => a.p_replaces || null)], [200, ["cs_old"], [null, "cs_old"]],
+        "8i the same person starts a second web checkout: their first is expired at Stripe, and only then does the new one replace it");
+      const sp6 = fakeStripe({ get: async (p) => (p === "/checkout/sessions/cs_old" ? { id: "cs_old", status: "complete" } : undefined) });
+      const paid = load(coupleDb(), { rpc: hold((a) => (a.p_replaces ? { result: "held" } : { result: "held_elsewhere", mine: true, provider: "stripe", attempt_id: "cs_old" })) }, env, sp6);
+      const r6 = await call(paid.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+      t.eq([r6.code, expired(sp6), paid.log.rpc.filter(([fn]) => fn === "household_hold_purchase").length], [409, ["cs_1"], 1], "8j …but a first checkout that completed is never replaced: refused, and the new one expired");
+      const sp7 = fakeStripe();
+      const ios = load(coupleDb(), { rpc: hold({ result: "held_elsewhere", mine: true, provider: "app_store", attempt_id: "store-ios-1" }) }, env, sp7);
+      t.eq([(await call(ios.billing, O, { action: "create_checkout_session", plan_key: "monthly" })).code, expired(sp7), ios.log.rpc.filter(([fn]) => fn === "household_hold_purchase").length], [409, ["cs_1"], 1],
+        "8k the same person's purchase in the iOS app holds the household: their web checkout is refused (iOS then Stripe), and never replaces it");
+      // The store app: one attempt id per tap.
       const nat = { origin: "capacitor://localhost" };
-      const sh = load(coupleDb(), { rpc: hold("held") });
-      t.eq((await call(sh.billing, P, { action: "store_hold", platform: "android" }, undefined, nat)).body, { held: true }, "8h the store app holds the household before it opens the purchase sheet");
-      t.eq(sh.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1].p_provider, "play_store", "8i …named for its store");
-      const sb = load(coupleDb(), { rpc: hold("held_by_partner") });
-      t.eq((await call(sb.billing, P, { action: "store_hold", platform: "ios" }, undefined, nat)).body, { held: false, paid: false, reason: "partner_buying" }, "8j the other member is buying: no sheet");
-      const sc = load(coupleDb({ subscriptions: [{ user_id: O, ...PAID() }] }), { rpc: hold("held") });
-      const covered = await call(sc.billing, P, { action: "store_hold" }, undefined, nat);
-      t.eq([covered.body.held, covered.body.paid, covered.body.covered_by, sc.log.rpc.length], [false, true, "partner", 0], "8k already covered by the other member: no sheet, and nothing held");
+      const A = "store-0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+      const sh = load(coupleDb(), { rpc: hold({ result: "held" }) });
+      t.eq((await call(sh.billing, P, { action: "store_hold", platform: "android" }, undefined, nat)).body, { error: "attempt_required" }, "8l the store app must say which attempt it is");
+      t.eq((await call(sh.billing, P, { action: "store_hold", platform: "android", attempt_id: A }, undefined, nat)).body, { held: true }, "8m one attempt holds the household before the purchase sheet opens");
+      t.eq(sh.log.rpc.find(([fn]) => fn === "household_hold_purchase")[1], { p_user: P, p_provider: "play_store", p_attempt: A, p_ttl: "32 minutes" }, "8n …this attempt, named for its store");
+      const sb = load(coupleDb(), { rpc: hold({ result: "held_elsewhere", mine: true, provider: "stripe", attempt_id: "cs_9" }) });
+      t.eq((await call(sb.billing, P, { action: "store_hold", platform: "ios", attempt_id: A }, undefined, nat)).body, { held: false, paid: false, reason: "purchase_in_progress" },
+        "8o the same person's web checkout holds it: no store sheet (Stripe then iOS)");
+      const pend = load(coupleDb(), { rpc: { household_hold_pending: () => ({ data: { result: "pending" }, error: null }), household_release_purchase: () => ({ data: { result: "released" }, error: null }) } });
+      t.eq((await call(pend.billing, P, { action: "store_hold", attempt_id: A, state: "pending" }, undefined, nat)).body, { pending: true }, "8p the store says pending: the hold is kept until the store reports");
+      t.eq(pend.log.rpc[0], ["household_hold_pending", { p_user: P, p_attempt: A, p_backstop: "7 days" }], "8q …for this attempt, with 7 days as the backstop");
+      t.eq((await call(pend.billing, P, { action: "store_hold", attempt_id: A, state: "released" }, undefined, nat)).body, { released: true }, "8r the store says cancelled or failed: the hold ends");
+      t.eq(pend.log.rpc[1], ["household_release_purchase", { p_user: P, p_attempt: A }], "8s …only this attempt's");
+      const sc = load(coupleDb({ subscriptions: [{ user_id: O, ...PAID() }] }), { rpc: hold({ result: "held" }) });
+      const covered = await call(sc.billing, P, { action: "store_hold", attempt_id: A }, undefined, nat);
+      t.eq([covered.body.held, covered.body.paid, covered.body.covered_by, sc.log.rpc.length], [false, true, "partner", 0], "8t already covered by the other member: no sheet, and nothing held");
       const blip = load(coupleDb(), { errors: { household_members: { code: "XX000", message: "upstream" } } });
-      t.eq((await call(blip.billing, P, { action: "store_hold" }, undefined, nat)).code, 503, "8l a household read that fails sells nothing (503)");
+      t.eq((await call(blip.billing, P, { action: "store_hold", attempt_id: A }, undefined, nat)).code, 503, "8u a household read that fails sells nothing (503)");
+      const src = (f) => require("fs").readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
+      t.ok(/if \(state\.paid\) \{ await releasePurchase\(admin, user_id\);/.test(src("billing.js")) && /if \(r\.paid \|\| STORE_ENDED_EVENTS\.has\(evt\.type\)\) await releasePurchase\(admin, userId\);/.test(src("revenuecat-webhook.js")),
+        "8v the store's own report ends a hold, a pending one included: a completed purchase (the app's sync, RevenueCat), or RevenueCat saying cancelled, ended or not charged");
+      // The app's side: one id per tap, and the store's answer told to the server for that id.
       const SB = await import("../src/lib/storeBilling.js");
-      const bought = [];
-      const deps = (hold) => ({ serverStatus: async () => ({ paid: false }), serverHold: async () => hold, purchasePackage: async (p) => { bought.push(p); }, serverSync: async () => ({ paid: true }), sleep: async () => {} });
-      t.eq([(await SB.buy(deps({ held: false, paid: false, reason: "partner_buying" }), "pkg")).outcome, (await SB.buy(deps(null), "pkg")).outcome, (await SB.buy(deps({ held: false, paid: true }), "pkg")).outcome, bought.length],
-        ["failed", "failed", "already_paid", 0], "8m the app opens no store sheet while the other buys, with no answer, or when already covered");
-      t.eq([(await SB.buy(deps({ held: true }), "pkg")).outcome, bought], ["paid", ["pkg"]], "8n …and opens it once held");
+      const run = async (holdAnswer, purchase) => {
+        const told = [], bought = [];
+        const deps = { newAttemptId: () => "store-tap-1", serverStatus: async () => ({ paid: false }),
+          serverHold: async (id, state) => { told.push([id, state || "hold"]); return state ? { ok: true } : holdAnswer; },
+          purchasePackage: async (p) => { if (purchase) throw purchase; bought.push(p); }, serverSync: async () => ({ paid: true }), sleep: async () => {} };
+        return { outcome: (await SB.buy(deps, "pkg")).outcome, told, bought };
+      };
+      t.eq(await run({ held: false, paid: false, reason: "purchase_in_progress" }), { outcome: "failed", told: [["store-tap-1", "hold"]], bought: [] }, "8w another attempt holds it: no store sheet");
+      t.eq((await run(null)).outcome, "failed", "8x no answer from the server: no store sheet");
+      t.eq(await run({ held: true }), { outcome: "paid", told: [["store-tap-1", "hold"]], bought: ["pkg"] }, "8y held: the sheet opens, and the server confirms the purchase");
+      t.eq(await run({ held: true }, { code: "20" }), { outcome: "pending", told: [["store-tap-1", "hold"], ["store-tap-1", "pending"]], bought: [] },
+        "8z the store says pending: the server is told, for the same attempt, so the hold outlasts its 32 minutes");
+      t.eq((await run({ held: true }, { userCancelled: true })).told, [["store-tap-1", "hold"], ["store-tap-1", "released"]], "8z2 cancelled: the hold is given back");
+      t.eq((await run({ held: true }, { code: "2" })).told, [["store-tap-1", "hold"], ["store-tap-1", "released"]], "8z3 failed: the hold is given back");
     }
 
     // ── 9. A HOUSEHOLD THAT PAYS TWICE (audit H5) ───────────────────────────────────────────────────
@@ -456,7 +498,7 @@ const coupleDb = (over = {}) => ({
       const src = (f) => require("fs").readFileSync(path.join(REPO, "netlify", "functions", f), "utf8");
       t.ok(/takeSeat\(admin, user_id, "stripe", sessionSubId \|\| null\);\n[\s\S]{0,400}await reconcileHouseholdBilling\(admin, user_id\);/.test(src("stripe-webhook.js"))
         && /isLiveStripeStatus\(object\.status\)\) await reconcileHouseholdBilling/.test(src("stripe-webhook.js")), "9m Stripe's webhook reconciles after a paid checkout and a subscription that became live");
-      t.ok(/if \(r\.paid\) await reconcileHouseholdBilling\(admin, userId\);/.test(src("revenuecat-webhook.js")) && /if \(state\.paid\) await reconcileHouseholdBilling\(admin, user_id\);/.test(src("billing.js")),
+      t.ok(/if \(r\.paid\) await reconcileHouseholdBilling\(admin, userId\);/.test(src("revenuecat-webhook.js")) && /if \(state\.paid\) \{ await releasePurchase\(admin, user_id\); await reconcileHouseholdBilling\(admin, user_id\); \}/.test(src("billing.js")),
         "9n …and so do a store purchase reaching the server and the app's store sync");
       t.ok(/peers\.length\) await household\.resumeHouseholdExtra\(admin, peers\)/.test(src("plaid.js")), "9o deleting an account resumes the partner's, if we had set it to end");
     }
@@ -511,6 +553,82 @@ const coupleDb = (over = {}) => ({
         t.eq(samples.map((x) => R.redactNames(R.redactAccountNumbers(x), R.householdNames({ name: "May Day", partnerName: "Sam Lee", kids: [{ name: "Ford" }] }))),
           samples.map((x) => CP.redactNames(CP.redactAccountNumbers(x), nm({ name: "May Day", partnerName: "Sam Lee", kids: [{ name: "Ford" }] }))),
           "10f the server's name rules give exactly the app's answers");
+      } finally {
+        global.fetch = prevFetch;
+      }
+    }
+
+    // ── 11. BANKS: THE DISCONNECT AND WHO LINKED WHAT (audit round 2 c) ─────────────────────────────
+    {
+      const rpcs = { household_disconnect_item: (args) => ({ data: { result: "removed", accounts: 2 }, error: null }) };
+      const a = load(coupleDb(), { rpc: rpcs });
+      plaidCalls.length = 0;
+      const r = await call(a.plaid, O, { action: "delete_item", item_id: "item-O" });
+      t.eq([r.code, a.log.rpc.map(([fn, x]) => [fn, x.p_user, x.p_item]), plaidCalls.map((c) => c.path)], [200, [["household_disconnect_item", O, "item-O"]], ["/item/remove"]],
+        "11a disconnecting a bank: Plaid revokes it, then the database cleans the shared blob and deletes the row, in one transaction");
+      t.eq([a.log.writes.filter(([tbl, op]) => tbl === "plaid_items" && op === "delete").length, a.db.plaid_items.length], [0, 2], "11b …the function never deletes the row itself first");
+      t.eq((await call(a.plaid, P, { action: "delete_item", item_id: "item-O" })).code, 400, "11c the partner cannot disconnect a bank the owner linked");
+      const before = load(coupleDb(), { rpc: {} });
+      const r2 = await call(before.plaid, O, { action: "delete_item", item_id: "item-O" });
+      t.eq([r2.code, before.db.plaid_items.map((x) => x.item_id)], [200, ["item-S"]], "11d before 0031 runs: the row is deleted, as today");
+      const failing = load(coupleDb(), { rpc: { household_disconnect_item: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } });
+      t.eq([(await call(failing.plaid, O, { action: "delete_item", item_id: "item-O" })).code, failing.db.plaid_items.length], [500, 2], "11e a cleanup that fails deletes nothing (500): the bank stays linked and its data stays whole");
+      const src = require("fs").readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8");
+      t.eq((src.match(/\.from\("plaid_items"\)\.delete\(\)\.eq\("user_id", user_id\)\.eq\("item_id"/g) || []).length, 0,
+        "11f no path in plaid.js deletes one bank's row on its own: delete_item and both duplicate clean-ups go through the cleanup");
+      // Who linked each account: recorded from Plaid's own answers, against the person who linked the bank.
+      const w = load(coupleDb());
+      await call(w.plaid, P, { action: "get_accounts", item_id: "item-O" });
+      await call(w.plaid, P, { action: "get_transactions", item_id: "item-O" });
+      t.eq((w.db.plaid_account_owners || []).map((x) => [x.user_id, x.item_id, x.account_id]), [[O, "item-O", "acc-1"]],
+        "11g the partner reading the owner's bank records its accounts as the OWNER's (the one who linked it), once");
+      const none = load(coupleDb(), { errors: { plaid_account_owners: { code: "42P01", message: "relation does not exist" } } });
+      t.eq((await call(none.plaid, O, { action: "get_accounts", item_id: "item-O" })).code, 200, "11h before 0031 runs nothing is recorded, and the bank reads as today");
+      t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback", "plaid_account_owners"\]\)/.test(src), "11i deleting an account deletes its record of who linked what");
+    }
+
+    // ── 12. THE COACH TAKES TEXT ONLY (audit round 2 b) ─────────────────────────────────────────────
+    {
+      const COACH_PATH = require.resolve("../netlify/functions/coach.js");
+      const consent = { ai_third_party_consent_at: "2026-10-01T00:00:00Z", ai_third_party_consent_revoked_at: null };
+      const db = coupleDb({ profiles: [{ user_id: O, ...ENDED_TRIAL, ...consent }, { user_id: P, ...ENDED_TRIAL, ...consent }], subscriptions: [{ user_id: O, ...PAID() }],
+        household_data: [{ household_id: "h1", data: { core: { appData: { profile: { name: "Amanda Ford", partnerName: "Jordan Lee" } } } } }] });
+      const rpcs = { increment_coach_usage: () => ({ data: 1, error: null }), increment_coach_usage_weekly: () => ({ data: 1, error: null }), increment_ai_usage_daily: () => ({ data: 1, error: null }) };
+      const sent = [];
+      const prevFetch = global.fetch;
+      global.fetch = async (url, init) => {
+        if (/api\.anthropic\.com/.test(String(url))) { sent.push(init.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "Fine." }], stop_reason: "end_turn", usage: { output_tokens: 1 } }) }; }
+        return prevFetch(url, init);
+      };
+      try {
+        const ask = async (payload, type = "chat") => {
+          const a = load(db, { rpc: rpcs }, { ANTHROPIC_API_KEY: "test-anthropic" });
+          delete require.cache[COACH_PATH];
+          const r = await require(COACH_PATH).handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: `Bearer tok:${P}` }, body: JSON.stringify({ type, payload }) });
+          return { code: r.statusCode, body: JSON.parse(r.body || "{}"), reads: a.log.reads.slice() };
+        };
+        const bad = [
+          ["an image block", { messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "QW1hbmRh" }, alt: "Amanda Ford" }] }] }],
+          ["a document block", { messages: [{ role: "user", content: [{ type: "document", source: { type: "text", media_type: "text/plain", data: "Jordan Lee" } }] }] }],
+          ["a tool result", { messages: [{ role: "user", content: [{ type: "tool_result", tool_use_id: "x", content: "Amanda Ford" }] }] }],
+          ["a text block with another key", { messages: [{ role: "user", content: [{ type: "text", text: "hi", citations: [{ cited_text: "Jordan Lee" }] }] }] }],
+          ["a message with another key", { messages: [{ role: "user", content: "hi", name: "Amanda Ford" }] }],
+          ["a system message", { messages: [{ role: "system", content: "Amanda Ford" }] }],
+          ["content that is an object", { messages: [{ role: "user", content: { text: "Jordan Lee" } }] }],
+          ["context that is not text", { context: { name: "Amanda Ford" }, messages: [{ role: "user", content: "hi" }] }],
+          ["a key the app never sends", { system: "You are talking to Amanda Ford", messages: [{ role: "user", content: "hi" }] }],
+        ];
+        for (const [what, payload] of bad) {
+          const r = await ask(payload);
+          t.eq([r.code, r.body.error, sent.length, r.reads.length], [400, "invalid_payload", 0, 0], `12a ${what}: refused (400) before anything is read or sent to the provider`);
+        }
+        const ok = await ask({ context: "Amanda Ford and Jordan Lee", messages: [{ role: "user", content: [{ type: "text", text: "Jordan asks" }] }, { role: "assistant", content: "Sure, Amanda." }] });
+        t.eq([ok.code, sent.length], [200, 1], "12b text, as a string or as text blocks, is accepted");
+        t.ok(!/Amanda|Ford|Jordan|Lee\b/.test(sent[0]), "12c …and no name is in the serialized provider request");
+        const R = require("../netlify/functions/_lib/coachRedact.js");
+        let threw = false;
+        try { R.redactProviderBody({ messages: [{ role: "user", content: [{ type: "image", source: { data: "x" } }] }] }, []); } catch { threw = true; }
+        t.ok(threw, "12d the last step before the provider refuses a non-text block too, whatever reached it");
       } finally {
         global.fetch = prevFetch;
       }

@@ -247,6 +247,9 @@ create trigger household_members_guard before insert on public.household_members
 -- It takes the household's lock first, as every membership change does (0031), so an
 -- account deleted while the owner removes the partner, or the partner leaves, waits for
 -- the other to finish instead of promoting someone who is being removed (audit B1).
+-- Someone left behind: the departed member's banks leave the shared blob (0031's strip; household_leave has
+-- already done it, so this matters when a sign-in is deleted without leaving first). The strip reads 0031's
+-- ownership record, which outlives the Plaid rows a deleted sign-in takes with it.
 create or replace function public.household_members_after_delete()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -254,7 +257,12 @@ begin
   if not found then return null; end if;
   if not exists (select 1 from public.household_members where household_id = old.household_id) then
     delete from public.households where id = old.household_id;
-  elsif old.role = 'owner' then
+    return null;
+  end if;
+  if to_regprocedure('public.household_strip_member_banks(uuid, uuid)') is not null then
+    perform public.household_strip_member_banks(old.household_id, old.user_id);
+  end if;
+  if old.role = 'owner' then
     update public.household_members set role = 'owner' where household_id = old.household_id;
   end if;
   return null;

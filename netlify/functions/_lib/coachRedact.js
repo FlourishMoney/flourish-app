@@ -87,13 +87,44 @@ const EMAIL_RX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 
 const redactText = (text, names) => redactNames(redactAccountNumbers(String(text).replace(EMAIL_RX, "[email]")), names);
 
+// WHAT THE APP MAY SEND (audit round 2 b). Only text: payload.context and payload.prompt are strings when present,
+// and payload.messages is a list of { role: "user" | "assistant", content }, where content is a string or a list
+// of { type: "text", text: string } blocks and nothing else. Anything else (an image, a document, a tool block, an
+// unknown key that could carry a name past the redaction) is refused before any request is made (coach.js, 400).
+// Answers null when it is acceptable, or the reason.
+const isTextBlock = (b) => !!b && typeof b === "object" && !Array.isArray(b) && b.type === "text" && typeof b.text === "string"
+  && Object.keys(b).every((k) => k === "type" || k === "text");
+function invalidCoachPayload(payload) {
+  if (payload == null) return null;
+  if (typeof payload !== "object" || Array.isArray(payload)) return "payload";
+  for (const k of Object.keys(payload)) if (!["context", "prompt", "messages"].includes(k)) return `payload.${k}`;
+  if (payload.context !== undefined && typeof payload.context !== "string") return "context";
+  if (payload.prompt !== undefined && typeof payload.prompt !== "string") return "prompt";
+  if (payload.messages !== undefined) {
+    if (!Array.isArray(payload.messages)) return "messages";
+    for (const m of payload.messages) {
+      if (!m || typeof m !== "object" || Array.isArray(m) || !["user", "assistant"].includes(m.role)) return "message";
+      if (Object.keys(m).some((k) => k !== "role" && k !== "content")) return "message";
+      const c = m.content;
+      if (typeof c === "string") continue;
+      if (!Array.isArray(c) || !c.length || !c.every(isTextBlock)) return "message.content";
+    }
+  }
+  return null;
+}
+
 // The provider request with every text redacted: system (a string, or blocks of { type: "text", text }) and each
-// message's content (a string, or blocks; only text blocks are touched, never a document's or image's data).
+// message's content (a string, or text blocks). A block of any other kind is never sent: it throws, and coach.js
+// sends nothing (the app's own payloads were already held to text only, above).
 function redactProviderBody(body, names) {
   if (!body || typeof body !== "object") return body;
+  const block = (b) => {
+    if (!b || b.type !== "text" || typeof b.text !== "string") throw new Error("coach: a non-text block never goes to the provider");
+    return { ...b, text: redactText(b.text, names) };
+  };
   const blocks = (v) => (typeof v === "string" ? redactText(v, names)
-    : Array.isArray(v) ? v.map((b) => (b && b.type === "text" && typeof b.text === "string" ? { ...b, text: redactText(b.text, names) } : b))
-    : v);
+    : Array.isArray(v) ? v.map(block)
+    : (() => { throw new Error("coach: content must be text"); })());
   return {
     ...body,
     ...(body.system !== undefined ? { system: blocks(body.system) } : {}),
@@ -121,4 +152,4 @@ async function coachNamesFor(admin, userId) {
   return householdNames(asker);
 }
 
-module.exports = { householdNames, redactNames, redactAccountNumbers, redactProviderBody, coachNamesFor };
+module.exports = { householdNames, redactNames, redactAccountNumbers, redactProviderBody, invalidCoachPayload, coachNamesFor };

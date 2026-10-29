@@ -24,7 +24,7 @@ const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSi
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { subjectKey, dayWindow, countIn } = require("./_lib/limiterKeys");
-const { coachNamesFor, redactProviderBody } = require("./_lib/coachRedact");
+const { coachNamesFor, redactProviderBody, invalidCoachPayload } = require("./_lib/coachRedact");
 
 // EVERY REQUEST TO THE AI PROVIDER GOES THROUGH HERE (audit H4): the household's names become roles, and email
 // addresses and account numbers are masked, in the system prompt and every message, at the last moment, whatever
@@ -191,14 +191,21 @@ exports.handler = async (event) => {
     return { statusCode: 413, headers: corsHeaders, body: JSON.stringify({ error: "Request too large" }) };
   }
 
-  let type, payload, action;
+  let type, payload, action, body0Payload;
   try {
     const body = JSON.parse(event.body || "{}");
     type = body.type;
+    body0Payload = body.payload;
     payload = body.payload || {};
     action = body.action;
   } catch {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Invalid JSON body" }) };
+  }
+  // Text only, in the shapes the app sends (audit round 2 b): anything else is refused here, before any read and
+  // before any request to the AI provider (_lib/coachRedact.js invalidCoachPayload).
+  if (action !== "accept_consent" && action !== "revoke_consent") {
+    const bad = invalidCoachPayload(body0Payload);
+    if (bad) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "invalid_payload", field: bad }) };
   }
 
   // ── Sprint Z3 #2: AI third-party consent management (no consent gate, no Anthropic call) ──────

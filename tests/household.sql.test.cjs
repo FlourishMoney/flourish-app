@@ -21,8 +21,12 @@
 //   8  brute force: every failed try is counted at once (tries at the same moment included), per account, per
 //      invited address and per network, and an invite dies after 5 wrong tries; a code only works for its address;
 //   9  races: a remove at the same moment as a leave or an ownership change runs one after the other;
-//  10  one purchase at a time: a member's purchase hold stops the other's;
-//  11  what a departed member's banks left behind (derived data) leaves with them.
+//  10  one purchase at a time: ONE purchase attempt holds the household; any other attempt is refused, the same
+//      person's on another platform included; a pending store purchase holds it until the store reports;
+//  11  what a departed member's banks left behind (derived data) leaves with them;
+//  12  disconnecting a bank cleans the shared blob before its Plaid row goes, in one transaction; the server's
+//      record of who linked each account makes leave's cleanup work even after a bank went another way;
+//  13  someone holding a leaked invite link cannot cancel it by opening it from another account.
 // Postgres comes from FOUNDING_PG_BIN, Homebrew (postgresql@17) or GitHub's Ubuntu runner (/usr/lib/postgresql).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -395,18 +399,40 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
         "9i the owner removes the partner, then their account is deleted at once: the removed partner is not promoted, and no empty household is left behind");
     }
 
-    // 10 ONE PURCHASE AT A TIME (audit H5) -------------------------------------------------------------------------
+    // 10 ONE PURCHASE AT A TIME (audit H5, round 2 a): one ATTEMPT holds the household --------------------------
     {
+      const hold = (u, prov, att, replaces) => svc(`household_hold_purchase('${u}', '${prov}', '${att}'${replaces ? `, interval '32 minutes', '${replaces}'` : ""})`).result;
       const a = pair("b1");
-      t.eq(svc(`household_hold_purchase('${a.o}', 'stripe')`).result, "held", "10a the owner starts a purchase: the household is held for them");
-      t.eq(svc(`household_hold_purchase('${a.p}', 'app_store')`).result, "held_by_partner", "10b the partner cannot start one at the same time, on another platform");
-      t.eq(svc(`household_hold_purchase('${a.o}', 'stripe')`).result, "held", "10c the owner may start again (a new checkout)");
-      sql(`update public.household_purchase_holds set expires_at = now() - interval '1 second' where household_id = '${a.h}'`);
-      t.eq(svc(`household_hold_purchase('${a.p}', 'play_store')`).result, "held", "10d once the hold has run out, the partner may buy");
-      t.eq(svc(`household_hold_purchase('${S}', 'stripe')`).result, "no_household", "10e someone in no household holds nothing");
-      svc(`household_leave('${a.p}')`);
-      t.eq(sql(`select count(*) from public.household_purchase_holds where household_id = '${a.h}'`), "0", "10f a member who leaves takes their hold with them");
-      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))), "10g nobody signed in reads the holds");
+      t.eq(hold(a.o, "stripe", "cs_1"), "held", "10a the owner starts a Stripe checkout: that attempt holds the household");
+      t.eq(hold(a.p, "app_store", "p-ios-1"), "held_elsewhere", "10b the partner cannot start a purchase meanwhile");
+      t.eq(hold(a.o, "app_store", "o-ios-1"), "held_elsewhere", "10c nor can the SAME person, Stripe then the iOS app");
+      t.eq(hold(a.o, "play_store", "o-and-1"), "held_elsewhere", "10d …or Stripe then the Android app");
+      t.eq(hold(a.o, "stripe", "cs_1"), "held", "10e the same attempt may refresh its own hold");
+      t.eq(hold(a.o, "stripe", "cs_2"), "held_elsewhere", "10f a second Stripe checkout of the same person is refused…");
+      t.eq(hold(a.o, "stripe", "cs_2", "cs_1"), "held", "10g …unless it replaces their own checkout the server has just seen expire at Stripe (it can never complete)");
+      t.eq(hold(a.p, "stripe", "cs_3", "cs_2"), "held_elsewhere", "10h nobody can replace someone else's checkout");
+      t.eq(svc(`household_release_purchase('${a.o}', 'cs_2')`).result, "released", "10i the attempt ends (cancelled, failed or completed): released");
+      t.eq(hold(a.o, "app_store", "o-ios-2"), "held", "10j iOS…");
+      t.eq(hold(a.o, "play_store", "o-and-2"), "held_elsewhere", "10k …then the Android app: refused");
+      t.eq(svc(`household_hold_pending('${a.o}', 'o-ios-2')`).result, "pending", "10l the store says the purchase is pending: the hold lasts");
+      // 40 minutes later: past the 32-minute lease, but the store has not reported.
+      sql(`update public.household_purchase_holds set created_at = now() - interval '40 minutes' where household_id = '${a.h}'`);
+      t.eq([hold(a.p, "stripe", "cs_4"), hold(a.o, "play_store", "o-and-3")], ["held_elsewhere", "held_elsewhere"], "10m a purchase pending for more than 32 minutes still holds the household against everyone");
+      t.eq(svc(`household_hold_pending('${a.p}', 'p-ios-9')`).result, "not_held", "10n only the attempt that holds it can be marked pending");
+      t.eq(svc(`household_release_purchase('${a.o}')`).result, "released", "10o the store reports the pending purchase completed: the hold ends");
+      t.eq(hold(a.p, "stripe", "cs_5"), "held", "10p then the other may buy (the household being paid for stops them anyway: billing.js)");
+      const b = pair("b2");
+      t.eq(hold(b.o, "app_store", "b2-ios"), "held", "10q (a second household) an attempt that is not pending…");
+      sql(`update public.household_purchase_holds set expires_at = now() - interval '8 minutes', created_at = now() - interval '40 minutes' where household_id = '${b.h}'`);
+      t.eq(hold(b.p, "play_store", "b2-and"), "held", "10r …lapses after 32 minutes");
+      svc(`household_hold_pending('${b.p}', 'b2-and')`);
+      sql(`update public.household_purchase_holds set expires_at = now() - interval '1 minute' where household_id = '${b.h}'`);
+      t.eq(hold(b.o, "stripe", "cs_b2"), "held", "10s a pending purchase the store never reports ends at its backstop (7 days)");
+      t.ok(/attempt_required/.test(err(() => svc(`household_hold_purchase('${b.o}', 'stripe', '')`))), "10t no hold without an attempt id");
+      t.eq(svc(`household_hold_purchase('${S}', 'stripe', 'cs_s')`).result, "no_household", "10u someone in no household holds nothing");
+      svc(`household_leave('${b.o}')`);
+      t.eq(sql(`select count(*) from public.household_purchase_holds where household_id = '${b.h}'`), "0", "10v a member who leaves takes their hold with them");
+      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))), "10w nobody signed in reads the holds");
     }
 
     // 11 WHAT A DEPARTED MEMBER'S BANKS LEFT BEHIND (audit M7) ------------------------------------------------------
@@ -458,6 +484,68 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       const Hm = await import("../src/lib/household.js");
       t.eq(canon(Hm.stripAccounts(appData, ["a-p", "a-p-old"])), canon(after), "11o the app's stripAccounts gives exactly what the database left");
       t.eq(sql("select array_to_string(public.household_personal_keys(), ',')"), Hm.PERSONAL_SIDE_KEYS.join(","), "11p the database's personal keys are the app's, in the same order");
+    }
+
+    // 12 DISCONNECTING A BANK, THEN LEAVING (audit round 2 c) -------------------------------------------------------
+    {
+      const a = pair("dc");
+      const q = (v) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+      sql(`insert into public.plaid_items (user_id, item_id, access_token, institution_name) values
+        ('${a.o}', 'item-dc1', 'tok-dc1', 'Shared Name'), ('${a.p}', 'item-dc2', 'tok-dc2', 'Shared Name')`);
+      // What plaid.js records whenever Plaid lists an item's accounts: who linked each one.
+      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values
+        ('${a.o}', 'item-dc1', 'acc-1'), ('${a.o}', 'item-dc1', 'acc-2'), ('${a.p}', 'item-dc2', 'acc-3')`);
+      const appData = {
+        accounts: [{ id: "acc-1", _item: "item-dc1", institution: "Shared Name" }, { id: "acc-2", institution: "Shared Name" },
+          { id: "acc-3", _item: "item-dc2", institution: "Shared Name" }, { id: "acc-h", institution: "Manual" }],
+        transactions: [{ id: "t1", account_id: "acc-1" }, { id: "t2", account_id: "acc-2" }, { id: "t3", account_id: "acc-3" }, { id: "th", account_id: "acc-h" }],
+        liabilities: { credit: [{ account_id: "acc-1" }, { account_id: "acc-3" }] },
+        investments: [{ id: "acc-2_s", account_id: "acc-2" }, { id: "acc-3_s", account_id: "acc-3" }],
+        debts: [{ account_id: "acc-1", fromBank: true }, { id: "dh", sameAsAccountId: "acc-2" }, { account_id: "acc-3", fromBank: true }],
+        debtLinkDismissed: ["dh|acc-1", "dh|acc-3"], bills: [{ id: "b1", debtId: "acc-1" }, { id: "b3", debtId: "acc-3" }],
+        incomeSuggestion: { s: 1 }, bankConnected: true,
+      };
+      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q(appData)})) where household_id = '${a.h}'`);
+      const blobNow = () => JSON.parse(sql(`select data->'core'->'appData' from public.household_data where household_id = '${a.h}'`));
+      t.eq(svc(`household_disconnect_item('${a.p}', 'item-dc1')`).result, "not_found", "12a a member cannot disconnect a bank the other linked");
+      t.eq(blobNow().accounts.length, 4, "12b …and nothing of it changes");
+      t.eq(svc(`household_disconnect_item('${a.o}', 'item-dc1')`).result, "removed", "12c the owner disconnects their bank");
+      const after = blobNow();
+      const mentions = (v, ids) => ids.some((id) => JSON.stringify(v).includes(`"${id}"`) || JSON.stringify(v).includes(`|${id}"`));
+      t.ok(!mentions(after, ["acc-1", "acc-2"]) && !("incomeSuggestion" in after),
+        "12d nothing from that bank remains: its accounts (the unstamped one found by the server's record), transactions, liabilities, holdings, debts, links and the cached suggestion");
+      t.eq([after.accounts.map((x) => x.id), after.transactions.map((x) => x.id), after.debts.length], [["acc-3", "acc-h"], ["t3", "th"], 2], "12e the partner's bank and the hand-entered account stay");
+      t.eq([sql(`select count(*) from public.plaid_items where item_id = 'item-dc1'`), sql(`select count(*) from public.plaid_account_owners where item_id = 'item-dc1'`)], ["0", "2"],
+        "12f the Plaid row is gone, after the cleanup and in the same transaction; the record of who linked the accounts stays");
+      // The partner's bank went the OLD way (only its Plaid row deleted), leaving its data in the blob; then they are removed.
+      sql(`delete from public.plaid_items where item_id = 'item-dc2'`);
+      t.eq(svc(`household_remove_partner('${a.o}')`).result, "removed", "12g the partner's bank was disconnected without the cleanup, then the partner is removed");
+      const gone = blobNow();
+      t.ok(!mentions(gone, ["acc-3"]), "12h …and nothing from that bank remains: the server's record says it was theirs, though its Plaid row is long gone");
+      t.eq(gone.accounts.map((x) => x.id), ["acc-h"], "12i only the hand-entered account is left");
+      // A sign-in deleted without leaving first (the admin dashboard, say): the trigger cleans up just the same.
+      const c = pair("dd");
+      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values ('${c.p}', 'item-dd', 'acc-dd')`);
+      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q({ accounts: [{ id: "acc-dd", _item: "item-dd" }, { id: "acc-m", institution: "Manual" }], transactions: [{ id: "tdd", account_id: "acc-dd" }] })})) where household_id = '${c.h}'`);
+      sql(`delete from auth.users where id = '${c.p}'`);
+      t.eq(JSON.parse(sql(`select data->'core'->'appData'->'accounts' from public.household_data where household_id = '${c.h}'`)).map((x) => x.id), ["acc-m"],
+        "12j a partner's sign-in deleted outright: their bank leaves the shared blob all the same");
+      const solo = who("dc-solo");
+      sql(`insert into public.plaid_items (user_id, item_id, access_token) values ('${solo}', 'item-solo', 'tok-solo')`);
+      t.eq([svc(`household_disconnect_item('${solo}', 'item-solo')`).result, sql(`select count(*) from public.plaid_items where item_id = 'item-solo'`)], ["removed", "0"], "12k in no household, disconnecting deletes the row, as before");
+      t.ok(/permission denied/.test(err(() => as(a.o, `select public.household_disconnect_item('${a.o}', 'x')`))) && /permission denied/.test(err(() => as(a.o, "select count(*) from public.plaid_account_owners"))),
+        "12l nobody signed in calls the disconnect or reads who linked what");
+    }
+
+    // 13 A LEAKED LINK (audit round 2 d) -----------------------------------------------------------------------------
+    {
+      const O13 = who("o13"), Z13 = who("z13"), X13 = who("x13");
+      svc(`household_create_invite('${O13}', 'z13@example.test', 'tok-13', 'code-13')`);
+      for (let i = 0; i < 6; i++) t.eq(svc(`household_accept_invite('${X13}', 'x13@example.test', 'tok-13', null, 'net-13')`).result, "wrong_account", `13a open ${i + 1} of the link from an account with another address: refused`);
+      t.eq(sql(`select failed_attempts::text || ',' || (revoked_at is null)::text from public.household_invites where token_hash = 'tok-13'`), "0,true", "13b …and the invite takes no strike: opening a leaked link cannot cancel it");
+      t.eq([tries(X13), sql(`select count(*) from public.household_join_attempts where target_key = encode(sha256(convert_to('z13@example.test', 'UTF8')), 'hex')`)], ["6", "0"],
+        "13c the opener's own tries are counted (their account, their network), never against the invited address");
+      t.eq(svc(`household_accept_invite('${Z13}', 'z13@example.test', 'tok-13', null, 'net-13b')`).result, "joined", "13d the person it was sent to still joins by it");
     }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));

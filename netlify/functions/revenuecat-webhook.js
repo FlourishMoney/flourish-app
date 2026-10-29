@@ -22,7 +22,11 @@ const crypto = require("crypto");
 const { getAdminClient } = require("./_lib/auth");
 const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
-const { reconcileHouseholdBilling } = require("./_lib/household");
+const { reconcileHouseholdBilling, releasePurchase } = require("./_lib/household");
+
+// COUPLE MODE (audit round 2 a): the store's own report ends a purchase hold, a pending one included. Completed
+// (the account now pays), or one of these: the store says the purchase was cancelled, ended or could not be charged.
+const STORE_ENDED_EVENTS = new Set(["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"]);
 
 const reply = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
@@ -101,6 +105,7 @@ async function handle(event, deps = {}) {
       }
       // COUPLE MODE (audit H5): a store purchase in a household the other member already pays for: one is the extra.
       if (r.paid) await reconcileHouseholdBilling(admin, userId);
+      if (r.paid || STORE_ENDED_EVENTS.has(evt.type)) await releasePurchase(admin, userId);
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
       if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }

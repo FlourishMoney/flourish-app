@@ -16,7 +16,7 @@ So the 1.1.3 store build can carry it before the migration runs.
 - **Join (partner).** The partner signs in or creates a login, opens the link or types the code, and sees the consent screen. Then the server adds them, in one locked transaction: it checks expiry, single use, the address and the 2-adult limit. The partner's phone then drops its own data and loads the household's.
   - A code is only ever matched among invites to the signed-in account's own confirmed address.
   - Failed tries are limited three ways, each counted under its own lock so tries at the same moment cannot slip past: 10 an hour per account, 10 an hour per invited address (whatever account tries), 30 an hour per network. The network is sent to the database as a keyed hash, never the IP address. Every failed try is recorded in the same transaction as its answer, unknown codes and links included, and kept a day.
-  - An invite dies after 5 wrong tries (a wrong code from the invited account, or the link tried by an account with another address). The owner sends a new one.
+  - An invite dies after 5 wrong code guesses from the invited account. The owner sends a new one. A valid link opened by an account with another address is counted against that account and its network only, never against the invite, so someone holding a leaked link cannot cancel it.
   - The partner's own keys (their AI and Plaid consent) move to their own private row, and their old `user_data` row is deleted: it is replaced by the household's, as their consent screen says, and it would never be read again.
 - **Shared.** Today, Safe to spend, bills, paydays, debts, goals, budgets, the money meeting and corrections are all in the household blob (`household_data`). Both people read and write it.
   - Saves check a version number. If both edited at once, the app merges by section (bills, debts, and so on): a section only one person changed keeps that change; if both changed the same section, the later save wins.
@@ -27,6 +27,8 @@ So the 1.1.3 store build can carry it before the migration runs.
 - **Banks.** Either person links their own bank, and both see every account.
   - The server lets a member use an item linked by anyone in the same household.
   - Only the person who linked a bank can disconnect or reconnect it, because the Plaid consent is theirs.
+  - Disconnecting is one transaction on the server (`household_disconnect_item`): what came from that bank leaves the shared blob, then its Plaid row goes.
+  - The server records who linked each bank account, from Plaid's own answers (`plaid_account_owners`). Leaving cleans up by that record, so it never depends on a Plaid row still being there.
   - Each member has their own sync cursor (`plaid_item_cursors`), so one phone never consumes the other's new transactions.
 - **Leave, remove, delete.**
   - Either person can leave, and the owner can remove the partner. The person who goes loses database access in the same transaction.
@@ -40,12 +42,14 @@ So the 1.1.3 store build can carry it before the migration runs.
   - A paid subscription (web, App Store or Play) or a beta-founder flag on either member covers both.
   - Trials stay per person: otherwise a new email every 14 days would be a free plan.
   - A covered partner is never offered or sold a plan: checkout returns 409 and the store screen gets paid:true.
-  - One purchase at a time: before a Stripe checkout is made, or the store app opens its purchase sheet (`store_hold`), the buyer holds the household for 32 minutes (`household_purchase_holds`). While the other member holds it, nothing is sold. A household's Stripe checkout ends after 31 minutes, before the hold does.
+  - One purchase ATTEMPT at a time (`household_purchase_holds`). A Stripe checkout (its session id), or one tap in the store app (a random id), holds the household for 32 minutes. Any other attempt is refused, whoever makes it and on any platform, the same person's included: the only thing replaced is that person's own earlier web checkout once Stripe says it has expired. A household's Stripe checkout ends after 31 minutes, before its hold; one refused is expired at Stripe at once.
+  - A store purchase the store calls pending holds the household until the store reports it completed, cancelled or failed (7 days at most).
   - If a household still ends up paying twice (both paid before joining, or a store purchase made outside the app), one rule picks the extra one: a founding price is kept; then a store's over ours (we can stop ours, not the store's); then the owner's. The extra one's holder is told, in the approved line, where to cancel it; its row is flagged for support (`support_flag = 'household_two_paid'`); it is logged; and if it is ours (Stripe) it is set to end at the end of the period it is paid for, so we never charge it again. This runs after every paid Stripe or store event, when someone joins, and on the Household screen.
   - When the two stop sharing (leave, remove, account deleted), a Stripe subscription we had set to end as the extra one is resumed.
   - Founding: the household is only ever sold one plan, so it takes one seat. The founding-seats work (0029, other session) still counts seats per account. If both already held a seat before joining, see Risks.
 - **Coach:** still roles only. If the partner asks, the coach context swaps "you" and "your partner" (employment, incomes, age). Names and emails never go in.
   - The server enforces it at the last moment: every request to the AI provider (`coach.js providerFetch`) has the household's names, read from its saved profile from the asker's side, replaced by roles, and emails and account numbers masked, in the system prompt and every message. If the names cannot be read, nothing is sent.
+  - The coach takes text only: strings and text blocks, in the keys the app sends. Anything else is refused (400) before any read or request.
 - **Removed:** the fake Household tab (the FLRSH code, the "join" that always worked, `HOUSEHOLD_ENABLED=false`), the `household` state and the two "Household connected" chips.
 
 ## Tables touched (migration 0030, not run)
@@ -57,7 +61,8 @@ So the 1.1.3 store build can carry it before the migration runs.
 | `household_join_attempts` new | user_id, target_key, net_key, invite_id, result, at | service role only |
 | `household_data` new | household_id pk, data jsonb, version, updated_at | select + update: members only; no client insert/delete; anon nothing; a trigger strips personal keys from every write |
 | `household_member_private` new | user_id pk, data jsonb (personal keys only), updated_at | select, insert, update: the row's own person only; nobody can move a row; anon nothing |
-| `household_purchase_holds` new | household_id pk, user_id, provider, expires_at | service role only |
+| `household_purchase_holds` new | household_id pk, user_id, provider, attempt_id, pending, expires_at | service role only |
+| `plaid_account_owners` new | user_id, item_id, account_id (pk user_id + account_id), seen_at | service role only |
 | `plaid_item_cursors` new | plaid_item_id, user_id, next_cursor | service role only |
 | `meeting_records` | policy added: members read each other's records from the day the author joined | select own, or same household since the author joined |
 | `plaid_items`, `subscriptions`, `profiles`, `user_data` | **no schema change** | plaid_items stays service-only; household access is checked in plaid.js and tested |
@@ -65,7 +70,8 @@ So the 1.1.3 store build can carry it before the migration runs.
 RPCs (security definer, `search_path` fixed, execute for service_role only):
 - `household_create_invite`, `household_revoke_invite`
 - `household_accept_invite`
-- `household_hold_purchase`
+- `household_hold_purchase`, `household_hold_pending`, `household_release_purchase`
+- `household_disconnect_item`
 - `household_leave`, `household_remove_partner` (both through `household_leave_locked`, which nobody may call directly)
 
 Three read helpers are used inside the policies (`is_household_member`, `shares_household_with`, `shares_household_record`). They are the only household functions granted to `authenticated`.

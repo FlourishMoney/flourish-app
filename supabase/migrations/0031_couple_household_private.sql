@@ -13,8 +13,12 @@
 --   plaid_item_cursors       each member's own /transactions/sync cursor for a bank
 --                            the other member linked (the linker keeps
 --                            plaid_items.next_cursor, unchanged)
---   household_purchase_holds one member is buying a subscription for the household:
---                            the other cannot start a purchase until it ends (30 min)
+--   household_purchase_holds ONE purchase attempt holds the household (a Stripe checkout,
+--                            or one tap in the store app); no other attempt, by either
+--                            person on any platform, may start until it ends (32 min, or
+--                            until the store reports a pending purchase finished)
+--   plaid_account_owners     who linked each bank account (kept by the server from Plaid's
+--                            own answers), so cleanup never depends on a live Plaid row
 --
 --   household_create_invite   the owner invites (makes the household on first use and
 --                             copies the owner's user_data blob into household_data,
@@ -22,7 +26,10 @@
 --   household_accept_invite   the partner joins (expiry, single use, address, 2 adults,
 --                             the attempt limits); their personal keys go to their own
 --                             private row and their old user_data row is deleted
---   household_hold_purchase   a member starts buying (Stripe checkout, store purchase)
+--   household_hold_purchase   a purchase attempt holds the household; household_hold_pending
+--                             and household_release_purchase keep or end it
+--   household_disconnect_item a member disconnects a bank: what came from it leaves the
+--                             shared blob, then its plaid_items row goes, in one transaction
 --   household_leave           a member leaves: their banks and everything derived from
 --                             them come out of the shared blob, and they start fresh
 --                             (their user_data and private rows are deleted). The last
@@ -94,23 +101,41 @@ create table if not exists public.household_purchase_holds (
   household_id uuid        primary key references public.households(id) on delete cascade,
   user_id      uuid        not null references auth.users(id) on delete cascade,
   provider     text        not null check (provider in ('stripe', 'app_store', 'play_store')),
+  attempt_id   text        not null,                 -- the one attempt holding it: a Stripe checkout id, or the app's random id
+  pending      boolean     not null default false,   -- the store said "pending": held until it reports (expires_at is the backstop)
   expires_at   timestamptz not null,
   created_at   timestamptz not null default now()
 );
+
+-- Who linked each bank account, from Plaid's own answers (plaid.js records it whenever Plaid lists an item's
+-- accounts). No foreign key on purpose: the record outlives the plaid_items row, so a bank disconnected some
+-- other way, or a sign-in deleted, still tells leave's cleanup which accounts were whose. Deleted with the
+-- account (delete_account).
+create table if not exists public.plaid_account_owners (
+  user_id    uuid        not null,
+  item_id    text        not null,
+  account_id text        not null,
+  seen_at    timestamptz not null default now(),
+  primary key (user_id, account_id)
+);
+create index if not exists plaid_account_owners_item on public.plaid_account_owners (user_id, item_id);
 
 alter table public.household_invites        enable row level security;
 alter table public.household_join_attempts  enable row level security;
 alter table public.plaid_item_cursors       enable row level security;
 alter table public.household_purchase_holds enable row level security;
+alter table public.plaid_account_owners     enable row level security;
 -- No policies on purpose: a browser never reaches these rows.
 revoke all on table public.household_invites        from anon, authenticated;
 revoke all on table public.household_join_attempts  from anon, authenticated;
 revoke all on table public.plaid_item_cursors       from anon, authenticated;
 revoke all on table public.household_purchase_holds from anon, authenticated;
+revoke all on table public.plaid_account_owners     from anon, authenticated;
 grant all privileges on table public.household_invites        to service_role;
 grant all privileges on table public.household_join_attempts  to service_role;
 grant all privileges on table public.plaid_item_cursors       to service_role;
 grant all privileges on table public.household_purchase_holds to service_role;
+grant all privileges on table public.plaid_account_owners     to service_role;
 
 -- 2. The owner invites ---------------------------------------------------------
 -- Makes the household the first time (owner, consent time, and the owner's own blob copied
@@ -184,8 +209,10 @@ end; $$;
 -- under its own advisory lock (always in that order), so tries at the same moment are counted one after the
 -- other and none slips past the limit. Every failed try is recorded in the same transaction as its answer,
 -- an unknown code or link included. A wrong code also counts against every open invite to that address, and
--- an invite dies after 5 wrong tries (revoke_reason 'too_many_tries'): the owner sends a new one. A link
--- tried by an account with another address counts against that invite too.
+-- an invite dies after 5 wrong tries (revoke_reason 'too_many_tries'): the owner sends a new one. A valid LINK
+-- opened by an account with another address is counted against that account and its network only, never against
+-- the invite or its address (audit round 2, d): someone holding a leaked link cannot cancel it, or lock out the
+-- person it was sent to. The 6-character code is the guessable secret, so only code guesses strike an invite.
 -- The invite row is locked, so the same invite cannot be used twice even at the same moment.
 -- Answers jsonb { result, household_id }: 'joined', 'already_member', 'invalid', 'expired', 'used',
 -- 'wrong_account', 'in_another_household', 'household_full', 'too_many_attempts'.
@@ -226,15 +253,8 @@ begin
     else null end;
   if outcome is not null then
     insert into public.household_join_attempts (user_id, target_key, net_key, invite_id, result)
-    values (p_user, case when outcome = 'wrong_account' then encode(sha256(convert_to(inv.email_key, 'UTF8')), 'hex') else target end,
-            p_net_key, inv.id, outcome);
-    if outcome = 'wrong_account' then
-      update public.household_invites
-         set failed_attempts = failed_attempts + 1,
-             revoked_at = case when failed_attempts + 1 >= invite_tries then now() else revoked_at end,
-             revoke_reason = case when failed_attempts + 1 >= invite_tries then 'too_many_tries' else revoke_reason end
-       where id = inv.id;
-    elsif outcome = 'invalid' and p_code_hash is not null and p_token_hash is null then
+    values (p_user, target, p_net_key, inv.id, outcome);
+    if outcome = 'invalid' and p_code_hash is not null and p_token_hash is null then
       update public.household_invites
          set failed_attempts = failed_attempts + 1,
              revoked_at = case when failed_attempts + 1 >= invite_tries then now() else revoked_at end,
@@ -263,14 +283,25 @@ begin
 end; $$;
 
 -- 3b. One purchase at a time ------------------------------------------------------
--- A member about to buy (billing.js: a Stripe checkout, or the store app's purchase sheet) holds the household
--- for p_ttl. While the other member holds it, a second purchase is refused, so two people cannot buy at the
--- same moment on two platforms (audit H5). The server checks first that the household is not already paid for.
--- Answers jsonb { result: 'held' | 'held_by_partner' | 'no_household', expires_at }.
-create or replace function public.household_hold_purchase(p_user uuid, p_provider text, p_ttl interval default interval '32 minutes')
+-- ONE PURCHASE ATTEMPT holds the household (audit H5, round 2 a). An attempt is a Stripe checkout (its session
+-- id) or one tap on a plan in the store app (a random id the app makes). While an attempt holds it, any OTHER
+-- attempt is refused, whoever makes it and on whatever platform: the same person cannot start a Stripe checkout
+-- and then a store purchase, or buy in the iOS and the Android app, any more than the two people can.
+--   household_hold_purchase   take the hold, or refresh it for the same attempt. p_replaces: a Stripe checkout
+--                             of the same person that the server has just seen expire at Stripe (it can never
+--                             complete), which a new checkout of theirs may replace. Nothing else is replaced.
+--   household_hold_pending    the store said the purchase is pending (Ask to Buy, a slow payment): the hold
+--                             lasts until the store reports it (household_release_purchase), with p_backstop as
+--                             the longest, so a store that never reports does not hold the household for ever
+--   household_release_purchase the attempt ended: completed, cancelled or failed
+-- A hold lapses at expires_at: 32 minutes for an attempt that is not pending (a Stripe checkout made under one
+-- ends at 31, billing.js), the backstop for one that is. Answers jsonb: { result: 'held' | 'held_elsewhere' | 'no_household', ... }.
+create or replace function public.household_hold_purchase(p_user uuid, p_provider text, p_attempt text,
+                                                          p_ttl interval default interval '32 minutes', p_replaces text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare hid uuid; h public.household_purchase_holds%rowtype; exp timestamptz;
 begin
+  if coalesce(p_attempt, '') = '' then raise exception 'attempt_required' using errcode = 'check_violation'; end if;
   select household_id into hid from public.household_members where user_id = p_user;
   if hid is null then return jsonb_build_object('result', 'no_household'); end if;
   perform 1 from public.households where id = hid for update;
@@ -278,15 +309,44 @@ begin
     return jsonb_build_object('result', 'no_household');
   end if;
   select * into h from public.household_purchase_holds where household_id = hid;
-  if h.household_id is not null and h.user_id <> p_user and h.expires_at > now() then
-    return jsonb_build_object('result', 'held_by_partner', 'expires_at', h.expires_at);
-  end if;
   exp := now() + p_ttl;
-  insert into public.household_purchase_holds (household_id, user_id, provider, expires_at)
-  values (hid, p_user, p_provider, exp)
-  on conflict (household_id) do update set user_id = excluded.user_id, provider = excluded.provider,
-                                           expires_at = excluded.expires_at, created_at = now();
+  if h.household_id is not null and h.expires_at > now() then
+    if h.attempt_id = p_attempt and h.user_id = p_user and h.provider = p_provider then
+      update public.household_purchase_holds set expires_at = greatest(expires_at, exp) where household_id = hid;
+      return jsonb_build_object('result', 'held', 'expires_at', greatest(h.expires_at, exp), 'refreshed', true);
+    end if;
+    if not (p_replaces is not null and h.attempt_id = p_replaces and h.user_id = p_user
+            and h.provider = 'stripe' and p_provider = 'stripe' and not h.pending) then
+      return jsonb_build_object('result', 'held_elsewhere', 'mine', h.user_id = p_user, 'provider', h.provider,
+                                'attempt_id', case when h.user_id = p_user then h.attempt_id end, 'pending', h.pending);
+    end if;
+  end if;
+  insert into public.household_purchase_holds (household_id, user_id, provider, attempt_id, pending, expires_at)
+  values (hid, p_user, p_provider, p_attempt, false, exp)
+  on conflict (household_id) do update set user_id = excluded.user_id, provider = excluded.provider, attempt_id = excluded.attempt_id,
+                                           pending = false, expires_at = excluded.expires_at, created_at = now();
   return jsonb_build_object('result', 'held', 'expires_at', exp);
+end; $$;
+
+create or replace function public.household_hold_pending(p_user uuid, p_attempt text, p_backstop interval default interval '7 days')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  update public.household_purchase_holds
+     set pending = true, expires_at = greatest(expires_at, now() + p_backstop)
+   where user_id = p_user and attempt_id = p_attempt and expires_at > now();
+  get diagnostics n = row_count;
+  return jsonb_build_object('result', case when n > 0 then 'pending' else 'not_held' end);
+end; $$;
+
+-- p_attempt null: every hold of this person's (their purchase completed: the household is paid for now).
+create or replace function public.household_release_purchase(p_user uuid, p_attempt text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  delete from public.household_purchase_holds where user_id = p_user and (p_attempt is null or attempt_id = p_attempt);
+  get diagnostics n = row_count;
+  return jsonb_build_object('result', case when n > 0 then 'released' else 'not_held' end);
 end; $$;
 
 -- 4. Leaving ---------------------------------------------------------------------
@@ -315,27 +375,18 @@ returns jsonb language sql immutable set search_path = public as $$
                     where not (jsonb_typeof(e) = 'object' and coalesce(e ->> p_field, '') = any(p_ids))), '[]'::jsonb) end;
 $$;
 
-create or replace function public.household_strip_member_banks(p_household uuid, p_user uuid)
+-- The accounts p_gone, and everything made from them, out of the household's blob (locked). The ids need not
+-- still be in the blob's accounts: a transaction or debt left behind on an account already removed goes too.
+create or replace function public.household_strip_accounts(p_household uuid, p_gone text[])
 returns void language plpgsql security definer set search_path = public as $$
 declare
-  d jsonb; ad jsonb; items text[]; mine_inst text[]; other_inst text[]; gone text[]; debt_keys text[];
+  d jsonb; ad jsonb; gone text[] := coalesce(p_gone, '{}'); debt_keys text[];
   local_kinds constant text[] := array['', 'manual', 'statement'];
 begin
+  if cardinality(gone) = 0 then return; end if;
   select data into d from public.household_data where household_id = p_household for update;
   ad := d #> '{core,appData}';
   if d is null or jsonb_typeof(ad) is distinct from 'object' then return; end if;
-  select coalesce(array_agg(item_id), '{}'), coalesce(array_agg(distinct lower(institution_name)) filter (where institution_name is not null), '{}')
-    into items, mine_inst from public.plaid_items where user_id = p_user;
-  select coalesce(array_agg(distinct lower(pi.institution_name)) filter (where pi.institution_name is not null), '{}') into other_inst
-    from public.plaid_items pi join public.household_members m on m.user_id = pi.user_id
-   where m.household_id = p_household and m.user_id <> p_user;
-  select coalesce(array_agg(e ->> 'id'), '{}') into gone
-    from jsonb_array_elements(case when jsonb_typeof(ad -> 'accounts') = 'array' then ad -> 'accounts' else '[]'::jsonb end) e
-   where jsonb_typeof(e) = 'object' and coalesce(e ->> 'id', '') <> '' and (
-         coalesce(e ->> '_item', '') = any(items)
-      or (coalesce(e ->> '_item', '') = '' and not lower(coalesce(e ->> 'institution', '')) = any(local_kinds)
-          and lower(e ->> 'institution') = any(mine_inst) and not lower(e ->> 'institution') = any(other_inst)));
-  if cardinality(gone) = 0 then return; end if;
   select coalesce(array_agg(coalesce(nullif(e ->> 'id', ''), e ->> 'account_id')), '{}') into debt_keys
     from jsonb_array_elements(case when jsonb_typeof(ad -> 'debts') = 'array' then ad -> 'debts' else '[]'::jsonb end) e
    where jsonb_typeof(e) = 'object' and coalesce(e ->> 'account_id', '') = any(gone);
@@ -370,6 +421,65 @@ begin
        where jsonb_typeof(e) = 'object' and (coalesce(e ->> '_item', '') <> '' or not lower(coalesce(e ->> 'institution', '')) = any(local_kinds)))));
   end if;
   update public.household_data set data = jsonb_set(d, '{core,appData}', ad) where household_id = p_household;
+end; $$;
+
+-- A departing member's accounts: every account the server saw them link (plaid_account_owners: it outlives
+-- the Plaid row, so a bank they disconnected another way still counts), every blob account stamped with one
+-- of their live items, and an older unstamped account at a bank only they linked. Then the strip above.
+create or replace function public.household_strip_member_banks(p_household uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  ad jsonb; items text[]; mine_inst text[]; other_inst text[]; gone text[];
+  local_kinds constant text[] := array['', 'manual', 'statement'];
+begin
+  select d.data #> '{core,appData}' into ad from public.household_data d where d.household_id = p_household;
+  select coalesce(array_agg(item_id), '{}'), coalesce(array_agg(distinct lower(institution_name)) filter (where institution_name is not null), '{}')
+    into items, mine_inst from public.plaid_items where user_id = p_user;
+  select coalesce(array_agg(distinct lower(pi.institution_name)) filter (where pi.institution_name is not null), '{}') into other_inst
+    from public.plaid_items pi join public.household_members m on m.user_id = pi.user_id
+   where m.household_id = p_household and m.user_id <> p_user;
+  select coalesce(array_agg(distinct x), '{}') into gone from (
+    select o.account_id as x from public.plaid_account_owners o where o.user_id = p_user
+    union
+    select e ->> 'id'
+      from jsonb_array_elements(case when jsonb_typeof(ad -> 'accounts') = 'array' then ad -> 'accounts' else '[]'::jsonb end) e
+     where jsonb_typeof(e) = 'object' and coalesce(e ->> 'id', '') <> '' and (
+           coalesce(e ->> '_item', '') = any(items)
+        or (coalesce(e ->> '_item', '') = '' and not lower(coalesce(e ->> 'institution', '')) = any(local_kinds)
+            and lower(e ->> 'institution') = any(mine_inst) and not lower(e ->> 'institution') = any(other_inst)))
+  ) ids;
+  perform public.household_strip_accounts(p_household, gone);
+end; $$;
+
+-- A member disconnects one of THEIR banks (plaid.js delete_item, and the duplicate clean-ups), audit round 2 c:
+-- under the household's lock, everything that came from it leaves the shared blob (its accounts by the
+-- ownership record and by their stamp, and all made from them), THEN its plaid_items row is deleted, in one
+-- transaction, so there is never a moment when the row is gone and the data is not. The ownership record is
+-- kept. Someone in no household: the row is deleted, as before. Answers { result: 'removed' | 'not_found' }.
+create or replace function public.household_disconnect_item(p_user uuid, p_item text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare hid uuid; ad jsonb; gone text[]; n integer;
+begin
+  -- Only one's own bank: no row of theirs for this item, nothing is touched.
+  if not exists (select 1 from public.plaid_items where user_id = p_user and item_id = p_item) then
+    return jsonb_build_object('result', 'not_found', 'accounts', 0);
+  end if;
+  select household_id into hid from public.household_members where user_id = p_user;
+  if hid is not null then
+    perform 1 from public.households where id = hid for update;
+    select d.data #> '{core,appData}' into ad from public.household_data d where d.household_id = hid;
+    select coalesce(array_agg(distinct x), '{}') into gone from (
+      select o.account_id as x from public.plaid_account_owners o where o.user_id = p_user and o.item_id = p_item
+      union
+      select e ->> 'id'
+        from jsonb_array_elements(case when jsonb_typeof(ad -> 'accounts') = 'array' then ad -> 'accounts' else '[]'::jsonb end) e
+       where jsonb_typeof(e) = 'object' and coalesce(e ->> 'id', '') <> '' and e ->> '_item' = p_item
+    ) ids;
+    perform public.household_strip_accounts(hid, gone);
+  end if;
+  delete from public.plaid_items where user_id = p_user and item_id = p_item;
+  get diagnostics n = row_count;
+  return jsonb_build_object('result', case when n > 0 then 'removed' else 'not_found' end, 'accounts', coalesce(cardinality(gone), 0));
 end; $$;
 
 -- One person goes, with the household's lock already held (only the two functions below call this).
@@ -449,7 +559,11 @@ end; $$;
 revoke all on function public.household_create_invite(uuid, text, text, text, interval) from public, anon, authenticated;
 revoke all on function public.household_revoke_invite(uuid)                         from public, anon, authenticated;
 revoke all on function public.household_accept_invite(uuid, text, text, text, text) from public, anon, authenticated;
-revoke all on function public.household_hold_purchase(uuid, text, interval)         from public, anon, authenticated;
+revoke all on function public.household_hold_purchase(uuid, text, text, interval, text) from public, anon, authenticated;
+revoke all on function public.household_hold_pending(uuid, text, interval)          from public, anon, authenticated;
+revoke all on function public.household_release_purchase(uuid, text)               from public, anon, authenticated;
+revoke all on function public.household_disconnect_item(uuid, text)                from public, anon, authenticated;
+revoke all on function public.household_strip_accounts(uuid, text[])               from public, anon, authenticated;
 revoke all on function public.household_strip_member_banks(uuid, uuid)              from public, anon, authenticated;
 revoke all on function public.household_drop_by(jsonb, text, text[])                from public, anon, authenticated;
 revoke all on function public.household_leave_locked(uuid, uuid)                    from public, anon, authenticated, service_role;
@@ -458,7 +572,10 @@ revoke all on function public.household_remove_partner(uuid)                    
 grant execute on function public.household_create_invite(uuid, text, text, text, interval) to service_role;
 grant execute on function public.household_revoke_invite(uuid)                         to service_role;
 grant execute on function public.household_accept_invite(uuid, text, text, text, text) to service_role;
-grant execute on function public.household_hold_purchase(uuid, text, interval)         to service_role;
+grant execute on function public.household_hold_purchase(uuid, text, text, interval, text) to service_role;
+grant execute on function public.household_hold_pending(uuid, text, interval)          to service_role;
+grant execute on function public.household_release_purchase(uuid, text)               to service_role;
+grant execute on function public.household_disconnect_item(uuid, text)                to service_role;
 grant execute on function public.household_leave(uuid)                                 to service_role;
 grant execute on function public.household_remove_partner(uuid)                        to service_role;
 
@@ -483,10 +600,15 @@ grant execute on function public.household_remove_partner(uuid)                 
 -- drop function if exists public.household_leave_locked(uuid, uuid);
 -- drop function if exists public.household_strip_member_banks(uuid, uuid);
 -- drop function if exists public.household_drop_by(jsonb, text, text[]);
--- drop function if exists public.household_hold_purchase(uuid, text, interval);
+-- drop function if exists public.household_disconnect_item(uuid, text);
+-- drop function if exists public.household_strip_accounts(uuid, text[]);
+-- drop function if exists public.household_release_purchase(uuid, text);
+-- drop function if exists public.household_hold_pending(uuid, text, interval);
+-- drop function if exists public.household_hold_purchase(uuid, text, text, interval, text);
 -- drop function if exists public.household_accept_invite(uuid, text, text, text, text);
 -- drop function if exists public.household_revoke_invite(uuid);
 -- drop function if exists public.household_create_invite(uuid, text, text, text, interval);
+-- drop table if exists public.plaid_account_owners;
 -- drop table if exists public.household_purchase_holds;
 -- drop table if exists public.plaid_item_cursors;
 -- drop table if exists public.household_join_attempts;
