@@ -25,6 +25,12 @@ const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { subjectKey, dayWindow, countIn } = require("./_lib/limiterKeys");
 
+// The consent gate's answer when it could not read consent (a read error or a thrown query): 503, so the
+// app treats it as busy and retries. Nothing reaches the AI provider without a confirmed grant.
+function consentUnavailable(corsHeaders) {
+  return { statusCode: 503, headers: corsHeaders, body: JSON.stringify({ error: "consent_unavailable" }) };
+}
+
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
 // trusted header (falls back to x-forwarded-for).
 function clientIp(event) {
@@ -219,9 +225,10 @@ exports.handler = async (event) => {
   // ── Sprint Z3 #2: server-enforced consent GATE — require AFFIRMATIVE consent before any AI path ───
   // Direct profiles read (NOT inferred from getUserPlan). The gate turns on a distinction the previous
   // version collapsed:
-  //   "we couldn't check"        (read error / thrown query) → FAIL OPEN (logged). A transient DB blip
-  //                              must not take AI down for everyone — a defensible availability tradeoff.
-  //   "we checked, and there is  → BLOCK. A SUCCESSFUL read is authoritative. Consent requires a
+  //   "we couldn't check"        (read error / thrown query) → FAIL CLOSED: 503, and no provider call.
+  //                              Audit 2026-10-29: consent that can't be confirmed is not consent, so
+  //                              a DB blip pauses the coach (the app retries) rather than sending data.
+  //   "we checked, and there is  → BLOCK 403. A SUCCESSFUL read is authoritative. Consent requires a
   //    no consent on file"          POSITIVE ai_third_party_consent_at with no later revoke; a missing
   //                                 profiles row, a null consent_at, or a revoke all mean "not granted".
   // The old gate selected only revoked_at, so a user who never consented (consent_at null, revoked_at
@@ -234,8 +241,9 @@ exports.handler = async (event) => {
       .eq("user_id", user_id)
       .maybeSingle();
     if (cErr) {
-      // Couldn't check — fail open. NOT the same as "checked and found no consent".
-      console.error("[coach] consent check read error (failing open):", cErr.message);
+      // Couldn't check — fail closed. NOT the same as "checked and found no consent" (that is the 403).
+      console.error("[coach] consent check read error (failing closed):", cErr.message);
+      return consentUnavailable(corsHeaders);
     } else {
       // Checked. accept_consent writes consent_at and clears revoked_at; revoke_consent writes
       // revoked_at. So a live grant is: consent_at present AND not superseded by a later revoke. The
@@ -248,7 +256,8 @@ exports.handler = async (event) => {
       }
     }
   } catch (e) {
-    console.error("[coach] consent check threw (failing open):", e.message);
+    console.error("[coach] consent check threw (failing closed):", e.message);
+    return consentUnavailable(corsHeaders);
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
