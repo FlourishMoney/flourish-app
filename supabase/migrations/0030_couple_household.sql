@@ -247,9 +247,9 @@ create trigger household_members_guard before insert on public.household_members
 -- It takes the household's lock first, as every membership change does (0031), so an
 -- account deleted while the owner removes the partner, or the partner leaves, waits for
 -- the other to finish instead of promoting someone who is being removed (audit B1).
--- Someone left behind: the departed member's banks leave the shared blob (0031's strip; household_leave has
--- already done it, so this matters when a sign-in is deleted without leaving first). The strip reads 0031's
--- ownership record, which outlives the Plaid rows a deleted sign-in takes with it.
+-- Someone left behind: the departed member's banks leave the shared blob (0031's strip). household_leave has
+-- already done it, and so has 0031's trigger on auth.users for a sign-in deleted directly (which then deletes
+-- that sign-in's ownership record); this covers a membership row deleted any other way.
 create or replace function public.household_members_after_delete()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin

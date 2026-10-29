@@ -44,6 +44,7 @@ So the 1.1.3 store build can carry it before the migration runs.
   - A covered partner is never offered or sold a plan: checkout returns 409 and the store screen gets paid:true.
   - One purchase ATTEMPT at a time (`household_purchase_holds`). A Stripe checkout (its session id), or one tap in the store app (a random id), holds the household for 32 minutes. Any other attempt is refused, whoever makes it and on any platform, the same person's included: the only thing replaced is that person's own earlier web checkout once Stripe says it has expired. A household's Stripe checkout ends after 31 minutes, before its hold; one refused is expired at Stripe at once.
   - A store purchase the store calls pending holds the household until the store reports it completed, cancelled or failed (7 days at most).
+  - Every hold's end is fixed from when its attempt began (32 minutes, or 7 days once pending); asking again never moves it. The app never ends a hold: a cancelled or failed sheet lapses on its own, and the app keeps one attempt id for 20 minutes so a retry is the same attempt. Only the store's own report, as the server reads it (RevenueCat's webhook, or the app's sync), ends one sooner: that person's hold on that store, if it began no later than the report.
   - If a household still ends up paying twice (both paid before joining, or a store purchase made outside the app), one rule picks the extra one: a founding price is kept; then a store's over ours (we can stop ours, not the store's); then the owner's. The extra one's holder is told, in the approved line, where to cancel it; its row is flagged for support (`support_flag = 'household_two_paid'`); it is logged; and if it is ours (Stripe) it is set to end at the end of the period it is paid for, so we never charge it again. This runs after every paid Stripe or store event, when someone joins, and on the Household screen.
   - When the two stop sharing (leave, remove, account deleted), a Stripe subscription we had set to end as the extra one is resumed.
   - Founding: the household is only ever sold one plan, so it takes one seat. The founding-seats work (0029, other session) still counts seats per account. If both already held a seat before joining, see Risks.
@@ -70,9 +71,11 @@ So the 1.1.3 store build can carry it before the migration runs.
 RPCs (security definer, `search_path` fixed, execute for service_role only):
 - `household_create_invite`, `household_revoke_invite`
 - `household_accept_invite`
-- `household_hold_purchase`, `household_hold_pending`, `household_release_purchase`
+- `household_hold_purchase`, `household_hold_pending`, `household_release_store_purchase`
 - `household_disconnect_item`
 - `household_leave`, `household_remove_partner` (both through `household_leave_locked`, which nobody may call directly)
+
+A trigger on `auth.users` (`household_user_deleting`, before delete) takes a directly deleted sign-in's banks out of the shared blob, then deletes its rows in `plaid_account_owners`.
 
 Three read helpers are used inside the policies (`is_household_member`, `shares_household_with`, `shares_household_record`). They are the only household functions granted to `authenticated`.
 

@@ -252,7 +252,8 @@ exports.handler = async (event) => {
       const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       const data = await plaid("/accounts/get", { access_token });
-      // Couple mode (audit round 2 c): who linked each account, from Plaid's own answer, for the cleanups.
+      // Couple mode (audit round 2 c): who linked each account, from Plaid's own answer, for the cleanups. A record
+      // that cannot be written answers 503 and no accounts (round 3: the catch below, err.ownerRecord).
       await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, (data.accounts || []).map((a) => a.account_id));
       return ok({
         accounts: data.accounts.map(a => ({
@@ -284,14 +285,18 @@ exports.handler = async (event) => {
       // Sprint Z #1/#3: incremental cursor sync. Returns { transactions (added+modified, normalized),
       // removed (ids), truncated, full }. Cursor is read from / persisted to plaid_items per item.
       // Couple mode: a bank the other member linked keeps a cursor of this member's own (plaid_item_cursors).
-      let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, owner_id, item_row_id, fullResync: !!full_resync });
+      // Couple mode (audit round 2 c): who linked each account, recorded BEFORE the sync's cursor moves on. A record
+      // that cannot be written throws (round 3), so the cursor stays, the answer is 503 with no transactions (the
+      // catch below, err.ownerRecord), and the next sync returns them again.
+      const recordOwners = (ids) => household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, ids);
+      let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, owner_id, item_row_id, fullResync: !!full_resync, recordOwners });
       // Fall back to /transactions/get ONLY on an empty FULL sync (fresh sandbox items sometimes
       // return nothing from /sync at first). An empty INCREMENTAL sync just means "no changes".
       if (result.full && result.transactions.length === 0 && result.removed.length === 0) {
         const fallback = await getTransactions(access_token, startDate, endDate);
+        await recordOwners(fallback.map((t) => t && t.account_id));
         result = { transactions: fallback, removed: [], truncated: false, full: true };
       }
-      await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, result.transactions.map((t) => t && t.account_id));
 
       return ok({
         transactions: result.transactions,
@@ -850,6 +855,8 @@ exports.handler = async (event) => {
   } catch (err) {
     console.error("[Plaid]", err.errorCode || "", err.message);
 
+    // Couple mode (audit round 3): who linked the accounts could not be recorded: no bank data goes back.
+    if (err.ownerRecord) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
     if (err.errorCode === "ITEM_LOGIN_REQUIRED") {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Bank session expired. Please reconnect.", needs_reconnect: true }) };
     }
@@ -992,6 +999,10 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
     }
 
     const truncated = hasMore; // stopped at the cap with more pages remaining
+
+    // Couple mode: who linked these accounts is recorded before the cursor moves on; a failure throws, and the
+    // cursor stays where it was (get_transactions answers 503).
+    if (ctx.recordOwners) await ctx.recordOwners([...accounts.keys(), ...Array.from(byId.values()).map((t) => t && t.account_id)]);
 
     // Persist the cursor reached so the next sync resumes (incremental advance, or truncation resume).
     if (admin && cursor && memberCursor) {

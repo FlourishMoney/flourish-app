@@ -14068,6 +14068,10 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   );
 }
 
+// Couple mode (audit round 3 a): the purchase attempt the store paywall last held the household for, kept for the
+// app's run, not the paywall's, so closing and reopening the plans is the same attempt (lib/storeBilling.js attemptFor).
+const STORE_ATTEMPT = { current: null };
+
 // VERSION 1.1, ITEM 2: THE STORE APPS' PAYWALL (lib/storeOffer.js has the offer and what may be claimed).
 // Rendered only in a store build that sells (lib/storeBilling.js storeBillingOn); App decides when (item 3).
 // The prices are the store's own strings, with no trial and no introductory offer, and access follows the
@@ -14107,6 +14111,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
   const deps = {
     serverStatus: ()=>askStore("store_status"),
     serverHold: (attempt_id, state)=>askStore("store_hold", { platform, attempt_id, ...(state ? { state } : {}) }),
+    attempt: STORE_ATTEMPT,   // couple mode: one purchase attempt across taps (lib/storeBilling.js attemptFor)
     serverSync: ()=>askStore("store_sync"),
     purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
     restorePurchases: ()=>purchases.restorePurchases(),

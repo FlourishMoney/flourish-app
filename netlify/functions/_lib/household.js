@@ -19,7 +19,7 @@
 "use strict";
 
 const crypto = require("crypto");
-const { deriveEntitlement, isPaidSubscription } = require("./planRules");
+const { deriveEntitlement, isPaidSubscription, STORE_PROVIDERS } = require("./planRules");
 const { cleanEmail, isEmail } = require("./emailAddress");
 const { emailHtml } = require("./emailLayout");
 const { subjectKey } = require("./limiterKeys");
@@ -177,7 +177,9 @@ async function householdCover(admin, userId, now = Date.now()) {
 // the store app (a random id the app makes). Any other attempt is refused while it holds, whoever makes it and on
 // whatever platform. A Stripe checkout made under a hold ends at CHECKOUT_MINUTES, before the hold (HOLD_MINUTES);
 // a store purchase the store calls pending holds the household until the store reports it (PENDING_BACKSTOP_DAYS
-// at most). Only a member of a household is held: for everyone else nothing is stored.
+// at most). Every hold's end is fixed from when its attempt began; asking again never moves it (audit round 3 a).
+// Only the store's own report, as the server reads it, ends a hold early: never the app's word.
+// Only a member of a household is held: for everyone else nothing is stored.
 //   holdPurchase  { held, household, mine, provider, attempt_id }; attempt_id only for one's own blocking attempt
 // Throws on any other failed call: the caller sells nothing rather than risk two subscriptions.
 const HOLD_MINUTES = 32;
@@ -201,10 +203,13 @@ async function holdPending(admin, userId, attemptId) {
   if (error) { if (isMissing(error)) return false; throw new Error(`purchase pending: ${error.code || "error"}`); }
   return !!data && data.result === "pending";
 }
-// The attempt ended (null: every attempt of this person's, their purchase completed). Never throws.
-async function releasePurchase(admin, userId, attemptId = null) {
+// The store reported this person's purchase on `provider` (app_store | play_store) at `reportedAt` (RevenueCat's
+// event time, or now for the server's own sync): their hold on that store ends if it began no later. Never a
+// web checkout's hold, the other store's, or a newer attempt's. Never throws: a hold left in place just lapses.
+async function releaseStorePurchase(admin, userId, provider, reportedAt) {
+  if (!STORE_PROVIDERS.includes(provider) || !reportedAt) return;
   try {
-    const { error } = await admin.rpc("household_release_purchase", { p_user: userId, p_attempt: attemptId });
+    const { error } = await admin.rpc("household_release_store_purchase", { p_user: userId, p_provider: provider, p_reported_at: reportedAt });
     if (error && !isMissing(error)) console.error("[household] release hold:", error.code || "error");
   } catch (e) { console.error("[household] release hold:", e.message); }
 }
@@ -212,16 +217,22 @@ async function releasePurchase(admin, userId, attemptId = null) {
 // ── WHO LINKED EACH BANK ACCOUNT (audit round 2 c) ─────────────────────────────────────────────────
 // Recorded from Plaid's own answers whenever plaid.js lists an item's accounts, against the person who linked the
 // item (never the member who happens to be asking). Leaving and disconnecting clean up by it, so neither depends on
-// the client's stamps or on a Plaid row that may be gone. Never throws; before 0031 runs it records nothing.
+// the client's stamps or on a Plaid row that may be gone. Before 0031 runs it records nothing.
+// FAILS CLOSED (audit round 3): any other failure throws an error marked ownerRecord, and plaid.js answers 503 with
+// no bank data, so no account reaches the app (and from it the shared blob) without the record leave's cleanup uses.
 async function recordAccountOwners(admin, ownerId, itemId, accountIds) {
   const ids = [...new Set((accountIds || []).filter((x) => typeof x === "string" && x))];
   if (!ownerId || !itemId || !ids.length) return;
+  let error = null;
   try {
     const now = new Date().toISOString();
-    const { error } = await admin.from("plaid_account_owners")
-      .upsert(ids.map((account_id) => ({ user_id: ownerId, item_id: itemId, account_id, seen_at: now })), { onConflict: "user_id,account_id" });
-    if (error && !isMissing(error)) console.error("[household] account owners:", error.code || "error");
-  } catch (e) { console.error("[household] account owners:", e.message); }
+    ({ error } = await admin.from("plaid_account_owners")
+      .upsert(ids.map((account_id) => ({ user_id: ownerId, item_id: itemId, account_id, seen_at: now })), { onConflict: "user_id,account_id" }));
+  } catch (e) { error = { message: e.message }; }
+  if (error && !isMissing(error)) {
+    console.error("[household] account owners:", error.code || "error");
+    throw Object.assign(new Error(`account owners: ${error.code || "error"}`), { ownerRecord: true });
+  }
 }
 
 // Disconnecting one's own bank: what came from it leaves the shared blob, then its plaid_items row goes, in one
@@ -330,7 +341,7 @@ module.exports = {
   sha256, normalizeCode, isCodeShaped, isTokenShaped, newInviteSecrets, inviteUrl, emailKey, netKeyOf,
   INVITE_EMAIL, hasPlaceholder, inviteEmailPayload, sendInviteEmail,
   householdCover,
-  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending, releasePurchase,
+  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending, releaseStorePurchase,
   recordAccountOwners, disconnectItem,
   EXTRA_FLAG, extraPayer, payersOf, reconcileHouseholdBilling, resumeHouseholdExtra,
 };

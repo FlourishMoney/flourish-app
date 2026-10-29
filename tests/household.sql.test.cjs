@@ -22,10 +22,12 @@
 //      invited address and per network, and an invite dies after 5 wrong tries; a code only works for its address;
 //   9  races: a remove at the same moment as a leave or an ownership change runs one after the other;
 //  10  one purchase at a time: ONE purchase attempt holds the household; any other attempt is refused, the same
-//      person's on another platform included; a pending store purchase holds it until the store reports;
+//      person's on another platform included; a pending store purchase holds it until the store reports; every
+//      hold's end is fixed from when its attempt began, and only that store's report, made after it began, ends it;
 //  11  what a departed member's banks left behind (derived data) leaves with them;
 //  12  disconnecting a bank cleans the shared blob before its Plaid row goes, in one transaction; the server's
-//      record of who linked each account makes leave's cleanup work even after a bank went another way;
+//      record of who linked each account makes leave's cleanup work even after a bank went another way; a sign-in
+//      deleted directly takes its record with it, once its banks have left the shared blob;
 //  13  someone holding a leaked invite link cannot cancel it by opening it from another account.
 // Postgres comes from FOUNDING_PG_BIN, Homebrew (postgresql@17) or GitHub's Ubuntu runner (/usr/lib/postgresql).
 // -----------------------------------------------------------------------------
@@ -399,40 +401,75 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
         "9i the owner removes the partner, then their account is deleted at once: the removed partner is not promoted, and no empty household is left behind");
     }
 
-    // 10 ONE PURCHASE AT A TIME (audit H5, round 2 a): one ATTEMPT holds the household --------------------------
+    // 10 ONE PURCHASE AT A TIME (audit H5, round 2 a; round 3 a): one ATTEMPT holds the household, to a FIXED end -------
     {
       const hold = (u, prov, att, replaces) => svc(`household_hold_purchase('${u}', '${prov}', '${att}'${replaces ? `, interval '32 minutes', '${replaces}'` : ""})`).result;
+      const ends = (h) => sql(`select expires_at from public.household_purchase_holds where household_id = '${h}'`);
+      // Whether a hold ends exactly `iv` after its attempt began (compared as Postgres adds it, clock changes included).
+      const lifeIs = (h, iv) => sql(`select expires_at = created_at + interval '${iv}' from public.household_purchase_holds where household_id = '${h}'`);
+      const lapse = (h) => sql(`update public.household_purchase_holds set expires_at = now() - interval '1 minute' where household_id = '${h}'`);
+      const storeReport = (u, prov, at) => svc(`household_release_store_purchase('${u}', '${prov}', ${at})`).result;
       const a = pair("b1");
       t.eq(hold(a.o, "stripe", "cs_1"), "held", "10a the owner starts a Stripe checkout: that attempt holds the household");
       t.eq(hold(a.p, "app_store", "p-ios-1"), "held_elsewhere", "10b the partner cannot start a purchase meanwhile");
       t.eq(hold(a.o, "app_store", "o-ios-1"), "held_elsewhere", "10c nor can the SAME person, Stripe then the iOS app");
       t.eq(hold(a.o, "play_store", "o-and-1"), "held_elsewhere", "10d …or Stripe then the Android app");
-      t.eq(hold(a.o, "stripe", "cs_1"), "held", "10e the same attempt may refresh its own hold");
+      const end1 = ends(a.h);
+      t.eq([hold(a.o, "stripe", "cs_1"), ends(a.h), lifeIs(a.h, "32 minutes")], ["held", end1, "t"], "10e the same attempt may ask again: held, and its end stays where it was (32 minutes from when it began)");
+      // 20 minutes in, the same attempt asks five more times: 12 minutes left stays 12 minutes left.
+      sql(`update public.household_purchase_holds set created_at = created_at - interval '20 minutes', expires_at = expires_at - interval '20 minutes' where household_id = '${a.h}'`);
+      const end2 = ends(a.h);
+      for (let i = 0; i < 5; i++) hold(a.o, "stripe", "cs_1");
+      t.eq([ends(a.h), lifeIs(a.h, "32 minutes")], [end2, "t"], "10e2 asking again and again never moves a hold's end: no one can keep a household held by asking (round 3 a)");
       t.eq(hold(a.o, "stripe", "cs_2"), "held_elsewhere", "10f a second Stripe checkout of the same person is refused…");
       t.eq(hold(a.o, "stripe", "cs_2", "cs_1"), "held", "10g …unless it replaces their own checkout the server has just seen expire at Stripe (it can never complete)");
       t.eq(hold(a.p, "stripe", "cs_3", "cs_2"), "held_elsewhere", "10h nobody can replace someone else's checkout");
-      t.eq(svc(`household_release_purchase('${a.o}', 'cs_2')`).result, "released", "10i the attempt ends (cancelled, failed or completed): released");
+      t.eq([sql("select to_regprocedure('public.household_release_purchase(uuid, text)') is null"), hold(a.p, "app_store", "p-ios-2")], ["t", "held_elsewhere"],
+        "10i nothing ends a hold on the app's word (round 3 a): there is no such call, and the checkout still holds the household");
+      lapse(a.h);   // a checkout cancelled or abandoned lapses on its own
       t.eq(hold(a.o, "app_store", "o-ios-2"), "held", "10j iOS…");
       t.eq(hold(a.o, "play_store", "o-and-2"), "held_elsewhere", "10k …then the Android app: refused");
-      t.eq(svc(`household_hold_pending('${a.o}', 'o-ios-2')`).result, "pending", "10l the store says the purchase is pending: the hold lasts");
+      t.eq([svc(`household_hold_pending('${a.o}', 'o-ios-2')`).result, lifeIs(a.h, "7 days")], ["pending", "t"], "10l the store says the purchase is pending: the hold lasts, to 7 days from when the attempt began");
+      const end3 = ends(a.h);
+      t.eq([svc(`household_hold_pending('${a.o}', 'o-ios-2')`).result, hold(a.o, "app_store", "o-ios-2"), ends(a.h)], ["pending", "held_elsewhere", end3],
+        "10l2 \"pending\" again changes nothing, and the pending attempt asking to hold again is refused (the store is still on it): its end never moves (round 3 a)");
       // 40 minutes later: past the 32-minute lease, but the store has not reported.
       sql(`update public.household_purchase_holds set created_at = now() - interval '40 minutes' where household_id = '${a.h}'`);
       t.eq([hold(a.p, "stripe", "cs_4"), hold(a.o, "play_store", "o-and-3")], ["held_elsewhere", "held_elsewhere"], "10m a purchase pending for more than 32 minutes still holds the household against everyone");
       t.eq(svc(`household_hold_pending('${a.p}', 'p-ios-9')`).result, "not_held", "10n only the attempt that holds it can be marked pending");
-      t.eq(svc(`household_release_purchase('${a.o}')`).result, "released", "10o the store reports the pending purchase completed: the hold ends");
+      t.eq([storeReport(a.o, "play_store", "now()"), storeReport(a.p, "app_store", "now()")], ["not_held", "not_held"], "10n2 a store report ends only that person's hold on that store: the other store's, or the other member's, ends nothing");
+      t.eq(storeReport(a.o, "app_store", "now()"), "released", "10o the store reports the pending purchase completed: the hold ends");
       t.eq(hold(a.p, "stripe", "cs_5"), "held", "10p then the other may buy (the household being paid for stops them anyway: billing.js)");
+      // LATE REPORTS (round 3 a): RevenueCat's event time, not when it reached us.
+      t.eq([storeReport(a.o, "app_store", "now() - interval '1 hour'"), storeReport(a.p, "app_store", "now()"), storeReport(a.p, "play_store", "now()")], ["not_held", "not_held", "not_held"],
+        "10x a store report, late or not, never ends a web checkout's hold (Stripe holds end at Stripe or lapse)");
+      lapse(a.h);
+      t.eq(hold(a.o, "play_store", "o-and-4"), "held", "10y the owner taps a plan in the Android app: a newer store attempt…");
+      t.eq([storeReport(a.o, "play_store", "now() - interval '5 minutes'"), hold(a.p, "stripe", "cs_6")], ["not_held", "held_elsewhere"],
+        "10y2 …a late report of an older Google Play purchase (made before this attempt began) leaves it holding the household");
+      t.eq([storeReport(a.o, "stripe", "now()"), storeReport(a.o, "play_store", "null"), hold(a.p, "stripe", "cs_6")], ["not_held", "not_held", "held_elsewhere"],
+        "10y3 …so does a report for no store we sell in, or with no time");
+      t.eq(storeReport(a.o, "play_store", "now()"), "released", "10y4 a report from that store, made after the attempt began, ends it");
+      const c = pair("b3");
+      t.eq(hold(c.o, "stripe", "cs_c1"), "held", "10z a web checkout holds the household…");
+      const endC = ends(c.h);
+      t.eq([svc(`household_hold_pending('${c.o}', 'cs_c1')`).result, ends(c.h)], ["not_held", endC], "10z2 …and can never be made \"pending\" on the app's word: its end stays 32 minutes (round 3 a)");
       const b = pair("b2");
       t.eq(hold(b.o, "app_store", "b2-ios"), "held", "10q (a second household) an attempt that is not pending…");
       sql(`update public.household_purchase_holds set expires_at = now() - interval '8 minutes', created_at = now() - interval '40 minutes' where household_id = '${b.h}'`);
       t.eq(hold(b.p, "play_store", "b2-and"), "held", "10r …lapses after 32 minutes");
+      sql(`update public.household_purchase_holds set created_at = now() - interval '3 days' where household_id = '${b.h}'`);
       svc(`household_hold_pending('${b.p}', 'b2-and')`);
-      sql(`update public.household_purchase_holds set expires_at = now() - interval '1 minute' where household_id = '${b.h}'`);
+      t.eq([lifeIs(b.h, "7 days"), sql(`select expires_at < now() + interval '4 days 1 minute' and expires_at > now() + interval '3 days 23 hours' from public.household_purchase_holds where household_id = '${b.h}'`)], ["t", "t"],
+        "10s0 \"pending\" counts its 7 days from when the attempt began (3 days ago: 4 days left), never from now");
+      lapse(b.h);
       t.eq(hold(b.o, "stripe", "cs_b2"), "held", "10s a pending purchase the store never reports ends at its backstop (7 days)");
       t.ok(/attempt_required/.test(err(() => svc(`household_hold_purchase('${b.o}', 'stripe', '')`))), "10t no hold without an attempt id");
       t.eq(svc(`household_hold_purchase('${S}', 'stripe', 'cs_s')`).result, "no_household", "10u someone in no household holds nothing");
       svc(`household_leave('${b.o}')`);
       t.eq(sql(`select count(*) from public.household_purchase_holds where household_id = '${b.h}'`), "0", "10v a member who leaves takes their hold with them");
-      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))), "10w nobody signed in reads the holds");
+      t.ok(/permission denied/.test(err(() => as(a.o, "select count(*) from public.household_purchase_holds"))) && /permission denied/.test(err(() => as(a.o, `select public.household_release_store_purchase('${a.o}', 'app_store', now())`))),
+        "10w nobody signed in reads the holds or ends one");
     }
 
     // 11 WHAT A DEPARTED MEMBER'S BANKS LEFT BEHIND (audit M7) ------------------------------------------------------
@@ -523,13 +560,27 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       const gone = blobNow();
       t.ok(!mentions(gone, ["acc-3"]), "12h …and nothing from that bank remains: the server's record says it was theirs, though its Plaid row is long gone");
       t.eq(gone.accounts.map((x) => x.id), ["acc-h"], "12i only the hand-entered account is left");
-      // A sign-in deleted without leaving first (the admin dashboard, say): the trigger cleans up just the same.
+      // A sign-in deleted without leaving first (the admin dashboard, say): the trigger cleans up just the same. acc-dd2
+      // carries no stamp, and its bank has no Plaid row of theirs left: only the server's record says it was theirs.
       const c = pair("dd");
-      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values ('${c.p}', 'item-dd', 'acc-dd')`);
-      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q({ accounts: [{ id: "acc-dd", _item: "item-dd" }, { id: "acc-m", institution: "Manual" }], transactions: [{ id: "tdd", account_id: "acc-dd" }] })})) where household_id = '${c.h}'`);
+      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values ('${c.p}', 'item-dd', 'acc-dd'), ('${c.p}', 'item-dd', 'acc-dd2'), ('${c.o}', 'item-do', 'acc-do')`);
+      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q({ accounts: [{ id: "acc-dd", _item: "item-dd" }, { id: "acc-dd2", institution: "Bank DD" }, { id: "acc-m", institution: "Manual" }], transactions: [{ id: "tdd", account_id: "acc-dd" }, { id: "tdd2", account_id: "acc-dd2" }] })})) where household_id = '${c.h}'`);
       sql(`delete from auth.users where id = '${c.p}'`);
       t.eq(JSON.parse(sql(`select data->'core'->'appData'->'accounts' from public.household_data where household_id = '${c.h}'`)).map((x) => x.id), ["acc-m"],
-        "12j a partner's sign-in deleted outright: their bank leaves the shared blob all the same");
+        "12j a partner's sign-in deleted outright: their bank leaves the shared blob all the same, the account only the server's record knew included");
+      t.eq([sql(`select count(*) from public.plaid_account_owners where user_id = '${c.p}'`), sql(`select count(*) from public.plaid_account_owners where user_id = '${c.o}'`)], ["0", "1"],
+        "12m …and then their record of who linked what is deleted with them (round 3: it has no foreign key); the owner's stays");
+      const lone = who("dc-lone");
+      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values ('${lone}', 'item-lone', 'acc-l1'), ('${lone}', 'item-lone', 'acc-l2')`);
+      sql(`delete from auth.users where id = '${lone}'`);
+      t.eq(sql(`select count(*) from public.plaid_account_owners where user_id = '${lone}'`), "0", "12n a sign-in in no household, deleted directly: none of its ownership rows remain");
+      const dOwner = pair("dx");
+      sql(`insert into public.plaid_account_owners (user_id, item_id, account_id) values ('${dOwner.o}', 'item-dx', 'acc-dx')`);
+      sql(`update public.household_data set data = jsonb_build_object('core', jsonb_build_object('appData', ${q({ accounts: [{ id: "acc-dx" }, { id: "acc-dm", institution: "Manual" }] })})) where household_id = '${dOwner.h}'`);
+      sql(`delete from auth.users where id = '${dOwner.o}'`);
+      t.eq([memberRole(dOwner.p), JSON.parse(sql(`select data->'core'->'appData'->'accounts' from public.household_data where household_id = '${dOwner.h}'`)).map((x) => x.id),
+        sql(`select count(*) from public.plaid_account_owners where user_id = '${dOwner.o}'`)], ["owner", ["acc-dm"], "0"],
+        "12o an OWNER's sign-in deleted directly: the partner becomes the owner, the owner's bank leaves the blob, and none of their ownership rows remain");
       const solo = who("dc-solo");
       sql(`insert into public.plaid_items (user_id, item_id, access_token) values ('${solo}', 'item-solo', 'tok-solo')`);
       t.eq([svc(`household_disconnect_item('${solo}', 'item-solo')`).result, sql(`select count(*) from public.plaid_items where item_id = 'item-solo'`)], ["removed", "0"], "12k in no household, disconnecting deletes the row, as before");

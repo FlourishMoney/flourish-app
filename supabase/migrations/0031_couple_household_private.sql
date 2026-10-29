@@ -15,10 +15,13 @@
 --                            plaid_items.next_cursor, unchanged)
 --   household_purchase_holds ONE purchase attempt holds the household (a Stripe checkout,
 --                            or one tap in the store app); no other attempt, by either
---                            person on any platform, may start until it ends (32 min, or
---                            until the store reports a pending purchase finished)
+--                            person on any platform, may start until it ends: 32 minutes
+--                            from when it began, 7 days for one the store calls pending, or
+--                            sooner when the store's report (checked by the server) ends it
 --   plaid_account_owners     who linked each bank account (kept by the server from Plaid's
---                            own answers), so cleanup never depends on a live Plaid row
+--                            own answers), so cleanup never depends on a live Plaid row;
+--                            a sign-in deleted directly takes its rows with it (a trigger
+--                            on auth.users, after its banks have left the shared blob)
 --
 --   household_create_invite   the owner invites (makes the household on first use and
 --                             copies the owner's user_data blob into household_data,
@@ -27,7 +30,8 @@
 --                             the attempt limits); their personal keys go to their own
 --                             private row and their old user_data row is deleted
 --   household_hold_purchase   a purchase attempt holds the household; household_hold_pending
---                             and household_release_purchase keep or end it
+--                             keeps it while the store waits; household_release_store_purchase
+--                             ends it on the store's own report (never on the app's word)
 --   household_disconnect_item a member disconnects a bank: what came from it leaves the
 --                             shared blob, then its plaid_items row goes, in one transaction
 --   household_leave           a member leaves: their banks and everything derived from
@@ -103,7 +107,7 @@ create table if not exists public.household_purchase_holds (
   provider     text        not null check (provider in ('stripe', 'app_store', 'play_store')),
   attempt_id   text        not null,                 -- the one attempt holding it: a Stripe checkout id, or the app's random id
   pending      boolean     not null default false,   -- the store said "pending": held until it reports (expires_at is the backstop)
-  expires_at   timestamptz not null,
+  expires_at   timestamptz not null,                  -- fixed from created_at: 32 minutes, or 7 days once pending; never moved later
   created_at   timestamptz not null default now()
 );
 
@@ -287,15 +291,20 @@ end; $$;
 -- id) or one tap on a plan in the store app (a random id the app makes). While an attempt holds it, any OTHER
 -- attempt is refused, whoever makes it and on whatever platform: the same person cannot start a Stripe checkout
 -- and then a store purchase, or buy in the iOS and the Android app, any more than the two people can.
---   household_hold_purchase   take the hold, or refresh it for the same attempt. p_replaces: a Stripe checkout
---                             of the same person that the server has just seen expire at Stripe (it can never
---                             complete), which a new checkout of theirs may replace. Nothing else is replaced.
---   household_hold_pending    the store said the purchase is pending (Ask to Buy, a slow payment): the hold
---                             lasts until the store reports it (household_release_purchase), with p_backstop as
---                             the longest, so a store that never reports does not hold the household for ever
---   household_release_purchase the attempt ended: completed, cancelled or failed
--- A hold lapses at expires_at: 32 minutes for an attempt that is not pending (a Stripe checkout made under one
--- ends at 31, billing.js), the backstop for one that is. Answers jsonb: { result: 'held' | 'held_elsewhere' | 'no_household', ... }.
+-- EVERY HOLD HAS A FIXED END (audit round 3 a), counted from when the attempt began (created_at): 32 minutes,
+-- or 7 days once the store calls it pending. Nothing moves it later: asking again for the same attempt answers
+-- with the end it already has, and "pending" sets the 7 days once. So no one can keep a household held by asking.
+--   household_hold_purchase   take the hold, or answer for the same attempt (its end unchanged). p_replaces: a
+--                             Stripe checkout of the same person that the server has just seen expire at Stripe
+--                             (it can never complete), which a new checkout of theirs may replace. Nothing else
+--                             is replaced. A pending attempt is refused even to itself: the store is still on it.
+--   household_hold_pending    the store said the purchase is pending (Ask to Buy, a slow payment): a STORE hold
+--                             lasts until the store reports it, p_backstop from when it began at most
+--   household_release_store_purchase  the store reported (RevenueCat, the server's own sync): ends this
+--                             person's hold on that store, if it began before the report. Never a web checkout's,
+--                             never the other store's, never a newer attempt's (a late report of an older one).
+-- The app never ends a hold: a sheet it says was cancelled or failed lapses on its own (billing.js store_hold).
+-- Answers jsonb: { result: 'held' | 'held_elsewhere' | 'no_household', ... }.
 create or replace function public.household_hold_purchase(p_user uuid, p_provider text, p_attempt text,
                                                           p_ttl interval default interval '32 minutes', p_replaces text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
@@ -311,9 +320,8 @@ begin
   select * into h from public.household_purchase_holds where household_id = hid;
   exp := now() + p_ttl;
   if h.household_id is not null and h.expires_at > now() then
-    if h.attempt_id = p_attempt and h.user_id = p_user and h.provider = p_provider then
-      update public.household_purchase_holds set expires_at = greatest(expires_at, exp) where household_id = hid;
-      return jsonb_build_object('result', 'held', 'expires_at', greatest(h.expires_at, exp), 'refreshed', true);
+    if h.attempt_id = p_attempt and h.user_id = p_user and h.provider = p_provider and not h.pending then
+      return jsonb_build_object('result', 'held', 'expires_at', h.expires_at, 'again', true);   -- its end stays where it was
     end if;
     if not (p_replaces is not null and h.attempt_id = p_replaces and h.user_id = p_user
             and h.provider = 'stripe' and p_provider = 'stripe' and not h.pending) then
@@ -321,30 +329,44 @@ begin
                                 'attempt_id', case when h.user_id = p_user then h.attempt_id end, 'pending', h.pending);
     end if;
   end if;
-  insert into public.household_purchase_holds (household_id, user_id, provider, attempt_id, pending, expires_at)
-  values (hid, p_user, p_provider, p_attempt, false, exp)
+  insert into public.household_purchase_holds (household_id, user_id, provider, attempt_id, pending, expires_at, created_at)
+  values (hid, p_user, p_provider, p_attempt, false, exp, now())
   on conflict (household_id) do update set user_id = excluded.user_id, provider = excluded.provider, attempt_id = excluded.attempt_id,
-                                           pending = false, expires_at = excluded.expires_at, created_at = now();
+                                           pending = false, expires_at = excluded.expires_at, created_at = excluded.created_at;
   return jsonb_build_object('result', 'held', 'expires_at', exp);
 end; $$;
 
+-- Pending: a store attempt only (a web checkout is never "pending" on the app's word), set once, its end then
+-- p_backstop from when the attempt began. Asking again changes nothing.
 create or replace function public.household_hold_pending(p_user uuid, p_attempt text, p_backstop interval default interval '7 days')
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare n integer;
+declare h public.household_purchase_holds%rowtype;
 begin
-  update public.household_purchase_holds
-     set pending = true, expires_at = greatest(expires_at, now() + p_backstop)
-   where user_id = p_user and attempt_id = p_attempt and expires_at > now();
-  get diagnostics n = row_count;
-  return jsonb_build_object('result', case when n > 0 then 'pending' else 'not_held' end);
+  select * into h from public.household_purchase_holds
+   where user_id = p_user and attempt_id = p_attempt and provider in ('app_store', 'play_store') and expires_at > now()
+   for update;
+  if h.household_id is null then return jsonb_build_object('result', 'not_held'); end if;
+  if not h.pending then
+    update public.household_purchase_holds set pending = true, expires_at = created_at + p_backstop
+     where household_id = h.household_id
+    returning expires_at into h.expires_at;
+  end if;
+  return jsonb_build_object('result', 'pending', 'expires_at', h.expires_at);
 end; $$;
 
--- p_attempt null: every hold of this person's (their purchase completed: the household is paid for now).
-create or replace function public.household_release_purchase(p_user uuid, p_attempt text default null)
+-- The store reported this person's purchase (completed, cancelled, ended, not charged), as the server checked it
+-- (RevenueCat's report, or the store's record the server fetched): their hold on THAT store ends, if it began no
+-- later than the report. p_reported_at is when the store reported (RevenueCat's event time), never when it
+-- reached us, so a report that arrives late cannot end a hold begun after it.
+create or replace function public.household_release_store_purchase(p_user uuid, p_provider text, p_reported_at timestamptz)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare n integer;
 begin
-  delete from public.household_purchase_holds where user_id = p_user and (p_attempt is null or attempt_id = p_attempt);
+  if p_provider is null or p_provider not in ('app_store', 'play_store') or p_reported_at is null then
+    return jsonb_build_object('result', 'not_held');
+  end if;
+  delete from public.household_purchase_holds
+   where user_id = p_user and provider = p_provider and created_at <= p_reported_at;
   get diagnostics n = row_count;
   return jsonb_build_object('result', case when n > 0 then 'released' else 'not_held' end);
 end; $$;
@@ -556,12 +578,41 @@ begin
   return public.household_leave_locked(hid, partner) || jsonb_build_object('result', 'removed', 'partner', partner);
 end; $$;
 
+-- A SIGN-IN DELETED DIRECTLY (the Supabase dashboard, or auth's own API), audit round 3: BEFORE its row goes, and
+-- with it (by cascade) its membership and its Plaid rows, the member's banks leave the shared blob while every
+-- record of them is still there. THEN this person's record of who linked what is deleted: it has no foreign key
+-- (it must outlive a Plaid row), so nothing else would. In no household, only the record goes. It takes the
+-- household's lock first, as every membership change does. plaid.js delete_account deletes the record itself too.
+create or replace function public.household_on_user_deleting()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare hid uuid;
+begin
+  select household_id into hid from public.household_members where user_id = old.id;
+  if hid is not null then
+    perform 1 from public.households where id = hid for update;
+    if exists (select 1 from public.household_members where household_id = hid and user_id = old.id)
+       and exists (select 1 from public.household_members where household_id = hid and user_id <> old.id) then
+      perform public.household_strip_member_banks(hid, old.id);
+    end if;
+  end if;
+  delete from public.plaid_account_owners where user_id = old.id;
+  return old;
+end; $$;
+-- Created the first time only, as 0025's trigger on auth.users is.
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'household_user_deleting' and tgrelid = 'auth.users'::regclass) then
+    create trigger household_user_deleting before delete on auth.users
+      for each row execute function public.household_on_user_deleting();
+  end if;
+end $$;
+
 revoke all on function public.household_create_invite(uuid, text, text, text, interval) from public, anon, authenticated;
 revoke all on function public.household_revoke_invite(uuid)                         from public, anon, authenticated;
 revoke all on function public.household_accept_invite(uuid, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.household_hold_purchase(uuid, text, text, interval, text) from public, anon, authenticated;
 revoke all on function public.household_hold_pending(uuid, text, interval)          from public, anon, authenticated;
-revoke all on function public.household_release_purchase(uuid, text)               from public, anon, authenticated;
+revoke all on function public.household_release_store_purchase(uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.household_disconnect_item(uuid, text)                from public, anon, authenticated;
 revoke all on function public.household_strip_accounts(uuid, text[])               from public, anon, authenticated;
 revoke all on function public.household_strip_member_banks(uuid, uuid)              from public, anon, authenticated;
@@ -569,12 +620,13 @@ revoke all on function public.household_drop_by(jsonb, text, text[])            
 revoke all on function public.household_leave_locked(uuid, uuid)                    from public, anon, authenticated, service_role;
 revoke all on function public.household_leave(uuid)                                 from public, anon, authenticated;
 revoke all on function public.household_remove_partner(uuid)                        from public, anon, authenticated;
+revoke all on function public.household_on_user_deleting()                          from public, anon, authenticated, service_role;
 grant execute on function public.household_create_invite(uuid, text, text, text, interval) to service_role;
 grant execute on function public.household_revoke_invite(uuid)                         to service_role;
 grant execute on function public.household_accept_invite(uuid, text, text, text, text) to service_role;
 grant execute on function public.household_hold_purchase(uuid, text, text, interval, text) to service_role;
 grant execute on function public.household_hold_pending(uuid, text, interval)          to service_role;
-grant execute on function public.household_release_purchase(uuid, text)               to service_role;
+grant execute on function public.household_release_store_purchase(uuid, text, timestamptz) to service_role;
 grant execute on function public.household_disconnect_item(uuid, text)                to service_role;
 grant execute on function public.household_leave(uuid)                                 to service_role;
 grant execute on function public.household_remove_partner(uuid)                        to service_role;
@@ -595,6 +647,10 @@ grant execute on function public.household_remove_partner(uuid)                 
 -- ============================================================================
 -- ROLLBACK
 -- ============================================================================
+-- The trigger on auth.users stays (dropping it needs the auth admin, who owns that table, as 0025 notes) and
+-- does nothing:
+--   create or replace function public.household_on_user_deleting()
+--   returns trigger language plpgsql security definer set search_path = public as $$ begin return old; end; $$;
 -- drop function if exists public.household_remove_partner(uuid);
 -- drop function if exists public.household_leave(uuid);
 -- drop function if exists public.household_leave_locked(uuid, uuid);
@@ -602,7 +658,7 @@ grant execute on function public.household_remove_partner(uuid)                 
 -- drop function if exists public.household_drop_by(jsonb, text, text[]);
 -- drop function if exists public.household_disconnect_item(uuid, text);
 -- drop function if exists public.household_strip_accounts(uuid, text[]);
--- drop function if exists public.household_release_purchase(uuid, text);
+-- drop function if exists public.household_release_store_purchase(uuid, text, timestamptz);
 -- drop function if exists public.household_hold_pending(uuid, text, interval);
 -- drop function if exists public.household_hold_purchase(uuid, text, text, interval, text);
 -- drop function if exists public.household_accept_invite(uuid, text, text, text, text);
