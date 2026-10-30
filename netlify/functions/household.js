@@ -46,7 +46,8 @@ async function rpc(admin, fn, args) {
 // A purchase this person started and has not finished stops them creating or joining a household (0031, audit round
 // 5): the database answers purchase_in_progress. One that can no longer charge (a checkout Stripe says has expired,
 // after we expire it, or completed; a store purchase now on their own row) is cleared by its id, and the call is
-// made once more (_lib/household.js settlePurchaseAttempt). Anything else stays purchase_in_progress.
+// made once more (_lib/household.js settlePurchaseAttempt). Anything else stays purchase_in_progress. Only the
+// caller's own attempt is ever settled: household_purchase_in_progress (the household's hold, round 6) is not.
 async function settledRpc(admin, userId, deps, fn, args) {
   let r = await rpc(admin, fn, args);
   if (r.result === "purchase_in_progress" && await H.settlePurchaseAttempt(admin, userId, r, deps)) r = await rpc(admin, fn, args);
@@ -166,7 +167,10 @@ exports.handler = async (event, _ctx, deps = {}) => {
       });
       if (r.result === "joined") await H.reconcileHouseholdBilling(admin, user_id, deps);   // both already paying: one is the extra
       if (r.result === "joined" || r.result === "already_member") return json(200, CORS, { ok: true, result: r.result });
-      const code = r.result === "too_many_attempts" ? 429 : ["household_full", "in_another_household", "purchase_in_progress"].includes(r.result) ? 409 : 400;
+      // household_purchase_in_progress (round 6): the household's own purchase hold is live, the owner's checkout or
+      // store sheet. It is not this person's attempt, so settledRpc leaves it alone: they wait for it to end.
+      const code = r.result === "too_many_attempts" ? 429
+        : ["household_full", "in_another_household", "purchase_in_progress", "household_purchase_in_progress"].includes(r.result) ? 409 : 400;
       return json(code, CORS, { error: r.result || "invalid" });
     }
 

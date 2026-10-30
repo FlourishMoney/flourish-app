@@ -72,16 +72,20 @@ export const HOUSEHOLD_WORDS = Object.freeze({
     wrong_account: "That invite is for a different email. Sign in with the address it was sent to.",
     in_another_household: "You're already in a household. Leave it first to join this one.",
     too_many_attempts: "Too many tries. Wait an hour, then try again.",
-    // Still to come (audit round 5): the facts and its limit are in docs/product/COUPLE-MODE-WORDS.md. The production
-    // build refuses to ship while it is a placeholder (scripts/check-pending-words.mjs).
-    purchase_in_progress: "[WORDS: household.error.purchase_in_progress]",
+    // Approved in the round 6 audit (ChatGPT + Grok, 2026-10-29). partner_purchase_in_progress is the line for the
+    // server's household_purchase_in_progress (the household's own purchase hold): householdErrorLine maps it.
+    purchase_in_progress: "A purchase you started isn't finished yet. Finish or cancel it, then try again.",
+    partner_purchase_in_progress: "Your partner has a purchase in progress. Try again once it's finished.",
     generic: "Something went wrong and nothing changed. Please try again.",
   }),
 });
 
+// A server error code whose line has another id.
+const ERROR_LINE_OF = Object.freeze({ household_purchase_in_progress: "partner_purchase_in_progress" });
+
 // The line for a server error code; anything unknown is the generic one.
 export function householdErrorLine(code) {
-  return HOUSEHOLD_WORDS.errors[code] || HOUSEHOLD_WORDS.errors.generic;
+  return HOUSEHOLD_WORDS.errors[ERROR_LINE_OF[code] || code] || HOUSEHOLD_WORDS.errors.generic;
 }
 
 // Where an extra (second) subscription is cancelled, by where it was bought.

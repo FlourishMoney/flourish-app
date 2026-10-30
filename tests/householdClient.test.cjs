@@ -246,6 +246,7 @@ const O = "owner-id", P = "partner-id";
     "errors.in_another_household": "household.error.in_another_household",
     "errors.too_many_attempts": "household.error.too_many_attempts",
     "errors.purchase_in_progress": "household.error.purchase_in_progress",
+    "errors.partner_purchase_in_progress": "household.error.partner_purchase_in_progress",
     "errors.generic": "household.error.generic"
     };
     const code = Object.fromEntries(Object.entries(KEY_IDS).map(([k, id]) => [id, k.startsWith("errors.") ? HW.HOUSEHOLD_WORDS.errors[k.slice(7)] : HW.HOUSEHOLD_WORDS[k]]));
@@ -253,36 +254,41 @@ const O = "owner-id", P = "partner-id";
     for (const k of ["subject", "intro", "button", "code", "expires", "ignore"]) code[`household.email.${k}`] = L.INVITE_EMAIL[k];
     code["household.email.footer"] = L.INVITE_EMAIL.footer.join(" ");
     const keys = Object.keys(HW.HOUSEHOLD_WORDS).filter((k) => k !== "errors").length + Object.keys(HW.HOUSEHOLD_WORDS.errors).length;
-    t.eq([keys, Object.keys(KEY_IDS).length, Object.keys(code).length], [58, 58, 65], "7c 58 lines in the app and 7 in the email, every one known by its id");
+    t.eq([keys, Object.keys(KEY_IDS).length, Object.keys(code).length], [59, 59, 66], "7c 59 lines in the app and 7 in the email, every one known by its id");
     const doc = read("docs", "product", "COUPLE-MODE-WORDS.md");
     const rows = [...doc.matchAll(/^\| `([a-z0-9_.]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)];
-    t.eq([rows.length, new Set(rows.map((r) => r[1])).size], [65, 65], "7d the doc lists 65 lines, each id once");
+    t.eq([rows.length, new Set(rows.map((r) => r[1])).size], [66, 66], "7d the doc lists 66 lines, each id once");
     const approved = Object.fromEntries(rows.map((r) => [r[1], r[4].trim()]));
     t.eq(Object.keys(code).filter((id) => code[id] !== approved[id]), [], "7e every line in the code is its approved line in the doc, word for word");
     t.eq(rows.filter((r) => !(r[2].trim() && r[3].trim() && r[4].trim().length <= Number(r[5]))).map((r) => r[1]), [], "7f every row says where it shows and its facts, and its line is within its limit");
-    // Round 5: one line is still to come, as its own placeholder in the code and in the doc; no other placeholder anywhere.
-    const PW = require("./_pendingWords.cjs");
-    const pending = PW.pendingWordIds();
-    t.eq(pending, ["household.error.purchase_in_progress"], "7g0 one line is still to come (round 5): household.error.purchase_in_progress");
-    t.eq(Object.keys(code).filter((id) => code[id] === `[WORDS: ${id}]`), pending, "7g1 …it is its own placeholder in the code, and the only line that is");
-    t.ok(Object.values(code).every((w) => typeof w === "string" && w.trim() && !PW.strayPlaceholders(w, pending).length) && !PW.strayPlaceholders(doc, pending).length,
-      "7g no other placeholder is left in the code's lines or in the doc");
-    t.ok(pending.every((id) => { const r = rows.find((x) => x[1] === id); return r && r[3].trim().length >= 200 && Number(r[5]) === 90; }),
-      "7g3 …and its row says where it shows and what it must state, with its limit of 90");
+    // Every line is approved (the last two in the round 6 audit): no placeholder anywhere, in the code or the doc.
+    const HOLD = /\[WORDS:/;
+    t.eq(rows.filter((r) => HOLD.test(r[4])).map((r) => r[1]), [], "7g0 no line is still to come: every row in the doc has its approved line");
+    t.eq(Object.keys(code).filter((id) => HOLD.test(String(code[id]))), [], "7g1 no line in the code is a placeholder");
+    t.ok(Object.values(code).every((w) => typeof w === "string" && w.trim()) && !HOLD.test(doc), "7g no placeholder is left in the code's lines or in the doc");
+    t.eq([approved["household.error.purchase_in_progress"], approved["household.error.partner_purchase_in_progress"]],
+      ["A purchase you started isn't finished yet. Finish or cancel it, then try again.", "Your partner has a purchase in progress. Try again once it's finished."],
+      "7g3 the two round 6 lines are the approved words, word for word");
+    t.ok(["household.error.purchase_in_progress", "household.error.partner_purchase_in_progress"].every((id) => {
+      const r = rows.find((x) => x[1] === id); return r && r[3].trim().length >= 200 && Number(r[5]) === 90; }),
+      "7g4 …and each row says where it shows and what it must state, with its limit of 90");
     t.ok(!/\u2014/.test(Object.values(code).join(" ")), "7g2 no em dash in any household line (the dash rule)");
     const app = read("src", "App.jsx");
     t.ok(!/\[WORDS:/.test(app), "7h no placeholder is written into App.jsx itself: the lines come from lib/householdWords.js");
     const libDir = path.join(ROOT, "src", "lib");
     const housed = fs.readdirSync(libDir).filter((f) => /household/i.test(f) && /\[WORDS:/.test(read("src", "lib", f)));
     const server = ["household.js", "_lib/household.js"].filter((f) => /\[WORDS:\s*[a-z]/.test(read("netlify", "functions", ...f.split("/"))));
-    t.eq([housed, server, PW.placeholders(read("src", "lib", "householdWords.js"))], [["householdWords.js"], [], pending],
-      "7i only lib/householdWords.js carries a placeholder, the one still to come, once; no household server file carries one");
-    // Nothing ships with it: the production deploy and every store build run this guard (foundingPlans 6o-6p).
+    t.eq([housed, server], [[], []], "7i no household file carries a placeholder, in the app or on the server");
+    // The production deploy and every store build run this guard (foundingPlans 6o-6p): it passes the household words.
     const { execFileSync } = require("child_process");
     let guard = 0, said = "";
     try { execFileSync(process.execPath, [path.join(ROOT, "scripts", "check-pending-words.mjs"), path.join(ROOT, "src", "lib", "householdWords.js")], { stdio: "pipe" }); }
     catch (e) { guard = e.status; said = String(e.stderr || ""); }
-    t.ok(guard === 1 && /householdWords\.js/.test(said), "7j the production build's guard refuses a build that still holds it");
+    t.ok(guard === 0 && !said, "7j the production build's guard finds no placeholder in lib/householdWords.js");
+    // The server's household_purchase_in_progress (the household's own hold) has its own line, the partner's.
+    t.eq([HW.householdErrorLine("household_purchase_in_progress"), HW.householdErrorLine("purchase_in_progress"), HW.householdErrorLine("no_such_code")],
+      [HW.HOUSEHOLD_WORDS.errors.partner_purchase_in_progress, HW.HOUSEHOLD_WORDS.errors.purchase_in_progress, HW.HOUSEHOLD_WORDS.errors.generic],
+      "7k a join refused for the household's own purchase shows the partner line; this person's own purchase, their line; anything else, the generic one");
   }
 
   t.summary("householdClient.test");

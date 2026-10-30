@@ -712,6 +712,94 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       sql(`delete from auth.users where id = '${A}'`);
       t.eq(sql(`select count(*) from public.purchase_attempts where user_id = '${A}'`), "0", "14y a deleted sign-in takes its attempt with it");
     }
+
+    // 15 A JOIN WAITS FOR THE HOUSEHOLD'S OWN PURCHASE (audit round 6) -----------------------------------------------
+    // The owner invites, then buys alone (allowed: they are alone, and it holds their household). A partner who already
+    // pays must not join until that ends, or the owner's purchase completes inside a household with two paid plans.
+    {
+      const begin = (u, prov, att) => svc(`purchase_attempt_begin('${u}', '${prov}', '${att}')`);
+      const attempt = (u) => sql(`select coalesce((select provider || ',' || attempt_id || ',' || pending::text from public.purchase_attempts where user_id = '${u}' and expires_at > now()), 'none')`);
+      const holdOf = (h) => sql(`select coalesce((select provider || ',' || attempt_id || ',' || pending::text from public.household_purchase_holds where household_id = '${h}' and expires_at > now()), 'none')`);
+      const lapse = (o, h) => sql(`update public.household_purchase_holds set expires_at = now() - interval '1 minute' where household_id = '${h}';
+                                   update public.purchase_attempts set expires_at = now() - interval '1 minute' where user_id = '${o}'`);
+      const invited = (tag, pays = true) => {
+        const o = who(`${tag}-owner`), p = who(`${tag}-partner`);
+        const made = svc(`household_create_invite('${o}', '${tag}-partner@example.test', 'tok-${tag}', 'code-${tag}')`);
+        if (pays) sql(`insert into public.subscriptions (user_id, provider, status, current_period_end, plan_key) values ('${p}', 'stripe', 'active', now() + interval '20 days', 'annual')
+                       on conflict (user_id) do update set status = 'active'`);
+        return { o, p, h: made.household_id, tag };
+      };
+      const join = (x) => svc(`household_accept_invite('${x.p}', '${x.tag}-partner@example.test', 'tok-${x.tag}', null)`);
+      const unused = (x) => sql(`select (used_at is null)::text from public.household_invites where token_hash = 'tok-${x.tag}'`);
+
+      // The owner opens a web checkout after inviting.
+      const S = invited("r6s");
+      t.eq([begin(S.o, "stripe", "cs_r6s_1").result, holdOf(S.h)], ["held", "stripe,cs_r6s_1,false"], "15a the owner invites, then opens a web checkout alone: it holds their household");
+      const rs = join(S);
+      t.eq([rs.result, memberRole(S.p), tries(S.p), unused(S)], ["household_purchase_in_progress", "none", "0", "true"],
+        "15b a partner who already pays tries to join: refused (household_purchase_in_progress), not a member, no try counted, the invite unused");
+      t.eq([Object.keys(rs), holdOf(S.h), attempt(S.o)], [["result"], "stripe,cs_r6s_1,false", "stripe,cs_r6s_1,false"],
+        "15c …the answer names nothing of the owner's (no store, no attempt id), and the owner's hold and attempt are untouched");
+      lapse(S.o, S.h);
+      t.eq(join(S).result, "joined", "15d once the owner's checkout has ended, the join goes through");
+      // The hold alone: the owner's own attempt is cleared (the server expired that checkout when they invited again),
+      // and the household's hold still runs to its fixed end.
+      const Q = invited("r6q");
+      begin(Q.o, "stripe", "cs_r6q_1");
+      svc(`purchase_attempt_clear('${Q.o}', 'cs_r6q_1')`);
+      t.eq([attempt(Q.o), holdOf(Q.h), join(Q).result, memberRole(Q.p)], ["none", "stripe,cs_r6q_1,false", "household_purchase_in_progress", "none"],
+        "15d2 the owner's own attempt cleared, the household's hold still live: the hold alone refuses the join");
+
+      // The owner taps a plan in the iPhone app after inviting: the store sheet.
+      const T = invited("r6t");
+      begin(T.o, "app_store", "store-r6t-1");
+      t.eq([join(T).result, memberRole(T.p), holdOf(T.h)], ["household_purchase_in_progress", "none", "app_store,store-r6t-1,false"],
+        "15e the same with the owner's iPhone purchase sheet open: refused, and the sheet's hold stands");
+
+      // The owner's store purchase goes pending (Ask to Buy): 7 days.
+      const U = invited("r6u");
+      begin(U.o, "play_store", "store-r6u-1");
+      t.eq([svc(`purchase_attempt_pending('${U.o}', 'store-r6u-1')`).result, holdOf(U.h),
+            sql(`select expires_at = created_at + interval '7 days' from public.household_purchase_holds where household_id = '${U.h}'`)],
+        ["pending", "play_store,store-r6u-1,true", "t"], "15f the owner's Android purchase goes pending: the household is held 7 days from the tap");
+      sql(`update public.household_purchase_holds set created_at = created_at - interval '6 days', expires_at = expires_at - interval '6 days' where household_id = '${U.h}';
+           update public.purchase_attempts set created_at = created_at - interval '6 days', expires_at = expires_at - interval '6 days' where user_id = '${U.o}'`);
+      t.eq([join(U).result, memberRole(U.p), tries(U.p)], ["household_purchase_in_progress", "none", "0"],
+        "15g six days later the join is still refused, and still no try is counted");
+      lapse(U.o, U.h);
+      t.eq(join(U).result, "joined", "15h once the 7 days have passed, the join goes through");
+
+      // The backstop: a member's own live attempt refuses a join even with no household hold.
+      const V = invited("r6v");
+      sql(`insert into public.purchase_attempts (user_id, provider, attempt_id, pending, expires_at, created_at) values ('${V.o}', 'app_store', 'store-r6v-1', false, now() + interval '20 minutes', now())`);
+      t.eq([holdOf(V.h), join(V).result, memberRole(V.p)], ["none", "household_purchase_in_progress", "none"],
+        "15i the owner's own live attempt refuses the join too, as it refuses the other member's purchase");
+
+      // Both: the household's hold is answered first, so the joiner's own checkout is never expired for a join that
+      // would be refused anyway (household.js settles only purchase_in_progress).
+      const X = invited("r6x", false);
+      begin(X.o, "stripe", "cs_r6x_1"); begin(X.p, "stripe", "cs_r6x_p");
+      t.eq([join(X).result, attempt(X.p), attempt(X.o)], ["household_purchase_in_progress", "stripe,cs_r6x_p,false", "stripe,cs_r6x_1,false"],
+        "15j the joiner has a checkout of their own too: the household's purchase is answered first, and both attempts stand");
+      lapse(X.o, X.h);
+      t.eq([join(X).result, attempt(X.p)], ["purchase_in_progress", "stripe,cs_r6x_p,false"], "15k …once the owner's has ended, the joiner's own is what refuses them (round 5)");
+
+      // Both orders at the same moment.
+      const Y = invited("r6y");
+      const slowBuy = slowly(`set role service_role; select public.purchase_attempt_begin('${Y.o}', 'stripe', 'cs_r6y_1')`);
+      await pause(300);
+      const late = join(Y);
+      const bought = json((await slowBuy).out);
+      t.eq([bought && bought.result, late.result, memberRole(Y.p)], ["held", "household_purchase_in_progress", "none"],
+        "15l the owner's checkout starts while the partner joins: the join waits for the household's lock, then sees the hold and is refused");
+      const Z = invited("r6z");
+      const slowJoin = slowly(`set role service_role; select public.household_accept_invite('${Z.p}', 'r6z-partner@example.test', 'tok-r6z', null)`);
+      await pause(300);
+      const buy = begin(Z.o, "stripe", "cs_r6z_1");
+      const joinedZ = json((await slowJoin).out);
+      t.eq([joinedZ && joinedZ.result, buy.result, memberRole(Z.p), holdOf(Z.h)], ["joined", "held", "partner", "stripe,cs_r6z_1,false"],
+        "15m …the other way round, the checkout waits for the join, then holds a household that now has a payer: billing.js reads the household's cover again after it and refuses the checkout (householdServer 15i)");
+    }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));
   } finally {

@@ -908,12 +908,16 @@ const coupleDb = (over = {}) => ({
           if (theirs) return { data: { result: "held_elsewhere", mine: false, provider: theirs.provider, pending: theirs.pending }, error: null };
           db.purchase_attempts = (db.purchase_attempts || []).filter((x) => x.user_id !== a.p_user)
             .concat([{ user_id: a.p_user, provider: a.p_provider, attempt_id: a.p_attempt, pending: false, expires_at: Date.now() + 32 * 60000 }]);
+          // A member's attempt holds their household too (household_hold_purchase).
+          if (hh) db.household_purchase_holds = (db.household_purchase_holds || []).filter((x) => x.household_id !== hh.household_id)
+            .concat([{ household_id: hh.household_id, user_id: a.p_user, provider: a.p_provider, attempt_id: a.p_attempt, pending: false, expires_at: Date.now() + 32 * 60000 }]);
           return { data: { result: "held" }, error: null };
         },
         purchase_attempt_pending: (a) => {
           const mine = live(db, a.p_user);
           if (!mine || mine.attempt_id !== a.p_attempt || mine.provider === "stripe") return { data: { result: "not_held" }, error: null };
           mine.pending = true; mine.expires_at = Date.now() + 7 * 86400000;
+          for (const h of db.household_purchase_holds || []) if (h.user_id === a.p_user && h.attempt_id === a.p_attempt) { h.pending = true; h.expires_at = mine.expires_at; }
           return { data: { result: "pending" }, error: null };
         },
         purchase_attempt_clear: (a) => {
@@ -922,6 +926,12 @@ const coupleDb = (over = {}) => ({
           return { data: { result: db.purchase_attempts.length < n ? "cleared" : "not_held" }, error: null };
         },
         household_accept_invite: (a) => {
+          // The household being joined (h1) holds a purchase, or a member has a live attempt (round 6): it is not the
+          // joiner's, so it is answered first and names nothing of the owner's.
+          if ((db.household_purchase_holds || []).some((h) => h.household_id === "h1" && h.expires_at > Date.now())
+            || (db.household_members || []).some((m) => m.household_id === "h1" && live(db, m.user_id))) {
+            return { data: { result: "household_purchase_in_progress" }, error: null };
+          }
           const mine = live(db, a.p_user);
           if (mine) return { data: { result: "purchase_in_progress", provider: mine.provider, attempt_id: mine.attempt_id, pending: mine.pending }, error: null };
           db.household_members.push({ household_id: "h1", user_id: a.p_user, role: "partner", joined_at: new Date().toISOString() });
@@ -1064,6 +1074,90 @@ const coupleDb = (over = {}) => ({
           [200, { held: true }], "14s with the switch off and 0031 not run, a buyer alone buys as before");
         const y = load(coupleDb({ household_members: [] }), { rpc: {} }, env, fakeStripe());
         t.eq((await call(y.billing, S, { action: "create_checkout_session", plan_key: "monthly" })).code, 503, "14t with it on, the attempt function not being there sells nothing (503)");
+      }
+
+      // ── 15. A JOIN WAITS FOR THE HOUSEHOLD'S OWN PURCHASE (audit round 6) ──────────────────────────────
+      // The owner invites, then buys alone (allowed: it holds their household); a partner who already pays tries to
+      // join. The same stand-in (its locks and both orders at the same moment: household.sql 15a-15m).
+      // O is alone in h1, having invited P, and pays nothing yet; P already pays.
+      const partnerPays = (subs = [{ user_id: P, ...PAID(), provider_subscription_id: "sub_P" }]) =>
+        coupleDb({ household_members: [{ household_id: "h1", user_id: O, role: "owner", joined_at: "2026-10-29T10:00:00Z" }], subscriptions: subs });
+      const holdsOf = (db) => (db.household_purchase_holds || []).filter((h) => h.household_id === "h1" && h.expires_at > Date.now());
+      {
+        const db = partnerPays(), sessions = { cs_1: "open" }, st = stripeFor(sessions);
+        const x = load(db, { rpc: model(db) }, env, st);
+        const co = await call(x.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+        t.eq([co.code, live(db, O) && live(db, O).attempt_id, holdsOf(db).map((h) => h.attempt_id)], [200, "cs_1", ["cs_1"]],
+          "15a O invites, then opens a web checkout alone: allowed, and it holds their household");
+        const asked = st.calls.length;
+        const j = await join(x, st);
+        t.eq([j.code, j.body, memberRole(db, P)], [409, { error: "household_purchase_in_progress" }, "none"],
+          "15b P, who already pays, tries to join: 409 household_purchase_in_progress, and P is not a member");
+        t.eq([st.calls.length - asked, sessions.cs_1, calls(x, "purchase_attempt_clear"), calls(x, "household_accept_invite"), live(db, O) && live(db, O).attempt_id],
+          [0, "open", 0, 1, "cs_1"],
+          "15c …it is not P's attempt, so nothing is settled: nothing asked of Stripe, O's checkout still open, nothing cleared, the join not tried again");
+      }
+      {
+        // household.js settles only the caller's own purchase_in_progress. Even an answer for the household's hold that
+        // named a checkout is left alone (the database names none: sql 15c).
+        const db = partnerPays(), sessions = { cs_o: "open" }, st = stripeFor(sessions);
+        const named = () => ({ data: { result: "household_purchase_in_progress", provider: "stripe", attempt_id: "cs_o" }, error: null });
+        const x = load(db, { rpc: { ...model(db), household_accept_invite: named } }, env, st);
+        const j = await join(x, st);
+        t.eq([j.code, j.body.error, sessions.cs_o, st.calls.length, calls(x, "purchase_attempt_clear"), calls(x, "household_accept_invite")],
+          [409, "household_purchase_in_progress", "open", 0, 0, 1],
+          "15c2 an answer for the household's hold is never settled, even one naming a checkout: not asked of Stripe, not expired, not cleared, not tried again");
+      }
+      {
+        const db = partnerPays(), st = fakeStripe();
+        const x = load(db, { rpc: model(db) }, env, st);
+        t.eq((await call(x.billing, O, { action: "store_hold", platform: "ios", attempt_id: "store-o-15d" }, undefined, nat)).body, { held: true },
+          "15d O opens the iPhone purchase sheet after inviting: it holds their household");
+        const j = await join(x, st);
+        t.eq([j.code, j.body.error, memberRole(db, P), st.calls.length, calls(x, "purchase_attempt_clear")], [409, "household_purchase_in_progress", "none", 0, 0],
+          "15e P tries to join meanwhile: refused, nothing asked of Stripe, nothing cleared");
+        t.eq((await call(x.billing, O, { action: "store_hold", attempt_id: "store-o-15d", state: "pending" }, undefined, nat)).body, { pending: true },
+          "15f the store says O's purchase is pending (Ask to Buy): held 7 days from the tap…");
+        t.eq([(await join(x, st)).body.error, memberRole(db, P), holdsOf(db).map((h) => h.pending)], ["household_purchase_in_progress", "none", [true]],
+          "15g …and P's join is still refused while it is pending");
+        for (const r of [...db.purchase_attempts, ...db.household_purchase_holds]) r.expires_at = Date.now() - 60000;
+        t.eq([(await join(x, st)).code, memberRole(db, P)], [200, "partner"], "15h once it has ended, P joins");
+      }
+      {
+        // The hold alone (O's own attempt was cleared when O invited again; the hold runs to its fixed end).
+        const db = partnerPays(), st = fakeStripe();
+        db.household_purchase_holds = [{ household_id: "h1", user_id: O, provider: "stripe", attempt_id: "cs_old", pending: false, expires_at: Date.now() + 10 * 60000 }];
+        const x = load(db, { rpc: model(db) }, env, st);
+        const j = await join(x, st);
+        t.eq([j.code, j.body.error, memberRole(db, P), st.calls.length], [409, "household_purchase_in_progress", "none", 0],
+          "15h2 the household's hold alone, with no live attempt of O's: P's join is still refused, and nothing is asked of Stripe");
+      }
+      {
+        // P has a web checkout of their own open as well: the household's purchase is answered first, so P's checkout
+        // is never expired for a join that would be refused anyway.
+        const db = partnerPays([]), sessions = { cs_o: "open", cs_p: "open" }, st = stripeFor(sessions);
+        db.purchase_attempts = [{ user_id: O, provider: "stripe", attempt_id: "cs_o", pending: false, expires_at: Date.now() + 20 * 60000 },
+          { user_id: P, provider: "stripe", attempt_id: "cs_p", pending: false, expires_at: Date.now() + 20 * 60000 }];
+        db.household_purchase_holds = [{ household_id: "h1", user_id: O, provider: "stripe", attempt_id: "cs_o", pending: false, expires_at: Date.now() + 20 * 60000 }];
+        const x = load(db, { rpc: model(db) }, env, st);
+        const j = await join(x, st);
+        t.eq([j.code, j.body.error, sessions.cs_o, sessions.cs_p, st.calls.length, memberRole(db, P)], [409, "household_purchase_in_progress", "open", "open", 0, "none"],
+          "15j P's own checkout is open too: still household_purchase_in_progress, and neither checkout is touched at Stripe");
+      }
+      {
+        // The other order: P's join reached the database just before O's attempt (the database refuses any join after
+        // it). billing.js reads the household's cover again once the attempt is recorded, so nothing is sold.
+        const db = partnerPays(), sessions = { cs_1: "open" }, st = stripeFor(sessions);
+        const joinFirst = { beforeBegin: () => { if (!db.household_members.some((m) => m.user_id === P)) db.household_members.push({ household_id: "h1", user_id: P, role: "partner" }); } };
+        const x = load(db, { rpc: model(db, joinFirst) }, env, st);
+        const co = await call(x.billing, O, { action: "create_checkout_session", plan_key: "monthly" });
+        t.eq([co.code, co.body.error, co.body.covered_by, sessions.cs_1], [409, "already_subscribed", "partner", "expired"],
+          "15i the other order: P's join lands just before O's checkout is recorded; the cover is read again after it, and that checkout is expired before it can charge");
+        const db2 = partnerPays();
+        const joinFirst2 = { beforeBegin: () => { if (!db2.household_members.some((m) => m.user_id === P)) db2.household_members.push({ household_id: "h1", user_id: P, role: "partner" }); } };
+        const y = load(db2, { rpc: model(db2, joinFirst2) }, env, fakeStripe());
+        const sh = await call(y.billing, O, { action: "store_hold", platform: "ios", attempt_id: "store-o-15k" }, undefined, nat);
+        t.eq([sh.body.held, sh.body.paid, sh.body.covered_by], [false, true, "partner"], "15k …the same in the store app: no sheet opens");
       }
     }
   } catch (e) {

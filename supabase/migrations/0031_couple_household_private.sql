@@ -31,8 +31,9 @@
 --                             copies the owner's user_data blob into household_data,
 --                             their personal keys into their own private row)
 --   household_accept_invite   the partner joins (expiry, single use, address, 2 adults,
---                             the attempt limits); their personal keys go to their own
---                             private row and their old user_data row is deleted
+--                             the attempt limits; not while the household's own purchase
+--                             hold is live, audit round 6); their personal keys go to their
+--                             own private row and their old user_data row is deleted
 --   household_hold_purchase   a purchase attempt holds the household; household_hold_pending
 --                             keeps it while the store waits (7 days at most); no function
 --                             ends a hold early (audit round 4 a3)
@@ -252,7 +253,9 @@ end; $$;
 -- person it was sent to. The 6-character code is the guessable secret, so only code guesses strike an invite.
 -- The invite row is locked, so the same invite cannot be used twice even at the same moment.
 -- Answers jsonb { result, household_id }: 'joined', 'already_member', 'invalid', 'expired', 'used',
--- 'wrong_account', 'in_another_household', 'household_full', 'too_many_attempts'.
+-- 'wrong_account', 'in_another_household', 'household_full', 'too_many_attempts',
+-- 'household_purchase_in_progress' (the household's own hold is live, round 6),
+-- 'purchase_in_progress' (this person's own attempt is live, round 5).
 create or replace function public.household_accept_invite(p_user uuid, p_email_key text, p_token_hash text, p_code_hash text,
                                                           p_net_key text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
@@ -307,6 +310,16 @@ begin
   select count(*) into n from public.household_members where household_id = inv.household_id;
   if n = 0 then return jsonb_build_object('result', 'invalid'); end if;
   if n >= 2 then return jsonb_build_object('result', 'household_full'); end if;
+  -- A purchase the household itself is holding (round 6): the owner opened a Stripe checkout or a store sheet after
+  -- inviting, or the store has it pending. The partner joins once that hold ends, so it can never complete inside a
+  -- household that now has a second payer. Read under the household row lock, as purchase_attempt_begin takes it, so
+  -- a hold and a join never interleave. It is not this person's attempt: nothing here ends it, and nothing is counted.
+  -- A member's own live attempt refuses it too, as it refuses the other member's purchase (purchase_attempt_begin).
+  if exists (select 1 from public.household_purchase_holds where household_id = inv.household_id and expires_at > now())
+     or exists (select 1 from public.purchase_attempts ma join public.household_members m on m.user_id = ma.user_id
+                 where m.household_id = inv.household_id and ma.expires_at > now()) then
+    return jsonb_build_object('result', 'household_purchase_in_progress');
+  end if;
   -- A purchase this person started and has not finished (round 5): they join once it ends, so a checkout or a store
   -- sheet opened alone can never complete inside a household that already pays. Not a failed try: nothing is counted.
   select * into pa from public.purchase_attempts where user_id = p_user and expires_at > now();
@@ -330,7 +343,9 @@ end; $$;
 -- ONE PURCHASE ATTEMPT holds the household (audit H5, round 2 a). An attempt is a Stripe checkout (its session
 -- id) or one tap on a plan in the store app (a random id the app makes). While an attempt holds it, any OTHER
 -- attempt is refused, whoever makes it and on whatever platform: the same person cannot start a Stripe checkout
--- and then a store purchase, or buy in the iOS and the Android app, any more than the two people can.
+-- and then a store purchase, or buy in the iOS and the Android app, any more than the two people can. Nor can
+-- anyone join while it is live (household_accept_invite: household_purchase_in_progress, audit round 6): an owner
+-- who invites and then buys alone holds their household, and a partner who already pays waits for it to end.
 -- EVERY HOLD HAS A FIXED END (audit round 3 a), counted from when the attempt began (created_at): 32 minutes,
 -- or 7 days once the store calls it pending. Nothing moves it later: asking again for the same attempt answers
 -- with the end it already has, and "pending" sets the 7 days once. So no one can keep a household held by asking.
