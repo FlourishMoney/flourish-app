@@ -153,7 +153,9 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
 
   // ── 5. migration 0028 ──────────────────────────────────────────────────────────────────────
   const files = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_/.test(f)).sort();
-  t.eq(files.filter((f) => f >= "0028"), ["0028_onboarding_counts.sql", "0030_couple_household.sql", "0031_couple_household_private.sql", "0032_founding_seats.sql"], "5a 0028 is in place, and only couple mode (0030, 0031) and the founding seats (0032, 2026-10-29) came after it");
+  t.eq(files.filter((f) => f >= "0028"), ["0028_onboarding_counts.sql", "0030_couple_household.sql", "0031_couple_household_private.sql", "0032_founding_seats.sql", "0033_meeting_records_grants.sql"],
+    "5a 0028 is in place, and only couple mode (0030, 0031), the founding seats (0032, 2026-10-29) and meeting_records' grants (0033, 2026-10-30) came after it");
+  t.ok(!/onboarding_counts/.test(read("supabase", "migrations", "0033_meeting_records_grants.sql")), "5a2 …and 0033 does not touch the onboarding counts");
   const sql = read("supabase", "migrations", "0028_onboarding_counts.sql");
   const table = sql.slice(sql.indexOf("create table if not exists public.onboarding_counts"), sql.indexOf("alter table public.onboarding_counts"));
   t.eq([...table.matchAll(/^\s+(\w+)\s+(date|text|integer)\b/gm)].map((m) => m[1]), ["cohort_day", "event", "detail", "count"], "5b four columns: day, event, detail, count; no account id, amount or free text");
