@@ -50,6 +50,14 @@ const TAB = (p, name) => p.getByRole("button").filter({ hasText: new RegExp("^" 
 const ARIA = (p, name) => p.getByRole("button", { name, exact: true }).first().click();
 const TXT = (p, s, exact = false) => p.getByText(s, { exact }).first().click();
 const NTH = (p, name, n) => p.getByRole("button", { name, exact: true }).nth(n).click();
+// The Today hero at a wide figure, whatever the demo shows on the day (its number moves with the date): five digits,
+// written into the number's own text node once its count-up has finished, so React's node stays in place.
+const WIDE_HERO = () => {
+  const b = document.querySelector('button[aria-label="How Flourish got this number"]');
+  const w = b && document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+  for (let n = w && w.nextNode(); n; n = w.nextNode()) if (/\d/.test(n.nodeValue)) { n.nodeValue = "88,888"; return true; }
+  throw new Error("the hero's number was not found");
+};
 const goals = (p, sub) => async () => { await TAB(p, "Do"); await TXT(p, "Goals", true); if (sub) await sub(); };
 const plan = async (p) => { await TAB(p, "Do"); await ARIA(p, "Build Plan"); };
 
@@ -121,6 +129,7 @@ const VIEWS = [
   { name: "Glossary",              who: "demo", overlay: true, go: async (p) => { await TAB(p, "Today"); await ARIA(p, "What Safe to spend means"); } },
   { name: "Can I afford this: fits", who: "demo", go: async (p) => { await TAB(p, "Today"); await p.getByPlaceholder("0.00").first().fill("40"); } },
   { name: "Can I afford this: over", who: "demo", go: async (p) => { await TAB(p, "Today"); await p.getByPlaceholder("0.00").first().fill("9000"); } },
+  { name: "Today: the hero at its widest", who: "demo", go: async (p) => { await TAB(p, "Today"); await p.waitForTimeout(900); await p.evaluate(WIDE_HERO); } },
   { name: "What-If",               who: "demo", go: async (p) => { await TAB(p, "Today"); await TXT(p, "What if? →"); } },
   { name: "Check-In",              who: "demo", go: async (p) => { await TAB(p, "Today"); await TXT(p, "Check-In ✦"); } },
   { name: "Reorder dashboard",     who: "demo", overlay: true, go: async (p) => { await TAB(p, "Today"); await TXT(p, "⠿ Reorder"); } },

@@ -3422,6 +3422,30 @@ function CountUp({to,prefix="",decimals=0,dur=900,sep=false}){
   return <span>{prefix}{sep ? formatNumber(v||0, {cents: decimals>0}) : (v||0).toFixed(decimals)}</span>;
 }
 
+// ONE LINE THAT FITS ITS BOX (the Today hero's number). At 320px with the phone's text at its largest (160%), the
+// "$" wrapped above the number and the number ran past the card: "1,999" by 1.8px in CI's Linux serif (textOverlap,
+// 2026-10-30). The line stays whole and is scaled down just enough to fit the width its box gives it; wherever it
+// already fits, nothing changes. A scale, not a font size: the phone's text scaling multiplies font sizes, so only
+// the rendered width says what fits. Measured again whenever the line or its box changes size.
+function useFitWidth(){
+  const [el,setEl]=useState(null);
+  const [k,setK]=useState(1);
+  useEffect(()=>{
+    const box=el&&el.parentElement;
+    if(!box||typeof ResizeObserver==="undefined") return;
+    const fit=()=>{
+      const cs=getComputedStyle(box);
+      const room=box.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight), need=el.offsetWidth;
+      const next=room>0&&need>room?Math.floor((room/need)*1000)/1000:1;
+      setK((was)=>Math.abs(was-next)<0.002?was:next);
+    };
+    fit();
+    const ro=new ResizeObserver(fit); ro.observe(el); ro.observe(box);
+    return()=>ro.disconnect();
+  },[el]);
+  return [setEl,{whiteSpace:"nowrap",transformOrigin:"left center",...(k<1?{transform:`scale(${k})`}:{})}];
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ██ FLOURISH FINANCIAL ENGINES — Modular calculation layer                   ██
@@ -5663,6 +5687,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
   const [affordFocused, setAffordFocused] = useState(false);
+  const [heroFitRef, heroFit] = useFitWidth();   // the safe-to-spend number always fits its card
   // A COLD LAUNCH ALWAYS OPENS TODAY. Held in memory only, so it is scoped to the session that set
   // it and nothing else: switching to Decisions and coming back from the background keeps Decisions,
   // because the React tree is still alive; killing the app and opening it again starts at Today,
@@ -5848,9 +5873,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe to spend plans around your bills using your income →</div>
             </div>
             ) : (
-            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} data-tour="today" aria-label="How Flourish got this number"
+            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} ref={heroFitRef} data-tour="today" aria-label="How Flourish got this number"
               style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
-              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
+              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block",...heroFit}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:"0.46em",display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
