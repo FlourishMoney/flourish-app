@@ -104,6 +104,9 @@ function fakeAdmin(state) {
     return q;
   };
   const rpc = async (name, args) => {
+    // Couple mode round 5: every checkout first records the buyer's one purchase attempt (0031 purchase_attempt_begin),
+    // which the real database grants a buyer with none live. Not recorded: these checks are about the founding functions.
+    if (name === "purchase_attempt_begin") return { data: { result: "held" }, error: null };
     state.rpcCalls.push({ name, args });
     if (name === "waitlist_founding_number_for_email") {
       if (state.rpcError) return { data: null, error: { message: state.rpcError } };

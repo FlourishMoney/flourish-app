@@ -20,7 +20,7 @@ const FN_PATH = require.resolve("../netlify/functions/plaid.js");
 const USER = "00000000-0000-4000-8000-000000000001";
 
 function run({ fail = {}, plaidFails = false } = {}) {
-  const log = { deletes: [], plaidCalls: 0, authDeleted: false };
+  const log = { deletes: [], plaidCalls: 0, authDeleted: false, rpcs: [] };
   const result = (table, op) => ({ data: op === "select" ? [{ item_id: "item-1", access_token: "access-sandbox-x" }] : null,
     error: fail[`${op}:${table}`] ? (typeof fail[`${op}:${table}`] === "object" ? fail[`${op}:${table}`] : { message: `${op} ${table} failed` }) : null });
   const admin = {
@@ -28,6 +28,9 @@ function run({ fail = {}, plaidFails = false } = {}) {
       select: () => ({ eq: async () => result(table, "select") }),
       delete: () => ({ eq: async () => { const r = result(table, "delete"); if (!r.error) log.deletes.push(table); return r; } }),
     }),
+    // Couple mode: delete_account leaves the household first (migration 0031 household_leave).
+    rpc: async (fn, args) => { log.rpcs.push([fn, args, log.plaidCalls, log.deletes.length]); const e = fail[`rpc:${fn}`];
+      return { data: e ? null : { result: "left" }, error: e ? (typeof e === "object" ? e : { message: `${fn} failed` }) : null }; },
     auth: { admin: {
       getUserById: async () => ({ data: { user: { email: "someone@example.invalid" } } }),
       deleteUser: async () => { if (fail.authDelete) return { error: { message: "no" } }; log.authDeleted = true; return { error: null }; },
@@ -91,6 +94,21 @@ const steps = (b) => (b.errors || []).map((e) => e.step);
   for (const code of ["42P01", "PGRST205"]) {
     const { body, log } = await run({ fail: { "delete:subscriptions": { code, message: "relation \"public.subscriptions\" does not exist" } } });
     t.eq([log.authDeleted, body.deleted], [true, true], `3c a missing subscriptions table (${code}) does not block the deletion`);
+  }
+
+  // ── 3d. COUPLE MODE: the household is left first, while the bank links still exist ─────────────
+  {
+    const { body, log } = await run();
+    t.eq(log.rpcs.map((r) => [r[0], r[1]]), [["household_leave", { p_user: USER }]], "3d-1 delete_account leaves the household, for this user");
+    t.eq([log.rpcs[0][2], log.rpcs[0][3]], [0, 0], "3d-2 …before any Plaid revoke or any delete, so the user's banks come out of the shared blob");
+    t.eq(body.deleted, true, "3d-3 …and the deletion finishes");
+    const failed = await run({ fail: { "rpc:household_leave": true } });
+    t.eq([failed.log.authDeleted, failed.log.plaidCalls, failed.log.deletes, failed.body.deleted, steps(failed.body)], [false, 0, [], false, ["household"]],
+      "3d-4 a failed household leave stops the deletion with nothing changed: a partner never keeps a deleted person's accounts");
+    for (const code of ["PGRST202", "42883"]) {
+      const before = await run({ fail: { "rpc:household_leave": { code, message: "function public.household_leave(uuid) does not exist" } } });
+      t.eq([before.log.authDeleted, before.body.deleted], [true, true], `3d-5 before 0031 runs (${code}) there is no household to leave: the deletion goes on`);
+    }
   }
 
   // ── 4. Plaid is down: still best-effort ──────────────────────────────────────────────────────

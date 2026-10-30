@@ -79,7 +79,8 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
     const bodies = sites.map((i) => APP.slice(i, i + 600).match(/body:\s*([A-Za-z.]+)\(/));
     t.ok(sites.length >= 6 && bodies.every((b) => b && b[1] === "coachRequestBody"), `3a all ${sites.length} requests to /api/coach are built by coachRequestBody`);
     t.ok(/redactStatementText\(safeText/.test(APP), "3b the statement text is redacted before it is sent");
-    t.ok(/setCoachNames\(appData\?\.profile\)/.test(APP), "3c App keeps the names register current from the profile");
+    // Couple mode: from the profile, seen from the asker's side (lib/household.js coachProfileFor; householdClient 4e).
+    t.ok(/setCoachNames\(coachProfileFor\(appData\?\.profile, householdRole\)\)/.test(APP), "3c App keeps the names register current from the profile");
     const ctx = APP.slice(APP.indexOf("<UNTRUSTED_USER_DATA>\nUser profile:"), APP.indexOf("</UNTRUSTED_USER_DATA>", APP.indexOf("<UNTRUSTED_USER_DATA>\nUser profile:")));
     const kids = APP.slice(APP.indexOf("const kidsInfo"), APP.indexOf("const PRIMARY_TYPES"));
     t.ok(ctx.length > 200 && !/(sanitizeField\(|\$\{)\s*profile\.(name|partnerName)\b(?!\s*\?)/.test(ctx) && !/k\.name/.test(kids), "3d the coach context names no one: no profile name, partner name or child's name in it");

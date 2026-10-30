@@ -64,7 +64,10 @@ function fakeAdmin(state) {
     };
     return q;
   };
-  return { from: api, auth: { admin: { getUserById: async () => ({ data: { user: { email: "a@b.c" } } }) } } };
+  // Couple mode round 5: every checkout records the buyer's one purchase attempt first (0031 purchase_attempt_begin),
+  // which the real database grants a buyer with none live.
+  return { from: api, rpc: async (fn) => (fn === "purchase_attempt_begin" ? { data: { result: "held" }, error: null } : { data: null, error: { message: `no ${fn} in this stand-in` } }),
+    auth: { admin: { getUserById: async () => ({ data: { user: { email: "a@b.c" } } }) } } };
 }
 
 function loadWithStubs(modPath, { user_id = null, authError = null, state, stripe = {} }) {

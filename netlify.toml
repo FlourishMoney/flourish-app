@@ -100,6 +100,13 @@
   to     = "/.netlify/functions/activation"
   status = 200
 
+# Redirect: Settings > Household (couple mode) → Netlify function. POST only, signed in. Answers 404 to
+# everything until HOUSEHOLD_ENABLED is "true" (netlify/functions/household.js).
+[[redirects]]
+  from   = "/api/household"
+  to     = "/.netlify/functions/household"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

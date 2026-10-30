@@ -24,6 +24,18 @@ const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit, countFreeDay, decideSi
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { subjectKey, dayWindow, countIn } = require("./_lib/limiterKeys");
+const { coachNamesFor, redactProviderBody, invalidCoachPayload } = require("./_lib/coachRedact");
+
+// EVERY REQUEST TO THE AI PROVIDER GOES THROUGH HERE (audit H4): the household's names become roles, and email
+// addresses and account numbers are masked, in the system prompt and every message, at the last moment, whatever
+// the app sent (_lib/coachRedact.js). `names` comes from coachNamesFor, read once per request.
+function providerFetch(apiKey, body, names) {
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify(redactProviderBody(body, names)),
+  });
+}
 
 // The consent gate's answer when it could not read consent (a read error or a thrown query): 503, so the
 // app treats it as busy and retries. Nothing reaches the AI provider without a confirmed grant.
@@ -63,7 +75,7 @@ const { buildSnapshotFactText, validateSnapshotProse, resolveSnapshotOutput } = 
 // generation (prompt hardening alone is not a guarantee). If the first reply cites a figure the
 // agenda does not state, retry once with a strict correction naming the figure; if that still fails,
 // return a safe qualitative fallback. Never displays or persists an unsupported-number response.
-async function guardFacilitatorOutput(data, payload, apiKey) {
+async function guardFacilitatorOutput(data, payload, apiKey, names) {
   const agendaText = payload.context || "";
   const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   const first = proseOf(data);
@@ -74,20 +86,16 @@ async function guardFacilitatorOutput(data, payload, apiKey) {
   const baseMessages = payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }];
   let retryProse = null;
   try {
-    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        system: buildFacilitatorSystem(agendaText),
-        messages: [
-          ...baseMessages,
-          { role: "assistant", content: first },
-          { role: "user", content: `Your reply used figures the agenda does not state: ${named}. Rewrite it using ONLY numbers written verbatim in the agenda, in the same unit and about the same thing. Do not count, total, average, or compute any ratio or percentage. If an observation needs a number that isn't in the agenda, say it qualitatively. Keep it under 4 sentences.` },
-        ],
-      }),
-    });
+    const r2 = await providerFetch(apiKey, {
+      model: "claude-sonnet-4-6",
+      max_tokens: 600,
+      system: buildFacilitatorSystem(agendaText),
+      messages: [
+        ...baseMessages,
+        { role: "assistant", content: first },
+        { role: "user", content: `Your reply used figures the agenda does not state: ${named}. Rewrite it using ONLY numbers written verbatim in the agenda, in the same unit and about the same thing. Do not count, total, average, or compute any ratio or percentage. If an observation needs a number that isn't in the agenda, say it qualitatively. Keep it under 4 sentences.` },
+      ],
+    }, names);
     const d2 = await r2.json();
     if (r2.ok) retryProse = proseOf(d2);
   } catch (e) {
@@ -102,7 +110,7 @@ async function guardFacilitatorOutput(data, payload, apiKey) {
 // Same defense-in-depth for chat + checkin: validate the coach's numeric claims against the snapshot
 // the client sent (plus numbers the user typed), retry once naming the unsupported figure, else a safe
 // qualitative fallback. The client-side reply footer renders below whatever text this returns.
-async function guardSnapshotOutput(data, payload, apiKey, type) {
+async function guardSnapshotOutput(data, payload, apiKey, type, names) {
   const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   const userText = type === "checkin"
     ? (payload.prompt || "")
@@ -119,20 +127,16 @@ async function guardSnapshotOutput(data, payload, apiKey, type) {
     : (payload.messages || []);
   let retryProse = null;
   try {
-    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: type === "checkin" ? 400 : 1024,
-        system,
-        messages: [
-          ...baseMessages,
-          { role: "assistant", content: first },
-          { role: "user", content: `Your reply used figures not present in my data: ${named}. Rewrite it citing ONLY numbers written verbatim in the snapshot above, or numbers I typed in my message, in the same unit and about the same thing. Do not compute a surplus, total, average, ratio or percentage from my numbers, and do not state a program limit or rate that isn't in the snapshot. If a figure isn't there, say so or describe it qualitatively. Keep it concise.` },
-        ],
-      }),
-    });
+    const r2 = await providerFetch(apiKey, {
+      model: "claude-sonnet-4-6",
+      max_tokens: type === "checkin" ? 400 : 1024,
+      system,
+      messages: [
+        ...baseMessages,
+        { role: "assistant", content: first },
+        { role: "user", content: `Your reply used figures not present in my data: ${named}. Rewrite it citing ONLY numbers written verbatim in the snapshot above, or numbers I typed in my message, in the same unit and about the same thing. Do not compute a surplus, total, average, ratio or percentage from my numbers, and do not state a program limit or rate that isn't in the snapshot. If a figure isn't there, say so or describe it qualitatively. Keep it concise.` },
+      ],
+    }, names);
     const d2 = await r2.json();
     if (r2.ok) retryProse = proseOf(d2);
   } catch (e) {
@@ -193,14 +197,21 @@ exports.handler = async (event) => {
     return { statusCode: 413, headers: corsHeaders, body: JSON.stringify({ error: "Request too large" }) };
   }
 
-  let type, payload, action;
+  let type, payload, action, body0Payload;
   try {
     const body = JSON.parse(event.body || "{}");
     type = body.type;
+    body0Payload = body.payload;
     payload = body.payload || {};
     action = body.action;
   } catch {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Invalid JSON body" }) };
+  }
+  // Text only, in the shapes the app sends (audit round 2 b): anything else is refused here, before any read and
+  // before any request to the AI provider (_lib/coachRedact.js invalidCoachPayload).
+  if (action !== "accept_consent" && action !== "revoke_consent") {
+    const bad = invalidCoachPayload(body0Payload);
+    if (bad) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "invalid_payload", field: bad }) };
   }
 
   // ── Sprint Z3 #2: AI third-party consent management (no consent gate, no Anthropic call) ──────
@@ -269,6 +280,15 @@ exports.handler = async (event) => {
   // Step 2: reject any non-live type before dispatch (plan/insights/buckets/tax removed).
   if (!isLiveCoachType(type)) {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "unknown_type", message: `Unsupported coach type: ${type}` }) };
+  }
+
+  // The household's names, from the asker's side, for the redaction at the provider request (audit H4). Not read:
+  // nothing is sent, rather than a request whose names were not checked.
+  let names;
+  try { names = await coachNamesFor(getAdminClient(), user_id); }
+  catch (e) {
+    console.error("[coach] names read failed (sending nothing):", e.message);
+    return { statusCode: 503, headers: corsHeaders, body: JSON.stringify({ error: "The coach is temporarily unavailable. Please try again." }) };
   }
 
   let anthropicBody;
@@ -438,15 +458,7 @@ exports.handler = async (event) => {
   try {
     console.log(`[coach] type="${type}" model="${anthropicBody.model}" user="${user_id.slice(0, 8)}"`);
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(anthropicBody),
-    });
+    const response = await providerFetch(apiKey, anthropicBody, names);
 
     const data = await response.json();
 
@@ -466,8 +478,8 @@ exports.handler = async (event) => {
     // checkin against the snapshot the client sent (validate → retry once → safe fallback). Simulator
     // and document-import are unchanged.
     let finalData = data;
-    if (type === "facilitator") finalData = await guardFacilitatorOutput(data, payload, apiKey);
-    else if (type === "chat" || type === "checkin") finalData = await guardSnapshotOutput(data, payload, apiKey, type);
+    if (type === "facilitator") finalData = await guardFacilitatorOutput(data, payload, apiKey, names);
+    else if (type === "chat" || type === "checkin") finalData = await guardSnapshotOutput(data, payload, apiKey, type, names);
 
     console.log(`[coach] OK — stop="${finalData.stop_reason}" tokens=${finalData.usage?.output_tokens}${finalData._guard ? ` guard=${finalData._guard}` : ""}`);
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(finalData) };

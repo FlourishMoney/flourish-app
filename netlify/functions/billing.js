@@ -25,13 +25,15 @@ const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice, foundingConfirmNeeded } = re
 const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib/foundingConfirm");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
-const { stripePost } = require("./_lib/stripeApi");
+const { stripePost, stripeGet } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
+const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
+const crypto = require("crypto");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
 // calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any
@@ -51,8 +53,16 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 //                 status call gives, from the same row.
 //   store_sync    "I just bought (or restored) in the store; look now": the row is brought up to date from
 //                 RevenueCat's server (_lib/storeSubscriptions.js), never from anything the app says.
+//   store_hold    COUPLE MODE (audit H5, round 2 a; round 5): { attempt_id, platform, state }. Without state: "about
+//                 to open the store's purchase sheet for this attempt"; the buyer's one attempt is recorded for THAT
+//                 attempt, and a member's household is held for it too (_lib/household.js holdPurchase), so no other
+//                 attempt, by either person on any platform, can buy at the same moment, and the buyer cannot join a
+//                 household until it ends. { held: true } lets the sheet open; anything else sells nothing.
+//                 state "pending": the store said the purchase is pending; the hold lasts its 7 days.
+//                 No other state is heard (round 3 a): the app never ends a hold, and nothing else does either
+//                 (round 4 a3): every hold ends at its fixed time.
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
-const STORE_ACTIONS = Object.freeze(["store_status", "store_sync"]);
+const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -142,6 +152,15 @@ exports.handler = async (event) => {
       const { data: row, error: rowErr } = await readWithRetry(() => admin
         .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // COUPLE MODE: the other member's subscription covers this person too (_lib/household.js). Covered, they are
+      // paid, offered nothing, and have nothing of their own to manage. A household read that fails is a 503.
+      const cover = isPaidSubscription(row) ? { covered: false } : await householdCover(admin, user_id);
+      if (cover.unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (cover.covered) {
+        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner" });
+        return json(200, CORS, { enabled: true, provider: cover.provider, paid: true, covered_by: "partner", period_end: cover.period_end,
+          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false } });
+      }
 
       // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
@@ -188,8 +207,20 @@ exports.handler = async (event) => {
       let state;
       if (action === "store_sync") {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
+        // COUPLE MODE: in a household the other member already pays for, one is the extra. No hold is ended here
+        // (audit round 4 a3): a hold ends at its fixed time, and this paid row already answers every later check.
+        if (state.paid) await reconcileHouseholdBilling(admin, user_id);
       } else {
         state = { paid: isPaidSubscription(row), provider: row ? row.provider || "stripe" : null, plan_key: row ? row.plan_key : null, conflict: false, conflictKind: null };
+      }
+      // COUPLE MODE: covered by the other member's subscription, the store app sells this person nothing.
+      if (!state.paid) {
+        const cover = await householdCover(admin, user_id);
+        if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+        if (cover.covered) {
+          return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", provider: cover.provider, plan_key: null, conflict: !!state.conflict,
+            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null } });
+        }
       }
       // A web subscription Stripe is still collecting (a renewal that failed): not paid, so no access, but still
       // live, so the app must not sell a store subscription on top of it. The household fixes the card on the web.
@@ -227,6 +258,41 @@ exports.handler = async (event) => {
       });
     }
 
+    // COUPLE MODE (audit H5): the store app asks this just before it opens the purchase sheet. Nothing is sold to a
+    // household already paid for (by this person, or covered by the other member), or while the other member is
+    // buying. A read or hold that fails sells nothing (503).
+    // The app can say one thing more, "pending" (the store is waiting), which keeps a store hold to its 7 days. It can
+    // never END a hold (audit round 3 a): a sheet it says was cancelled or failed lapses on its own. Nothing ends one
+    // early (round 4 a3); a purchase that went through is a paid row, which the checks below read first. Any other
+    // state is refused, before anything is read.
+    if (action === "store_hold") {
+      const attempt = body.attempt_id;
+      if (!isAttemptId(attempt)) return json(400, CORS, { error: "attempt_required" });
+      if (body.state !== undefined && body.state !== "pending") return json(400, CORS, { error: "invalid_state" });
+      if (body.state === "pending") {
+        try { return json(200, CORS, { pending: await holdPending(admin, user_id, attempt) }); }
+        catch (e) { console.error("[billing] store pending:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      }
+      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+      if (rowErr) { console.error("[billing] store hold read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
+      if (isLiveRow(row)) return json(200, CORS, { held: false, paid: isPaidSubscription(row), provider: row.provider || "stripe" });
+      const cover = await householdCover(admin, user_id);
+      if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+      if (cover.covered) return json(200, CORS, { held: false, paid: true, covered_by: "partner", provider: cover.provider });
+      let hold;
+      // Round 5: EVERY buyer's attempt is recorded, alone or not; a member's household is held for it too.
+      try { hold = await holdPurchase(admin, user_id, body.platform === "android" ? "play_store" : "app_store", attempt); }   // which store: a label only
+      catch (e) { console.error("[billing] store hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      // Refused: another attempt is live (this person's own elsewhere, or the other member's).
+      if (!hold.held) return json(200, CORS, { held: false, paid: false, reason: "purchase_in_progress" });
+      // The household's cover again, now the attempt is recorded: a join that went through between the read above and
+      // the attempt (the database refuses any join after it) is seen here, and no sheet opens for a covered household.
+      const after = await householdCover(admin, user_id);
+      if (after.unavailable) return json(503, CORS, { error: "unavailable" });
+      if (after.covered) return json(200, CORS, { held: false, paid: true, covered_by: "partner", provider: after.provider });
+      return json(200, CORS, { held: true });
+    }
+
     if (action === "create_checkout_session") {
       const planKey = body.plan_key;
       if (!isValidPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
@@ -244,6 +310,11 @@ exports.handler = async (event) => {
         if (!curErr && isLiveRow(current)) {
           return json(409, CORS, { error: "already_subscribed", provider: current.provider || "stripe" });
         }
+        // COUPLE MODE: the other member's subscription already covers this household: never a second charge.
+        // A household read that fails stops the checkout (503) rather than risk selling twice.
+        const cover = await householdCover(admin, user_id);
+        if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
+        if (cover.covered) return json(409, CORS, { error: "already_subscribed", provider: cover.provider || "stripe", covered_by: "partner" });
       }
 
       const user = await authUser(admin, user_id);
@@ -279,6 +350,14 @@ exports.handler = async (event) => {
         return json(503, CORS, { error: "unavailable" });
       }
 
+      // COUPLE MODE (audit H5, round 2 a; round 5): one purchase ATTEMPT at a time, for EVERY buyer. The checkout is
+      // made first, short-lived (expires_at: it ends before its attempt does), and then it must be recorded as this
+      // person's one attempt under its own id, which for a member also holds the household (_lib/household.js
+      // holdPurchase). Another live attempt (this person's own in a store app, or the other member's) refuses it, and
+      // the new checkout is expired at once, so it can never complete. While it lives the person cannot create or
+      // join a household. The one thing a checkout may replace is this person's own earlier checkout, once Stripe says
+      // it has expired (the expiry just above makes it so).
+
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",
         customer: customerId,
@@ -289,10 +368,39 @@ exports.handler = async (event) => {
         metadata: { user_id, plan_key: planKey },
         subscription_data: { metadata: { user_id, plan_key: planKey } },
         ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
+        expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,   // before its attempt ends (round 5: every checkout)
         allow_promotion_codes: true,
         success_url: `${APP_ORIGIN()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?billing=cancelled`,
-      }, { idempotencyKey: `checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}` });
+      // Each checkout is one attempt: never handed back again by Stripe's idempotency (it may be expired below).
+      }, { idempotencyKey: `checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` });
+
+      {
+        const refuse = async (code, error) => {
+          try { await stripePost(`/checkout/sessions/${encodeURIComponent(session.id)}/expire`, {}); }
+          catch (e) { console.error("[billing] expire refused checkout:", e && e.statusCode ? e.statusCode : "no_status"); }
+          return json(code, CORS, { error, ...(error === "already_subscribed" ? { covered_by: "partner" } : {}) });
+        };
+        try {
+          let hold = await holdPurchase(admin, user_id, "stripe", session.id);
+          if (!hold.held && hold.mine && hold.provider === "stripe" && hold.attempt_id && hold.attempt_id !== session.id) {
+            // This person's own earlier checkout: replaced only once Stripe says it can no longer complete.
+            let old = null;
+            try { old = await stripeGet(`/checkout/sessions/${encodeURIComponent(hold.attempt_id)}`); } catch { old = null; }
+            if (old && old.status === "open") { try { old = await stripePost(`/checkout/sessions/${encodeURIComponent(hold.attempt_id)}/expire`, {}); } catch { old = null; } }
+            if (old && old.status === "expired") hold = await holdPurchase(admin, user_id, "stripe", session.id, { replaces: hold.attempt_id });
+          }
+          if (!hold.held) return await refuse(409, "purchase_in_progress");
+          // The household's cover again, now the attempt is recorded: a join that went through between the cover read
+          // above and the attempt (the database refuses any join after it) is seen here, and this checkout never charges.
+          const after = await householdCover(admin, user_id);
+          if (after.unavailable) return await refuse(503, "unavailable");
+          if (after.covered) return await refuse(409, "already_subscribed");
+        } catch (e) {
+          console.error("[billing] checkout hold:", e.message);
+          return await refuse(503, "unavailable");
+        }
+      }
 
       return json(200, CORS, { url: session.url });
     }

@@ -234,7 +234,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/create table if not exists public\.feedback/.test(sql) && /references auth\.users\(id\) on delete cascade/.test(sql), "6t migration 0013 adds public.feedback, deleted with the account");
     t.ok(/enable row level security/.test(sql) && /for insert to authenticated with check \(auth\.uid\(\) = user_id\)/.test(sql), "6u RLS: a signed-in person may insert their own rows");
     t.ok(!/for (select|update|delete|all)\b/.test(sql) && /grant insert\s+on table public\.feedback to authenticated;/.test(sql) && !/to anon/.test(sql), "6v …and nothing else: no read-back, no anon access");
-    t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback"\]\)/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8")), "6w deleting the account deletes the feedback too");
+    t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback"(?:, "[a-z_]+")*\]\)/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8")), "6w deleting the account deletes the feedback too");
     // Prompt 4b item 5: production already had an older public.feedback (no created_at, 0 rows), so
     // the first run stopped at the created_at index (ERROR 42703) and changed nothing. Step 0 moves an
     // empty older table aside, stops on one with rows, and never drops anything. (Run against the

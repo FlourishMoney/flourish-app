@@ -138,8 +138,11 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
   // ── 3. the real path: server labels, fetchItemTxns splits ────────────────────────────────────
   // plaid.js get_transactions against a fake Plaid (/transactions/sync, nothing leaves the machine),
   // then the app's own fetchItemTxns against a fake /api/plaid that answers with that server output.
+  // upsert: the database takes plaid.js's record of who linked each account (couple mode), which must be written
+  // before any bank data goes back (a failed write is a 503: householdServer.test.cjs 11j-11m).
   function fakeSupabase() {
     const q = { select() { return q; }, eq() { return q; }, update() { return q; }, single: async () => ({ data: { access_token: "access-sandbox-test", next_cursor: null }, error: null }), maybeSingle: async () => ({ data: null, error: null }),
+      upsert: async () => ({ data: null, error: null }),
       then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); } };
     return { from: () => q, auth: { admin: {} } };
   }
