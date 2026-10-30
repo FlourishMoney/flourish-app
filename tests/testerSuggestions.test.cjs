@@ -266,16 +266,19 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
     t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.3", "1.1.3", ["1.1.3"], "1.1.3"], "7a one version, 1.1.3, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526906, [526906], 21, 21], "7b the builds in whatsNew.json are the ones the projects build: iOS 526905, Android 20");
-    t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
-    noBanned("7d release notes", [W.intro, ...W.notes, ...(W.notesAndroid || [])].join(" "));
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526907, [526907], 22, 22], "7b the builds in whatsNew.json are the ones the projects build: iOS 526907, Android 22");
+    const allNotes = [...W.notes, ...(W.notesAndroid || []), ...(W.alsoNotes || [])];
+    t.ok(Array.isArray(W.notes) && W.notes.length >= 1 && allNotes.length >= 3, "7c release notes are in the same file");
+    noBanned("7d release notes", [W.intro, ...allNotes, W.alsoTitle || ""].join(" "));
     // The intro (approved 2026-10-23) opens "Get your first Safe to spend number", which the scan's imperative
     // check reads as an instruction; it is not money advice, and the notes themselves are scanned in full.
-    noAdvice("7e release notes", [...W.notes, ...(W.notesAndroid || [])]);
+    noAdvice("7e release notes", allNotes);
     const st = settingsText();
     t.ok(st.includes("What's new") && st.includes("Version 1.1.3") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
     t.ok(/\{whatsNewNotes\(\)\.map\(\(n,i\)=><li key=\{i\}/.test(APP) && /\{WHATS_NEW\.intro&&<p /.test(APP), "7f2 …the intro and the notes from whatsNew.json");
+    t.ok(/\{WHATS_NEW\.alsoTitle&&<p [^>]*>\{WHATS_NEW\.alsoTitle\}<\/p>\}/.test(APP) && /\{WHATS_NEW\.alsoNotes\.map\(\(n,i\)=><li key=\{i\}/.test(APP)
+      && APP.indexOf("{whatsNewNotes().map(") < APP.indexOf("{WHATS_NEW.alsoTitle&&"), "7f3 …then the second part under its own line, after the notes");
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
   }
 
@@ -337,14 +340,14 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const strings = [
       ...Tr.TOUR_STEPS.flatMap(st => [st.title, st.body]),
       ...A.FAQ.flatMap(f => [f.q, f.a]), A.WHAT_MAKES_DIFFERENT, "What makes Flourish different",
-      Fb.WEEK_ONE_QUESTION, ...Fb.FEEDBACK_KINDS.map(k => k.label), ...WN.notes, ...(WN.notesAndroid || []), WN.intro,
+      Fb.WEEK_ONE_QUESTION, ...Fb.FEEDBACK_KINDS.map(k => k.label), ...WN.notes, ...(WN.notesAndroid || []), WN.intro, WN.alsoTitle, ...(WN.alsoNotes || []),
       ...Ck.setupChecklist({}).map(i => i.label), Sh.SHARE_TITLE, Sh.SHARE_TEXT,
     ];
-    // One named exception: the 1.1.1 What's new note approved word for word (2026-10-23) writes "flourish says so".
-    // iapApprovedCopy 5a pins it exactly; any other lowercase "flourish" still fails here.
-    const APPROVED_LOWER = ["If a bank connection doesn't go through, flourish says so and lets you try again or enter your numbers yourself."];
+    // The one named exception (1.1.1's note "flourish says so") left with 1.1.1's notes: 1.1.3's text has no lowercase
+    // "flourish", so none is allowed now.
+    const APPROVED_LOWER = [];
     t.eq(strings.filter(x => lower.test(x) && !APPROVED_LOWER.includes(x)), [], "2b every string this PR added says \"Flourish\" with a capital F");
-    t.eq(APPROVED_LOWER.length, 1, "2b2 one approved string may say \"flourish\", and only that one");
+    t.eq(APPROVED_LOWER.length, 0, "2b2 no string may say \"flourish\" (the 1.1.1 exception is gone with its notes)");
     t.ok(/<Btn label="Rate Flourish"/.test(APP) && />What makes Flourish different<\/h2>/.test(APP) && !/label="Rate flourish"/.test(APP), "2c …including the Rate row and the card's heading");
   }
 
