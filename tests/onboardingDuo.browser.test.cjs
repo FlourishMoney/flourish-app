@@ -206,7 +206,7 @@ function buildApp(supabaseUrl) {
       await p.getByText("days left in your trial", { exact: false }).first().waitFor();
     }],
     ["Store app: Settings", async (p) => { await p.getByRole("button", { name: "Settings", exact: true }).first().click(); await p.getByText("Restore purchases").first().waitFor(); }, true],
-    ["Store app: What's new", async (p) => { await p.getByRole("button", { name: /What's new/ }).first().click(); await p.getByText("Getting started is quicker.", { exact: false }).first().waitFor(); }, true],
+    ["Store app: What's new", async (p) => { await p.getByRole("button", { name: /What's new/ }).first().click(); await p.getByText("New: share your household with your partner.", { exact: false }).first().waitFor(); }, true],
     ["Store app: See plans", async (p) => { await p.getByRole("button", { name: "See plans", exact: true }).first().click();
       await p.getByRole("button", { name: "Close", exact: true }).last().waitFor(); }, true],
   ];
