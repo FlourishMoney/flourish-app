@@ -800,6 +800,66 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq([joinedZ && joinedZ.result, buy.result, memberRole(Z.p), holdOf(Z.h)], ["joined", "held", "partner", "stripe,cs_r6z_1,false"],
         "15m …the other way round, the checkout waits for the join, then holds a household that now has a payer: billing.js reads the household's cover again after it and refuses the checkout (householdServer 15i)");
     }
+
+    // 16 ONE LOCK ORDER: THE HOUSEHOLD, THEN ITS INVITE (audit round 7) ----------------------------------------------
+    // household_create_invite and household_revoke_invite lock the household row, then its invites. The join used to
+    // lock the invite first, then the household, so a join and a revoke at the same moment could deadlock (a 503). The
+    // owner's call is held open here just after it has locked the household, as each does first, while the join comes in.
+    {
+      const deadlock = (s) => /deadlock/i.test(String(s || ""));
+      const tryJoin = (u, mail, tok, code) => {
+        try { return svc(`household_accept_invite('${u}', '${mail}', ${tok ? `'${tok}'` : "null"}, ${code ? `'${code}'` : "null"})`).result; }
+        catch (e) { return String(e.stderr || e.message); }
+      };
+      const invite = (tok) => sql(`select (used_at is not null)::text || ',' || coalesce(used_by::text, '-') || ',' || coalesce(revoke_reason, '-') from public.household_invites where token_hash = '${tok}'`);
+      const ownerHolds = (h, then) => slowly(`select 1 from public.households where id = '${h}' for update; select pg_sleep(1); set role service_role; ${then}`, 0);
+
+      // Revoke, with the join arriving while the owner's call holds the household.
+      const O1 = who("lock16-o1"), P1 = who("lock16-p1");
+      const h1 = svc(`household_create_invite('${O1}', 'lock16-p1@example.test', 'tok-16a', 'code-16a')`).household_id;
+      const rv = ownerHolds(h1, `select public.household_revoke_invite('${O1}')`);
+      await pause(300);
+      const j1 = tryJoin(P1, "lock16-p1@example.test", "tok-16a", null);
+      const r1 = await rv;
+      t.eq([deadlock(j1) || deadlock(r1.err), j1, (json(r1.out) || {}).result, (json(r1.out) || {}).count],
+        [false, "invalid", "revoked", 1],
+        "16a a join by link while the owner revokes: no deadlock; the join waits for the household, then reads the invite again and finds it revoked");
+      t.eq([memberRole(P1), invite("tok-16a")], ["none", "false,-,owner"], "16b …not a member, and the invite was never used");
+
+      // The same by code.
+      const O2 = who("lock16-o2"), P2 = who("lock16-p2");
+      const h2 = svc(`household_create_invite('${O2}', 'lock16-p2@example.test', 'tok-16c', 'code-16c')`).household_id;
+      const rv2 = ownerHolds(h2, `select public.household_revoke_invite('${O2}')`);
+      await pause(300);
+      const j2 = tryJoin(P2, "lock16-p2@example.test", null, "code-16c");
+      const r2 = await rv2;
+      t.eq([deadlock(j2) || deadlock(r2.err), j2, (json(r2.out) || {}).result, memberRole(P2)], [false, "invalid", "revoked", "none"],
+        "16c the same by code: no deadlock, refused, not a member");
+
+      // A new invite replacing the open one, with a join by the old link arriving meanwhile.
+      const O3 = who("lock16-o3"), P3 = who("lock16-p3");
+      const h3 = svc(`household_create_invite('${O3}', 'lock16-p3@example.test', 'tok-16d', 'code-16d')`).household_id;
+      const mk = ownerHolds(h3, `select public.household_create_invite('${O3}', 'lock16-p3@example.test', 'tok-16d2', 'code-16d2')`);
+      await pause(300);
+      const j3 = tryJoin(P3, "lock16-p3@example.test", "tok-16d", null);
+      const m3 = await mk;
+      t.eq([deadlock(j3) || deadlock(m3.err), j3, (json(m3.out) || {}).result, invite("tok-16d")], [false, "invalid", "invited", "false,-,replaced"],
+        "16d a join by the old link while the owner sends a new invite: no deadlock; the old invite is replaced and refused, never used");
+      t.eq([tryJoin(P3, "lock16-p3@example.test", "tok-16d2", null), invite("tok-16d2").split(",").slice(0, 2).join(",")], ["joined", `true,${P3}`],
+        "16e …and the new invite's link joins");
+
+      // The other order: the join first, then the revoke. Single use holds.
+      const O4 = who("lock16-o4"), P4 = who("lock16-p4");
+      svc(`household_create_invite('${O4}', 'lock16-p4@example.test', 'tok-16f', 'code-16f')`);
+      const jn = slowly(`set role service_role; select public.household_accept_invite('${P4}', 'lock16-p4@example.test', 'tok-16f', null)`);
+      await pause(300);
+      let r4; try { r4 = svc(`household_revoke_invite('${O4}')`); } catch (e) { r4 = { result: String(e.stderr || e.message) }; }
+      const j4 = await jn;
+      t.eq([deadlock(j4.err) || deadlock(r4.result), (json(j4.out) || {}).result, r4.result, r4.count, invite("tok-16f"), memberRole(P4)],
+        [false, "joined", "revoked", 0, `true,${P4},-`, "partner"],
+        "16f the join first, the revoke at the same moment: no deadlock; the join goes through once, and the revoke, which waited for it, finds nothing open");
+      t.eq(tryJoin(P4, "lock16-p4@example.test", "tok-16f", null), "already_member", "16g the used link again: already a member, not a second use");
+    }
   } catch (e) {
     t.ok(false, "the suite ran to the end: " + String((e && (e.stderr || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 300));
   } finally {

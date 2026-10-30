@@ -77,7 +77,7 @@ So the 1.1.3 store build can carry it before the migration runs.
 
 RPCs (security definer, `search_path` fixed, execute for service_role only):
 - `household_create_invite`, `household_revoke_invite`
-- `household_accept_invite` (refuses while the household's own purchase hold, or a member's own attempt, is live: round 6)
+- `household_accept_invite` (refuses while the household's own purchase hold, or a member's own attempt, is live: round 6; locks the household, then its invite, in the same order as the invite and revoke functions: round 7)
 - `household_hold_purchase`, `household_hold_pending` (no function ends a hold early; leaving takes the leaver's own)
 - `purchase_attempt_begin`, `purchase_attempt_pending`, `purchase_attempt_clear` (every buyer's attempt; billing.js calls only `purchase_attempt_begin` and `purchase_attempt_pending`, which take a member's household hold too; only `/api/household` clears one, by its id, once the server has seen it can no longer charge)
 - `household_disconnect_item`

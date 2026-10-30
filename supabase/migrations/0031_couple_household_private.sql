@@ -251,7 +251,8 @@ end; $$;
 -- opened by an account with another address is counted against that account and its network only, never against
 -- the invite or its address (audit round 2, d): someone holding a leaked link cannot cancel it, or lock out the
 -- person it was sent to. The 6-character code is the guessable secret, so only code guesses strike an invite.
--- The invite row is locked, so the same invite cannot be used twice even at the same moment.
+-- The invite row is locked, so the same invite cannot be used twice even at the same moment; its household row is
+-- locked before it, in the order every other invite function takes them (round 7).
 -- Answers jsonb { result, household_id }: 'joined', 'already_member', 'invalid', 'expired', 'used',
 -- 'wrong_account', 'in_another_household', 'household_full', 'too_many_attempts',
 -- 'household_purchase_in_progress' (the household's own hold is live, round 6),
@@ -260,7 +261,7 @@ create or replace function public.household_accept_invite(p_user uuid, p_email_k
                                                           p_net_key text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  inv public.household_invites%rowtype; mine uuid; n integer; target text; outcome text; pa public.purchase_attempts%rowtype;
+  inv public.household_invites%rowtype; cand uuid; cand_hh uuid; mine uuid; n integer; target text; outcome text; pa public.purchase_attempts%rowtype;
   user_limit constant integer := 10; target_limit constant integer := 10; net_limit constant integer := 30;
   invite_tries constant integer := 5;
 begin
@@ -276,12 +277,21 @@ begin
     return jsonb_build_object('result', 'too_many_attempts');
   end if;
 
+  -- LOCK ORDER (audit round 7): the household row, then its invite, as household_create_invite and
+  -- household_revoke_invite take them, so a join and a revoke (or a new invite) at the same moment wait for each
+  -- other rather than deadlock. The candidate invite is found WITHOUT a lock; its household row is locked; then that
+  -- exact invite is read again FOR UPDATE, and every check below (revoked, used, expiry, address) is made on that
+  -- second read. An invite revoked or replaced meanwhile is answered as revoked.
   if p_token_hash is not null then
-    select * into inv from public.household_invites where token_hash = p_token_hash for update;
+    select id, household_id into cand, cand_hh from public.household_invites where token_hash = p_token_hash;
   elsif p_code_hash is not null then
-    select * into inv from public.household_invites
+    select id, household_id into cand, cand_hh from public.household_invites
      where code_hash = p_code_hash and email_key = p_email_key and used_at is null and revoked_at is null
-     order by created_at desc limit 1 for update;
+     order by created_at desc limit 1;
+  end if;
+  if cand is not null then
+    perform 1 from public.households where id = cand_hh for update;   -- an invite's household never changes
+    select * into inv from public.household_invites where id = cand for update;
   end if;
 
   select household_id into mine from public.household_members where user_id = p_user;
@@ -306,7 +316,7 @@ begin
   end if;
 
   if mine is not null then return jsonb_build_object('result', 'in_another_household'); end if;
-  perform 1 from public.households where id = inv.household_id for update;
+  -- The household row is already locked (above, before the invite).
   select count(*) into n from public.household_members where household_id = inv.household_id;
   if n = 0 then return jsonb_build_object('result', 'invalid'); end if;
   if n >= 2 then return jsonb_build_object('result', 'household_full'); end if;
