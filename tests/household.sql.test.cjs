@@ -42,6 +42,7 @@ const { execFileSync, spawn } = require("child_process");
 const MIGRATIONS = path.join(__dirname, "..", "supabase", "migrations");
 const M30 = fs.readFileSync(path.join(MIGRATIONS, "0030_couple_household.sql"), "utf8");
 const M31 = fs.readFileSync(path.join(MIGRATIONS, "0031_couple_household_private.sql"), "utf8");
+const M33 = fs.readFileSync(path.join(MIGRATIONS, "0033_meeting_records_grants.sql"), "utf8");
 const STUB = `
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -140,6 +141,15 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'purchase\\_attempt\\_%'`);
     t.eq(attemptFns, "purchase_attempt_begin:false:false:true,purchase_attempt_clear:false:false:true,purchase_attempt_pending:false:false:true",
       "1f the purchase-attempt functions (round 5): the service role only");
+    // 0033: meeting_records' grants, run over Supabase's old default grants as production has them (everything for
+    // anon and authenticated on a new public table).
+    sql(`grant all privileges on table public.meeting_records to anon, authenticated`);
+    fs.writeFileSync(path.join(dir, "c33.sql"), footerCheck(M33));
+    t.eq(file(path.join(dir, "c33.sql")), "t|t|t|t|t|t|t", "1g before 0033, with the old default grants: anon and a signed-in user hold everything on meeting_records");
+    file(path.join(MIGRATIONS, "0033_meeting_records_grants.sql"));
+    t.eq(file(path.join(dir, "c33.sql")), "f|f|t|f|f|t|t", "1h 0033: anon nothing, a signed-in user select only (no column more), the server all, RLS still on");
+    t.ok(/Expected after: false, false, true, false, false, true, true\./.test(M33), "1i …which is what 0033's footer says to expect");
+    t.eq(err(() => file(path.join(MIGRATIONS, "0033_meeting_records_grants.sql"))), "", "1j 0033 runs a second time without error");
 
     // Four people. O owns the household, P is invited, S is a stranger, T is a third adult.
     const id = (email) => sql(`insert into auth.users (email, email_confirmed_at) values ('${email}', now()) returning id`);
