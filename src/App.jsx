@@ -12678,6 +12678,11 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <ul style={{paddingLeft:20,margin:0}}>
           {whatsNewNotes().map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
         </ul>
+        {/* 1.1.3's approved text has a second part under its own line ("Also in this update:"), in that order. */}
+        {WHATS_NEW.alsoTitle&&<p style={{margin:`${SPACE.sm}px 0 ${SPACE.xs}px`}}>{WHATS_NEW.alsoTitle}</p>}
+        {(WHATS_NEW.alsoNotes||[]).length>0&&<ul style={{paddingLeft:20,margin:0}}>
+          {WHATS_NEW.alsoNotes.map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
+        </ul>}
       </div>}
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
