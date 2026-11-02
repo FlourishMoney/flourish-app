@@ -2,7 +2,15 @@
 // -----------------------------------------------------------------------------
 // WHERE IT SENDS PEOPLE. An iPhone or iPad goes to the App Store listing, an Android phone or tablet to the Google
 // Play listing, both straight away. Anything else (a computer) stays on the page: both badges, and the website.
-// An iPad that asks for the desktop site says "Macintosh"; it is told apart by its touch screen.
+// An iPad that asks for the desktop site says "Macintosh"; it is told apart by its touch screen. The Instagram and
+// Facebook in-app browsers say iPhone or Android in their user agents, so they go the same way.
+//
+// NO FLASH (2026-11-02). This script loads in the head, before anything is drawn. On a phone it hides the card
+// (html.going, index.html) until the redirect. If the redirect never happens, or someone comes back, the card shows.
+// The phone's redirect replaces this page, so Back from the store does not land here and bounce straight out again.
+//
+// THE PLAY REFERRER (2026-11-02). Android's link carries referrer=utm_source=<ref>&utm_medium=social&utm_campaign=founding.
+// The address is anyone's to type, so only a plain short word goes on to Google; anything else is "other".
 //
 // WHAT PLAUSIBLE IS TOLD (cookieless, as on the rest of the public site, src/lib/webAnalytics.js): one event,
 // "Get link", with two properties and nothing else: way (which of the five ways below) and ref (which link it came
@@ -16,13 +24,12 @@
   var EVENT = "Get link";
   var WAYS = ["iPhone or iPad to the App Store", "Android to Google Play", "Page: App Store badge", "Page: Google Play badge", "Page: website"];
   var REFS = ["founding", "other"];
-  var APP_STORE = document.getElementById("app-store").href;
-  var PLAY = document.getElementById("google-play").href;
+  var REVEAL_AFTER_MS = 2500;
 
   var params = new URLSearchParams(window.location.search);
   var ref = params.get("ref") === "founding" ? "founding" : "other";
-  // The website's way in: the founding checkout for the founding link, the home page otherwise.
-  if (ref !== "founding") document.getElementById("website").setAttribute("href", "/");
+  var rawRef = params.get("ref") || "";
+  var source = /^[A-Za-z0-9_-]{1,40}$/.test(rawRef) ? rawRef : "other";
 
   function device() {
     var ua = navigator.userAgent || "";
@@ -58,24 +65,43 @@
   document.head.appendChild(s);
 
   // Count the way, then go (at most 700 ms later, whether or not Plausible answered).
-  function countThenGo(way, url) {
+  function countThenGo(way, url, replace) {
     var gone = false;
-    function go() { if (!gone) { gone = true; window.location.assign(url); } }
+    function go() { if (!gone) { gone = true; if (replace) window.location.replace(url); else window.location.assign(url); } }
     try { window.plausible(EVENT, { props: { way: way, ref: ref }, callback: go }); } catch (e) { /* the redirect still happens */ }
     setTimeout(go, 700);
   }
 
   var d = device();
-  if (d === "ios") { countThenGo(WAYS[0], APP_STORE); return; }
-  if (d === "android") { countThenGo(WAYS[1], PLAY); return; }
+  var root = document.documentElement;
+  function reveal() { root.classList.remove("going"); }
+  if (d !== "other") {
+    root.classList.add("going");
+    setTimeout(reveal, REVEAL_AFTER_MS);
+    window.addEventListener("pageshow", function (e) { if (e.persisted) reveal(); });
+  }
 
-  // A computer: the page. Each link is counted, then followed.
-  [["app-store", WAYS[2]], ["google-play", WAYS[3]], ["website", WAYS[4]]].forEach(function (pair) {
-    var a = document.getElementById(pair[0]);
-    a.addEventListener("click", function (e) {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) { try { window.plausible(EVENT, { props: { way: pair[1], ref: ref } }); } catch (x) { /* nothing */ } return; }
-      e.preventDefault();
-      countThenGo(pair[1], a.href);
+  function start() {
+    var appStore = document.getElementById("app-store").href;
+    var play = document.getElementById("google-play").href;
+    // The website's way in: the founding checkout for the founding link, the home page otherwise.
+    if (ref !== "founding") document.getElementById("website").setAttribute("href", "/");
+
+    if (d === "ios") { countThenGo(WAYS[0], appStore, true); return; }
+    if (d === "android") {
+      countThenGo(WAYS[1], play + "&referrer=" + encodeURIComponent("utm_source=" + source + "&utm_medium=social&utm_campaign=founding"), true);
+      return;
+    }
+
+    // A computer: the page. Each link is counted, then followed.
+    [["app-store", WAYS[2]], ["google-play", WAYS[3]], ["website", WAYS[4]]].forEach(function (pair) {
+      var a = document.getElementById(pair[0]);
+      a.addEventListener("click", function (e) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) { try { window.plausible(EVENT, { props: { way: pair[1], ref: ref } }); } catch (x) { /* nothing */ } return; }
+        e.preventDefault();
+        countThenGo(pair[1], a.href, false);
+      });
     });
-  });
+  }
+  document.addEventListener("DOMContentLoaded", start);
 })();
