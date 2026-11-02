@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   public/get/index.html: THE DEVICE LINK, flourishmoney.app/get?ref=founding (2026-10-27).
-  get.js sends an iPhone or iPad to the App Store and an Android phone to Google Play. Anything else stays on this
+  get.js sends an iPhone or iPad to the App Store and an Android phone to Google Play (2026-11-02: from the head, with
+  this card hidden on a phone until the redirect, so it does not flash). Anything else stays on this
   page: the stores' own badges (one of each; Apple allows one App Store badge per layout), and the website's founding
   checkout as a smaller second way. Plausible counts which way people went, with no personal data (get.js).
   A plain static page, not the app: it loads in a moment, and works with scripts off (the badges and the link are
@@ -15,6 +16,7 @@
 <meta name="robots" content="noindex">
 <title>flourish</title>
 <link rel="icon" href="/flourish-adult-favicon-32.png">
+<script src="/get/get.js"></script>
 <style>
   :root { --page: #F4F1EB; --card: #FFFFFF; --ink: #1A2035; --muted: #5B6170; --rule: #E6E1D8; --brand: #007048; color-scheme: light dark; }
   @media (prefers-color-scheme: dark) {
@@ -33,6 +35,7 @@
   .web { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
   .web a { color: var(--brand); text-decoration: underline; }
   a:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+  html.going main { visibility: hidden; }
 </style>
 </head>
 <body>
@@ -45,6 +48,5 @@
   </div>
   <p class="web"><a id="website" href="/?checkout=founding" data-words="get-website">Prefer the website? The founding price is there too.</a></p>
 </main>
-<script src="/get/get.js"></script>
 </body>
 </html>

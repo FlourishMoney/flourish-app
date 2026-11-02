@@ -92,6 +92,8 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
   t.ok(/<p class="web"><a id="website" href="\/\?checkout=founding"/.test(page) && /\.web \{[^}]*font-size: 14px/.test(page) && /h1 \{[^}]*font-size: 22px/.test(page),
     "4b the website is the smaller second way: a 14 px link to the founding checkout under the 22 px heading and the badges");
   t.ok(!/<script>(?!<\/)/.test(page) && /<script src="\/get\/get\.js"><\/script>/.test(page) && !/\son[a-z]+="/.test(page), "4c no inline script and no inline handler (the CSP allows script from the site only)");
+  t.ok(page.indexOf('<script src="/get/get.js">') < page.indexOf("</head>") && !/\b(async|defer)\b[^>]*get\.js/.test(page) && /html\.going main \{ visibility: hidden; \}/.test(page),
+    "4c2 the script runs in the head, before anything is drawn, so a phone never sees the card flash");
   t.ok(/<meta name="robots" content="noindex">/.test(page) && /<html lang="en">/.test(page) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(page), "4d noindex, a language, a phone viewport");
   const plausibleSrc = (read("src", "lib", "webAnalytics.js").match(/"(https:\/\/plausible\.io\/js\/[^"]+)"/) || [])[1];
   t.ok(!!plausibleSrc && script.includes(`var PLAUSIBLE_SRC = "${plausibleSrc}";`), "4e the page loads the site's own Plausible script (src/lib/webAnalytics.js)");

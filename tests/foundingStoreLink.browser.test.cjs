@@ -11,6 +11,9 @@
 //   3  nothing typed into the address reaches Plausible: an unknown ref is "other", an extra parameter is dropped
 //   4  Plausible blocked: the phone still goes to its store, within a second
 //   5  the page fits a 320 px window without sideways scrolling, light and dark
+//   6  the Instagram and Facebook in-app browsers, iPhone and Android, go to their store and are counted the same way
+//   7  Android's link carries the Play referrer; only a plain short ref reaches Google
+//   8  no flash: on a phone the card is hidden before first paint; a computer's never is; a failed redirect shows it
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -29,9 +32,14 @@ const UA = {
   ipadDesktop: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15",
   android: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
   mac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  instagramIos: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 402.0.0.34.86 (iPhone15,3; iOS 18_6; en_CA; en; scale=3.00; 1290x2796; 793405268; IABMV/1)",
+  facebookIos: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/530.0.0.41.106;FBBV/765432100;FBDV/iPhone15,3;FBMD/iPhone;FBSN/iOS;FBSV/18.6;FBSS/3;FBID/phone;FBLC/en_CA;FBOP/5]",
+  instagramAndroid: "Mozilla/5.0 (Linux; Android 15; Pixel 9 Build/AP4A.250205.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/135.0.7049.79 Mobile Safari/537.36 Instagram 402.0.0.34.86 Android (35/15; 420dpi; 1080x2424; Google/google; Pixel 9; tokay; tokay; en_CA; 793405268)",
+  facebookAndroid: "Mozilla/5.0 (Linux; Android 15; Pixel 9 Build/AP4A.250205.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/135.0.7049.79 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/530.0.0.41.106;]",
 };
 const APP_STORE = "https://apps.apple.com/ca/app/flourish-money-handled/id6792967778";
 const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.app";
+const playFor = (source) => `${PLAY}&referrer=utm_source%3D${source}%26utm_medium%3Dsocial%26utm_campaign%3Dfounding`;
 
 (async () => {
   const t = create();
@@ -68,7 +76,7 @@ const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.ap
     ["an iPhone", UA.iphone, 0, APP_STORE, "iPhone or iPad to the App Store"],
     ["an iPad", UA.ipad, 0, APP_STORE, "iPhone or iPad to the App Store"],
     ["an iPad asking for the desktop site", UA.ipadDesktop, 5, APP_STORE, "iPhone or iPad to the App Store"],
-    ["an Android phone", UA.android, 0, PLAY, "Android to Google Play"],
+    ["an Android phone", UA.android, 0, playFor("founding"), "Android to Google Play"],
   ]) {
     const { ctx, page, sent } = await open({ ua, touch });
     await page.goto(`${base}/get?ref=founding`);
@@ -110,9 +118,10 @@ const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.ap
   {
     const { ctx, page, sent } = await open({ ua: UA.android });
     await page.goto(`${base}/get?ref=someone%40example.ca&email=someone%40example.ca&t=abc`);
-    await page.waitForURL(PLAY);
+    await page.waitForURL(playFor("other"));
     t.eq(props(sent), [["Get link", `${base}/get`, { way: "Android to Google Play", ref: "other" }]], "3a an unknown ref is \"other\", and no parameter reaches Plausible");
     t.ok(!JSON.stringify(sent).includes("example.ca") && !JSON.stringify(sent).includes("abc"), "3b …no address, no token anywhere in what was sent");
+    t.ok(!/example|someone|abc/.test(page.url()), "3b2 …nor in the address Google is sent");
     await ctx.close();
     const o = await open({ ua: UA.mac, width: 1440 });
     await o.page.goto(`${base}/get?ref=other`);
@@ -138,6 +147,51 @@ const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.ap
     t.ok(fit.over <= 0, `5a ${scheme}: no sideways scrolling at 320 px (${fit.over})`);
     t.eq(fit.bg, scheme === "light" ? "rgb(244, 241, 235)" : "rgb(18, 21, 30)", `5b ${scheme}: the page's own background`);
     await ctx.close();
+  }
+
+  // ── 6. The Instagram and Facebook in-app browsers ─────────────────────────────────────────────
+  for (const [who, ua, ref, store, way] of [
+    ["Instagram on iPhone", UA.instagramIos, "instagram", APP_STORE, "iPhone or iPad to the App Store"],
+    ["Facebook on iPhone", UA.facebookIos, "facebook", APP_STORE, "iPhone or iPad to the App Store"],
+    ["Instagram on Android", UA.instagramAndroid, "instagram", playFor("instagram"), "Android to Google Play"],
+    ["Facebook on Android", UA.facebookAndroid, "facebook", playFor("facebook"), "Android to Google Play"],
+  ]) {
+    const { ctx, page, sent } = await open({ ua });
+    await page.goto(`${base}/get?ref=${ref}`);
+    await page.waitForURL(store);
+    t.eq(page.url(), store, `6a ${who}: straight to its store`);
+    t.eq(props(sent), [["Get link", `${base}/get`, { way, ref: "other" }]], `6b ${who}: counted once, before it went, as today's fixed list has it`);
+    await ctx.close();
+  }
+
+  // ── 7. The Play referrer ─────────────────────────────────────────────────────────────────────
+  for (const [query, source] of [["ref=story_1", "story_1"], ["ref=a%26utm_source%3Devil", "other"], [`ref=${"x".repeat(41)}`, "other"], ["", "other"]]) {
+    const { ctx, page } = await open({ ua: UA.android });
+    await page.goto(`${base}/get?${query}`);
+    await page.waitForURL(playFor(source));
+    t.eq(new URL(page.url()).searchParams.get("referrer"), `utm_source=${source}&utm_medium=social&utm_campaign=founding`, `7a "${query.slice(0, 24)}": utm_source is ${source}`);
+    await ctx.close();
+  }
+
+  // ── 8. No flash ──────────────────────────────────────────────────────────────────────────────
+  {
+    for (const [who, ua, want] of [["an iPhone", UA.iphone, "hidden"], ["Instagram on Android", UA.instagramAndroid, "hidden"], ["a computer", UA.mac, "visible"]]) {
+      const o = await open({ ua });
+      const seen = [];
+      await o.ctx.exposeBinding("__seen", (_src, v) => { seen.push(v); });
+      await o.ctx.addInitScript(() => { document.addEventListener("DOMContentLoaded", () => { window.__seen(getComputedStyle(document.querySelector("main")).visibility); }, { capture: true, once: true }); });
+      await o.page.goto(`${base}/get?ref=founding`, { waitUntil: "commit" });
+      for (let i = 0; i < 50 && !seen.length; i++) await new Promise((ok) => setTimeout(ok, 100));
+      t.eq(seen[0], want, `8a ${who}: the card is ${want} when the page is first parsed`);
+      await o.ctx.close();
+    }
+    const o = await open({ ua: UA.iphone });
+    // A 204 leaves the browser on this page, as a handover to the store app does.
+    await o.ctx.route(/apps\.apple\.com|play\.google\.com/, (r) => r.fulfill({ status: 204 }));
+    await o.page.goto(`${base}/get?ref=founding`, { waitUntil: "commit" });
+    await o.page.waitForFunction(() => getComputedStyle(document.querySelector("main")).visibility === "visible", null, { timeout: 5000 });
+    t.ok(await o.page.isVisible("#app-store"), "8b the page is still here after the redirect: the card shows, with its badges");
+    await o.ctx.close();
   }
 
   await browser.close();
