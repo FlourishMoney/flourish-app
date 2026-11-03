@@ -4,7 +4,7 @@
 // docs/product/CREATOR-PROGRAM-WORDS.md lists each id: where it shows, the facts it must state, the approved line and its
 // limit; tests/creators.test.cjs holds the two together.
 //
-// NOT WRITTEN YET. Each line is its own "[WORDS: id]" placeholder until it is approved, and nothing ships with one:
+// NOT WRITTEN YET. Each line is its own "[WORDS: …]" placeholder until it is approved, and nothing ships with one:
 // scripts/check-pending-words.mjs refuses the production web build (netlify.toml) and every store build (npm run
 // build:native). The app shows none of them while CREATORS_ENABLED is off.
 // -----------------------------------------------------------------------------

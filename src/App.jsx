@@ -15502,7 +15502,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [creatorsOn, setCreatorsOn] = useState(false);
   useEffect(() => {
     let live = true;
-    fetch(`${API_BASE}/api/creator`).then((r) => { if (live && r.ok) setCreatorsOn(true); }).catch(() => { /* no field */ });
+    fetch(`${API_BASE}/api/creator`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) setCreatorsOn(true); }).catch(() => { /* no field */ });
     return () => { live = false; };
   }, []);
   // Which fields the person has left (or tried to submit), for the inline errors (audit H11).
