@@ -9,6 +9,10 @@
 // (html.going, index.html) until the redirect. If the redirect never happens, or someone comes back, the card shows.
 // The phone's redirect replaces this page, so Back from the store does not land here and bounce straight out again.
 //
+// A CREATOR'S LINK (?c=CODE, the Creator Program). On a computer the website's link carries the code on to the home page,
+// whose sign-up form starts with it filled in (src/lib/creatorCode.js). A phone's redirect is unchanged and carries nothing
+// of it: the stores can't hold a code, so someone on a phone types it into the app's sign-up form. Plausible never sees it.
+//
 // THE PLAY REFERRER (2026-11-02). Android's link carries referrer=utm_source=<ref>&utm_medium=social&utm_campaign=founding.
 // The address is anyone's to type, so only a plain short word goes on to Google; anything else is "other".
 //
@@ -37,6 +41,8 @@
   var SHOP_TAGS = ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"];
   var shop = SHOP_TAGS.indexOf(rawRef) >= 0 ? rawRef : "";
   var APPLE_PROVIDER_TOKEN = "128816288";
+  var rawCode = (params.get("c") || "").trim().toUpperCase();
+  var creatorCode = /^[A-Z0-9]{3,20}$/.test(rawCode) ? rawCode : null;
 
   function device() {
     var ua = navigator.userAgent || "";
@@ -106,7 +112,12 @@
       return;
     }
 
-    // A computer: the page. Each link is counted, then followed.
+    // A computer: the page. A creator's code goes along with the website's link. Each link is counted, then followed.
+    if (creatorCode) {
+      var site = document.getElementById("website");
+      var to = site.getAttribute("href");
+      site.setAttribute("href", to + (to.indexOf("?") >= 0 ? "&" : "?") + "c=" + creatorCode);
+    }
     [["app-store", WAYS[2]], ["google-play", WAYS[3]], ["website", WAYS[4]]].forEach(function (pair) {
       var a = document.getElementById(pair[0]);
       a.addEventListener("click", function (e) {

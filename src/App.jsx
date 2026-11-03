@@ -109,6 +109,8 @@ import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
+import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
+import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
 import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -744,6 +746,18 @@ async function callHousehold(action, params = {}) {
   if (!jwt) return { status: 401, data: {} };
   try {
     const res = await fetch(`${API_BASE}/api/household`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    return { status: res.status, data };
+  } catch { return { status: 0, data: {} }; }
+}
+
+// The creator code in Settings (netlify/functions/creator.js). { status, data }. A 404 means the program is off: no card.
+async function callCreator(action, params = {}) {
+  const jwt = await getJwt();
+  if (!jwt) return { status: 401, data: {} };
+  try {
+    const res = await fetch(`${API_BASE}/api/creator`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
     let data = {};
     try { data = await res.json(); } catch {}
     return { status: res.status, data };
@@ -12209,6 +12223,34 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 // Settings > Household: the owner invites ONE partner (an email link, and a 6-character code for the store
 // apps), the partner joins, either leaves, the owner removes the partner. Both see a consent screen first.
 // Every word is a placeholder until approved (lib/householdWords.js); roles only, never the other person's name.
+// THE CREATOR CODE IN SETTINGS: shown only while this account may add one (/api/creator status: within 14 days of sign-up,
+// before the first payment, no code yet, not a partner). No card at all otherwise, and none while the program is off.
+function CreatorCodeCard({onAdd}){
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [added,setAdded]=useState(false);
+  if(added) return <div data-creator-added="" role="status" style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{CREATOR_WORDS.settingsAdded}</div>;
+  const submit=async()=>{
+    if(busy||!code) return;
+    setBusy(true); setError(null);
+    const r=await onAdd(code);
+    setBusy(false);
+    if(r&&r.ok) setAdded(true);
+    else setError(creatorErrorLine(r&&r.error)||CREATOR_WORDS.errors.creator_code_unavailable);
+  };
+  return(
+    <div data-creator-card="" style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>{CREATOR_WORDS.settingsTitle}</div>
+      <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:SPACE.md}}>{CREATOR_WORDS.settingsBody}</div>
+      <input type="text" aria-label={CREATOR_WORDS.settingsTitle} value={code} onChange={e=>setCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} maxLength={20}
+        style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",marginBottom:SPACE.sm}}/>
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <Btn label={CREATOR_WORDS.settingsButton} onClick={submit} color={C.green} small/>
+    </div>
+  );
+}
+
 // The app shows this only when /api/household answers (the server switch on, migrations 0030 + 0031 run).
 function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLeave, onRemove, onClearLinkToken }) {
   const W = HOUSEHOLD_WORDS;
@@ -12307,7 +12349,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
   </div>;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
+function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   // Couple mode: a link's invite opens Settings straight on Household (HouseholdSection).
   const [activeSection,setActiveSection]=useState(()=>household?.linkToken && household?.info?.enabled ? "household" : null);
@@ -12666,6 +12708,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       </div>
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
     </div>
+    {creator?.info?.may_add&&<CreatorCodeCard onAdd={creator.onAdd}/>}
     {/* ── What's new (tester suggestions, item 7): version, build and notes from src/whatsNew.json ── */}
     <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <button onClick={()=>setShowWhatsNew(v=>!v)} aria-expanded={showWhatsNew} aria-controls="whats-new-notes"
@@ -13637,8 +13680,9 @@ function ConfirmedPage({confirmed=false, onSignIn}){
           <div data-confirm-failed="">
             {link.failed&&<h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>This link no longer works.</h1>}
             {link.description&&<p style={{color:C.cream,fontSize:15,lineHeight:1.6,margin:"0 0 16px"}}>{link.description}</p>}
-            <div style={{color:C.mutedHi,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
-            <input type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+            <div style={{color:C.muted,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
+            <label htmlFor="confirmed-email" style={{...AUTH_FIELD_LABEL,color:C.cream,marginTop:0,textAlign:"left"}}>Email address</label>
+            <input id="confirmed-email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
               onChange={e=>setEmail(stripEmailSpaces(e.target.value))} autoComplete="email" name="email"
               style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",marginBottom:10,outline:"none"}}/>
             <button onClick={resend} disabled={!email || cooldown>0} style={{...btn,background:"transparent",color:C.greenBright,border:`1.5px solid ${C.green}66`,opacity:(!email||cooldown>0)?0.6:1}}>
@@ -14284,7 +14328,7 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
 
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",paddingTop:INSET.top,...safeX(0)}}>
-      <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
+      <div style={{width:"100%",minWidth:0,maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
           <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
@@ -14299,10 +14343,10 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Plan selector */}
-        <div style={{display:"flex",gap:10,marginBottom:20}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:20}}>
           {Object.entries(plans).map(([key,plan])=>(
             <button key={key} onClick={()=>setSelected(key)} style={{flex:1,background:selected===key?C.purple+"22":C.card,border:`2px solid ${selected===key?C.purple:C.border}`,borderRadius:16,padding:"14px 12px",cursor:"pointer",textAlign:"center",position:"relative",transition:"all .2s"}}>
-              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
+              {plan.badge&&<div style={{position:"absolute",bottom:"calc(100% - 12px)",left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
               <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
             </button>
@@ -14324,12 +14368,13 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Promo code */}
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <label htmlFor="paywall-promo" style={{...AUTH_FIELD_LABEL,color:C.cream,marginTop:0}}>Promo code</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
           <input
+            id="paywall-promo"
             value={promo}
             onChange={e=>{setPromo(e.target.value.toUpperCase());setPromoError("");setPromoNote("");}}
-            placeholder="Promo code"
-            style={{flex:1,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
+            style={{flex:"1 1 8em",minWidth:0,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
           />
           <button
             onClick={async ()=>{
@@ -14358,9 +14403,9 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Trust footer */}
-        <div style={{marginTop:20,display:"flex",justifyContent:"center",gap:16}}>
+        <div style={{marginTop:20,display:"flex",flexWrap:"wrap",justifyContent:"center",gap:16}}>
           {["🔒 Read-only. No money movement.","🇨🇦 Built in Ontario","🔑 Your bank login is never stored"].map((t,i)=>(
-            <div key={i} style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
+            <div key={i} style={{flex:"1 1 5em",color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
           ))}
         </div>
       </div>
@@ -15063,6 +15108,10 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
   );
 }
 
+// A label above a sign-in field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
+// The reset screen, the sign-in form, /confirmed and the paywall's promo code share these measurements; each adds its own colour.
+const AUTH_FIELD_LABEL = Object.freeze({ display: "block", fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs });
+
 // Sprint Q item 12: set-new-password screen. Shown by FlourishApp when a password-recovery token
 // lands (PASSWORD_RECOVERY). The recovery token establishes a temporary session, so updateUser can
 // set the new password directly. On success we strip the recovery hash and hand back to the app.
@@ -15097,7 +15146,10 @@ function ResetPasswordScreen({ onDone, onCancel }) {
     setBusy(false);
     setDone(true);
   };
-  const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 12 };
+  const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box" };
+  const label = { ...AUTH_FIELD_LABEL, color: "#EDE9E2", fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  // Every quiet line on this card is this one grey, 6.2:1 (it was #6B7A6E, 3.8:1). It is C.muted's dark value, written out because C follows the theme and this card is always dark.
+  const hintGrey = "rgba(237,233,226,0.62)";
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, ...overlaySafe(24, { bottom: true }), background: "#050D09" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
@@ -15107,22 +15159,25 @@ function ResetPasswordScreen({ onDone, onCancel }) {
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 38, marginBottom: 10 }}>✓</div>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 22, color: "#EDE9E2" }}>Password updated</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
+              <div style={{ color: hintGrey, fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
             </div>
           ) : (
             <>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 20, color: "#EDE9E2", marginBottom: 6 }}>Set a new password</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
-              <input style={inp} type="password" placeholder="New password (min 8 characters)" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
-              <input style={{ ...inp, marginBottom: 20 }} type="password" placeholder="Confirm new password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
+              <div style={{ color: hintGrey, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
+              <label htmlFor="reset-password" style={label}>New password</label>
+              <input id="reset-password" style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" aria-describedby="reset-password-hint" />
+              <div id="reset-password-hint" style={{ color: hintGrey, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5, marginTop: SPACE.xs }}>At least 8 characters</div>
+              <label htmlFor="reset-password-confirm" style={label}>Confirm new password</label>
+              <input id="reset-password-confirm" style={{ ...inp, marginBottom: 20 }} type="password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
               {err && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
               <button onClick={submit} disabled={busy}
-                style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? "#6B7A6E" : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
+                style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? hintGrey : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
                 {busy ? "Updating…" : "Update password"}
               </button>
               <div style={{ textAlign: "center", marginTop: 16 }}>
                 <button onClick={cancel} disabled={busy}
-                  style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                  style={{ background: "none", border: "none", color: hintGrey, fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                   Back to log in
                 </button>
               </div>
@@ -15455,6 +15510,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // read (audit H12, lib/signupUi.js). Only a definite false shows the code field: a failed check is never
   // treated as invite-only, and the screen offers to check again instead.
   const [openSignup, setOpenSignup] = useState(null);
+  // THE CREATOR CODE (behind CREATORS_ENABLED on the server: /api/creator answers 404 while it is off, and then there is no
+  // field and nothing is sent). A creator's link on a computer starts it filled in (lib/creatorCode.js).
+  const [creatorCode, setCreatorCode] = useState("");
+  const [creatorsOn, setCreatorsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/creator`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) { setCreatorCode(captureCreatorCode()); setCreatorsOn(true); } }).catch(() => { /* no field */ });
+    return () => { live = false; };
+  }, []);
   // Which fields the person has left (or tried to submit), for the inline errors (audit H11).
   const [touched, setTouched] = useState({});
   // Whether the confirmation email after a self-serve signup actually went out (beta.js `sent`).
@@ -15613,12 +15677,13 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc() }),
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
         const e = out.error;
-        if (e === "invalid_code")          setError("Invalid beta code. Request one at hello@flourishmoney.app");
+        if (creatorErrorLine(e))           setError(creatorErrorLine(e));
+        else if (e === "invalid_code")     setError("Invalid beta code. Request one at hello@flourishmoney.app");
         else if (e === "cap_reached")      setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
         else if (e === "weak_password")    setError("Choose a password of at least 8 characters.");
@@ -15631,6 +15696,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
         else                               setError(`Signup failed${e ? ` (${e})`: ` (HTTP ${res.status})`}${out.detail ? `: ${out.detail}`: out.message ? `: ${out.message}`: ""}. Please contact hello@flourishmoney.app.`);
         setLoading(false); return;
       }
+      forgetCreatorCode();
       // A CODED signup is confirmed on creation, so there is no email to check: drop them on the
       // login screen, where the address and password are still filled in. A SELF-SERVE signup is not
       // usable until the address is confirmed, so (audit H10) it goes to the check-your-email state: the
@@ -15751,6 +15817,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
     outline: "none", boxSizing: "border-box", display: "block",
   });
   const fieldErrStyle = { color: AUTH_C.error, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
+  const fieldLabelStyle = { ...AUTH_FIELD_LABEL, color: AUTH_C.ink };
+  const fieldHintStyle = { color: AUTH_C.muted, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
   // Text buttons (Back, Forgot password?, Wrong email?): underlined, and a 44 px target however short the label.
   const authLinkStyle = { background: "none", border: "none", minHeight: LAYOUT.minTap, padding: "0 4px", color: AUTH_C.link, fontSize: 13,
     fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", textUnderlineOffset: 2 };
@@ -15765,8 +15833,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 
   // H11: the inline errors, and Create Account / Log In. The button is never `disabled`, so a tap on it while
   // a field is wrong shows that field's error instead of doing nothing; it submits only when canSubmit.
+  // The 8-character rule is for choosing a password. Log In sends whatever was typed and the server answers.
   const fieldErr = fieldErrors({ mode, email, password, touched });
-  const canSubmit = !loading && !!email && password.length >= 8 && codeOk;
+  const canSubmit = !loading && !!email && (mode === "login" ? !!password : password.length >= 8) && codeOk;
   const submitAuth = () => {
     if (!canSubmit) { if (!loading) setTouched({ email: true, password: true }); return; }
     if (mode === "login") handleLogin(); else handleSignup();
@@ -16203,19 +16272,32 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       <button onClick={retrySignupStatus} style={{ ...authLinkStyle, padding: "0 10px" }}>Try again</button>
                     </div>
                   )}
-                  <input style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+                  <label htmlFor="auth-email" style={fieldLabelStyle}>Email address</label>
+                  <input id="auth-email" style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
                     aria-invalid={fieldErr.email || undefined} aria-describedby={fieldErr.email ? "auth-email-error" : undefined} autoComplete="email" name="email" />
                   {fieldErr.email && <div id="auth-email-error" data-field-error="email" style={fieldErrStyle}>{SIGNUP_COPY.emailError}</div>}
-                  <input style={{ ...inpStyle(fieldErr.password), marginTop: SPACE.md }} type="password" placeholder="Password (min 8 characters)" value={password}
+                  <label htmlFor="auth-password" style={fieldLabelStyle}>Password</label>
+                  <input id="auth-password" style={inpStyle(fieldErr.password)} type="password" value={password}
                     onChange={e => setPassword(e.target.value)} onBlur={() => password && setTouched(t => ({ ...t, password: true }))}
-                    aria-invalid={fieldErr.password || undefined} aria-describedby={fieldErr.password ? "auth-password-error" : undefined}
+                    aria-invalid={fieldErr.password || undefined} aria-describedby={[mode === "signup" && "auth-password-hint", fieldErr.password && "auth-password-error"].filter(Boolean).join(" ") || undefined}
                     autoComplete={mode === "signup" ? "new-password" : "current-password"} name="password" />
+                  {mode === "signup" && <div id="auth-password-hint" style={fieldHintStyle}>At least 8 characters</div>}
                   {fieldErr.password && <div id="auth-password-error" data-field-error="password" style={fieldErrStyle}>{SIGNUP_COPY.passwordError}</div>}
                   {/* Invite-only (the server's definite answer): the code field, as it has always been. Signup open,
                       still asking, or the check failed: no field and no invite link (H11, H12). */}
                   {mode==="signup"&&showCodeInput&&(
-                    <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    <>
+                      <label htmlFor="auth-beta-code" style={fieldLabelStyle}>Beta access code</label>
+                      <input id="auth-beta-code" style={inpStyle(false)} type="text" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    </>
+                  )}
+                  {mode==="signup"&&creatorsOn&&(
+                    <div data-creator-field="">
+                      <label htmlFor="auth-creator-code" style={fieldLabelStyle}>{CREATOR_WORDS.signupLabel}</label>
+                      <input id="auth-creator-code" style={inpStyle(false)} type="text" value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
+                      <div style={fieldHintStyle}>{CREATOR_WORDS.signupHint}</div>
+                    </div>
                   )}
                   {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
                   <button style={{ ...btnStyle(canSubmit), marginTop: SPACE.lg }} onClick={submitAuth} aria-disabled={!canSubmit}>
@@ -17241,6 +17323,8 @@ export default function FlourishApp(){
   // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
   // link's invite token kept for this tab while the person signs in (never synced; lib/household.js).
   const [householdInfo,setHouseholdInfo]=useState(null);
+  // The creator code: /api/creator's status for this account (null while off, or not asked yet).
+  const [creatorInfo,setCreatorInfo]=useState(null);
   const [householdLinkToken,setHouseholdLinkToken]=useState(()=>{
     try {
       const t = inviteTokenFromSearch(window.location.search);
@@ -18066,6 +18150,18 @@ export default function FlourishApp(){
     return ()=>document.removeEventListener("visibilitychange", onVis);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── The creator code: Settings' card, while this account may still add one ──
+  const refreshCreator = async ()=>{
+    if (!user) return;
+    const r = await callCreator("status");
+    setCreatorInfo(r.status === 200 ? r.data : null);
+  };
+  useEffect(()=>{ if (showSettings && user && hydrated) refreshCreator(); }, [showSettings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const addCreatorCode = async (code)=>{
+    const r = await callCreator("add", { code });
+    if (r.status === 200) return { ok: true };
+    return { error: r.data?.error || "creator_code_unavailable" };
+  };
   // ── Couple mode: Settings > Household (HouseholdSection) ──
   const refreshHousehold = async ()=>{
     if (!user) return;
@@ -19055,7 +19151,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
