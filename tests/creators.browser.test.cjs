@@ -209,6 +209,22 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       t.ok(store.test(sent.stores[0] || ""), `4e ${who}: the store redirect is exactly as it was, and carries nothing of the code (${(sent.stores[0] || "").slice(0, 60)})`);
       await ctx.close();
     }
+    // A shop's QR code and a creator's code in one link: each does its own job.
+    {
+      const { ctx, page } = await open({ on: true });
+      await page.goto(`${base}/get?ref=shop-trenton-counter&c=ben`);
+      await page.locator("#website").waitFor();
+      t.eq([await page.locator("#website").getAttribute("href"), /ct=shop-trenton-counter/.test(await page.locator("#app-store").getAttribute("href")), /utm_source%3Dshop-trenton-counter/.test(await page.locator("#google-play").getAttribute("href"))],
+        ["/?c=BEN", true, true], "4f a computer, a shop's tag and a creator's code together: the badges carry the tag, the website's link the code");
+      await ctx.close();
+    }
+    for (const [who, ua, store] of [["iPhone", IPHONE, /ct=shop-trenton-counter&mt=8$/], ["Android", ANDROID, /utm_source%3Dshop-trenton-counter%26utm_medium%3Dqr%26utm_campaign%3Dshop$/]]) {
+      const { ctx, page, sent } = await open({ on: true, ua });
+      await page.goto(`${base}/get?ref=shop-trenton-counter&c=ben`);
+      await page.waitForURL(/apps\.apple\.com|play\.google\.com/);
+      t.ok(store.test(sent.stores[0] || "") && !/c=ben/i.test(sent.stores[0] || ""), `4g ${who}, the same link: the shop's tagged store link, and nothing of the code (${(sent.stores[0] || "").slice(-60)})`);
+      await ctx.close();
+    }
 
     // 5 ── THE NARROWEST PHONE ───────────────────────────────────────────────────────────────────────────────────
     {

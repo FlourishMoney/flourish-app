@@ -44,8 +44,7 @@ No table or function is reachable by anyone signed in, or by anon. A creator is 
 
 ## Going live, in order
 1. Run the migration.
-2. Check the `shop-source-tags` PR (#114) has merged, and main is merged in here.
-3. Check the first iOS event since the Small Business Program was set in RevenueCat shows a 15% fee. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
-4. Merge, and deploy. Add `invoice.paid` and `charge.dispute.closed` to the Stripe endpoint.
-5. Set `CREATORS_ENABLED=true` in production and redeploy.
-6. iPhone and Android show the field only from the next store build.
+2. Check the first iOS event since the Small Business Program was set in RevenueCat shows a 15% fee. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
+3. Merge, and deploy. Add `invoice.paid` and `charge.dispute.closed` to the Stripe endpoint.
+4. Set `CREATORS_ENABLED=true` in production and redeploy.
+5. iPhone and Android show the field only from the next store build.
