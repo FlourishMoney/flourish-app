@@ -39,7 +39,7 @@ No table or function is reachable by anyone signed in, or by anon. A creator is 
 ## Going live, in order
 1. Get the words approved and swap them into `src/lib/creatorWords.js` and the words doc. The production deploy and store builds refuse placeholders, so **this PR can't deploy until then**.
 2. Run the migration.
-3. Check a real refund's `transaction_id` against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
+3. Check RevenueCat's App Store fee setting: it reports 30% today, Google Play 15%. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
 4. Merge, and deploy. Add `invoice.paid` to the Stripe endpoint.
 5. Set `CREATORS_ENABLED=true` in production and redeploy.
 6. iPhone and Android show the field only from the next store build.

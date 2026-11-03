@@ -45,5 +45,13 @@ The server emails the support inbox, and writes on the event's `billing_events` 
 | `creator_own_code` | A household holding its own creator's code. No commission was recorded. | Terms: "no using your own code". |
 | `creator_not_cad` | A payment not in Canadian dollars. No commission was recorded. | Terms: Canada only for now. |
 
-## To check before relying on store refunds
-RevenueCat's docs don't say a refund event's `transaction_id` names the refunded payment. The code matches on it, then on the original transaction and the exact purchase date, and otherwise raises `creator_refund_unmatched` rather than guess. Check one real refund against its payment at go-live.
+## What real RevenueCat deliveries look like (checked 2026-11-03)
+Read from delivered webhook bodies in RevenueCat's dashboard, sandbox events on our own project.
+
+**Every field the code reads is there.** `tax_percentage`, `commission_percentage`, `price_in_purchased_currency`, `currency`, `transaction_id`, `original_transaction_id`, `purchased_at_ms`, `environment`, `is_family_share`, `store`, `product_id`. RevenueCat's "Event Data" panel leaves some of them out; the panel is not the delivery.
+
+**A refund matches its payment on Google Play: proven.** A sandbox refund of CAD 11.99 from the dashboard delivered `CANCELLATION` with `cancel_reason: CUSTOMER_SUPPORT` and `price_in_purchased_currency: -11.99`. Its `transaction_id` and `purchased_at_ms` were identical to the `RENEWAL` it refunded, so it matches exactly.
+
+**On the App Store: not proven.** RevenueCat can't refund an Apple purchase, and the app has no refund request. The code matches on `transaction_id`, then on the original transaction and the exact purchase date, and otherwise raises `creator_refund_unmatched` rather than guess. Check the first real App Store refund against its payment.
+
+**The store fee RevenueCat reports.** Google Play came through at `commission_percentage: 0.15`, the App Store at `0.3`. If the company is in Apple's Small Business Program (15%), set that in RevenueCat's App Store configuration before going live, or App Store commissions are worked out on too small a base: on $79.99, $55.99 rather than $67.99. `tax_percentage` came through as `0` in Canada on both stores.
