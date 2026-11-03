@@ -55,9 +55,10 @@ async function rpc(admin, fn, args) {
   return data;
 }
 
-// Sign-up, before the account exists: 'ok' or 'invalid'. Throws when the database can't say.
-async function checkCreatorCode(admin, code, email) {
-  const r = await rpc(admin, "creator_code_check", { p_code: code, p_email: email });
+// Sign-up, before the account exists: 'ok' or 'invalid'. It is asked about the code and nothing else: the answer can't
+// be used to test whether an address is a creator's. Throws when the database can't say.
+async function checkCreatorCode(admin, code) {
+  const r = await rpc(admin, "creator_code_check", { p_code: code });
   return r && r.result === "ok" ? "ok" : "invalid";
 }
 
@@ -108,13 +109,13 @@ function stripeInvoicePayment(inv, eventCreated) {
   if (!inv || typeof inv.id !== "string" || !inv.id) return { skip: "no_invoice" };
   if (!subscriptionOfInvoice(inv)) return { skip: "not_a_subscription" };
   if (!Number.isInteger(inv.amount_paid) || inv.amount_paid <= 0) return { skip: "nothing_paid" };
-  if (!Number.isInteger(inv.total_excluding_tax) || inv.total_excluding_tax <= 0) return { unknown: true };
   const paidAt = inv.status_transitions?.paid_at;
   const seconds = Number.isFinite(paidAt) ? paidAt : eventCreated;
-  if (!Number.isFinite(seconds)) return { unknown: true };
+  const when = Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null;
+  if (!Number.isInteger(inv.total_excluding_tax) || inv.total_excluding_tax <= 0 || !when) return { unknown: true, when };
   return {
     ref: inv.id,
-    when: new Date(seconds * 1000).toISOString(),
+    when,
     baseCents: inv.total_excluding_tax,
     grossCents: inv.amount_paid,
     currency: String(inv.currency || "").toUpperCase(),
@@ -143,7 +144,12 @@ async function creditStripeInvoice(admin, inv, eventCreated, deps = {}) {
   const userId = await stripeInvoiceAccount(admin, inv);
   if (!userId) return notes;
   if (!(await rpc(admin, "creator_for_payer", { p_user: userId }))) return notes;
-  if (p.unknown) { await noteForSupport(notes, "creator_amounts_unknown", userId, "stripe", deps); return notes; }
+  if (p.unknown) {
+    // No commission, and a note for support. The payment still happened: if it is the first, the 12 months start now.
+    await rpc(admin, "creator_first_payment_seen", { p_user: userId, p_when: p.when });
+    await noteForSupport(notes, "creator_amounts_unknown", userId, "stripe", deps);
+    return notes;
+  }
   await recordCommission(admin, userId, "stripe", p, notes, deps);
   return notes;
 }
@@ -243,6 +249,8 @@ async function creditStoreEvent(admin, evt, deps = {}) {
   const baseCents = storeProceedsCents(evt);
   const grossCents = typeof evt.price_in_purchased_currency === "number" ? Math.round(evt.price_in_purchased_currency * 100) : null;
   if (baseCents === null || !ref || !when || !planKeyFor(evt.product_id)) {
+    // No commission, and a note for support. The payment still happened: if it is the first, the 12 months start now.
+    await rpc(admin, "creator_first_payment_seen", { p_user: userId, p_when: when || eventDate(evt.event_timestamp_ms) });
     await noteForSupport(notes, "creator_amounts_unknown", userId, provider, deps);
     return notes;
   }

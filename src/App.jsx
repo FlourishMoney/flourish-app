@@ -15498,11 +15498,11 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [openSignup, setOpenSignup] = useState(null);
   // THE CREATOR CODE (behind CREATORS_ENABLED on the server: /api/creator answers 404 while it is off, and then there is no
   // field and nothing is sent). A creator's link on a computer starts it filled in (lib/creatorCode.js).
-  const [creatorCode, setCreatorCode] = useState(() => captureCreatorCode());
+  const [creatorCode, setCreatorCode] = useState("");
   const [creatorsOn, setCreatorsOn] = useState(false);
   useEffect(() => {
     let live = true;
-    fetch(`${API_BASE}/api/creator`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) setCreatorsOn(true); }).catch(() => { /* no field */ });
+    fetch(`${API_BASE}/api/creator`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) { setCreatorCode(captureCreatorCode()); setCreatorsOn(true); } }).catch(() => { /* no field */ });
     return () => { live = false; };
   }, []);
   // Which fields the person has left (or tried to submit), for the inline errors (audit H11).

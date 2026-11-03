@@ -95,14 +95,14 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     const person = (email, signedUpDaysAgo = 0) => {
       n += 1;
       const mail = email || `person${n}@example.test`;
-      return sql(`insert into auth.users (email, created_at) values ('${mail}', now() - interval '${signedUpDaysAgo} days') returning id`).split("\n")[0];
+      return sql(`insert into auth.users (email, email_confirmed_at, created_at) values ('${mail}', now(), now() - interval '${signedUpDaysAgo} days') returning id`).split("\n")[0];
     };
     const creator = (code, status = "active", mail) => {
       sql(`insert into public.creators (code, name, payout_email, status) values ('${code}', 'Creator ${code}', '${mail || `${code.toLowerCase()}@creators.test`}', '${status}')`);
       return code;
     };
     const attribute = (u, code, source = "web") => svc(`creator_attribute('${u}', '${code}', '${source}')`).result;
-    const check = (code, mail) => svc(`creator_code_check('${code}', '${mail}')`).result;
+    const check = (code) => svc(`creator_code_check('${code}')`).result;
     const backdate = (u, days) => sql(`update public.creator_attributions set attributed_at = now() - interval '${days} days' where user_id = '${u}'`);
     const pay = (u, ref, whenSql = "now() + interval '1 second'", { base = 1000, provider = "stripe", gross = "null", currency = "CAD", original = "null" } = {}) =>
       svc(`creator_commission_record('${u}', '${provider}', '${ref}', ${original === "null" ? "null" : `'${original}'`}, ${whenSql}, ${base}, ${gross}, '${currency}')`);
@@ -134,11 +134,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     creator("BEN");
     creator("ENDED", "ended");
     creator("CAUSE", "ended_for_cause");
-    t.eq([check("NOPE", "a@example.test"), check("ALICE", "a@example.test"), check(" alice ", "a@example.test")], ["invalid", "ok", "ok"],
-      "2a a wrong code is refused; a right one is fine, whatever its case or spaces");
-    t.eq([check("ALICE", "alice.smith+pay@gmail.com"), check("ALICE", "ALICE.SMITH@gmail.com"), check("ALICE", "alicesmith+other@googlemail.com")], ["invalid", "invalid", "invalid"],
-      "2b a creator's own code is refused, however they write their address (case, a +tag, Gmail's dots), with the same answer as a wrong code");
-    t.eq([check("ENDED", "a@example.test"), check("CAUSE", "a@example.test")], ["invalid", "invalid"], "2c an ended creator's code takes no new household");
+    t.eq([check("NOPE"), check("ALICE"), check(" alice ")], ["invalid", "ok", "ok"], "2a a wrong code is refused; a right one is fine, whatever its case or spaces");
+    t.ok(/creator_code_check\(p_code text\)/.test(SRC), "2b the check before sign-up takes the code and no address: it can't be used to test whether an address is a creator's");
+    t.eq([check("ENDED"), check("CAUSE")], ["invalid", "invalid"], "2c an ended creator's code takes no new household");
 
     const A = person();
     t.eq(attribute(A, "NOPE"), "invalid", "2d a wrong code: nothing recorded");
@@ -146,8 +144,8 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(attribute(A, "alice", "ios"), "attributed", "2f a right code, in any case: recorded");
     t.eq(sql(`select code || ',' || source from public.creator_attributions where user_id = '${A}'`), "ALICE,ios", "2g …with its uppercase code and where it came from");
     t.eq([attribute(A, "BEN"), sql(`select code from public.creator_attributions where user_id = '${A}'`)], ["already", "ALICE"], "2h first code wins: a second changes nothing");
-    const Own = person("Alice.Smith@gmail.com");
-    t.eq(attribute(Own, "ALICE"), "invalid", "2i a creator cannot use their own code from their own account");
+    t.eq([attribute(person("alice.smith+pay@gmail.com"), "ALICE"), attribute(person("Alice.Smith@gmail.com"), "ALICE"), attribute(person("alicesmith+other@googlemail.com"), "ALICE")], ["invalid", "invalid", "invalid"],
+      "2i a creator's own code goes on no account, however they write their address (case, a +tag, Gmail's dots), with the same answer as a wrong code");
     t.eq(attribute(person(null, 15), "BEN"), "too_late", "2j more than 14 days after sign-up: too late");
     t.eq(attribute(person(null, 13), "BEN"), "attributed", "2k within 14 days: fine");
     const Paid = person();
@@ -194,6 +192,18 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(pay(P5, "inv_p35a").result, "no_creator", "3j together: nothing");
     svc(`household_leave('${P5}')`);
     t.eq([pay(P5, "inv_p35b").result, creditedTo("inv_p35b")], ["recorded", "BEN"], "3k having left, the partner is on their own again, with their own code");
+    // A partner's own plan from before they joined is not the household's subscribing.
+    const O7 = person(), P7 = person();
+    attribute(O7, "ALICE");
+    sql(`insert into public.subscriptions (user_id, provider, status, plan_key, created_at) values ('${P7}', 'stripe', 'active', 'monthly', now() - interval '700 days')`);
+    pair("p37", O7, P7);
+    t.eq([pay(P7, "inv_p37").result, sql(`select first_payment_at is null from public.creator_attributions where user_id = '${O7}'`)], ["partner_plan_before_join", "t"], "3m someone who has paid for two years joins a household holding a code: their renewal earns nothing, and starts no 12 months");
+    t.eq([pay(O7, "inv_p37o").result, creditedTo("inv_p37o")], ["recorded", "ALICE"], "3n …the owner's own subscribing still counts");
+    const O8 = person(), P8 = person();
+    attribute(O8, "ALICE");
+    pair("p38", O8, P8);
+    sql(`insert into public.subscriptions (user_id, provider, status, plan_key) values ('${P8}', 'stripe', 'active', 'monthly')`);
+    t.eq([pay(P8, "inv_p38").result, creditedTo("inv_p38")], ["recorded", "ALICE"], "3o a partner who subscribes after joining: the household subscribing, and it counts");
     const CreatorMate = person("ben@creators.test"), O6 = person();
     attribute(O6, "BEN");
     pair("p36", O6, CreatorMate);
@@ -231,6 +241,18 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(pay(Y, "y3", `${first} + interval '12 months' - interval '1 day'`).result, "outside_window", "5d nor does one a store dates a day early (Apple charges within the 24 hours before the period ends)");
     t.eq(pay(Y, "y4", `${first} + interval '12 months' - interval '3 days'`).result, "recorded", "5e three days before it is still in the first year");
     t.eq(pay(Y, "y5", `${first} + interval '13 months'`).result, "outside_window", "5f later still: nothing");
+    // The first payment starts the clock whether or not it earned anything.
+    const YU = person();
+    attribute(YU, "ALICE");
+    backdate(YU, 400);
+    t.eq(svc(`creator_first_payment_seen('${YU}', ${first})`).result, "anchored", "5f2 a first payment whose amounts can't be read: no commission, but the 12 months start");
+    t.eq(pay(YU, "yu1", `${first} + interval '12 months'`).result, "outside_window", "5f3 …so next year's renewal is not a fresh first payment");
+    const YC = person();
+    attribute(YC, "ALICE");
+    backdate(YC, 400);
+    t.eq(pay(YC, "yc0", first, { currency: "USD" }).result, "not_cad", "5f4 a first payment not in dollars earns nothing");
+    t.eq(pay(YC, "yc1", `${first} + interval '12 months'`).result, "outside_window", "5f5 …and still starts the 12 months");
+    t.eq(svc(`creator_first_payment_seen('${person()}', now())`).result, "no_creator", "5f6 nobody's code, nothing to start");
     const Z = person();
     attribute(Z, "ALICE");
     backdate(Z, 100);
@@ -278,17 +300,19 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     setUp("LOW");
     money("LOW", "low1", 2499);
     t.eq(report("LOW"), { households: 2, payable: 0, carry: 2499, clawbacks: 0, young: 0 }, "8a under $25: nothing payable, it carries over; households as a count");
+    const payout = (code, ref, cents, asOf = "now()") => svc(`creator_payout_record('${code}', '${ref}', ${cents}, ${asOf})`);
     money("LOW", "low2", 1);
     t.eq(report("LOW"), { households: 2, payable: 2500, carry: 0, clawbacks: 0, young: 0 }, "8b exactly $25: payable");
     money("LOW", "low3", 700, { daysOld: 10 });
     t.eq(report("LOW").young, 700, "8c a payment under 30 days old is not payable yet");
-    t.eq(svc(`creator_payout_record('NOSUCH', 'pay-x')`).result, "no_such_creator", "8d no such creator");
+    t.eq(payout("NOSUCH", "pay-x", 1).result, "no_such_creator", "8d no such creator");
     setUp("SMALL");
     money("SMALL", "small1", 1000);
-    t.eq([svc(`creator_payout_record('SMALL', 'pay-1')`).result, report("SMALL").carry], ["below_minimum", 1000], "8e a payout under $25 is refused, and the money carries over");
-    const paid = svc(`creator_payout_record('LOW', 'pay-2026-11')`);
+    t.eq([payout("SMALL", "pay-1", 1000).result, report("SMALL").carry], ["below_minimum", 1000], "8e a payout under $25 is refused, and the money carries over");
+    t.eq([payout("LOW", "pay-wrong", 9999).result, payout("LOW", "pay-wrong", 9999).cents, rowOf("low1")], ["amount_changed", 2500, "2499,pending"], "8e2 an amount that isn't what the report says is refused, and nothing is settled");
+    const paid = payout("LOW", "pay-2026-11", 2500);
     t.eq([paid.result, paid.cents, rowOf("low1"), rowOf("low2")], ["paid", 2500, "2499,paid", "1,paid"], "8f recording a payout settles what it covered");
-    t.eq([rowOf("low3"), svc(`creator_payout_record('LOW', 'pay-again')`).result], ["700,pending", "below_minimum"], "8g …and only that: the young payment waits, and a second run finds nothing to pay");
+    t.eq([rowOf("low3"), payout("LOW", "pay-again", 2500).result], ["700,pending", "below_minimum"], "8g …and only that: the young payment waits, and a second run finds nothing to pay");
     t.eq(report("LOW"), { households: 2, payable: 0, carry: 0, clawbacks: 0, young: 700 }, "8h after the payout, nothing is left but the young payment");
     t.eq(svc(`creator_commission_clawback('stripe', 'low1', null, null, null)`).result, "clawback", "8i a payment refunded after it was paid out");
     t.eq(report("LOW"), { households: 2, payable: 0, carry: -2499, clawbacks: -2499, young: 700 }, "8j …is owed back: it comes off later payouts, and shows as a negative carry-over");
@@ -296,13 +320,39 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(report("LOW"), { households: 2, payable: 0, carry: 501, clawbacks: -2499, young: 700 }, "8k a later month's earnings pay it down first; what is left is under $25, so it carries over");
     money("LOW", "low5", 2000);
     t.eq(report("LOW"), { households: 2, payable: 2501, carry: 0, clawbacks: -2499, young: 700 }, "8l once the net reaches $25 it is payable");
-    t.eq(svc(`creator_payout_record('LOW', 'pay-2026-12')`).cents, 2501, "8m the payout is the net");
+    t.eq(payout("LOW", "pay-2026-12", 2501).cents, 2501, "8m the payout is the net");
     t.eq(report("LOW"), { households: 2, payable: 0, carry: 0, clawbacks: 0, young: 700 }, "8n the clawback is settled with it, and not taken twice");
     t.eq(sql(`select status from public.creator_commissions where payment_ref = 'low1' and clawback_of is not null`), "clawback", "8o the clawback stays a clawback");
     setUp("YOUNG");
     money("YOUNG", "y_ref", 500, { daysOld: 5 });
     svc(`creator_commission_clawback('stripe', 'y_ref', null, null, null)`);
     t.eq(report("YOUNG"), { households: 2, payable: 0, carry: 0, clawbacks: 0, young: 0 }, "8p refunded before it is 30 days old: the two cancel out, and nothing is taken from anything else");
+    // The report and the payout are one snapshot: what happens after the report waits for next month.
+    setUp("SNAP");
+    money("SNAP", "snap1", 4000);
+    const snapAt = sql(`select now()`);
+    const at = `'${snapAt}'::timestamptz`;
+    t.eq(report("SNAP", at).payable, 4000, "8p2 the report says $40, and $40 is sent");
+    money("SNAP", "snap_late", 900);
+    svc(`creator_commission_clawback('stripe', 'snap1', null, null, 1000)`);
+    t.eq(report("SNAP", at).payable, 4000, "8p3 the same report, read again after a new payment and a refund, says the same");
+    const snap = payout("SNAP", "pay-snap", 4000, at);
+    t.eq([snap.result, rowOf("snap1"), rowOf("snap_late")], ["paid", "4000,paid", "900,pending"], "8p4 recording it settles what was sent and nothing newer, though more has matured since");
+    t.eq(sql(`select (payout_ref is null)::text from public.creator_commissions where payment_ref = 'snap1' and clawback_of is not null`), "true", "8p5 a refund landing after the report is not marked settled");
+    t.eq(report("SNAP").clawbacks, -4000, "8p6 …it comes off the next payout, and is recovered");
+    t.ok(/check_violation|creator_payout_needs/.test(err(() => svc(`creator_payout_record('SNAP', 'x', null, ${at})`))) && /check_violation|creator_payout_needs/.test(err(() => svc(`creator_payout_record('SNAP', 'x', 1, null)`))), "8p7 a payout must say how much and as of when");
+    // Households, not accounts.
+    creator("COUNT");
+    const cOwner = person(), cPartner = person(), cUnconfirmed = person(), cSolo = person();
+    attribute(cOwner, "COUNT"); attribute(cPartner, "COUNT"); attribute(cUnconfirmed, "COUNT"); attribute(cSolo, "COUNT");
+    sql(`update auth.users set email_confirmed_at = null where id = '${cUnconfirmed}'`);
+    pair("count1", cOwner, cPartner);
+    t.eq(report("COUNT").households, 2, "8p8 a couple who both entered it count once, and an address never confirmed doesn't count");
+    creator("OTHER");
+    const oOwner = person(), oPartner = person();
+    attribute(oPartner, "OTHER");
+    pair("count2", oOwner, oPartner);
+    t.eq(report("OTHER").households, 0, "8p9 a partner's own code earns nothing while they are together, and counts for nothing");
     const shape = sql(`select pg_get_function_result('public.creator_payout_report(timestamptz)'::regprocedure)`);
     t.eq(shape.replace(/TABLE\(|\)/g, "").split(", ").map((c) => c.split(" ")[0]), ["code", "name", "payout_email", "status", "households_credited", "payable_this_month_cents", "carry_over_cents", "clawbacks_cents", "not_yet_30_days_cents"],
       "8q the report's columns: the creator's own, and totals. No household, no customer, nothing per household");

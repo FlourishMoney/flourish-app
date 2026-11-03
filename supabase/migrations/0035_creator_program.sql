@@ -163,17 +163,16 @@ begin
 end; $$;
 
 -- 3. Entering a code ----------------------------------------------------------------------------------------------
--- Before an account exists (sign-up): is this code good for this address? A code that does not exist, one no longer
--- active, and the creator's own all answer 'invalid': the screen never says whose address a code belongs to.
-create or replace function public.creator_code_check(p_code text, p_email text)
+-- Before an account exists (sign-up): could this code take a new household? A code that does not exist and one no longer
+-- active answer 'invalid'. It takes no address on purpose: if a creator's own address answered differently here, anyone
+-- could test a guessed address against a public code. A creator signing up with their own code gets an account and no
+-- attribution (creator_attribute refuses it, by then for an address they have shown they hold).
+create or replace function public.creator_code_check(p_code text)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare c public.creators%rowtype;
 begin
   select * into c from public.creators where code = upper(trim(coalesce(p_code, '')));
-  if c.id is null or c.status <> 'active'
-     or public.creator_email_key(p_email) = public.creator_email_key(c.payout_email) then
-    return jsonb_build_object('result', 'invalid');
-  end if;
+  if c.id is null or c.status <> 'active' then return jsonb_build_object('result', 'invalid'); end if;
   return jsonb_build_object('result', 'ok');
 end; $$;
 
@@ -213,13 +212,53 @@ returns boolean language sql stable security definer set search_path = public as
   select public.creator_attribution_for(p_user) is not null;
 $$;
 
+-- A partner's own plan from before they joined is not this household's subscribing: someone who has paid for years does
+-- not earn a creator a fresh 12 months by joining a household that holds a code. (A subscriptions row keeps its first
+-- created_at, so a partner who cancelled, joined and bought again is also left out: the cautious way round.)
+create or replace function public.creator_partner_plan_before_join(p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.household_members m join public.subscriptions s on s.user_id = m.user_id
+     where m.user_id = p_user and m.role = 'partner' and s.created_at < m.joined_at);
+$$;
+
+-- The 12 months start at the household's first payment, whether or not that payment earned anything: one that couldn't be
+-- worked out, or wasn't in dollars, is still the first. Otherwise a renewal a year later would count as the first. Called
+-- under the attribution's lock (creator_commission_record), or alone when a payment's amounts can't be read
+-- (creator_first_payment_seen). Answers the household's first payment.
+create or replace function public.creator_anchor_first_payment(p_attribution uuid, p_when timestamptz)
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare was timestamptz; first_at timestamptz;
+begin
+  select first_payment_at into was from public.creator_attributions where id = p_attribution for update;
+  first_at := least(coalesce(was, p_when), p_when);
+  if was is distinct from first_at then
+    update public.creator_attributions set first_payment_at = first_at where id = p_attribution;
+  end if;
+  return first_at;
+end; $$;
+
+-- A payment whose amounts can't be read: no commission, but the 12 months still start.
+create or replace function public.creator_first_payment_seen(p_user uuid, p_when timestamptz)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare aid uuid;
+begin
+  if p_when is null then return jsonb_build_object('result', 'no_date'); end if;
+  aid := public.creator_attribution_for(p_user);
+  if aid is null then return jsonb_build_object('result', 'no_creator'); end if;
+  if public.creator_partner_plan_before_join(p_user) then return jsonb_build_object('result', 'partner_plan_before_join'); end if;
+  perform public.creator_anchor_first_payment(aid, p_when);
+  return jsonb_build_object('result', 'anchored');
+end; $$;
+
 -- One qualifying payment. 20% of p_base_cents, which the caller has already worked out: the price before sales tax,
 -- and for a store, its proceeds after the store's fee. Pending until the payment is more than 30 days old.
--- THE 12 MONTHS run from the household's first payment (first_payment_at, the earliest this function has seen). A
--- renewal on the anniversary is outside them, and so is one a store dates up to two days early: Apple charges a renewal
--- within the 24 hours before the period ends, and a second annual payment must not count as the first year's.
--- Answers jsonb { result }: 'recorded' (with commission_cents), 'no_creator', 'not_cad', 'creator_ended', 'own_code',
--- 'before_code' (the household had paid before the code was entered), 'outside_window', 'duplicate'.
+-- THE 12 MONTHS run from the household's first payment (first_payment_at, the earliest payment seen). A renewal on the
+-- anniversary is outside them, and so is one a store dates up to two days early: Apple charges a renewal within the 24
+-- hours before the period ends, and a second annual payment must not count as the first year's.
+-- Answers jsonb { result }: 'recorded' (with commission_cents), 'no_creator', 'partner_plan_before_join', 'not_cad',
+-- 'creator_ended', 'own_code', 'before_code' (the household had paid before the code was entered), 'outside_window',
+-- 'duplicate'.
 create or replace function public.creator_commission_record(
   p_user uuid, p_provider text, p_payment_ref text, p_original_ref text, p_payment_date timestamptz,
   p_base_cents integer, p_gross_cents integer, p_currency text)
@@ -229,19 +268,17 @@ begin
   if coalesce(p_payment_ref, '') = '' or p_payment_date is null or p_base_cents is null or p_base_cents < 0 then
     raise exception 'creator_commission_bad_payment' using errcode = 'check_violation';
   end if;
-  if upper(coalesce(p_currency, '')) <> 'CAD' then return jsonb_build_object('result', 'not_cad'); end if;
   aid := public.creator_attribution_for(p_user);
   if aid is null then return jsonb_build_object('result', 'no_creator'); end if;
-  select * into a from public.creator_attributions where id = aid for update;
+  if public.creator_partner_plan_before_join(p_user) then return jsonb_build_object('result', 'partner_plan_before_join'); end if;
+  first_at := public.creator_anchor_first_payment(aid, p_payment_date);   -- takes the attribution's lock, and is first on purpose
+  select * into a from public.creator_attributions where id = aid;
+  if upper(coalesce(p_currency, '')) <> 'CAD' then return jsonb_build_object('result', 'not_cad'); end if;
   select * into c from public.creators where id = a.creator_id;
   if c.status = 'ended_for_cause' then return jsonb_build_object('result', 'creator_ended'); end if;
   if public.creator_is_own(p_user, c.id) then return jsonb_build_object('result', 'own_code'); end if;
   select household_id into hid from public.household_members where user_id = p_user;
 
-  first_at := least(coalesce(a.first_payment_at, p_payment_date), p_payment_date);
-  if a.first_payment_at is distinct from first_at then
-    update public.creator_attributions set first_payment_at = first_at where id = a.id;
-  end if;
   if first_at < a.attributed_at then return jsonb_build_object('result', 'before_code'); end if;
   if p_payment_date >= first_at + interval '12 months' - interval '2 days' then
     return jsonb_build_object('result', 'outside_window');
@@ -309,9 +346,15 @@ begin
 end; $$;
 
 -- 5. The monthly payout ---------------------------------------------------------------------------------------------
+-- p_as_of IS THE SNAPSHOT. The report and the payout it leads to look at the same rows: those already recorded at that
+-- moment, on payments more than 30 days old at it. A payment that matures, or a refund that lands, after the report waits
+-- for next month's, whenever the payout is recorded.
+--
 -- Read only. One line per creator. Everything is a total: no household, no customer, no amount per household. A row is
 -- ready once its payment is more than 30 days old, whether or not the daily sweep has flipped it yet.
---   households_credited       how many households joined with this code (a count, never who)
+--   households_credited       how many households joined with this code: a count, never who. An account counts once its
+--                             email is confirmed; a partner's own code doesn't count while they are in a household; an
+--                             account since deleted counts if it ever paid.
 --   payable_this_month_cents  what is earned less what is to be taken back, when that reaches $25; otherwise 0
 --   carry_over_cents          the same figure when it is under $25: it rolls to next month. Below zero, it is still owed
 --                             back, and comes off later payouts (the approved terms)
@@ -326,15 +369,23 @@ language sql stable security definer set search_path = public as $$
            coalesce(sum(cc.commission_cents) filter (where cc.clawback_of is null), 0) as earned,
            coalesce(sum(cc.commission_cents) filter (where cc.clawback_of is not null), 0) as clawed
       from public.creator_commissions cc
-     where cc.payout_ref is null and cc.status <> 'paid' and cc.payment_date < p_as_of - interval '30 days'
+     where cc.payout_ref is null and cc.status <> 'paid' and cc.created_at <= p_as_of
+       and cc.payment_date < p_as_of - interval '30 days'
      group by cc.creator_id),
   young as (
     select cc.creator_id, coalesce(sum(cc.commission_cents), 0) as cents
       from public.creator_commissions cc
-     where cc.payout_ref is null and cc.status <> 'paid' and cc.payment_date >= p_as_of - interval '30 days'
+     where cc.payout_ref is null and cc.status <> 'paid' and cc.created_at <= p_as_of
+       and cc.payment_date >= p_as_of - interval '30 days'
      group by cc.creator_id),
   joined as (
-    select ca.creator_id, count(*) as households from public.creator_attributions ca group by ca.creator_id)
+    select ca.creator_id, count(*) as households
+      from public.creator_attributions ca
+      left join auth.users u on u.id = ca.user_id
+     where ca.attributed_at <= p_as_of
+       and (case when ca.user_id is null then ca.first_payment_at is not null else u.email_confirmed_at is not null end)
+       and not exists (select 1 from public.household_members m where m.user_id = ca.user_id and m.role = 'partner')
+     group by ca.creator_id)
   select c.code, c.name, c.payout_email, c.status, coalesce(j.households, 0),
          case when coalesce(r.earned, 0) + coalesce(r.clawed, 0) >= 2500 then coalesce(r.earned, 0) + coalesce(r.clawed, 0) else 0 end,
          case when coalesce(r.earned, 0) + coalesce(r.clawed, 0) >= 2500 then 0 else coalesce(r.earned, 0) + coalesce(r.clawed, 0) end,
@@ -346,22 +397,29 @@ language sql stable security definer set search_path = public as $$
    order by c.code;
 $$;
 
--- After the e-Transfer has gone: everything that payout covered is settled, under one reference. Refuses when the figure
--- is under $25, so it cannot settle a carry-over by mistake, and a second run finds nothing left.
--- Answers jsonb { result }: 'paid' (with cents, rows), 'below_minimum' (with cents), 'no_such_creator'.
-create or replace function public.creator_payout_record(p_code text, p_payout_ref text, p_as_of timestamptz default now())
+-- After the e-Transfer has gone: exactly what the report at p_as_of covered is settled, under one reference. p_expected_cents
+-- is the amount that report said and that was sent: any other figure refuses, and nothing is settled. Under $25 refuses too,
+-- so a carry-over can't be settled by mistake, and a second run finds nothing left.
+-- Answers jsonb { result }: 'paid' (with cents, rows), 'amount_changed' (with cents), 'below_minimum' (with cents),
+-- 'no_such_creator'.
+create or replace function public.creator_payout_record(p_code text, p_payout_ref text, p_expected_cents bigint, p_as_of timestamptz)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare c public.creators%rowtype; net bigint; n integer;
 begin
-  if coalesce(trim(p_payout_ref), '') = '' then raise exception 'creator_payout_ref_required' using errcode = 'check_violation'; end if;
+  if coalesce(trim(p_payout_ref), '') = '' or p_expected_cents is null or p_as_of is null then
+    raise exception 'creator_payout_needs_ref_amount_and_date' using errcode = 'check_violation';
+  end if;
   select * into c from public.creators where code = upper(trim(coalesce(p_code, ''))) for update;
   if c.id is null then return jsonb_build_object('result', 'no_such_creator'); end if;
   select coalesce(sum(commission_cents), 0) into net from public.creator_commissions
-   where creator_id = c.id and payout_ref is null and status <> 'paid' and payment_date < p_as_of - interval '30 days';
+   where creator_id = c.id and payout_ref is null and status <> 'paid' and created_at <= p_as_of
+     and payment_date < p_as_of - interval '30 days';
   if net < 2500 then return jsonb_build_object('result', 'below_minimum', 'cents', net); end if;
+  if net <> p_expected_cents then return jsonb_build_object('result', 'amount_changed', 'cents', net); end if;
   update public.creator_commissions
      set payout_ref = p_payout_ref, paid_at = now(), status = case when status = 'clawback' then 'clawback' else 'paid' end
-   where creator_id = c.id and payout_ref is null and status <> 'paid' and payment_date < p_as_of - interval '30 days';
+   where creator_id = c.id and payout_ref is null and status <> 'paid' and created_at <= p_as_of
+     and payment_date < p_as_of - interval '30 days';
   get diagnostics n = row_count;
   return jsonb_build_object('result', 'paid', 'cents', net, 'rows', n);
 end; $$;
@@ -371,28 +429,34 @@ revoke all on function public.creator_email_key(text) from public, anon, authent
 revoke all on function public.creator_is_own(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.creator_attribution_for(uuid) from public, anon, authenticated;
 revoke all on function public.creator_add_refused(uuid) from public, anon, authenticated;
-revoke all on function public.creator_code_check(text, text) from public, anon, authenticated;
+revoke all on function public.creator_code_check(text) from public, anon, authenticated;
 revoke all on function public.creator_attribute(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.creator_status(uuid) from public, anon, authenticated;
 revoke all on function public.creator_for_payer(uuid) from public, anon, authenticated;
+revoke all on function public.creator_partner_plan_before_join(uuid) from public, anon, authenticated;
+revoke all on function public.creator_anchor_first_payment(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public.creator_first_payment_seen(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text) from public, anon, authenticated;
 revoke all on function public.creator_commission_clawback(text, text, text, timestamptz, integer) from public, anon, authenticated;
 revoke all on function public.creator_commissions_mature(timestamptz) from public, anon, authenticated;
 revoke all on function public.creator_payout_report(timestamptz) from public, anon, authenticated;
-revoke all on function public.creator_payout_record(text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.creator_payout_record(text, text, bigint, timestamptz) from public, anon, authenticated;
 grant execute on function public.creator_email_key(text) to service_role;
 grant execute on function public.creator_is_own(uuid, uuid) to service_role;
 grant execute on function public.creator_attribution_for(uuid) to service_role;
 grant execute on function public.creator_add_refused(uuid) to service_role;
-grant execute on function public.creator_code_check(text, text) to service_role;
+grant execute on function public.creator_code_check(text) to service_role;
 grant execute on function public.creator_attribute(uuid, text, text) to service_role;
 grant execute on function public.creator_status(uuid) to service_role;
 grant execute on function public.creator_for_payer(uuid) to service_role;
+grant execute on function public.creator_partner_plan_before_join(uuid) to service_role;
+grant execute on function public.creator_anchor_first_payment(uuid, timestamptz) to service_role;
+grant execute on function public.creator_first_payment_seen(uuid, timestamptz) to service_role;
 grant execute on function public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text) to service_role;
 grant execute on function public.creator_commission_clawback(text, text, text, timestamptz, integer) to service_role;
 grant execute on function public.creator_commissions_mature(timestamptz) to service_role;
 grant execute on function public.creator_payout_report(timestamptz) to service_role;
-grant execute on function public.creator_payout_record(text, text, timestamptz) to service_role;
+grant execute on function public.creator_payout_record(text, text, bigint, timestamptz) to service_role;
 
 -- READ-ONLY CHECK (after running): RLS on all three; anon and a signed-in user reach no table and no function; the
 -- server does.
@@ -407,15 +471,18 @@ grant execute on function public.creator_payout_record(text, text, timestamptz) 
 -- Expected after: true, false, false, false, false, false, false, true.
 
 -- ROLLBACK (only before any creator has a row that matters):
--- drop function if exists public.creator_payout_record(text, text, timestamptz);
+-- drop function if exists public.creator_payout_record(text, text, bigint, timestamptz);
 -- drop function if exists public.creator_payout_report(timestamptz);
 -- drop function if exists public.creator_commissions_mature(timestamptz);
 -- drop function if exists public.creator_commission_clawback(text, text, text, timestamptz, integer);
 -- drop function if exists public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text);
+-- drop function if exists public.creator_first_payment_seen(uuid, timestamptz);
+-- drop function if exists public.creator_anchor_first_payment(uuid, timestamptz);
+-- drop function if exists public.creator_partner_plan_before_join(uuid);
 -- drop function if exists public.creator_for_payer(uuid);
 -- drop function if exists public.creator_status(uuid);
 -- drop function if exists public.creator_attribute(uuid, text, text);
--- drop function if exists public.creator_code_check(text, text);
+-- drop function if exists public.creator_code_check(text);
 -- drop function if exists public.creator_add_refused(uuid);
 -- drop function if exists public.creator_attribution_for(uuid);
 -- drop function if exists public.creator_is_own(uuid, uuid);

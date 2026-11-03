@@ -2,8 +2,9 @@
 // -----------------------------------------------------------------------------
 // A CREATOR'S LINK ON A COMPUTER (flourishmoney.app/get?c=CODE, public/get/get.js): the website's link on that page carries
 // the code to /?c=CODE, and the web sign-up form starts with it filled in. It is held for this tab only while the person
-// finds their way to the form (sessionStorage, never synced), and it leaves the address bar at once. It is a suggestion to
-// a form: the server checks whatever is sent (netlify/functions/beta.js), and a code gives nobody a discount.
+// finds their way to the form (sessionStorage, never synced), and it leaves the address bar once the app knows the program is
+// on. With the program off nothing is touched. It is a suggestion to a form: the server checks whatever is sent
+// (netlify/functions/beta.js), and a code gives nobody a discount.
 // -----------------------------------------------------------------------------
 
 const KEY = "flourish_creator_code";

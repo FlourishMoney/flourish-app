@@ -1,7 +1,7 @@
 // tests/creators.browser.test.cjs
 // -----------------------------------------------------------------------------
 // THE CREATOR CODE IN A REAL BROWSER: the app built as it ships, on a stand-in server.
-//   1  the program off (/api/creator answers 404): no field, nothing sent, and a code in the address leaves it
+//   1  the program off (/api/creator answers 404): no field, nothing sent, and a code in the address touched by nothing
 //   2  on: a creator's link starts the sign-up field filled in, the code goes with the sign-up, and a refusal shows its line
 //   3  Settings: the card shows only while a code can be added; adding one; a wrong code
 //   4  /get?c=CODE: on a computer the website's link carries it; on a phone the store redirect is exactly as it was
@@ -92,7 +92,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await page.waitForTimeout(400);
       t.eq(await page.locator(FIELD).count(), 0, "1a off: no field on the sign-up form");
       t.ok(!(await page.content()).includes("[WORDS:"), "1b off: no placeholder anywhere on the page");
-      t.ok(!page.url().includes("c="), "1c a code in the address leaves it");
+      t.ok(page.url().includes("c=alice") && (await page.evaluate(() => sessionStorage.getItem("flourish_creator_code"))) === null, "1c off: the address and the tab are left exactly as they were");
       await fillAccount(page);
       await submit(page);
       await page.getByText("Check your email", { exact: false }).first().waitFor();

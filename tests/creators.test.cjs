@@ -167,9 +167,10 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       let D = makeDb({ answers: { creator_code_check: { result: "invalid" } } });
       let r = await signup(D, { creator_code: "WRONG" });
       t.eq([r.body.error, D.db.created.length, callsTo(D, "creator_attribute").length], ["creator_code_invalid", 0, 0], "2a a wrong code: refused before any account exists");
-      D = makeDb({ answers: { creator_code_check: { result: "invalid" } } });
+      D = makeDb({ answers: { creator_code_check: { result: "ok" }, creator_attribute: { result: "invalid" } } });
       r = await signup(D, { creator_code: "MINE", email: "creator@example.test" });
-      t.eq([r.body.error, callsTo(D, "creator_code_check")[0]], ["creator_code_invalid", { p_code: "MINE", p_email: "creator@example.test" }], "2b a creator's own code: the database compares the address it is given, and the answer is the same as a wrong code's");
+      t.eq([r.body.ok, r.body.error, callsTo(D, "creator_code_check")[0], D.db.created.length], [true, undefined, { p_code: "MINE" }, 1],
+        "2b a creator's own code: sign-up asks about the code alone, so the answer can't test a guessed address; the account is made, and the database puts no code on it");
       D = ok();
       r = await signup(D, { creator_code: "a b" });
       t.eq([r.body.error, creatorCalls(D).length, D.db.created.length], ["creator_code_invalid", 0, 0], "2c something that could not be a code: refused without asking");
@@ -249,6 +250,7 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       D = attributed();
       await stripeEvent(D, "evt_null", "invoice.paid", invoice({ id: "in_u", total_excluding_tax: null }));
       t.eq([callsTo(D, "creator_commission_record").length, D.db.alerts.map((a) => a.flag), /creator_amounts_unknown/.test(noteOn(D, "evt_null"))], [0, ["creator_amounts_unknown"], true], "4i a price before tax it can't read: no commission, a guess never, and a note for support");
+      t.eq(callsTo(D, "creator_first_payment_seen")[0], { p_user: uid(1), p_when: new Date((T - 60) * 1000).toISOString() }, "4i2 …and the 12 months still start: next year's renewal can't be a fresh first payment");
       D = attributed({ answers: { creator_for_payer: false } });
       await stripeEvent(D, "evt_none", "invoice.paid", invoice({ id: "in_o", total_excluding_tax: null }));
       t.eq([callsTo(D, "creator_commission_record").length, D.db.alerts.length], [0, 0], "4j an account with no creator: nothing recorded, nothing to report");
@@ -313,6 +315,7 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       D = paid();
       await rcEvent(D, storeEvt({ tax_percentage: null }));
       t.ok(/creator_amounts_unknown/.test(noteOn(D, "rc:rc-txn_1")), "6f …written on the event's own record too");
+      t.eq(callsTo(D, "creator_first_payment_seen")[0], { p_user: uid(1), p_when: new Date(NOW - 60000).toISOString() }, "6f2 …and the 12 months still start");
       D = paid();
       await rcEvent(D, storeEvt({ environment: "SANDBOX" }));
       t.eq([callsTo(D, "creator_commission_record").length, D.db.alerts.length, creatorCalls(D).length], [0, 0, 0], "6g a sandbox purchase earns nothing, and nothing is even asked");

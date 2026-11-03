@@ -576,15 +576,16 @@ async function handle(event) {
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
     // THE CREATOR CODE (optional; behind CREATORS_ENABLED; docs/product/CREATOR-PROGRAM-SPEC.md). Checked before an
-    // account exists, so a typo costs nothing: wrong, ended and the creator's own all answer the same. The rate limit
-    // above has already counted this try. If the check itself fails, the person is told and nothing is created: they can
-    // try again, or leave the field empty.
+    // account exists, so a typo costs nothing: a wrong code and an ended creator's answer the same. It is asked about the
+    // code only, so this answer can't test whether an address is a creator's: a creator using their own code gets an
+    // account and no attribution (creator_attribute, below). The rate limit above has already counted this try. If the check
+    // itself fails, the person is told and nothing is created: they can try again, or leave the field empty.
     let creatorCode = null;
     if (creatorsEnabled() && creatorCodeTyped(body.creator_code)) {
       creatorCode = cleanCreatorCode(body.creator_code);
       if (!creatorCode) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_invalid" }) };
       try {
-        if (await checkCreatorCode(admin, creatorCode, email) !== "ok") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_invalid" }) };
+        if (await checkCreatorCode(admin, creatorCode) !== "ok") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_invalid" }) };
       } catch (e) {
         console.error("[beta:signup] creator code check failed:", e.message);
         return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_unavailable" }) };

@@ -11,13 +11,15 @@ The code is 3 to 20 capitals and digits. Their link is `https://flourishmoney.ap
 To end a partnership, set `status`: `'ended'` (they keep earning on households already credited) or `'ended_for_cause'` (fraud, spam or a serious breach: nothing further).
 
 ## Each month
+Pick one moment for the whole run, and use it in both steps. A payment that matures, or a refund that lands, after it waits for next month.
+
 **1. The report (read only).**
 ```sql
-select * from public.creator_payout_report();
+select * from public.creator_payout_report('2026-12-01 09:00:00-05');
 ```
 | Column | What it is |
 |---|---|
-| `households_credited` | How many households joined with this code. A count, never who. |
+| `households_credited` | How many households joined with this code. A count, never who. An account counts once its email is confirmed. A partner's own code doesn't count while they are in a household. |
 | `payable_this_month_cents` | Earned on payments more than 30 days old, less clawbacks, once that reaches $25. Otherwise 0. |
 | `carry_over_cents` | The same figure when it is under $25: it rolls to next month. **Below zero** it is still owed back, and comes off later payouts. |
 | `clawbacks_cents` | The refunds already counted in those two figures (zero or negative). |
@@ -27,9 +29,9 @@ Check `status` before paying an `ended_for_cause` creator: the terms stop furthe
 
 **2. Pay** each creator with `payable_this_month_cents` above 0, by Interac e-Transfer.
 
-**3. Record each payout**, with your own reference. It settles what that payout covered, refuses under $25, and a second run finds nothing left.
+**3. Record each payout**, with your own reference, the amount you sent in cents, and the same moment. It settles exactly what that report covered. It answers `amount_changed` and settles nothing if the amount doesn't match, and `below_minimum` under $25. A second run finds nothing left.
 ```sql
-select public.creator_payout_record('ALICE', 'etransfer-2026-12');
+select public.creator_payout_record('ALICE', 'etransfer-2026-12', 4000, '2026-12-01 09:00:00-05');
 ```
 
 ## What a creator is told
