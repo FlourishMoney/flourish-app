@@ -232,7 +232,7 @@ const playFor = (source) => `${PLAY}&referrer=utm_source%3D${source}%26utm_mediu
     }
   }
   // Near misses are like any other ref: no campaign link, and Play's referrer as in section 7.
-  for (const miss of ["shop-kingston", "SHOP-TRENTON", "shop-trenton2"]) {
+  for (const miss of ["shop-trenton", "shop-napanee", "shop-belleville", "shop-kingston-counter", "SHOP-TRENTON-COUNTER", "shop-trenton-counter2"]) {
     const i = await open({ ua: UA.iphone });
     await i.page.goto(`${base}/get?ref=${miss}`);
     await i.page.waitForURL(APP_STORE);

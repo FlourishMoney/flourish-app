@@ -2,8 +2,8 @@
 -- -----------------------------------------------------------------------------
 -- THE THREE SHOP QR CODES (2026-11-02). NOT APPLIED.
 --
--- WAITLIST_SRCS (_lib/waitlistConsent.js) gains shop-trenton, shop-napanee and shop-belleville. Two things in the
--- database hold their own copy of that list, and this brings both up to date:
+-- WAITLIST_SRCS (_lib/waitlistConsent.js) gains six tags, a counter and a bag QR code for each of Trenton, Napanee
+-- and Belleville. Two things in the database hold their own copy of that list, and this brings both up to date:
 --   waitlist_signup_counts   (0018) would count the shops' signups as "direct"
 --   landing_counts           (0027) would refuse the shops' counts, so they would be lost
 --
@@ -23,7 +23,7 @@ security invoker
 set search_path = public
 as $$
   with sources(source) as (
-    values ('direct'), ('ig'), ('fb'), ('tt'), ('calendar'), ('clawback'), ('email'), ('press'), ('meta_a'), ('meta_b'), ('shop-trenton'), ('shop-napanee'), ('shop-belleville')
+    values ('direct'), ('ig'), ('fb'), ('tt'), ('calendar'), ('clawback'), ('email'), ('press'), ('meta_a'), ('meta_b'), ('shop-trenton-counter'), ('shop-trenton-bag'), ('shop-napanee-counter'), ('shop-napanee-bag'), ('shop-belleville-counter'), ('shop-belleville-bag')
   ),
   days(day) as (
     select generate_series(p_from, p_to, interval '1 day')::date
@@ -52,7 +52,7 @@ begin
   if to_regclass('public.landing_counts') is not null then
     alter table public.landing_counts drop constraint if exists landing_counts_src_check;
     alter table public.landing_counts add constraint landing_counts_src_check
-      check (src in ('direct','ig','fb','tt','calendar','clawback','email','press','meta_a','meta_b','shop-trenton','shop-napanee','shop-belleville'));
+      check (src in ('direct','ig','fb','tt','calendar','clawback','email','press','meta_a','meta_b','shop-trenton-counter','shop-trenton-bag','shop-napanee-counter','shop-napanee-bag','shop-belleville-counter','shop-belleville-bag'));
   end if;
 end $$;
 

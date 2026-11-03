@@ -1,6 +1,6 @@
 // src/lib/waitlistSrc.js
 // THE CAMPAIGN A VISITOR ARRIVED FROM. The campaign links carry ?src= (ig, fb, tt, calendar, clawback,
-// email, press, shop-trenton, shop-napanee, shop-belleville). It is read when the page loads and kept for the browser session, so a visitor who
+// email, press, and the shop-*-counter and shop-*-bag QR codes). It is read when the page loads and kept for the browser session, so a visitor who
 // reloads, or wanders the page before joining, is still credited to the link they came from. A later
 // link with its own ?src= replaces it. Storage can be unavailable (private windows, blocked site data),
 // so every access is guarded and the join simply goes without a src; the server then stores "direct".

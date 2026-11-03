@@ -26,7 +26,7 @@ const { WAITLIST_SRCS } = require("../netlify/functions/_lib/waitlistConsent");
   const listed = [...(/values\s*([\s\S]*?)\),\s*days/.exec(fn) || ["", ""])[1].matchAll(/'([a-z_-]+)'/g)].map(m => m[1]);
   t.eq([...listed].sort(), ["direct", ...WAITLIST_SRCS].sort(), "1a the report lists every WAITLIST_SRCS value and \"direct\", no more and no fewer");
   t.ok(listed.includes("meta_a") && listed.includes("meta_b"), "1b …meta_a and meta_b included");
-  for (const shop of ["shop-trenton", "shop-napanee", "shop-belleville"]) t.ok(listed.includes(shop), `1b2 …${shop} included`);
+  for (const shop of ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"]) t.ok(listed.includes(shop), `1b2 …${shop} included`);
   t.ok(/case when lower\(trim\(coalesce\(w\.source, ''\)\)\) in \(select source from sources\)\s+then lower\(trim\(w\.source\)\) else 'direct' end as source/.test(fn),
     "1c a null, blank or unrecognised source is counted as direct, not dropped");
   t.ok(/cross join sources s/.test(fn) && /left join rows_ r/.test(fn) && /count\(r\.day\)::integer as signups/.test(fn), "1d every day and every source gets a row, zeros included");

@@ -369,7 +369,7 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       t.eq(u.app_metadata, { email_confirmation: "link" }, `${label}: app_metadata says only how the address is confirmed`);
       t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_platform", "signup_source", "signup_src"], `${label}: and metadata carries only the labels`);
       t.eq(u.user_metadata.signup_platform, "web", `${label}: a signup from the website is labelled "web" (the confirmation link carries it on into the app)`);
-      t.ok(["direct", "ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", "shop-trenton", "shop-napanee", "shop-belleville"].includes(u.user_metadata.signup_src), `${label}: signup_src is a known src or "direct", never free text`);
+      t.ok(["direct", "ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", "shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"].includes(u.user_metadata.signup_src), `${label}: signup_src is a known src or "direct", never free text`);
       const meta = JSON.stringify(u.user_metadata);
       t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);
     }

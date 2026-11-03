@@ -16,8 +16,8 @@ const path = require("path");
 
 const REPO = path.join(__dirname, "..");
 const BETA = path.join(REPO, "netlify", "functions", "beta.js");
-const SHOPS = ["shop-trenton", "shop-napanee", "shop-belleville"];
-const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", ...SHOPS];;
+const SHOPS = ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"];
+const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", ...SHOPS];
 
 async function join(extra) {
   process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -115,7 +115,7 @@ function fakeStorage() {
       t.eq([r.status, r.row && r.row.source], [200, src], `5c ${src}: after the reload the signup is stored with source "${src}"`);
       t.eq((await join({ src: ` ${src.toUpperCase()} ` })).row.source, src, `5d ${src}: case and surrounding spaces do not make it unknown`);
     }
-    for (const src of ["shop-kingston", "shop", "shop-trenton2", "shop_trenton", "shop-trenton <b>"]) {
+    for (const src of ["shop-trenton", "shop-napanee", "shop-belleville", "shop-kingston-counter", "shop-trenton-till", "shop", "shop-trenton-counter2", "shop_trenton_counter", "shop-trenton-counter <b>"]) {
       t.eq((await join({ src })).row.source, "direct", `5e "${src}" is not a shop tag: stored as "direct", never free text`);
     }
   }

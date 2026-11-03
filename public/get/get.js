@@ -12,7 +12,7 @@
 // THE PLAY REFERRER (2026-11-02). Android's link carries referrer=utm_source=<ref>&utm_medium=social&utm_campaign=founding.
 // The address is anyone's to type, so only a plain short word goes on to Google; anything else is "other".
 //
-// THE SHOP QR CODES (2026-11-02). ?ref=shop-trenton, shop-napanee or shop-belleville, exactly: both badges carry the
+// THE SHOP QR CODES (2026-11-02). ?ref= one of the six shop tags below, exactly: both badges carry the
 // tag (Apple's campaign link, a Play referrer with utm_medium=qr and utm_campaign=shop, the same links as
 // src/lib/storeLinks.js), and a phone goes to its badge's link. Every other ref is as above.
 //
@@ -34,7 +34,7 @@
   var ref = params.get("ref") === "founding" ? "founding" : "other";
   var rawRef = params.get("ref") || "";
   var source = /^[A-Za-z0-9_-]{1,40}$/.test(rawRef) ? rawRef : "other";
-  var SHOP_TAGS = ["shop-trenton", "shop-napanee", "shop-belleville"];
+  var SHOP_TAGS = ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"];
   var shop = SHOP_TAGS.indexOf(rawRef) >= 0 ? rawRef : "";
   var APPLE_PROVIDER_TOKEN = "128816288";
 

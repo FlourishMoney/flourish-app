@@ -7,7 +7,7 @@
 // "Google Play Badge guidelines"; English, there is no Canadian variant), both in public/store-badges/.
 // tests/landingStoreBadges.test.cjs pins the links, the words, the files and where they show.
 //
-// THE SHOP QR CODES (2026-11-02). A visit from ?src=shop-trenton, shop-napanee or shop-belleville gets badges that
+// THE SHOP QR CODES (2026-11-02). A visit from ?src= one of the six shop tags (each shop's counter and bag) gets badges that
 // carry the tag: Apple's campaign link (pt, our provider, and ct, the tag) and a Play referrer. Every other visit,
 // the other campaigns included, gets the plain links. Nothing personal goes in either: only the tag.
 // -----------------------------------------------------------------------------
@@ -15,7 +15,7 @@
 export const APP_STORE_URL = "https://apps.apple.com/ca/app/flourish-money-handled/id6792967778";
 export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.flourishmoney.app";
 
-export const STORE_CAMPAIGN_SRCS = Object.freeze(["shop-trenton", "shop-napanee", "shop-belleville"]);
+export const STORE_CAMPAIGN_SRCS = Object.freeze(["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"]);
 // The App Store Connect provider of the developer account that ships Flourish.
 const APPLE_PROVIDER_TOKEN = "128816288";
 
