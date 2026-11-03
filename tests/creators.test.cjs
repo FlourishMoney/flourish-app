@@ -12,7 +12,7 @@
 //   6  the stores: the base is proceeds after the store's fee; null percentages, sandbox and Family Sharing earn nothing
 //   7  store refunds, and a refund the store takes back
 //   8  the sweep
-//   9  the words: every line listed, each its own placeholder, in one file, and the production guard refuses them
+//   9  the words: every line listed, in one file, the same in the code and the doc, within its limit, none left a placeholder
 //  10  the code on a computer: the form's starting value, and the address it leaves
 // -----------------------------------------------------------------------------
 "use strict";
@@ -395,21 +395,28 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       const PW = require("./_pendingWords.cjs");
       const doc = read("docs", "product", "CREATOR-PROGRAM-WORDS.md");
       const rows = [...doc.matchAll(/^\| `(creator-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)];
-      const { errors, ...plain } = W.CREATOR_WORDS;
-      const inCode = [...Object.values(plain), ...Object.values(errors)];
-      t.eq(rows.map((r) => r[1]).sort(), PW.placeholders(inCode.join(" ")).sort(), "9a the list and the code name the same ids, each once");
+      const { errors } = W.CREATOR_WORDS;
+      const inCode = {
+        "creator-signup-label": W.CREATOR_WORDS.signupLabel, "creator-signup-hint": W.CREATOR_WORDS.signupHint,
+        "creator-settings-title": W.CREATOR_WORDS.settingsTitle, "creator-settings-body": W.CREATOR_WORDS.settingsBody,
+        "creator-settings-button": W.CREATOR_WORDS.settingsButton, "creator-settings-added": W.CREATOR_WORDS.settingsAdded,
+        "creator-code-invalid": errors.creator_code_invalid, "creator-code-closed": errors.creator_code_closed, "creator-code-unavailable": errors.creator_code_unavailable,
+      };
+      t.eq(rows.map((r) => r[1]).sort(), Object.keys(inCode).sort(), "9a the list and the code name the same ids, each once");
       t.eq(rows.length, 9, "9b nine lines");
-      t.eq(rows.filter((r) => r[4].trim() !== `[WORDS: ${r[1]}]`).map((r) => r[1]), [], "9c each line in the doc is its own placeholder");
-      t.eq(inCode.filter((w) => !/^\[WORDS: creator-[a-z0-9-]+\]$/.test(w)), [], "9d each line in the code is one, and nothing else");
+      t.eq(rows.filter((r) => r[4].trim() !== inCode[r[1]]).map((r) => r[1]), [], "9c each line in the code is the doc's approved line, word for word");
+      t.eq(rows.filter((r) => r[4].trim().length > Number(r[5])).map((r) => r[1]), [], "9d each line is within its limit");
       t.eq(rows.filter((r) => !(r[2].trim().length >= 10 && r[3].trim().length >= 10 && Number(r[5]) > 0)).map((r) => r[1]), [], "9e each row says where it shows, its facts and its limit");
-      t.eq(PW.pendingCreatorWordIds().sort(), rows.map((r) => r[1]).sort(), "9f the exception covers exactly these");
+      t.eq(Object.values(inCode).filter((w) => /[—$]|discount/i.test(w)), [], "9e2 the house rules: no em dash, no price, no \"discount\"");
+      t.eq([PW.pendingCreatorWordIds(), PW.placeholders(`${read("src", "lib", "creatorWords.js")} ${doc}`)], [[], []], "9f no placeholder is left in the words file or the doc, so the exception covers nothing");
       t.eq([W.creatorErrorLine("creator_code_invalid"), W.creatorErrorLine("creator_code_closed"), W.creatorErrorLine("email_exists")], [errors.creator_code_invalid, errors.creator_code_closed, null], "9g a server's code finds its line; anything else is not this module's");
       t.eq([PW.strayPlaceholders("[WORDS: trial-link]", "src/lib/creatorWords.js"), PW.strayPlaceholders("[WORDS: creator-signup-label]", "src/App.jsx"), PW.strayPlaceholders("[WORDS: creator-signup-label]", "src/lib/creatorWords.js")],
-        [["trial-link"], ["creator-signup-label"], []], "9h the exception is narrow: another id, or this id anywhere else, still fails");
-      let guard = 0, said = "";
-      try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "creatorWords.js")], { stdio: "pipe" }); } catch (e) { guard = e.status; said = String(e.stderr || ""); }
-      t.ok(guard === 1 && /creator-signup-label/.test(said), "9i the production build's guard refuses them");
-      t.eq(PW.placeholders(read("src", "App.jsx")), [], "9j none is written into App.jsx: the lines come from the words file");
+        [["trial-link"], ["creator-signup-label"], ["creator-signup-label"]], "9h a placeholder now fails everywhere, this id in the words file too");
+      let guard = 0;
+      try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "creatorWords.js")], { stdio: "pipe" }); } catch (e) { guard = e.status; }
+      t.eq(guard, 0, "9i the production build's guard passes the words file");
+      const app = read("src", "App.jsx");
+      t.eq([PW.placeholders(app), Object.values(inCode).filter((w) => app.includes(w))], [[], []], "9j none is written into App.jsx: the lines come from the words file");
     }
 
     // 10 ── THE CODE ON A COMPUTER ───────────────────────────────────────────────────────────────────────────────

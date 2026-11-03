@@ -4,22 +4,21 @@
 // docs/product/CREATOR-PROGRAM-WORDS.md lists each id: where it shows, the facts it must state, the approved line and its
 // limit; tests/creators.test.cjs holds the two together.
 //
-// NOT WRITTEN YET. Each line is its own "[WORDS: …]" placeholder until it is approved, and nothing ships with one:
-// scripts/check-pending-words.mjs refuses the production web build (netlify.toml) and every store build (npm run
-// build:native). The app shows none of them while CREATORS_ENABLED is off.
+// APPROVED 2026-11-03, copied exactly. Change a line only with a new approval. The app shows none of them while
+// CREATORS_ENABLED is off.
 // -----------------------------------------------------------------------------
 
 export const CREATOR_WORDS = Object.freeze({
-  signupLabel: "[WORDS: creator-signup-label]",
-  signupHint: "[WORDS: creator-signup-hint]",
-  settingsTitle: "[WORDS: creator-settings-title]",
-  settingsBody: "[WORDS: creator-settings-body]",
-  settingsButton: "[WORDS: creator-settings-button]",
-  settingsAdded: "[WORDS: creator-settings-added]",
+  signupLabel: "Creator code (optional)",
+  signupHint: "Tells us which creator sent you. It doesn't change what you pay.",
+  settingsTitle: "Creator code",
+  settingsBody: "If a creator sent you, add their code within 14 days of sign-up, before your first payment. One code per household. Price stays the same.",
+  settingsButton: "Add code",
+  settingsAdded: "Creator code added. Thanks for telling us who sent you.",
   errors: Object.freeze({
-    creator_code_invalid: "[WORDS: creator-code-invalid]",
-    creator_code_closed: "[WORDS: creator-code-closed]",
-    creator_code_unavailable: "[WORDS: creator-code-unavailable]",
+    creator_code_invalid: "That code doesn't work. Check it, or leave it blank. Nothing changed.",
+    creator_code_closed: "A creator code can't be added to this household now.",
+    creator_code_unavailable: "We couldn't check that code just now. Nothing changed. Try again, or leave it blank.",
   }),
 });
 

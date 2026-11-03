@@ -34,13 +34,13 @@ No table or function is reachable by anyone signed in, or by anon. A creator is 
 ## Files
 - **Migration:** `supabase/migrations/*_creator_program.sql`: `creators`, `creator_attributions`, `creator_commissions`, and the rules as functions.
 - **Server:** `netlify/functions/_lib/creators.js`, `creator.js` (`/api/creator`), `creator-commissions-sweep.js`; hooks in `beta.js`, `stripe-webhook.js`, `revenuecat-webhook.js`; new flags in `_lib/supportAlert.js`.
-- **App:** `src/lib/creatorWords.js` (the words, all placeholders), `src/lib/creatorCode.js`, the sign-up field and `CreatorCodeCard` in `App.jsx`, `public/get/get.js`.
+- **App:** `src/lib/creatorWords.js` (the approved words), `src/lib/creatorCode.js`, the sign-up field and `CreatorCodeCard` in `App.jsx`, `public/get/get.js`.
 - **Words:** `docs/product/CREATOR-PROGRAM-WORDS.md`. **Monthly routine:** `docs/ops/CREATOR-PAYOUTS.md`.
 - **Tests:** `tests/creators.sql.test.cjs` (real Postgres), `tests/creators.test.cjs`, `tests/creators.browser.test.cjs`.
 
 ## Going live, in order
-1. Get the words approved and swap them into `src/lib/creatorWords.js` and the words doc. The production deploy and store builds refuse placeholders, so **this PR can't deploy until then**.
-2. Run the migration.
+1. Run the migration.
+2. Check the `shop-source-tags` PR (#114) has merged, and main is merged in here.
 3. Check RevenueCat's App Store fee setting: it reports 30% today, Google Play 15%. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
 4. Merge, and deploy. Add `invoice.paid` to the Stripe endpoint.
 5. Set `CREATORS_ENABLED=true` in production and redeploy.

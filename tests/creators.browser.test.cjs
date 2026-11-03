@@ -41,6 +41,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"],
     { cwd: ROOT, stdio: "pipe", env: { ...process.env, VITE_SUPABASE_URL: base, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" } });
   const browser = await playwright.chromium.launch();
+  const W = (await import("../src/lib/creatorWords.js")).CREATOR_WORDS;
 
   const open = async ({ on = false, width = 390, ua, signedIn = false, status = { enabled: true, may_add: true }, addAnswer } = {}) => {
     const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(ua ? { userAgent: ua } : {}), colorScheme: "light" });
@@ -91,7 +92,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSignup(page);
       await page.waitForTimeout(400);
       t.eq(await page.locator(FIELD).count(), 0, "1a off: no field on the sign-up form");
-      t.ok(!(await page.content()).includes("[WORDS:"), "1b off: no placeholder anywhere on the page");
+      t.ok(!(await page.content()).includes(W.signupHint) && !(await page.content()).includes(W.signupLabel), "1b off: none of the program's words on the page");
       t.ok(page.url().includes("c=alice") && (await page.evaluate(() => sessionStorage.getItem("flourish_creator_code"))) === null, "1c off: the address and the tab are left exactly as they were");
       await fillAccount(page);
       await submit(page);
@@ -110,14 +111,14 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSignup(page);
       await page.locator(FIELD).waitFor();
       t.eq(await page.locator(FIELD).inputValue(), "ALICE", "2c a creator's link starts the field filled in");
-      t.ok((await page.locator('[data-creator-field]').innerText()).includes("[WORDS: creator-signup-hint]"), "2d the words shown are the module's own (placeholders until approved)");
+      t.eq([(await page.locator('[data-creator-field]').innerText()).includes(W.signupHint), await page.locator(FIELD).getAttribute("aria-label"), await page.locator(FIELD).getAttribute("placeholder")], [true, W.signupLabel, W.signupLabel], "2d the words shown are the module's own");
       await page.locator(FIELD).fill("wrong");
       t.eq(await page.locator(FIELD).inputValue(), "WRONG", "2e what is typed shows in capitals");
       await fillAccount(page);
       await submit(page);
-      await page.getByRole("alert").filter({ hasText: "[WORDS: creator-code-invalid]" }).waitFor();
+      await page.getByRole("alert").filter({ hasText: W.errors.creator_code_invalid }).waitFor();
       t.eq(sent.signup[0].creator_code, "WRONG", "2f the code goes with the sign-up");
-      t.ok((await page.getByRole("alert").first().innerText()).includes("[WORDS: creator-code-invalid]"), "2g a refused code shows its line, and the form stays");
+      t.ok((await page.getByRole("alert").first().innerText()).includes(W.errors.creator_code_invalid), "2g a refused code shows its line, and the form stays");
       await page.locator(FIELD).fill("");
       await submit(page);
       await page.getByText("Check your email", { exact: false }).first().waitFor();
@@ -147,12 +148,12 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSettings(page);
       const card = page.locator("[data-creator-card]");
       await card.waitFor();
-      t.ok((await card.innerText()).includes("[WORDS: creator-settings-body]"), "3a while a code can be added, Settings shows the card");
+      t.ok((await card.innerText()).includes(W.settingsBody) && (await card.innerText()).includes(W.settingsTitle) && (await card.getByRole("button", { name: W.settingsButton }).count()) === 1, "3a while a code can be added, Settings shows the card");
       await card.locator("input").fill("alice");
       await card.getByRole("button").click();
       await page.locator("[data-creator-added]").waitFor();
       t.eq(sent.add, [{ action: "add", code: "ALICE" }], "3b adding sends the code");
-      t.ok((await page.locator("[data-creator-added]").innerText()).includes("[WORDS: creator-settings-added]"), "3c …and the card says it is done");
+      t.ok((await page.locator("[data-creator-added]").innerText()).includes(W.settingsAdded), "3c …and the card says it is done");
       await ctx.close();
     }
     {
@@ -163,7 +164,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await card.locator("input").fill("nope");
       await card.getByRole("button").click();
       await card.getByRole("alert").waitFor();
-      t.ok((await card.getByRole("alert").innerText()).includes("[WORDS: creator-code-invalid]"), "3d a wrong code shows its line, and the card stays");
+      t.ok((await card.getByRole("alert").innerText()).includes(W.errors.creator_code_invalid), "3d a wrong code shows its line, and the card stays");
       await ctx.close();
     }
     {
@@ -217,6 +218,17 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await page.locator(FIELD).waitFor();
       const box = await page.locator(FIELD).boundingBox();
       t.ok(box && box.x >= 0 && box.x + box.width <= 320 && box.height >= 40, "5a at 320px the field fits and can be tapped");
+      const fits = (p, sel) => p.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; }, sel);
+      t.ok(await fits(page, "[data-creator-field]"), "5b …and the approved hint wraps inside the screen, with nothing to scroll sideways");
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await open({ on: true, signedIn: true, width: 320 });
+      await page.goto(`${base}/`);
+      await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+      await page.locator("[data-creator-card]").waitFor();
+      const r = await page.evaluate(() => { const c = document.querySelector("[data-creator-card]"); const b = c.getBoundingClientRect(); return { inside: b.left >= 0 && b.right <= innerWidth, sideways: document.documentElement.scrollWidth > innerWidth, clipped: [...c.querySelectorAll("div,button")].some((e) => e.scrollWidth > e.clientWidth + 1) }; });
+      t.eq(r, { inside: true, sideways: false, clipped: false }, "5c at 320px the Settings card and its approved line fit, with nothing cut off");
       await ctx.close();
     }
   } catch (e) {
