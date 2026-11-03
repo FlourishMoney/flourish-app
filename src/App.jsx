@@ -77,7 +77,7 @@ import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/fea
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
-import { STORE_BADGES } from "./lib/storeLinks.js";
+import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
@@ -15471,11 +15471,13 @@ function FoundingCard({ pill = true }) {
 
 // The App Store and Google Play badges (lib/storeLinks.js), on the website only: a store app never shows the
 // landing page, and this renders nothing there even if it ever did. Each opens the store in a new tab.
+// A visit from a shop's QR code carries its tag to the store. The ?src= is read here, not from the session alone,
+// because this first draws before the landing's own effect has kept it.
 function StoreBadges(){
   if (isNativeApp()) return null;
   return (
     <div className="fll-stores">
-      {STORE_BADGES.map((b) => (
+      {storeBadgesFor(captureWaitlistSrc()).map((b) => (
         <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer"
           onClick={() => track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" })}>
           <img src={b.src} alt={b.alt} width={b.width} height={b.height} />

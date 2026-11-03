@@ -95,7 +95,9 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   const m = read("supabase", "migrations", "0027_landing_counts.sql");
   const cols = ((m.match(/create table if not exists public\.landing_counts \(([\s\S]*?)\n\);/) || [])[1] || "").split("\n").map(l => (l.trim().match(/^([a-z_]+)\s/) || [])[1]).filter(c => c && c !== "primary");
   t.eq(cols, ["day", "src", "device", "event", "n", "updated_at"], "4a the table holds a day, a src, a device, an event and a count: no email, IP, user agent or account");
-  t.ok(m.includes(`check (src in ('${["direct", ...C.WAITLIST_SRCS].join("','")}'))`), "4b its srcs are the waitlist's, plus direct (one list)");
+  const m34 = read("supabase", "migrations", "0034_shop_source_tags.sql");
+  t.ok(m34.includes(`check (src in ('${["direct", ...C.WAITLIST_SRCS].join("','")}'))`), "4b its srcs are the waitlist's, plus direct (one list; 0034 holds the current list)");
+  t.ok(m.includes("check (src in (") && /drop constraint if exists landing_counts_src_check/.test(m34), "4b2 0034 replaces the check 0027 made, by the name Postgres gave it");
   t.ok(/alter table public\.landing_counts enable row level security;/.test(m) && /revoke all on table public\.landing_counts from anon, authenticated;/.test(m)
     && /grant execute on function public\.bump_landing_count\(text, text, text\) to service_role;/.test(m) && /revoke all on function public\.bump_landing_count\(text, text, text\) from anon;/.test(m),
     "4c service role only: no browser reads or writes a count");

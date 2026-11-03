@@ -34,6 +34,25 @@ const OFFICIAL = {
   t.eq(L.STORE_BADGES.map((b) => [b.store, b.href, b.alt]), [["app_store", L.APP_STORE_URL, "Download on the App Store"], ["play_store", L.PLAY_STORE_URL, "Get it on Google Play"]],
     "1b the alt text exactly, and the App Store badge first");
 
+  // ── 1b. The shop QR codes carry their tag to the stores ───────────────────────────────────────
+  for (const shop of L.STORE_CAMPAIGN_SRCS) {
+    const [apple, play] = L.storeBadgesFor(shop);
+    t.eq(apple.href, `https://apps.apple.com/ca/app/flourish-money-handled/id6792967778?pt=128816288&ct=${shop}&mt=8`, `1c ${shop}: the App Store badge is a campaign link`);
+    t.eq(play.href, `https://play.google.com/store/apps/details?id=com.flourishmoney.app&referrer=utm_source%3D${shop}%26utm_medium%3Dqr%26utm_campaign%3Dshop`, `1d ${shop}: the Play badge carries the referrer`);
+    t.eq(new URL(play.href).searchParams.get("referrer"), `utm_source=${shop}&utm_medium=qr&utm_campaign=shop`, `1e ${shop}: Google reads the referrer back whole`);
+    t.eq(L.storeBadgesFor(` ${shop.toUpperCase()} `).map((b) => b.href), [apple.href, play.href], `1f ${shop}: case and spaces do not lose it, as on the server`);
+    t.eq([apple, play].map((b) => [b.store, b.src, b.alt]), L.STORE_BADGES.map((b) => [b.store, b.src, b.alt]), `1g ${shop}: the same badges, words and order`);
+  }
+  for (const src of ["ig", "fb", "tt", "calendar", "email", "press", "meta_a", "direct", "", undefined, null, { a: 1 }, "shop-trenton", "shop-napanee", "shop-belleville", "shop-kingston-counter", "shop-trenton-till", "shop-trenton-counter&ct=x", "<b>"]) {
+    t.eq(L.storeBadgesFor(src).map((b) => b.href), [L.APP_STORE_URL, L.PLAY_STORE_URL], `1h ${JSON.stringify(src)}: the plain links, nothing typed into the address reaches a store link`);
+  }
+  {
+    const C = require(path.join(REPO, "netlify", "functions", "_lib", "waitlistConsent.js"));
+    t.ok(L.STORE_CAMPAIGN_SRCS.every((s) => C.WAITLIST_SRCS.includes(s)), "1i every tag a store link carries is a campaign the server knows");
+    t.eq(C.WAITLIST_SRCS.filter((s) => s.startsWith("shop")), [...L.STORE_CAMPAIGN_SRCS], "1j the server's shop tags and the store links' are the same six");
+    t.eq(L.STORE_CAMPAIGN_SRCS.length, 6, "1k six tags, and only these");
+  }
+
   // ── 2. The artwork ────────────────────────────────────────────────────────────────────────────
   for (const b of L.STORE_BADGES) {
     const file = path.join(REPO, "public", b.src.replace(/^\//, ""));
@@ -81,6 +100,14 @@ const OFFICIAL = {
     const web = A.render(A.h(A.StoreBadges, {}));
     t.ok(web.includes(L.APP_STORE_URL) && web.includes(L.PLAY_STORE_URL) && web.includes('alt="Download on the App Store"') && web.includes('alt="Get it on Google Play"') && (web.match(/target="_blank"/g) || []).length === 2,
       "6c on the website: both badges, both links, both alt texts, both in a new tab");
+    // What the page draws, first paint included: the ?src= is read before the landing's effect has kept it.
+    const loc = Object.getOwnPropertyDescriptor(globalThis.window, "location");
+    for (const shop of L.STORE_CAMPAIGN_SRCS) {
+      Object.defineProperty(globalThis.window, "location", { configurable: true, value: { search: `?src=${shop}` } });
+      let html = "";
+      try { html = A.render(A.h(A.StoreBadges, {})); } finally { if (loc) Object.defineProperty(globalThis.window, "location", loc); else delete globalThis.window.location; }
+      t.ok(html.includes(`ct=${shop}`) && html.includes(`utm_source%3D${shop}`), `6c2 a visit from ?src=${shop}: both badges on the page carry the tag`);
+    }
     for (const platform of ["ios", "android"]) {
       globalThis.window.Capacitor = { isNativePlatform: () => true, getPlatform: () => platform };
       let html = "x";

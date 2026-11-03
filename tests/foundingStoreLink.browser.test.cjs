@@ -14,6 +14,7 @@
 //   6  the Instagram and Facebook in-app browsers, iPhone and Android, go to their store and are counted the same way
 //   7  Android's link carries the Play referrer; only a plain short ref reaches Google
 //   8  no flash: on a phone the card is hidden before first paint; a computer's never is; a failed redirect shows it
+//   9  the shops' QR codes: each device goes to the tagged link, a computer's badges carry the tag; a near miss does not
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -192,6 +193,61 @@ const playFor = (source) => `${PLAY}&referrer=utm_source%3D${source}%26utm_mediu
     await o.page.waitForFunction(() => getComputedStyle(document.querySelector("main")).visibility === "visible", null, { timeout: 5000 });
     t.ok(await o.page.isVisible("#app-store"), "8b the page is still here after the redirect: the card shows, with its badges");
     await o.ctx.close();
+  }
+
+  // ── 9. The shop QR codes ─────────────────────────────────────────────────────────────────────
+  const L = await import("../src/lib/storeLinks.js");
+  for (const shop of L.STORE_CAMPAIGN_SRCS) {
+    const [apple, play] = L.storeBadgesFor(shop).map((b) => b.href);
+    t.eq([apple, new URL(play).searchParams.get("referrer")], [`${APP_STORE}?pt=128816288&ct=${shop}&mt=8`, `utm_source=${shop}&utm_medium=qr&utm_campaign=shop`], `9a ${shop}: the links asked for`);
+    for (const [who, ua, store, way] of [
+      ["an iPhone", UA.iphone, apple, "iPhone or iPad to the App Store"],
+      ["an iPad", UA.ipad, apple, "iPhone or iPad to the App Store"],
+      ["Instagram on iPhone", UA.instagramIos, apple, "iPhone or iPad to the App Store"],
+      ["Facebook on iPhone", UA.facebookIos, apple, "iPhone or iPad to the App Store"],
+      ["an Android phone", UA.android, play, "Android to Google Play"],
+      ["Instagram on Android", UA.instagramAndroid, play, "Android to Google Play"],
+      ["Facebook on Android", UA.facebookAndroid, play, "Android to Google Play"],
+    ]) {
+      const { ctx, page, sent } = await open({ ua });
+      await page.goto(`${base}/get?ref=${shop}`);
+      await page.waitForURL(store);
+      t.eq(page.url(), store, `9b ${shop}, ${who}: straight to the tagged store link`);
+      t.eq(props(sent), [["Get link", `${base}/get`, { way, ref: "other" }]], `9c ${shop}, ${who}: counted once before it went, as any other /get link, with no tag in what was sent`);
+      await ctx.close();
+    }
+    const o = await open({ ua: UA.mac, width: 1440 });
+    await o.page.goto(`${base}/get?ref=${shop}`);
+    await o.page.waitForTimeout(300);
+    t.eq([o.page.url(), await o.page.getAttribute("#app-store", "href"), await o.page.getAttribute("#google-play", "href"), await o.page.getAttribute("#website", "href"), o.sent.length],
+      [`${base}/get?ref=${shop}`, apple, play, "/", 0], `9d ${shop}, a computer: stays on the page, both badges carry the tag, nothing counted until a click`);
+    await o.ctx.close();
+    for (const [id, way, store] of [["#app-store", "Page: App Store badge", apple], ["#google-play", "Page: Google Play badge", play]]) {
+      const c = await open({ ua: UA.mac, width: 1440 });
+      await c.page.goto(`${base}/get?ref=${shop}`);
+      await c.page.click(id);
+      await c.page.waitForURL(store);
+      t.eq(props(c.sent), [["Get link", `${base}/get`, { way, ref: "other" }]], `9e ${shop}, a computer, ${way}: counted, then followed to the tagged link`);
+      await c.ctx.close();
+    }
+  }
+  // Near misses are like any other ref: no campaign link, and Play's referrer as in section 7.
+  for (const miss of ["shop-trenton", "shop-napanee", "shop-belleville", "shop-kingston-counter", "SHOP-TRENTON-COUNTER", "shop-trenton-counter2"]) {
+    const i = await open({ ua: UA.iphone });
+    await i.page.goto(`${base}/get?ref=${miss}`);
+    await i.page.waitForURL(APP_STORE);
+    t.eq(i.page.url(), APP_STORE, `9f "${miss}", an iPhone: the plain App Store link`);
+    await i.ctx.close();
+    const a = await open({ ua: UA.android });
+    await a.page.goto(`${base}/get?ref=${miss}`);
+    await a.page.waitForURL(playFor(miss));
+    t.eq(a.page.url(), playFor(miss), `9g "${miss}", Android: treated as any other ref, not as a shop`);
+    await a.ctx.close();
+    const c = await open({ ua: UA.mac, width: 1440 });
+    await c.page.goto(`${base}/get?ref=${miss}`);
+    await c.page.waitForTimeout(300);
+    t.eq([await c.page.getAttribute("#app-store", "href"), await c.page.getAttribute("#google-play", "href")], [APP_STORE, PLAY], `9h "${miss}", a computer: the plain badges`);
+    await c.ctx.close();
   }
 
   await browser.close();
