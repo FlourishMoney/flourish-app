@@ -5,7 +5,8 @@
 //   2  on: a creator's link starts the sign-up field filled in, the code goes with the sign-up, and a refusal shows its line
 //   3  Settings: the card shows only while a code can be added; adding one; a wrong code
 //   4  /get?c=CODE: on a computer the website's link carries it; on a phone the store redirect is exactly as it was
-//   5  the field fits the narrowest phone, and the labels on the sign-in and reset screens show in full at every text size
+//   5  the field fits the narrowest phone, and the labels on the sign-in, reset and /confirmed screens show in full at every text size
+//   6  each card's quiet lines are one grey, at least 4.5:1. The white card and the dark card can't share one: a colour that passes on either fails on the other.
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -43,14 +44,14 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
   const browser = await playwright.chromium.launch();
   const W = (await import("../src/lib/creatorWords.js")).CREATOR_WORDS;
 
-  const open = async ({ on = false, width = 390, ua, signedIn = false, status = { enabled: true, may_add: true }, addAnswer } = {}) => {
-    const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(ua ? { userAgent: ua } : {}), colorScheme: "light" });
+  const open = async ({ on = false, width = 390, ua, signedIn = false, status = { enabled: true, may_add: true }, addAnswer, inviteOnly = false, theme = "light" } = {}) => {
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(ua ? { userAgent: ua } : {}), colorScheme: theme });
     const sent = { signup: [], add: [], stores: [] };
-    await ctx.addInitScript(([session, key, signed]) => { try {
-      localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
+    await ctx.addInitScript(([session, key, signed, chosen]) => { try {
+      localStorage.setItem("flourish_theme", chosen); localStorage.setItem("flourish_theme_manual", "1");
       localStorage.setItem("flourish_first_visit_done", "1"); localStorage.setItem("flourish_tour_done", "1");
       if (signed) localStorage.setItem(key, session);
-    } catch {} }, [JSON.stringify(MOCK.makeSession()), MOCK.storageKey(base), signedIn]);
+    } catch {} }, [JSON.stringify(MOCK.makeSession()), MOCK.storageKey(base), signedIn, theme]);
     await ctx.route("https://plausible.io/**", (r) => r.abort());
     await ctx.route(/apps\.apple\.com|play\.google\.com/, (r) => { sent.stores.push(r.request().url()); return r.fulfill({ status: 200, contentType: "text/html", body: "<p>store</p>" }); });
     await ctx.route("**/api/creator", (r) => {
@@ -64,6 +65,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
     });
     await ctx.route("**/api/beta", (r) => {
       const b = JSON.parse(r.request().postData() || "{}");
+      if (b.action === "signup_status" && inviteOnly) return r.fulfill({ status: 200, contentType: "application/json", body: '{"openSignup":false}' });
       if (b.action !== "signup") return r.fulfill({ status: 200, contentType: "application/json", body: "{}" });
       sent.signup.push(b);
       const bad = b.creator_code === "WRONG";
@@ -93,6 +95,30 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
   });
   const shown = (seen) => seen.map(({ name, placeholder, inside, cut }) => ({ name, placeholder, inside, cut }));
   const inFull = (names) => names.map((name) => ({ name, placeholder: null, inside: true, cut: false }));
+  const placeholders = () => document.querySelectorAll("input[placeholder],textarea[placeholder]").length;
+  const noSideways = () => document.documentElement.scrollWidth <= innerWidth;
+  // A rule under a field: its words, where it sits against the field and what comes next, and whether any of it is cut off.
+  const ruleUnder = ([sel, nextSel]) => {
+    const input = document.querySelector(sel), h = document.getElementById(input.getAttribute("aria-describedby").split(" ")[0]), css = getComputedStyle(h);
+    const range = document.createRange(); range.selectNodeContents(h);
+    const text = range.getBoundingClientRect(), box = input.getBoundingClientRect();
+    return { words: h.textContent, under: text.top >= box.bottom, aboveNext: text.bottom <= document.querySelector(nextSel).getBoundingClientRect().top, inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" };
+  };
+  const RULE = { words: "At least 8 characters", under: true, aboveNext: true, inside: true, cut: false };
+  // Each line's colour and its contrast on what is really behind it, see-through layers included.
+  const quiet = (lines) => lines.map((words) => {
+    const el = [...document.querySelectorAll("body *")].find((e) => e.children.length === 0 && e.textContent.trim() === words);
+    if (!el) return { words, missing: true };
+    const rgba = (s) => s.match(/[\d.]+/g).map(Number);
+    const blend = (c, under) => { const a = c[3] === undefined ? 1 : c[3]; return [0, 1, 2].map((i) => c[i] * a + under[i] * (1 - a)); };
+    const behind = (e) => { const c = rgba(getComputedStyle(e).backgroundColor); return !e.parentElement || c[3] === undefined || c[3] === 1 ? c.slice(0, 3) : blend(c, behind(e.parentElement)); };
+    const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const bg = behind(el), color = getComputedStyle(el).color;
+    const [hi, lo] = [lum(blend(rgba(color), bg)), lum(bg)].sort((x, y) => y - x);
+    return { words, color, ratio: (hi + 0.05) / (lo + 0.05) };
+  });
+  const oneGrey = (seen) => seen.every((s) => !s.missing && s.ratio >= 4.5) && new Set(seen.map((s) => s.color)).size === 1;
+  const ratios = (seen) => seen.map((s) => (s.missing ? "missing" : s.ratio.toFixed(1))).join(", ");
 
   try {
     // 1 ── OFF ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -102,7 +128,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSignup(page);
       await page.waitForTimeout(400);
       t.eq(await page.locator(FIELD).count(), 0, "1a off: no field on the sign-up form");
-      t.eq(await page.getByLabel("Password (min 8 characters)").getAttribute("name"), "password", "1a2 the password's label doesn't depend on the program");
+      t.eq(await page.getByLabel("Password", { exact: true }).getAttribute("name"), "password", "1a2 the password's label doesn't depend on the program");
       t.eq([await page.getByLabel("Email address").getAttribute("type"), await page.getByLabel("Email address").getAttribute("placeholder")], ["email", null], "1a3 nor does the email's, and it is a label, not a placeholder");
       t.ok(!(await page.content()).includes(W.signupHint) && !(await page.content()).includes(W.signupLabel), "1b off: none of the program's words on the page");
       t.ok(page.url().includes("c=alice") && (await page.evaluate(() => sessionStorage.getItem("flourish_creator_code"))) === null, "1c off: the address and the tab are left exactly as they were");
@@ -256,47 +282,99 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
         await page.evaluate(biggerText, k);
         const seen = await page.evaluate(labels, SIGNUP);
         t.eq(shown(seen), inFull(["email", "password", "creatorcode"]), `5b2 at 320px and text ×${k}: all three labels show in full, inside the field's width`);
-        t.ok((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), `5b3 …with nothing to scroll sideways (×${k})`);
-        // "Email address" is short enough to stay on one line; the two long ones can't.
-        if (k === 2) t.ok(seen.filter((s) => s.name !== "email").every((s) => s.lines >= 2), `5b4 at the largest, the long ones wrap onto more lines instead of being cut (${seen.map((s) => s.lines).join(", ")})`);
+        t.eq(await page.evaluate(ruleUnder, ['input[name="password"]', 'label[for="auth-creator-code"]']), RULE, `5f at 320px and text ×${k}: Sign Up's rule is under the password field, and shows in full`);
+        t.eq(await page.evaluate(placeholders), 0, `5f2 …and no field holds a placeholder (×${k})`);
+        t.ok(await page.evaluate(noSideways), `5b3 …with nothing to scroll sideways (×${k})`);
+        // "Email address" and "Password" are short enough to stay on one line; the creator code's can't.
+        if (k === 2) t.ok(seen.find((s) => s.name === "creatorcode").lines >= 2, `5b4 at the largest, the long one wraps onto more lines instead of being cut (${seen.map((s) => s.lines).join(", ")})`);
       }
+      const PASSWORD = page.locator('input[name="password"]');
       await page.reload();
       await toSignup(page);
-      await page.getByRole("button", { name: "Log In", exact: true }).first().click();
-      await page.getByRole("button", { name: "Forgot password?" }).waitFor();
-      await page.evaluate(biggerText, 2);
-      t.eq(shown(await page.evaluate(labels, SIGNUP.slice(0, 2))), inFull(["email", "password"]), "5b5 the Log In tab has the same two labels, in full at the largest text");
+      t.eq(await page.locator('label[for="auth-password"]').innerText(), "Password", "5f3 Sign Up's label is just \"Password\": the rule moved under the field");
+      await PASSWORD.fill("short");
+      t.ok(await page.getByText("At least 8 characters", { exact: true }).isVisible(), "5f4 the rule stays on screen once something is typed");
+      await PASSWORD.blur();
+      await page.locator('[data-field-error="password"]').waitFor();
+      t.eq([await page.getByText("At least 8 characters", { exact: true }).isVisible(), await PASSWORD.getAttribute("aria-describedby")], [true, "auth-password-hint auth-password-error"], "5f5 too short: the error joins the rule, and both are tied to the field");
+      t.ok(await page.evaluate(() => document.getElementById("auth-password-hint").getBoundingClientRect().bottom <= document.getElementById("auth-password-error").getBoundingClientRect().top), "5f6 …with the rule first, so the error doesn't push it away");
+      const toLogIn = async () => { await page.getByRole("button", { name: "Log In", exact: true }).first().click(); await page.getByRole("button", { name: "Forgot password?" }).waitFor(); };
+      await toLogIn();
+      t.eq([await page.locator("#auth-password-hint").count(), await page.getByText("At least 8 characters", { exact: true }).count()], [0, 0], "5g the Log In tab has no rule, even with a short password typed");
+      await page.getByRole("button", { name: "Sign Up", exact: true }).first().click();
+      await page.locator("#auth-password-hint").waitFor();
+      t.ok(true, "5g2 …and it comes back on Sign Up");
+      for (const k of [1, 1.3, 1.6, 2]) {
+        await page.reload();
+        await toSignup(page);
+        await toLogIn();
+        await page.evaluate(biggerText, k);
+        t.eq(shown(await page.evaluate(labels, SIGNUP.slice(0, 2))), inFull(["email", "password"]), `5b5 at 320px and text ×${k}: the Log In tab's two labels show in full`);
+        t.eq([await page.locator('label[for="auth-password"]').innerText(), await PASSWORD.getAttribute("aria-describedby"), await page.evaluate(placeholders), await page.evaluate(noSideways)], ["Password", null, 0, true], `5g3 …"Password" with nothing tied to it, no placeholder, nothing to scroll sideways (×${k})`);
+      }
+      await ctx.close();
+    }
+    // Invite-only: the beta access code, with the program off and on. Nothing else about the form changes.
+    for (const on of [false, true]) {
+      const { ctx, page } = await open({ on, inviteOnly: true, width: 320 });
+      const BETA = page.getByLabel("Beta access code", { exact: true });
+      const names = on ? ["email", "password", "betacode", "creatorcode"] : ["email", "password", "betacode"];
+      const fields = names.map((n) => `input[name="${n}"]`);
+      await page.goto(`${base}/`);
+      for (const k of [1, 1.3, 1.6, 2]) {
+        await page.reload();
+        await toSignup(page);
+        await BETA.waitFor();
+        if (on) await page.locator(FIELD).waitFor();
+        await page.evaluate(biggerText, k);
+        t.eq(shown(await page.evaluate(labels, fields)), inFull(names), `5h at 320px and text ×${k}, the program ${on ? "on" : "off"}: every label shows in full`);
+        t.eq([await page.evaluate(ruleUnder, ['input[name="password"]', 'label[for="auth-beta-code"]']), await page.evaluate(placeholders), await page.evaluate(noSideways)], [RULE, 0, true], `5h2 …the rule sits between the password and the code, no placeholder, nothing to scroll sideways (×${k})`);
+      }
+      await ctx.close();
+    }
+    {
+      const { ctx, page, sent } = await open({ on: false, inviteOnly: true });
+      const BETA = page.getByLabel("Beta access code", { exact: true });
+      await page.goto(`${base}/`);
+      await toSignup(page);
+      await BETA.waitFor();
+      await fillAccount(page);
+      await BETA.fill("FRIEND26");
+      await submit(page);
+      await page.getByText("Check your email", { exact: false }).first().waitFor();
+      t.eq(sent.signup[0].code, "FRIEND26", "5h3 the label drives the same field: the code goes with the sign-up");
+      await ctx.close();
+    }
+    // /confirmed, in the theme it follows. No token and a refused link show the same field.
+    for (const theme of ["dark", "light"]) {
+      const { ctx, page } = await open({ on: false, width: 320, theme });
+      const EMAIL = page.getByLabel("Email address", { exact: true });
+      await page.goto(`${base}/confirmed#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired`);
+      await EMAIL.waitFor();
+      t.eq(await EMAIL.getAttribute("autocomplete"), "email", `5i ${theme}: the label drives the email field`);
+      const lines = await page.evaluate(quiet, ["No email yet?", "Email address"]);
+      t.ok(lines.every((l) => !l.missing && l.ratio >= 4.5), `5i2 ${theme}: the line above the field and its label are readable (${ratios(lines)}, at least 4.5)`);
+      for (const k of [1, 1.3, 1.6, 2]) {
+        await page.reload();
+        await EMAIL.waitFor();
+        await page.evaluate(biggerText, k);
+        t.eq([shown(await page.evaluate(labels, ["#confirmed-email"])), await page.evaluate(placeholders), await page.evaluate(noSideways)], [inFull(["email"]), 0, true], `5i3 ${theme}, 320px, text ×${k}: the label shows in full, no placeholder, nothing to scroll sideways`);
+      }
       await ctx.close();
     }
     // The password reset screen. The program has no part in it.
     {
       const { ctx, page } = await open({ on: false, width: 320 });
       const NEW_PW = page.getByLabel("New password", { exact: true }), CONFIRM = page.getByLabel("Confirm new password", { exact: true });
-      const hint = () => {
-        const input = document.getElementById("reset-password"), h = document.getElementById(input.getAttribute("aria-describedby")), css = getComputedStyle(h);
-        const range = document.createRange(); range.selectNodeContents(h);
-        const text = range.getBoundingClientRect(), box = input.getBoundingClientRect();
-        return { words: h.textContent, under: text.top >= box.bottom, aboveNext: text.bottom <= document.querySelector('label[for="reset-password-confirm"]').getBoundingClientRect().top, inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" };
-      };
       await page.goto(`${base}/#type=recovery`);
       for (const k of [1, 1.3, 1.6, 2]) {
         await page.reload();
         await NEW_PW.waitFor();
         await page.evaluate(biggerText, k);
         t.eq(shown(await page.evaluate(labels, ["#reset-password", "#reset-password-confirm"])), inFull(["reset-password", "reset-password-confirm"]), `5d at 320px and text ×${k}: the reset screen's labels show in full, inside the field's width`);
-        t.eq(await page.evaluate(hint), { words: "At least 8 characters", under: true, aboveNext: true, inside: true, cut: false }, `5d2 …the rule is under the field, not in it, and shows in full (×${k})`);
-        t.ok((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), `5d3 …with nothing to scroll sideways (×${k})`);
+        t.eq(await page.evaluate(ruleUnder, ["#reset-password", 'label[for="reset-password-confirm"]']), RULE, `5d2 …the rule is under the field, not in it, and shows in full (×${k})`);
+        t.ok(await page.evaluate(noSideways), `5d3 …with nothing to scroll sideways (×${k})`);
       }
-      const ratio = await page.evaluate(() => {
-        const rgba = (s) => s.match(/[\d.]+/g).map(Number);
-        const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-        const h = document.getElementById("reset-password-hint");
-        let el = h.parentElement; while (rgba(getComputedStyle(el).backgroundColor)[3] === 0) el = el.parentElement;
-        const bg = rgba(getComputedStyle(el).backgroundColor), fg = rgba(getComputedStyle(h).color), a = fg[3] === undefined ? 1 : fg[3];
-        const [hi, lo] = [lum([0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a))), lum(bg)].sort((x, y) => y - x);
-        return (hi + 0.05) / (lo + 0.05);
-      });
-      t.ok(ratio >= 4.5, `5d4 the rule is readable on the card, not just there (${ratio.toFixed(1)}:1, at least 4.5)`);
       await NEW_PW.fill("short");
       t.ok(await page.getByText("At least 8 characters", { exact: true }).isVisible(), "5e the rule stays on screen once something is typed");
       await CONFIRM.fill("short");
@@ -307,6 +385,34 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await page.getByRole("button", { name: "Update password", exact: true }).click();
       await page.getByText("Those passwords don't match.", { exact: true }).waitFor();
       t.ok(true, "5e3 …and two that differ");
+      await ctx.close();
+    }
+    // 6 ── ONE GREY PER CARD ─────────────────────────────────────────────────────────────────────────────────────
+    {
+      const { ctx, page } = await open({ on: false, signedIn: true });
+      await page.route("**/auth/v1/user", async (r) => { if (r.request().method() === "PUT") await new Promise((ok) => setTimeout(ok, 600)); return r.fallback(); });
+      await page.goto(`${base}/#type=recovery`);
+      await page.getByLabel("New password", { exact: true }).waitFor();
+      const onCard = await page.evaluate(quiet, ["Choose a new password for your Flourish account.", "At least 8 characters", "Back to log in"]);
+      t.ok(oneGrey(onCard), `6a the reset screen's subtitle, rule and Back link are one grey, at least 4.5:1 (${ratios(onCard)})`);
+      await page.getByLabel("New password", { exact: true }).fill("long-enough-password");
+      await page.getByLabel("Confirm new password", { exact: true }).fill("long-enough-password");
+      await page.getByRole("button", { name: "Update password", exact: true }).click();
+      await page.getByText("Updating…", { exact: true }).waitFor();
+      const busy = await page.evaluate(quiet, ["Updating…"]);
+      t.ok(oneGrey([...onCard, ...busy]), `6b …and the button's "Updating…" while it waits (${ratios(busy)})`);
+      await page.getByText("Password updated", { exact: true }).waitFor();
+      const done = await page.evaluate(quiet, ["Taking you to Flourish…"]);
+      t.ok(oneGrey([...onCard, ...done]), `6c …and the line under "Password updated" (${ratios(done)})`);
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await open({ on: true });
+      await page.goto(`${base}/`);
+      await toSignup(page);
+      await page.locator(FIELD).waitFor();
+      const lines = await page.evaluate(quiet, ["At least 8 characters", W.signupHint]);
+      t.ok(oneGrey(lines), `6d on the white card, Sign Up's rule and the creator code's hint are one grey, at least 4.5:1 (${ratios(lines)})`);
       await ctx.close();
     }
     {

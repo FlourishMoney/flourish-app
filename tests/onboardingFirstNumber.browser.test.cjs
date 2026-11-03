@@ -404,7 +404,7 @@ function buildApp(supabaseUrl) {
     t.ok(!/invite code|Beta access code/i.test(signupTxt) && beta.some((b) => b.action === "signup_status"), `F1b ${w}: signup is open: no invite link and no code field (H11)`);
     // Inline errors once a field is left.
     await page.getByLabel("Email address").fill("sam@");
-    await page.getByLabel("Password (min 8 characters)").fill("12345");
+    await page.getByLabel("Password", { exact: true }).fill("12345");
     await page.getByLabel("Email address").click();
     await page.waitForTimeout(200);
     const errsShown = await page.locator("[data-field-error]").evaluateAll((els) => els.map((e) => e.getAttribute("data-field-error")));
@@ -416,7 +416,7 @@ function buildApp(supabaseUrl) {
     await btn(page, "Create Account").click({ force: true });
     t.ok(!beta.some((b) => b.action === "signup"), `F1e ${w}: Create Account with a wrong field sends nothing`);
     await page.getByLabel("Email address").fill("sam@example.invalid");
-    await page.getByLabel("Password (min 8 characters)").fill("a-long-enough-password");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
     await page.getByLabel("Email address").click();
     await page.waitForTimeout(200);
     t.eq(await page.locator("[data-field-error]").count(), 0, `F1f ${w}: corrected, the errors go`);
@@ -524,7 +524,7 @@ function buildApp(supabaseUrl) {
     t.ok(!/Beta access code|invite code/i.test(u), "U1b no beta code is asked for on an error");
     t.ok(u.includes("We couldn't check sign-up just now. You can still create your account.") && await page.getByRole("button", { name: "Try again", exact: true }).count() === 1, "U1c the line, and Try again");
     await page.getByLabel("Email address").fill("sam@example.org");
-    await page.getByLabel("Password (min 8 characters)").fill("a-long-enough-password");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
     t.eq(await btn(page, "Create Account").getAttribute("aria-disabled"), "false", "U1d Create Account still works (the server decides)");
     await shot(page, "founding-390-signup-status-unavailable");
     fails = 0;

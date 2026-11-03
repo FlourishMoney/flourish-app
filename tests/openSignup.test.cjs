@@ -496,7 +496,7 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/aria-invalid=\{fieldErr\.email \|\| undefined\} aria-describedby=\{fieldErr\.email \? "auth-email-error" : undefined\}/.test(form)
       && /<div id="auth-email-error" data-field-error="email" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.emailError\}<\/div>/.test(form),
       "11m the email error is tied to its field for a screen reader");
-    t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{fieldErr\.password \? "auth-password-error" : undefined\}/.test(form)
+    t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{\[mode === "signup" && "auth-password-hint", fieldErr\.password && "auth-password-error"\]\.filter\(Boolean\)\.join\(" "\) \|\| undefined\}/.test(form)
       && /<div id="auth-password-error" data-field-error="password" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.passwordError\}<\/div>/.test(form),
       "11n …and so is the password error");
     t.eq([SIGNUP_COPY.emailError, SIGNUP_COPY.passwordError], ["Enter a valid email address.", "Choose a password of at least 8 characters."],

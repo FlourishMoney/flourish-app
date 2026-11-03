@@ -13680,8 +13680,9 @@ function ConfirmedPage({confirmed=false, onSignIn}){
           <div data-confirm-failed="">
             {link.failed&&<h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>This link no longer works.</h1>}
             {link.description&&<p style={{color:C.cream,fontSize:15,lineHeight:1.6,margin:"0 0 16px"}}>{link.description}</p>}
-            <div style={{color:C.mutedHi,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
-            <input type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+            <div style={{color:C.muted,fontSize:13,marginBottom:8,textAlign:"left"}}>No email yet?</div>
+            <label htmlFor="confirmed-email" style={{...AUTH_FIELD_LABEL,color:C.cream,marginTop:0,textAlign:"left"}}>Email address</label>
+            <input id="confirmed-email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
               onChange={e=>setEmail(stripEmailSpaces(e.target.value))} autoComplete="email" name="email"
               style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",marginBottom:10,outline:"none"}}/>
             <button onClick={resend} disabled={!email || cooldown>0} style={{...btn,background:"transparent",color:C.greenBright,border:`1.5px solid ${C.green}66`,opacity:(!email||cooldown>0)?0.6:1}}>
@@ -15107,7 +15108,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
 }
 
 // A label above a sign-in field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
-// The reset screen and the sign-in form share these measurements; each adds its own colour.
+// The reset screen, the sign-in form and /confirmed share these measurements; each adds its own colour.
 const AUTH_FIELD_LABEL = Object.freeze({ display: "block", fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs });
 
 // Sprint Q item 12: set-new-password screen. Shown by FlourishApp when a password-recovery token
@@ -15146,6 +15147,8 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   };
   const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box" };
   const label = { ...AUTH_FIELD_LABEL, color: "#EDE9E2", fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  // Every quiet line on this card is this one grey, 6.2:1 (it was #6B7A6E, 3.8:1). It is C.muted's dark value, written out because C follows the theme and this card is always dark.
+  const hintGrey = "rgba(237,233,226,0.62)";
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, ...overlaySafe(24, { bottom: true }), background: "#050D09" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
@@ -15155,25 +15158,25 @@ function ResetPasswordScreen({ onDone, onCancel }) {
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 38, marginBottom: 10 }}>✓</div>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 22, color: "#EDE9E2" }}>Password updated</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
+              <div style={{ color: hintGrey, fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
             </div>
           ) : (
             <>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 20, color: "#EDE9E2", marginBottom: 6 }}>Set a new password</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
+              <div style={{ color: hintGrey, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
               <label htmlFor="reset-password" style={label}>New password</label>
               <input id="reset-password" style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" aria-describedby="reset-password-hint" />
-              <div id="reset-password-hint" style={{ color: "rgba(237,233,226,0.62)", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5, marginTop: SPACE.xs }}>At least 8 characters</div>
+              <div id="reset-password-hint" style={{ color: hintGrey, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5, marginTop: SPACE.xs }}>At least 8 characters</div>
               <label htmlFor="reset-password-confirm" style={label}>Confirm new password</label>
               <input id="reset-password-confirm" style={{ ...inp, marginBottom: 20 }} type="password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
               {err && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
               <button onClick={submit} disabled={busy}
-                style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? "#6B7A6E" : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
+                style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? hintGrey : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
                 {busy ? "Updating…" : "Update password"}
               </button>
               <div style={{ textAlign: "center", marginTop: 16 }}>
                 <button onClick={cancel} disabled={busy}
-                  style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                  style={{ background: "none", border: "none", color: hintGrey, fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                   Back to log in
                 </button>
               </div>
@@ -15814,6 +15817,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   });
   const fieldErrStyle = { color: AUTH_C.error, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
   const fieldLabelStyle = { ...AUTH_FIELD_LABEL, color: AUTH_C.ink };
+  const fieldHintStyle = { color: AUTH_C.muted, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
   // Text buttons (Back, Forgot password?, Wrong email?): underlined, and a 44 px target however short the label.
   const authLinkStyle = { background: "none", border: "none", minHeight: LAYOUT.minTap, padding: "0 4px", color: AUTH_C.link, fontSize: 13,
     fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", textUnderlineOffset: 2 };
@@ -16271,22 +16275,26 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
                     aria-invalid={fieldErr.email || undefined} aria-describedby={fieldErr.email ? "auth-email-error" : undefined} autoComplete="email" name="email" />
                   {fieldErr.email && <div id="auth-email-error" data-field-error="email" style={fieldErrStyle}>{SIGNUP_COPY.emailError}</div>}
-                  <label htmlFor="auth-password" style={fieldLabelStyle}>Password (min 8 characters)</label>
+                  <label htmlFor="auth-password" style={fieldLabelStyle}>Password</label>
                   <input id="auth-password" style={inpStyle(fieldErr.password)} type="password" value={password}
                     onChange={e => setPassword(e.target.value)} onBlur={() => password && setTouched(t => ({ ...t, password: true }))}
-                    aria-invalid={fieldErr.password || undefined} aria-describedby={fieldErr.password ? "auth-password-error" : undefined}
+                    aria-invalid={fieldErr.password || undefined} aria-describedby={[mode === "signup" && "auth-password-hint", fieldErr.password && "auth-password-error"].filter(Boolean).join(" ") || undefined}
                     autoComplete={mode === "signup" ? "new-password" : "current-password"} name="password" />
+                  {mode === "signup" && <div id="auth-password-hint" style={fieldHintStyle}>At least 8 characters</div>}
                   {fieldErr.password && <div id="auth-password-error" data-field-error="password" style={fieldErrStyle}>{SIGNUP_COPY.passwordError}</div>}
                   {/* Invite-only (the server's definite answer): the code field, as it has always been. Signup open,
                       still asking, or the check failed: no field and no invite link (H11, H12). */}
                   {mode==="signup"&&showCodeInput&&(
-                    <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    <>
+                      <label htmlFor="auth-beta-code" style={fieldLabelStyle}>Beta access code</label>
+                      <input id="auth-beta-code" style={inpStyle(false)} type="text" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    </>
                   )}
                   {mode==="signup"&&creatorsOn&&(
                     <div data-creator-field="">
                       <label htmlFor="auth-creator-code" style={fieldLabelStyle}>{CREATOR_WORDS.signupLabel}</label>
                       <input id="auth-creator-code" style={inpStyle(false)} type="text" value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
-                      <div style={{ color: AUTH_C.muted, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs }}>{CREATOR_WORDS.signupHint}</div>
+                      <div style={fieldHintStyle}>{CREATOR_WORDS.signupHint}</div>
                     </div>
                   )}
                   {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
