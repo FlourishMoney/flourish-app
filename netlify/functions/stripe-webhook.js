@@ -27,6 +27,7 @@ const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
 const { reconcileHouseholdBilling } = require("./_lib/household");
+const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge } = require("./_lib/creators");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -34,6 +35,9 @@ const HANDLED = Object.freeze([
   "customer.subscription.deleted",
   "charge.refunded",
 ]);
+// THE CREATOR PROGRAM (behind CREATORS_ENABLED). invoice.paid is the only event that says what each payment was, renewals
+// included. With the flag off it is ignored like any other event not handled here.
+const CREATOR_EVENT = "invoice.paid";
 
 const reply = (statusCode, body) => ({
   statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -164,7 +168,8 @@ exports.handler = async (event) => {
       .eq("event_id", evt.id);
   }
 
-  if (!HANDLED.includes(evt.type)) {
+  const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();
+  if (!HANDLED.includes(evt.type) && !creatorInvoice) {
     await admin.from("billing_events")
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
     return reply(200, { received: true, ignored: true });
@@ -254,6 +259,7 @@ exports.handler = async (event) => {
     return reply(200, { received: true, duplicate: true });
   };
 
+  let creatorNotes = [];
   try {
     if (evt.type === "checkout.session.completed") {
       const user_id = userIdFrom(object);
@@ -313,7 +319,12 @@ exports.handler = async (event) => {
         if (ownerErr) throw new Error(ownerErr.message);
         if (owner?.user_id) await releaseSeat(admin, owner.user_id, { reason: "refund", provider: "stripe" });
       }
+      // THE CREATOR PROGRAM: a clawback of the commission on that one payment, partial refunds included.
+      if (creatorsEnabled()) creatorNotes = await clawbackStripeCharge(admin, object);
     }
+
+    // THE CREATOR PROGRAM: a payment, the first or a renewal. Changes nothing about the household's plan.
+    if (creatorInvoice) creatorNotes = await creditStripeInvoice(admin, object, evt.created);
 
     if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
       const user_id = userIdFrom(object);
@@ -393,7 +404,7 @@ exports.handler = async (event) => {
     }
 
     await admin.from("billing_events")
-      .update({ status: "processed", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
+      .update({ status: "processed", processed_at: new Date().toISOString(), ...(creatorNotes.length ? { error: creatorNotes.join(" | ").slice(0, 500) } : {}) }).eq("event_id", evt.id);
     return reply(200, { received: true });
   } catch (e) {
     console.error("[stripe-webhook]", evt.type, e.message);

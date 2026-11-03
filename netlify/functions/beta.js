@@ -34,6 +34,7 @@ const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
+const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
 function clientIp(event) {
@@ -574,6 +575,22 @@ async function handle(event) {
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
+    // THE CREATOR CODE (optional; behind CREATORS_ENABLED; docs/product/CREATOR-PROGRAM-SPEC.md). Checked before an
+    // account exists, so a typo costs nothing: wrong, ended and the creator's own all answer the same. The rate limit
+    // above has already counted this try. If the check itself fails, the person is told and nothing is created: they can
+    // try again, or leave the field empty.
+    let creatorCode = null;
+    if (creatorsEnabled() && creatorCodeTyped(body.creator_code)) {
+      creatorCode = cleanCreatorCode(body.creator_code);
+      if (!creatorCode) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_invalid" }) };
+      try {
+        if (await checkCreatorCode(admin, creatorCode, email) !== "ok") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_invalid" }) };
+      } catch (e) {
+        console.error("[beta:signup] creator code check failed:", e.message);
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "creator_code_unavailable" }) };
+      }
+    }
+
     // WHO IS CONFIRMED ON CREATION (billing day, round 3). With signup shut, an invited (coded) signup is
     // confirmed on creation, as it always has been. Once signup is open, nobody is: a code shows Amanda
     // handed it out, not that this person owns the address they typed, and the founding price follows the
@@ -638,8 +655,9 @@ async function handle(event) {
       }
     };
 
+    let newAccountId = null;
     try {
-      const { error: createErr } = await admin.auth.admin.createUser({
+      const { data: createdAccount, error: createErr } = await admin.auth.admin.createUser({
         email,
         password,
         // Signup shut: a CODED signup is confirmed on creation, exactly as it has always been. Signup
@@ -672,10 +690,20 @@ async function handle(event) {
         console.error("[beta:signup] createUser failed:", createErr.message);
         return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "create_failed", message: createErr.message }) };
       }
+      newAccountId = createdAccount?.user?.id || null;
     } catch (e) {
       await releaseSeat("createUser threw");
       console.error("[beta:signup] createUser threw:", e.message);
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: (e.message || "").slice(0, 200) }) };
+    }
+
+    // The creator code goes on the new account. Best effort: the account exists either way, and the code can still be
+    // added in Settings if this fails.
+    if (creatorCode && newAccountId) {
+      try {
+        const outcome = await attributeCreatorCode(admin, newAccountId, creatorCode, creatorSourceOf(event));
+        if (outcome !== "attributed") console.error("[beta:signup] creator code not recorded:", outcome);
+      } catch (e) { console.error("[beta:signup] creator code not recorded:", e.message); }
     }
 
     // signup_completed. There is no analytics pipeline yet (no events table, no Plausible, no GA), so

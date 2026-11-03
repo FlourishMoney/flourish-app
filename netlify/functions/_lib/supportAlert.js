@@ -22,6 +22,11 @@ const WHAT = Object.freeze({
   two_store_subscriptions: "two live store subscriptions at once (for example a regular plan and the founding annual, which Apple bills as separate groups)",
   founding_not_eligible: "the founding price bought in a store by a household the server did not offer it to",
   two_stripe_subscriptions: "two live Stripe subscriptions at once (two checkouts completed); the row keeps the first",
+  creator_amounts_unknown: "a payment by a household with a creator, whose amounts could not be read (no tax or store fee given): no commission was recorded",
+  creator_refund_unmatched: "a refund for a household with a creator that matches no commission: nothing was clawed back",
+  creator_refund_reversed: "a store took back a refund for a household with a creator: any clawback is unchanged",
+  creator_own_code: "a payment by a household that includes the creator whose code it holds: no commission was recorded",
+  creator_not_cad: "a payment by a household with a creator, not in Canadian dollars: no commission was recorded",
 });
 
 // The message, exactly as sent. No address, no amount: the account id is how support finds it.
@@ -33,7 +38,9 @@ function supportAlertMessage({ flag, userId, provider }) {
       `The server flagged a household: ${what}.`,
       `Account: ${userId}`,
       `Store: ${provider || "unknown"}`,
-      provider === "stripe"
+      flag.startsWith("creator_")
+        ? "Nothing about the household's access changed. Check the payment, and correct creator_commissions by hand if it should count (docs/ops/CREATOR-PAYOUTS.md)."
+        : provider === "stripe"
         ? "The household keeps its access. Find the customer in Stripe by the account id (subscription metadata user_id), cancel and refund the extra subscription, then clear support_flag on its subscriptions row."
         : "The household keeps its access. Check the account in RevenueCat, refund or cancel the extra subscription in the store if it is a double charge, then clear support_flag on its subscriptions row.",
     ].join("\n"),

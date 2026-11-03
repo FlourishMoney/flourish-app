@@ -109,6 +109,8 @@ import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
+import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
+import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
 import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval } from "./lib/household.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
@@ -744,6 +746,18 @@ async function callHousehold(action, params = {}) {
   if (!jwt) return { status: 401, data: {} };
   try {
     const res = await fetch(`${API_BASE}/api/household`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    return { status: res.status, data };
+  } catch { return { status: 0, data: {} }; }
+}
+
+// The creator code in Settings (netlify/functions/creator.js). { status, data }. A 404 means the program is off: no card.
+async function callCreator(action, params = {}) {
+  const jwt = await getJwt();
+  if (!jwt) return { status: 401, data: {} };
+  try {
+    const res = await fetch(`${API_BASE}/api/creator`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
     let data = {};
     try { data = await res.json(); } catch {}
     return { status: res.status, data };
@@ -12209,6 +12223,34 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 // Settings > Household: the owner invites ONE partner (an email link, and a 6-character code for the store
 // apps), the partner joins, either leaves, the owner removes the partner. Both see a consent screen first.
 // Every word is a placeholder until approved (lib/householdWords.js); roles only, never the other person's name.
+// THE CREATOR CODE IN SETTINGS: shown only while this account may add one (/api/creator status: within 14 days of sign-up,
+// before the first payment, no code yet, not a partner). No card at all otherwise, and none while the program is off.
+function CreatorCodeCard({onAdd}){
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [added,setAdded]=useState(false);
+  if(added) return <div data-creator-added="" role="status" style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{CREATOR_WORDS.settingsAdded}</div>;
+  const submit=async()=>{
+    if(busy||!code) return;
+    setBusy(true); setError(null);
+    const r=await onAdd(code);
+    setBusy(false);
+    if(r&&r.ok) setAdded(true);
+    else setError(creatorErrorLine(r&&r.error)||CREATOR_WORDS.errors.creator_code_unavailable);
+  };
+  return(
+    <div data-creator-card="" style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>{CREATOR_WORDS.settingsTitle}</div>
+      <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:SPACE.md}}>{CREATOR_WORDS.settingsBody}</div>
+      <input type="text" aria-label={CREATOR_WORDS.settingsTitle} value={code} onChange={e=>setCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} maxLength={20}
+        style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",marginBottom:SPACE.sm}}/>
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <Btn label={CREATOR_WORDS.settingsButton} onClick={submit} color={C.green} small/>
+    </div>
+  );
+}
+
 // The app shows this only when /api/household answers (the server switch on, migrations 0030 + 0031 run).
 function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLeave, onRemove, onClearLinkToken }) {
   const W = HOUSEHOLD_WORDS;
@@ -12307,7 +12349,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
   </div>;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
+function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   // Couple mode: a link's invite opens Settings straight on Household (HouseholdSection).
   const [activeSection,setActiveSection]=useState(()=>household?.linkToken && household?.info?.enabled ? "household" : null);
@@ -12666,6 +12708,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       </div>
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
     </div>
+    {creator?.info?.may_add&&<CreatorCodeCard onAdd={creator.onAdd}/>}
     {/* ── What's new (tester suggestions, item 7): version, build and notes from src/whatsNew.json ── */}
     <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <button onClick={()=>setShowWhatsNew(v=>!v)} aria-expanded={showWhatsNew} aria-controls="whats-new-notes"
@@ -15453,6 +15496,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // read (audit H12, lib/signupUi.js). Only a definite false shows the code field: a failed check is never
   // treated as invite-only, and the screen offers to check again instead.
   const [openSignup, setOpenSignup] = useState(null);
+  // THE CREATOR CODE (behind CREATORS_ENABLED on the server: /api/creator answers 404 while it is off, and then there is no
+  // field and nothing is sent). A creator's link on a computer starts it filled in (lib/creatorCode.js).
+  const [creatorCode, setCreatorCode] = useState(() => captureCreatorCode());
+  const [creatorsOn, setCreatorsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/creator`).then((r) => { if (live && r.ok) setCreatorsOn(true); }).catch(() => { /* no field */ });
+    return () => { live = false; };
+  }, []);
   // Which fields the person has left (or tried to submit), for the inline errors (audit H11).
   const [touched, setTouched] = useState({});
   // Whether the confirmation email after a self-serve signup actually went out (beta.js `sent`).
@@ -15611,12 +15663,13 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc() }),
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
         const e = out.error;
-        if (e === "invalid_code")          setError("Invalid beta code. Request one at hello@flourishmoney.app");
+        if (creatorErrorLine(e))           setError(creatorErrorLine(e));
+        else if (e === "invalid_code")     setError("Invalid beta code. Request one at hello@flourishmoney.app");
         else if (e === "cap_reached")      setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
         else if (e === "weak_password")    setError("Choose a password of at least 8 characters.");
@@ -15629,6 +15682,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
         else                               setError(`Signup failed${e ? ` (${e})`: ` (HTTP ${res.status})`}${out.detail ? `: ${out.detail}`: out.message ? `: ${out.message}`: ""}. Please contact hello@flourishmoney.app.`);
         setLoading(false); return;
       }
+      forgetCreatorCode();
       // A CODED signup is confirmed on creation, so there is no email to check: drop them on the
       // login screen, where the address and password are still filled in. A SELF-SERVE signup is not
       // usable until the address is confirmed, so (audit H10) it goes to the check-your-email state: the
@@ -16214,6 +16268,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       still asking, or the check failed: no field and no invite link (H11, H12). */}
                   {mode==="signup"&&showCodeInput&&(
                     <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  )}
+                  {mode==="signup"&&creatorsOn&&(
+                    <div data-creator-field="">
+                      <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" aria-label={CREATOR_WORDS.signupLabel} placeholder={CREATOR_WORDS.signupLabel} value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
+                      <div style={{ color: AUTH_C.muted, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs }}>{CREATOR_WORDS.signupHint}</div>
+                    </div>
                   )}
                   {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
                   <button style={{ ...btnStyle(canSubmit), marginTop: SPACE.lg }} onClick={submitAuth} aria-disabled={!canSubmit}>
@@ -17239,6 +17299,8 @@ export default function FlourishApp(){
   // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
   // link's invite token kept for this tab while the person signs in (never synced; lib/household.js).
   const [householdInfo,setHouseholdInfo]=useState(null);
+  // The creator code: /api/creator's status for this account (null while off, or not asked yet).
+  const [creatorInfo,setCreatorInfo]=useState(null);
   const [householdLinkToken,setHouseholdLinkToken]=useState(()=>{
     try {
       const t = inviteTokenFromSearch(window.location.search);
@@ -18064,6 +18126,18 @@ export default function FlourishApp(){
     return ()=>document.removeEventListener("visibilitychange", onVis);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── The creator code: Settings' card, while this account may still add one ──
+  const refreshCreator = async ()=>{
+    if (!user) return;
+    const r = await callCreator("status");
+    setCreatorInfo(r.status === 200 ? r.data : null);
+  };
+  useEffect(()=>{ if (showSettings && user && hydrated) refreshCreator(); }, [showSettings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const addCreatorCode = async (code)=>{
+    const r = await callCreator("add", { code });
+    if (r.status === 200) return { ok: true };
+    return { error: r.data?.error || "creator_code_unavailable" };
+  };
   // ── Couple mode: Settings > Household (HouseholdSection) ──
   const refreshHousehold = async ()=>{
     if (!user) return;
@@ -19053,7 +19127,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;

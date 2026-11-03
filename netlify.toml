@@ -29,6 +29,11 @@
 [functions."limiter-cleanup"]
   schedule = "@daily"
 
+# Scheduled: a creator's commission becomes payable once its payment is more than 30 days old. Reads and writes NOTHING
+# unless CREATORS_ENABLED is exactly "true" (netlify/functions/creator-commissions-sweep.js).
+[functions."creator-commissions-sweep"]
+  schedule = "@daily"
+
 # Security headers
 [[headers]]
   for = "/*"
@@ -105,6 +110,13 @@
 [[redirects]]
   from   = "/api/household"
   to     = "/.netlify/functions/household"
+  status = 200
+
+# Redirect: the creator code (the Creator Program) → Netlify function. Answers 404 to everything until
+# CREATORS_ENABLED is "true" (netlify/functions/creator.js).
+[[redirects]]
+  from   = "/api/creator"
+  to     = "/.netlify/functions/creator"
   status = 200
 
 # SPA fallback — all routes → index.html
