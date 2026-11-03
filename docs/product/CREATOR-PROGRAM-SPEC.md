@@ -26,7 +26,11 @@ Ships dark, behind `CREATORS_ENABLED` (exactly "true"). With it off: sign-up ign
 - **A refund** claws back the commission on that one payment, in proportion to what was refunded. A clawback is its own row carrying its payment's date: against a payment under 30 days old the two cancel out; against one already paid it comes off later payouts until recovered.
   - A refund that matches no payment changes nothing and tells support.
   - A refund the store later takes back (`REFUND_REVERSED`) tells support; nothing moves on its own.
-- **Chargebacks are not handled.** A Stripe dispute reaches no code here; it is corrected by hand.
+- **A lost chargeback** works as a refund does (Amanda, 2026-11-03). Stripe's `charge.dispute.closed` with status `lost` claws back the commission on that one payment, in proportion to the amount disputed. It comes off the next payout, then later ones if short. **Go-live step: add `charge.dispute.closed` to the Stripe webhook endpoint (Amanda).**
+  - The clawback carries the dispute's id, so the same dispute never takes anything twice. A payment can have more than one dispute: each takes its own share, and with any refund they never take more than the payment earned.
+  - `won`, `warning_closed` and anything else change nothing. A dispute that matches no commission changes nothing and tells support.
+  - A dispute Stripe later turns from lost to won (a "late win") leaves the clawback standing, and nothing tells anyone.
+  - The stores: a chargeback that reaches us as a refund is handled as a refund. See `docs/ops/CREATOR-PAYOUTS.md`.
 
 ## Who sees what
 No table or function is reachable by anyone signed in, or by anon. A creator is told counts and totals only (`creator_payout_report`). A deleted account's rows keep their money with the account id cleared.
@@ -41,7 +45,7 @@ No table or function is reachable by anyone signed in, or by anon. A creator is 
 ## Going live, in order
 1. Run the migration.
 2. Check the `shop-source-tags` PR (#114) has merged, and main is merged in here.
-3. Check RevenueCat's App Store fee setting: it reports 30% today, Google Play 15%. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
-4. Merge, and deploy. Add `invoice.paid` to the Stripe endpoint.
+3. Check the first iOS event since the Small Business Program was set in RevenueCat shows a 15% fee. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
+4. Merge, and deploy. Add `invoice.paid` and `charge.dispute.closed` to the Stripe endpoint.
 5. Set `CREATORS_ENABLED=true` in production and redeploy.
 6. iPhone and Android show the field only from the next store build.

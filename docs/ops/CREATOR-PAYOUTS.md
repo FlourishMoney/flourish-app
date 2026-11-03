@@ -11,7 +11,7 @@ The code is 3 to 20 capitals and digits. Their link is `https://flourishmoney.ap
 To end a partnership, set `status`: `'ended'` (they keep earning on households already credited) or `'ended_for_cause'` (fraud, spam or a serious breach: nothing further).
 
 ## Each month
-Pick one moment for the whole run, and use it in both steps. A payment that matures, or a refund that lands, after it waits for next month.
+Pick one moment for the whole run, and use it in both steps. A payment that matures, or a refund or lost chargeback that lands, after it waits for next month.
 
 **1. The report (read only).**
 ```sql
@@ -22,7 +22,7 @@ select * from public.creator_payout_report('2026-12-01 09:00:00-05');
 | `households_credited` | How many households joined with this code. A count, never who. An account counts once its email is confirmed. A partner's own code doesn't count while they are in a household. |
 | `payable_this_month_cents` | Earned on payments more than 30 days old, less clawbacks, once that reaches $25. Otherwise 0. |
 | `carry_over_cents` | The same figure when it is under $25: it rolls to next month. **Below zero** it is still owed back, and comes off later payouts. |
-| `clawbacks_cents` | The refunds already counted in those two figures (zero or negative). |
+| `clawbacks_cents` | The refunds and lost chargebacks already counted in those two figures (zero or negative). |
 | `not_yet_30_days_cents` | Earned on payments under 30 days old. Not payable yet. |
 
 Check `status` before paying an `ended_for_cause` creator: the terms stop further earning, but what was earned before is a decision for you.
@@ -43,6 +43,7 @@ The server emails the support inbox, and writes on the event's `billing_events` 
 |---|---|---|
 | `creator_amounts_unknown` | A payment whose amounts couldn't be read (RevenueCat gave no tax or fee figure, or Stripe no price before tax). No commission was recorded. | Check the payment. Record it by hand if it should count. |
 | `creator_refund_unmatched` | A refund matching no commission. Nothing was clawed back. | Find the payment and record the clawback by hand if there was one. |
+| `creator_chargeback_unmatched` | A lost Stripe chargeback matching no commission. Nothing was clawed back. | Find the payment and record the clawback by hand if there was one. |
 | `creator_refund_reversed` | A store took a refund back. Any clawback stands. | Decide by hand. |
 | `creator_own_code` | A household holding its own creator's code. No commission was recorded. | Terms: "no using your own code". |
 | `creator_not_cad` | A payment not in Canadian dollars. No commission was recorded. | Terms: Canada only for now. |
@@ -56,4 +57,8 @@ Read from delivered webhook bodies in RevenueCat's dashboard, sandbox events on 
 
 **On the App Store: not proven.** RevenueCat can't refund an Apple purchase, and the app has no refund request. The code matches on `transaction_id`, then on the original transaction and the exact purchase date, and otherwise raises `creator_refund_unmatched` rather than guess. Check the first real App Store refund against its payment.
 
-**The store fee RevenueCat reports.** Google Play came through at `commission_percentage: 0.15`, the App Store at `0.3`. If the company is in Apple's Small Business Program (15%), set that in RevenueCat's App Store configuration before going live, or App Store commissions are worked out on too small a base: on $79.99, $55.99 rather than $67.99. `tax_percentage` came through as `0` in Canada on both stores.
+**The store fee RevenueCat reports.** The base uses each event's own `commission_percentage` and nothing else. Google Play came through at `0.15`, the App Store at `0.3` when this was first checked. The Small Business Program is now set in RevenueCat for Flourish iOS (start 2026-09-23), so new iOS events should show `0.15`: on $79.99, a base of $67.99 rather than $55.99. Check the first one. `tax_percentage` came through as `0` in Canada on both stores.
+
+**Chargebacks on the stores (RevenueCat's docs, read 2026-11-03).** Its webhook and refund pages don't mention chargebacks, and no field tells one from a refund. One that reaches RevenueCat as a refund arrives as `CANCELLATION`, `cancel_reason: CUSTOMER_SUPPORT`, with a negative price, and the refund code already claws it back. None has been seen yet.
+
+**What never arrives can't be clawed back.** RevenueCat says a subscription's `CANCELLATION` isn't sent for refunds of earlier periods, and a Google refund has to be refunded and revoked for it to be seen. Correct those by hand from the store's own reports.

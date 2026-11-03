@@ -280,6 +280,27 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(claw("unknown-txn", { provider: "play_store", original: "orig9", when: "(now() - interval '1 year')" }).result, "not_found", "6g a store refund naming another transaction and another date: no match, no guess");
     t.eq(sql(`select count(*) from public.creator_commissions where payment_ref = 'txn9' and clawback_of is not null`), "0", "6h …nothing clawed back");
 
+    // 6b LOST CHARGEBACKS ---------------------------------------------------------------------------------------
+    const lost = (ref, id, cents) => svc(`creator_commission_clawback('stripe', '${ref}', null, null, ${cents}, '${id}')`);
+    const CB = person();
+    attribute(CB, "ALICE");
+    backdate(CB, 60);
+    pay(CB, "cb1", day, { base: 1000, gross: 1000 });
+    pay(CB, "cb2", day, { base: 2000, gross: 2000 });
+    pay(CB, "cb3", day, { base: 1000, gross: 1000 });
+    t.eq([lost("cb1", "du_1", 1000).result, clawed("cb1"), clawed("cb2")], ["clawback", -200, 0], "6i a lost chargeback claws back that payment's commission, and no other's");
+    t.eq([lost("cb1", "du_1", 1000).result, clawed("cb1"), sql(`select count(*) from public.creator_commissions where dispute_ref = 'du_1'`)], ["already", -200, "1"], "6j the same dispute again adds nothing: one row, carrying the dispute's id");
+    t.eq([lost("cb3", "du_1", 1000).result, clawed("cb3")], ["already", 0], "6k one dispute id never takes from a second payment");
+    t.eq([claw("cb1").result, clawed("cb1")], ["already", -200], "6l a refund on top of it takes nothing more: never more than the payment earned");
+    t.eq([lost("cb2", "du_2", 500).cents, lost("cb2", "du_3", 500).cents, clawed("cb2")], [100, 100, -200], "6m two disputes on parts of one payment each take their own share");
+    t.eq([claw("cb2", { refunded: 500 }).cents, clawed("cb2")], [100, -300], "6n a refund of another part adds its own share, not less for the disputes");
+    t.eq([lost("cb2", "du_4", 2000).cents, clawed("cb2")], [100, -400], "6o a dispute on top: only what is left of the payment's commission");
+    t.eq([lost("cb2", "du_5", 2000).result, sql(`select count(*) from public.creator_commissions where dispute_ref = 'du_5'`)], ["already", "0"], "6p nothing left: no row");
+    t.eq(lost("nope", "du_6", 100).result, "not_found", "6q a chargeback matching no commission: nothing is guessed");
+    t.eq(rowOf("cb1"), "200,pending", "6r the payment's own row stands; the clawback is a row of its own");
+    t.ok(/creator_commissions_dispute_on_clawback/.test(err(() => sql(`update public.creator_commissions set dispute_ref = 'du_7' where payment_ref = 'cb3' and clawback_of is null`))), "6s only a clawback can carry a dispute's id");
+    t.ok(/creator_commissions_one_per_dispute/.test(err(() => sql(`update public.creator_commissions set dispute_ref = 'du_1' where dispute_ref = 'du_2'`))), "6t the database itself holds one row per dispute");
+
     // 7 MATURITY ------------------------------------------------------------------------------------------------
     const M = person();
     attribute(M, "ALICE");
@@ -323,6 +344,17 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(payout("LOW", "pay-2026-12", 2501).cents, 2501, "8m the payout is the net");
     t.eq(report("LOW"), { households: 2, payable: 0, carry: 0, clawbacks: 0, young: 700 }, "8n the clawback is settled with it, and not taken twice");
     t.eq(sql(`select status from public.creator_commissions where payment_ref = 'low1' and clawback_of is not null`), "clawback", "8o the clawback stays a clawback");
+    // A lost chargeback comes off the same way: the next payout, then later ones if short.
+    setUp("CBK");
+    money("CBK", "cbk1", 3000);
+    t.eq(payout("CBK", "pay-cbk-1", 3000).result, "paid", "8o2 a payment paid out");
+    money("CBK", "cbk2", 1000);
+    t.eq(svc(`creator_commission_clawback('stripe', 'cbk1', null, null, null, 'du_cbk')`).result, "clawback", "8o3 …then lost to a chargeback");
+    t.eq(report("CBK"), { households: 2, payable: 0, carry: -2000, clawbacks: -3000, young: 0 }, "8o4 it comes off what is earned next; the $20 still owed shows as a negative carry-over");
+    money("CBK", "cbk3", 4500);
+    t.eq(report("CBK"), { households: 2, payable: 2500, carry: 0, clawbacks: -3000, young: 0 }, "8o5 a later month pays down the rest first, and what is left is payable");
+    t.eq([payout("CBK", "pay-cbk-2", 2500).cents, report("CBK").clawbacks, report("CBK").carry], [2500, 0, 0], "8o6 settled with that payout, and not taken twice");
+    t.eq(svc(`creator_commission_clawback('stripe', 'cbk1', null, null, null, 'du_cbk')`).result, "already", "8o7 the same dispute, delivered again after all that: nothing");
     setUp("YOUNG");
     money("YOUNG", "y_ref", 500, { daysOld: 5 });
     svc(`creator_commission_clawback('stripe', 'y_ref', null, null, null)`);

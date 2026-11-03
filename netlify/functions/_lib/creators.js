@@ -23,6 +23,10 @@
 // WHAT A REFUND DOES. It claws back the commission on that one payment. A refund that matches no payment changes nothing
 // and tells support: nothing is ever taken from the wrong payment.
 //
+// WHAT A LOST CHARGEBACK DOES (Amanda, 2026-11-03). The same, for a Stripe dispute that closes as lost. A won or
+// warning_closed dispute changes nothing. The stores: a chargeback RevenueCat delivers as a refund is handled as a refund;
+// no field tells the two apart (docs/ops/CREATOR-PAYOUTS.md).
+//
 // A note for support carries the account id and the flag, never an amount or an address (_lib/supportAlert.js).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -177,14 +181,38 @@ async function clawbackStripeCharge(admin, charge, deps = {}) {
     p_provider: "stripe", p_payment_ref: ref, p_original_ref: null, p_payment_date: null, p_refunded_cents: charge.amount_refunded,
   }) : null;
   if (r && r.result !== "not_found") return notes;
-  // No commission on this payment. That is only news if the account has a creator: then a refund has gone unmatched.
+  await noteIfUnmatched(admin, charge, "creator_refund_unmatched", notes, deps);
+  return notes;
+}
+
+// No commission on this charge's payment. That is only news if the account has a creator: then something has gone unmatched.
+async function noteIfUnmatched(admin, charge, flag, notes, deps) {
   const customer = typeof charge?.customer === "string" ? charge.customer : charge?.customer?.id;
-  if (!customer) return notes;
+  if (!customer) return;
   const { data: owner, error } = await admin.from("subscriptions").select("user_id").eq("provider_customer_id", customer).maybeSingle();
   if (error) throw new Error(`subscriptions read: ${error.code || "error"}`);
   if (owner?.user_id && await rpc(admin, "creator_for_payer", { p_user: owner.user_id })) {
-    await noteForSupport(notes, "creator_refund_unmatched", owner.user_id, "stripe", deps);
+    await noteForSupport(notes, flag, owner.user_id, "stripe", deps);
   }
+}
+
+// charge.dispute.closed. Only a lost dispute takes anything. A dispute names its charge, not its invoice or its customer,
+// so the charge is read from Stripe. Its id goes on the clawback, so the same dispute never takes anything twice.
+// Returns the notes. Throws when Stripe or the database fails, so Stripe retries.
+async function clawbackStripeDispute(admin, dispute, deps = {}) {
+  const notes = [];
+  if (dispute?.status !== "lost" || typeof dispute.id !== "string" || !dispute.id) return notes;
+  const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id;
+  if (!chargeId) return notes;
+  const get = deps.stripeGet || stripeGet;
+  const charge = await get(`/charges/${encodeURIComponent(chargeId)}`);
+  const ref = await invoiceOfCharge(charge, deps);
+  const r = ref ? await rpc(admin, "creator_commission_clawback", {
+    p_provider: "stripe", p_payment_ref: ref, p_original_ref: null, p_payment_date: null,
+    p_refunded_cents: Number.isInteger(dispute.amount) && dispute.amount > 0 ? dispute.amount : null, p_dispute_ref: dispute.id,
+  }) : null;
+  if (r && r.result !== "not_found") return notes;
+  await noteIfUnmatched(admin, charge, "creator_chargeback_unmatched", notes, deps);
   return notes;
 }
 
@@ -262,5 +290,5 @@ async function creditStoreEvent(admin, evt, deps = {}) {
 
 module.exports = {
   creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode, creatorStatus,
-  stripeInvoicePayment, creditStripeInvoice, invoiceOfCharge, clawbackStripeCharge, storeProceedsCents, creditStoreEvent,
+  stripeInvoicePayment, creditStripeInvoice, invoiceOfCharge, clawbackStripeCharge, clawbackStripeDispute, storeProceedsCents, creditStoreEvent,
 };
