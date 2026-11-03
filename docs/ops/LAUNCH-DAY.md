@@ -55,6 +55,11 @@ Each link is the website with the campaign code, so the waitlist counts each sou
 | Meta ad set B | `https://flourishmoney.app/?src=meta_b` |
 | Press release and media kit | `https://flourishmoney.app/?src=press` |
 | Your email signature and one-to-one emails | `https://flourishmoney.app/?src=email` |
+| QR code in the Trenton shop | `https://flourishmoney.app/?src=shop-trenton` |
+| QR code in the Napanee shop | `https://flourishmoney.app/?src=shop-napanee` |
+| QR code in the Belleville shop | `https://flourishmoney.app/?src=shop-belleville` |
+
+Run migration 0034 before the shop QR codes go out: until then their signups are still stored with the shop's tag, but the reports count them as `direct` and the landing counts for them are lost. On those visits the page's store badges carry the tag too: App Store Connect shows it as the campaign, and Play Console as the `utm_source`. The other campaigns' badges carry nothing.
 
 `calendar` and `clawback` are for the benefit calendar and CCB clawback pages, which do not exist yet: do
 not use them today.

@@ -1,6 +1,7 @@
 // tests/signupCounts.test.cjs
 // -----------------------------------------------------------------------------
-// WAITLIST SIGNUPS BY SOURCE AND BY DAY, COUNTS ONLY (migration 0018, 2026-10-15).
+// WAITLIST SIGNUPS BY SOURCE AND BY DAY, COUNTS ONLY (migration 0018, 2026-10-15; the report's current definition,
+// with the shop tags, is migration 0034's, so its function is the one read here).
 //   1. Every source in WAITLIST_SRCS is reported (meta_a and meta_b included), plus "direct", and a null,
 //      blank or unknown source counts as "direct" instead of being dropped.
 //   2. Rows marked is_test are left out of every figure; their count is a separate function.
@@ -16,14 +17,16 @@ const fs = require("fs");
 const path = require("path");
 const RAW = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0018_waitlist_signup_counts.sql"), "utf8");
 const SQL = RAW.replace(/--.*$/gm, " ");
+const LATEST = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0034_shop_source_tags.sql"), "utf8").replace(/--.*$/gm, " ");
 const { WAITLIST_SRCS } = require("../netlify/functions/_lib/waitlistConsent");
 
 (async () => {
   const t = create();
-  const fn = SQL.slice(SQL.indexOf("function public.waitlist_signup_counts("), SQL.indexOf("$$;", SQL.indexOf("function public.waitlist_signup_counts(")));
-  const listed = [...(/values\s*([\s\S]*?)\),\s*days/.exec(fn) || ["", ""])[1].matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+  const fn = LATEST.slice(LATEST.indexOf("function public.waitlist_signup_counts("), LATEST.indexOf("$$;", LATEST.indexOf("function public.waitlist_signup_counts(")));
+  const listed = [...(/values\s*([\s\S]*?)\),\s*days/.exec(fn) || ["", ""])[1].matchAll(/'([a-z_-]+)'/g)].map(m => m[1]);
   t.eq([...listed].sort(), ["direct", ...WAITLIST_SRCS].sort(), "1a the report lists every WAITLIST_SRCS value and \"direct\", no more and no fewer");
   t.ok(listed.includes("meta_a") && listed.includes("meta_b"), "1b …meta_a and meta_b included");
+  for (const shop of ["shop-trenton", "shop-napanee", "shop-belleville"]) t.ok(listed.includes(shop), `1b2 …${shop} included`);
   t.ok(/case when lower\(trim\(coalesce\(w\.source, ''\)\)\) in \(select source from sources\)\s+then lower\(trim\(w\.source\)\) else 'direct' end as source/.test(fn),
     "1c a null, blank or unrecognised source is counted as direct, not dropped");
   t.ok(/cross join sources s/.test(fn) && /left join rows_ r/.test(fn) && /count\(r\.day\)::integer as signups/.test(fn), "1d every day and every source gets a row, zeros included");
@@ -35,9 +38,9 @@ const { WAITLIST_SRCS } = require("../netlify/functions/_lib/waitlistConsent");
   // Quoted literals are the fixed source names ('email' is a campaign source, not an address column).
   t.ok(!/email|metadata|name|consent|unsubscribe|founding_position/i.test(fn.replace(/search_path/g, "").replace(/'[^']*'/g, "")), "3c no email, name, metadata or other row field is referenced");
   t.ok(/stable/.test(fn) && !/\b(insert|update|delete|truncate|alter|drop)\b/i.test(SQL.replace(/revoke all|grant execute/g, "")), "3d read-only: nothing is inserted, changed or dropped");
-  for (const f of ["waitlist_signup_counts(date, date)", "waitlist_test_row_count()"]) {
+  for (const [f, text] of [["waitlist_signup_counts(date, date)", SQL], ["waitlist_signup_counts(date, date)", LATEST], ["waitlist_test_row_count()", SQL]]) {
     const e = f.replace(/[()]/g, "\\$&");
-    t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(SQL) && new RegExp(`grant execute on function public\\.${e} to service_role;`).test(SQL),
+    t.ok(new RegExp(`revoke all on function public\\.${e} from public, anon, authenticated;`).test(text) && new RegExp(`grant execute on function public\\.${e} to service_role;`).test(text),
       `4a explicit grants: ${f}, service role only`);
   }
   t.ok(/at time zone 'America\/Toronto'/.test(fn), "1e days are Toronto days, so a signup at 11 pm ET is not counted as tomorrow");

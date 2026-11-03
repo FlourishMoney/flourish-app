@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // THE WAITLIST RECORDS WHICH CAMPAIGN BROUGHT EACH SIGNUP.
 //
-// Campaign links carry ?src= (ig, fb, tt, calendar, clawback, email, press, meta_a, meta_b). The form reads it on page
+// Campaign links carry ?src= (ig, fb, tt, calendar, clawback, email, press, meta_a, meta_b, and the three shops). The form reads it on page
 // load, keeps it for the browser session, and sends it with the join. The server stores a known src in
 // the source column and anything else as "direct" (never empty, never free text), moves the form's
 // position into metadata.placement, and keeps utm_* exactly as captured.
@@ -16,7 +16,8 @@ const path = require("path");
 
 const REPO = path.join(__dirname, "..");
 const BETA = path.join(REPO, "netlify", "functions", "beta.js");
-const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"];
+const SHOPS = ["shop-trenton", "shop-napanee", "shop-belleville"];
+const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", ...SHOPS];;
 
 async function join(extra) {
   process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -101,6 +102,22 @@ function fakeStorage() {
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/useEffect\(\(\) => \{ captureWaitlistSrc\(\); \}, \[\]\);/.test(app), "4h the form reads ?src= when the page loads");
     t.ok(/placement: tag, src: captureWaitlistSrc\(\),/.test(app), "4i …and sends the placement and the session's src with the join");
+  }
+
+  // ── 5. The shop QR codes: from the printed URL to the stored row, through a reload ───────────
+  {
+    const W = await import("../src/lib/waitlistSrc.js");
+    for (const src of SHOPS) {
+      const st = fakeStorage();
+      t.eq(W.captureWaitlistSrc(`?src=${src}`, st), src, `5a ${src}: https://flourishmoney.app/?src=${src} is read when the page loads`);
+      t.eq(W.captureWaitlistSrc("", st), src, `5b ${src}: a reload in the same session still has it`);
+      const r = await join({ src: W.captureWaitlistSrc("", st) });
+      t.eq([r.status, r.row && r.row.source], [200, src], `5c ${src}: after the reload the signup is stored with source "${src}"`);
+      t.eq((await join({ src: ` ${src.toUpperCase()} ` })).row.source, src, `5d ${src}: case and surrounding spaces do not make it unknown`);
+    }
+    for (const src of ["shop-kingston", "shop", "shop-trenton2", "shop_trenton", "shop-trenton <b>"]) {
+      t.eq((await join({ src })).row.source, "direct", `5e "${src}" is not a shop tag: stored as "direct", never free text`);
+    }
   }
 
   t.summary("waitlistSrc.test");
