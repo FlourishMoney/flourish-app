@@ -92,6 +92,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSignup(page);
       await page.waitForTimeout(400);
       t.eq(await page.locator(FIELD).count(), 0, "1a off: no field on the sign-up form");
+      t.eq(await page.getByLabel("Password (min 8 characters)").getAttribute("name"), "password", "1a2 the password's label doesn't depend on the program");
       t.ok(!(await page.content()).includes(W.signupHint) && !(await page.content()).includes(W.signupLabel), "1b off: none of the program's words on the page");
       t.ok(page.url().includes("c=alice") && (await page.evaluate(() => sessionStorage.getItem("flourish_creator_code"))) === null, "1c off: the address and the tab are left exactly as they were");
       await fillAccount(page);
@@ -111,7 +112,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await toSignup(page);
       await page.locator(FIELD).waitFor();
       t.eq(await page.locator(FIELD).inputValue(), "ALICE", "2c a creator's link starts the field filled in");
-      t.eq([(await page.locator('[data-creator-field]').innerText()).includes(W.signupHint), await page.locator(FIELD).getAttribute("aria-label"), await page.locator(FIELD).getAttribute("placeholder")], [true, W.signupLabel, W.signupLabel], "2d the words shown are the module's own");
+      t.eq([(await page.locator('[data-creator-field]').innerText()).includes(W.signupHint), await page.getByLabel(W.signupLabel).getAttribute("name"), await page.locator(FIELD).getAttribute("placeholder")], [true, "creatorcode", null], "2d the words shown are the module's own, and the label is a real one, not a placeholder");
       await page.locator(FIELD).fill("wrong");
       t.eq(await page.locator(FIELD).inputValue(), "WRONG", "2e what is typed shows in capitals");
       await fillAccount(page);
@@ -236,6 +237,24 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       t.ok(box && box.x >= 0 && box.x + box.width <= 320 && box.height >= 40, "5a at 320px the field fits and can be tapped");
       const fits = (p, sel) => p.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; }, sel);
       t.ok(await fits(page, "[data-creator-field]"), "5b …and the approved hint wraps inside the screen, with nothing to scroll sideways");
+      // Every text size: each rendered font size times k, worked out first so nested sizes don't compound.
+      const biggerText = (k) => { const els = [...document.querySelectorAll("body *")]; const sizes = els.map((e) => parseFloat(getComputedStyle(e).fontSize)); els.forEach((e, i) => { if (sizes[i]) e.style.fontSize = sizes[i] * k + "px"; }); };
+      const labels = () => ["password", "creatorcode"].map((name) => {
+        const input = document.querySelector(`input[name="${name}"]`), label = document.querySelector(`label[for="${input.id}"]`);
+        const range = document.createRange(); range.selectNodeContents(label);
+        const text = range.getBoundingClientRect(), box = input.getBoundingClientRect(), css = getComputedStyle(label);
+        return { name, placeholder: input.getAttribute("placeholder"), inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" || label.scrollWidth > label.clientWidth + 1, lines: Math.round(text.height / parseFloat(css.lineHeight)) };
+      });
+      for (const k of [1, 1.3, 1.6, 2]) {
+        await page.reload();
+        await toSignup(page);
+        await page.locator(FIELD).waitFor();
+        await page.evaluate(biggerText, k);
+        const seen = await page.evaluate(labels);
+        t.eq(seen.map(({ name, placeholder, inside, cut }) => ({ name, placeholder, inside, cut })), ["password", "creatorcode"].map((name) => ({ name, placeholder: null, inside: true, cut: false })), `5b2 at 320px and text ×${k}: both labels show in full, inside the field's width`);
+        t.ok((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), `5b3 …with nothing to scroll sideways (×${k})`);
+        if (k === 2) t.ok(seen.every((s) => s.lines >= 2), `5b4 at the largest, each wraps onto more lines instead of being cut (${seen.map((s) => s.lines).join(", ")})`);
+      }
       await ctx.close();
     }
     {

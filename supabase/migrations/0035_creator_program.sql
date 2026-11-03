@@ -14,7 +14,8 @@
 --                                            rest of their 12 months (the approved terms)
 --                           ended_for_cause  fraud, spam or a serious breach: no new households, nothing further earned
 --   creator_attributions  one per account: the code it entered, when, and from where
---   creator_commissions   one per qualifying payment, and clawback rows against it
+--   creator_commissions   one per qualifying payment, clawback rows against it, and a row giving a clawback back if
+--                         a lost chargeback later turns into a win
 --
 -- WHOSE CODE (Amanda, 2026-11-02). A households row exists only after an owner's first invite, so an attribution
 -- belongs to the ACCOUNT that entered the code (user_id). Someone on their own uses their own. A member of a household
@@ -64,19 +65,20 @@ create table if not exists public.creator_commissions (
   gross_amount_cents integer     check (gross_amount_cents >= 0),           -- what was charged: a partial refund's share of it
   commission_cents   integer     not null,
   currency           text        not null default 'CAD' check (currency = 'CAD'),   -- Canada only for now
-  status             text        not null default 'pending' check (status in ('pending', 'payable', 'paid', 'clawback')),
+  status             text        not null default 'pending' check (status in ('pending', 'payable', 'paid', 'clawback', 'reinstated')),
   clawback_of        uuid        references public.creator_commissions(id) on delete restrict,
-  dispute_ref        text,                    -- on a clawback for a lost chargeback: Stripe's dispute id
+  dispute_ref        text,                    -- on a lost chargeback's clawback, and on the row giving it back: Stripe's dispute id
   payout_ref         text,                    -- the payout that settled this row
   paid_at            timestamptz,
   created_at         timestamptz not null default now(),
   constraint creator_commissions_clawback_shape check (
     (status = 'clawback' and clawback_of is not null and commission_cents < 0)
-    or (status <> 'clawback' and clawback_of is null and commission_cents >= 0)),
+    or (status = 'reinstated' and clawback_of is not null and dispute_ref is not null and commission_cents > 0)
+    or (status not in ('clawback', 'reinstated') and clawback_of is null and commission_cents >= 0)),
   constraint creator_commissions_dispute_on_clawback check (dispute_ref is null or clawback_of is not null)
 );
 create unique index if not exists creator_commissions_one_per_payment on public.creator_commissions (provider, payment_ref) where clawback_of is null;
-create unique index if not exists creator_commissions_one_per_dispute on public.creator_commissions (provider, dispute_ref) where dispute_ref is not null;
+create unique index if not exists creator_commissions_one_per_dispute on public.creator_commissions (provider, dispute_ref, status) where dispute_ref is not null;
 create index if not exists creator_commissions_creator on public.creator_commissions (creator_id, status);
 create index if not exists creator_commissions_original_ref on public.creator_commissions (provider, original_ref) where original_ref is not null;
 create index if not exists creator_commissions_clawback_of on public.creator_commissions (clawback_of) where clawback_of is not null;
@@ -344,6 +346,27 @@ begin
   return jsonb_build_object('result', 'clawback', 'cents', new_cents);
 end; $$;
 
+-- A lost chargeback that turned into a win, with the money back (Amanda, 2026-11-03). What that dispute took goes back, in a
+-- row of its own carrying the payment's date, so it comes with the next payout. Never more than the dispute took, and once
+-- per dispute. 'nothing': this dispute took nothing, as with an ordinary win. Answers the account, for support's note.
+create or replace function public.creator_commission_give_back(p_provider text, p_dispute_ref text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.creator_commissions%rowtype;
+begin
+  select * into c from public.creator_commissions where provider = p_provider and dispute_ref = p_dispute_ref and status = 'clawback';
+  if c.id is null then return jsonb_build_object('result', 'nothing'); end if;
+  perform 1 from public.creator_commissions where id = c.clawback_of for update;
+  if exists (select 1 from public.creator_commissions where provider = p_provider and dispute_ref = p_dispute_ref and status = 'reinstated') then
+    return jsonb_build_object('result', 'already');
+  end if;
+  insert into public.creator_commissions
+    (user_id, household_id, creator_id, attribution_id, provider, payment_ref, original_ref, payment_date,
+     base_amount_cents, gross_amount_cents, commission_cents, currency, status, clawback_of, dispute_ref)
+  values (c.user_id, c.household_id, c.creator_id, c.attribution_id, c.provider, c.payment_ref, c.original_ref, c.payment_date,
+          c.base_amount_cents, c.gross_amount_cents, -c.commission_cents, c.currency, 'reinstated', c.clawback_of, p_dispute_ref);
+  return jsonb_build_object('result', 'given_back', 'cents', -c.commission_cents, 'user_id', c.user_id);
+end; $$;
+
 -- Pending becomes payable once the payment is more than 30 days old. Run daily (creator-commissions-sweep). Answers how
 -- many changed.
 create or replace function public.creator_commissions_mature(p_as_of timestamptz default now())
@@ -370,15 +393,17 @@ end; $$;
 --   carry_over_cents          the same figure when it is under $25: it rolls to next month. Below zero, it is still owed
 --                             back, and comes off later payouts (the approved terms)
 --   clawbacks_cents           the refunds and lost chargebacks included in those figures (zero or negative)
+--   given_back_cents          lost chargebacks that turned into wins, included in those figures (zero or positive)
 --   not_yet_30_days_cents     earned on payments under 30 days old, less any refunds of them: not payable yet
 create or replace function public.creator_payout_report(p_as_of timestamptz default now())
 returns table (code text, name text, payout_email text, status text, households_credited bigint, payable_this_month_cents bigint,
-               carry_over_cents bigint, clawbacks_cents bigint, not_yet_30_days_cents bigint)
+               carry_over_cents bigint, clawbacks_cents bigint, given_back_cents bigint, not_yet_30_days_cents bigint)
 language sql stable security definer set search_path = public as $$
   with ready as (
     select cc.creator_id,
-           coalesce(sum(cc.commission_cents) filter (where cc.clawback_of is null), 0) as earned,
-           coalesce(sum(cc.commission_cents) filter (where cc.clawback_of is not null), 0) as clawed
+           coalesce(sum(cc.commission_cents), 0) as net,
+           coalesce(sum(cc.commission_cents) filter (where cc.status = 'clawback'), 0) as clawed,
+           coalesce(sum(cc.commission_cents) filter (where cc.status = 'reinstated'), 0) as given_back
       from public.creator_commissions cc
      where cc.payout_ref is null and cc.status <> 'paid' and cc.created_at <= p_as_of
        and cc.payment_date < p_as_of - interval '30 days'
@@ -398,9 +423,9 @@ language sql stable security definer set search_path = public as $$
        and not exists (select 1 from public.household_members m where m.user_id = ca.user_id and m.role = 'partner')
      group by ca.creator_id)
   select c.code, c.name, c.payout_email, c.status, coalesce(j.households, 0),
-         case when coalesce(r.earned, 0) + coalesce(r.clawed, 0) >= 2500 then coalesce(r.earned, 0) + coalesce(r.clawed, 0) else 0 end,
-         case when coalesce(r.earned, 0) + coalesce(r.clawed, 0) >= 2500 then 0 else coalesce(r.earned, 0) + coalesce(r.clawed, 0) end,
-         coalesce(r.clawed, 0), coalesce(y.cents, 0)
+         case when coalesce(r.net, 0) >= 2500 then coalesce(r.net, 0) else 0 end,
+         case when coalesce(r.net, 0) >= 2500 then 0 else coalesce(r.net, 0) end,
+         coalesce(r.clawed, 0), coalesce(r.given_back, 0), coalesce(y.cents, 0)
     from public.creators c
     left join ready r on r.creator_id = c.id
     left join young y on y.creator_id = c.id
@@ -428,7 +453,7 @@ begin
   if net < 2500 then return jsonb_build_object('result', 'below_minimum', 'cents', net); end if;
   if net <> p_expected_cents then return jsonb_build_object('result', 'amount_changed', 'cents', net); end if;
   update public.creator_commissions
-     set payout_ref = p_payout_ref, paid_at = now(), status = case when status = 'clawback' then 'clawback' else 'paid' end
+     set payout_ref = p_payout_ref, paid_at = now(), status = case when status in ('clawback', 'reinstated') then status else 'paid' end
    where creator_id = c.id and payout_ref is null and status <> 'paid' and created_at <= p_as_of
      and payment_date < p_as_of - interval '30 days';
   get diagnostics n = row_count;
@@ -449,6 +474,7 @@ revoke all on function public.creator_anchor_first_payment(uuid, timestamptz) fr
 revoke all on function public.creator_first_payment_seen(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text) from public, anon, authenticated;
 revoke all on function public.creator_commission_clawback(text, text, text, timestamptz, integer, text) from public, anon, authenticated;
+revoke all on function public.creator_commission_give_back(text, text) from public, anon, authenticated;
 revoke all on function public.creator_commissions_mature(timestamptz) from public, anon, authenticated;
 revoke all on function public.creator_payout_report(timestamptz) from public, anon, authenticated;
 revoke all on function public.creator_payout_record(text, text, bigint, timestamptz) from public, anon, authenticated;
@@ -465,6 +491,7 @@ grant execute on function public.creator_anchor_first_payment(uuid, timestamptz)
 grant execute on function public.creator_first_payment_seen(uuid, timestamptz) to service_role;
 grant execute on function public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text) to service_role;
 grant execute on function public.creator_commission_clawback(text, text, text, timestamptz, integer, text) to service_role;
+grant execute on function public.creator_commission_give_back(text, text) to service_role;
 grant execute on function public.creator_commissions_mature(timestamptz) to service_role;
 grant execute on function public.creator_payout_report(timestamptz) to service_role;
 grant execute on function public.creator_payout_record(text, text, bigint, timestamptz) to service_role;
@@ -485,6 +512,7 @@ grant execute on function public.creator_payout_record(text, text, bigint, times
 -- drop function if exists public.creator_payout_record(text, text, bigint, timestamptz);
 -- drop function if exists public.creator_payout_report(timestamptz);
 -- drop function if exists public.creator_commissions_mature(timestamptz);
+-- drop function if exists public.creator_commission_give_back(text, text);
 -- drop function if exists public.creator_commission_clawback(text, text, text, timestamptz, integer, text);
 -- drop function if exists public.creator_commission_record(uuid, text, text, text, timestamptz, integer, integer, text);
 -- drop function if exists public.creator_first_payment_seen(uuid, timestamptz);

@@ -74,9 +74,9 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       t.ok(/Check your email to confirm your address\./.test(await page.locator("body").innerText()), "1d …and says to check the inbox");
       // ── 3. Log In opens the sign-in card ──
       await page.getByRole("button", { name: "Log In" }).first().click();
-      await page.getByPlaceholder("Password (min 8 characters)").waitFor({ timeout: 10000 }).catch(() => {});
+      await page.getByLabel("Password (min 8 characters)").waitFor({ timeout: 10000 }).catch(() => {});
       const card = await page.locator("body").innerText();
-      t.ok(new URL(page.url()).pathname === "/" && (await page.getByPlaceholder("Password (min 8 characters)").count()) > 0 && /Log In/.test(card), "3a Log In opens the sign-in card, at \"/\"");
+      t.ok(new URL(page.url()).pathname === "/" && (await page.getByLabel("Password (min 8 characters)").count()) > 0 && /Log In/.test(card), "3a Log In opens the sign-in card, at \"/\"");
       await ctx.close();
     }
     // ── 2. No token at all ────────────────────────────────────────────────────────────────────────

@@ -301,6 +301,27 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/creator_commissions_dispute_on_clawback/.test(err(() => sql(`update public.creator_commissions set dispute_ref = 'du_7' where payment_ref = 'cb3' and clawback_of is null`))), "6s only a clawback can carry a dispute's id");
     t.ok(/creator_commissions_one_per_dispute/.test(err(() => sql(`update public.creator_commissions set dispute_ref = 'du_1' where dispute_ref = 'du_2'`))), "6t the database itself holds one row per dispute");
 
+    // 6c A LOST CHARGEBACK THAT TURNS INTO A WIN ---------------------------------------------------------------------
+    const giveBack = (id) => svc(`creator_commission_give_back('stripe', '${id}')`);
+    const GB = person();
+    attribute(GB, "ALICE");
+    backdate(GB, 60);
+    pay(GB, "gb1", day, { base: 1000, gross: 1000 });
+    pay(GB, "gb2", day, { base: 2000, gross: 2000 });
+    t.eq(giveBack("du_none"), { result: "nothing" }, "6u a dispute that took nothing, as with an ordinary win: nothing to give back");
+    lost("gb1", "du_g1", 1000);
+    const back1 = giveBack("du_g1");
+    t.eq([back1.result, back1.cents, back1.user_id, clawed("gb1"), clawed("gb2")], ["given_back", 200, GB, 0, 0], "6v what the dispute took goes back, on that payment alone, and support can find the account");
+    t.eq([giveBack("du_g1").result, clawed("gb1"), sql(`select count(*) from public.creator_commissions where dispute_ref = 'du_g1' and status = 'reinstated'`)], ["already", 0, "1"], "6w the same dispute again gives back nothing more: one row");
+    t.eq([lost("gb1", "du_g1", 1000).result, clawed("gb1")], ["already", 0], "6x …and it can't take it a second time");
+    t.eq(rowOf("gb1"), "200,pending", "6y the payment's own row stands");
+    t.eq([claw("gb1").result, clawed("gb1"), claw("gb1").result, clawed("gb1")], ["clawback", -200, "already", -200], "6z a real refund afterwards can still take it, once");
+    claw("gb2", { refunded: 1000 });
+    t.eq([lost("gb2", "du_g2", 2000).cents, clawed("gb2")], [200, -400], "6z2 a refund took half, and a dispute only what was left");
+    t.eq([giveBack("du_g2").cents, clawed("gb2")], [200, -200], "6z3 never more than the dispute took: the refund's share stands");
+    t.ok(/creator_commissions_clawback_shape/.test(err(() => sql(`update public.creator_commissions set dispute_ref = null where dispute_ref = 'du_g2' and status = 'reinstated'`))), "6z4 a give-back always carries its dispute's id");
+    t.ok(/creator_commissions_clawback_shape/.test(err(() => sql(`update public.creator_commissions set commission_cents = -1 where dispute_ref = 'du_g2' and status = 'reinstated'`))), "6z5 …and is always money back");
+
     // 7 MATURITY ------------------------------------------------------------------------------------------------
     const M = person();
     attribute(M, "ALICE");
@@ -355,6 +376,23 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(report("CBK"), { households: 2, payable: 2500, carry: 0, clawbacks: -3000, young: 0 }, "8o5 a later month pays down the rest first, and what is left is payable");
     t.eq([payout("CBK", "pay-cbk-2", 2500).cents, report("CBK").clawbacks, report("CBK").carry], [2500, 0, 0], "8o6 settled with that payout, and not taken twice");
     t.eq(svc(`creator_commission_clawback('stripe', 'cbk1', null, null, null, 'du_cbk')`).result, "already", "8o7 the same dispute, delivered again after all that: nothing");
+    // A lost chargeback that turned into a win: what was taken goes back on the next payout.
+    const givenBack = (code) => Number(sql(`select given_back_cents from public.creator_payout_report(now()) where code = '${code}'`));
+    t.eq([svc(`creator_commission_give_back('stripe', 'du_cbk')`).cents, report("CBK").payable, report("CBK").carry, report("CBK").clawbacks, givenBack("CBK")], [3000, 3000, 0, 0, 3000], "8o8 a late win, after the clawback was settled: it comes back on the next payout, in a column of its own");
+    t.eq([payout("CBK", "pay-cbk-3", 3000).cents, report("CBK").payable, givenBack("CBK")], [3000, 0, 0], "8o9 paid with that payout, and not paid twice");
+    t.eq(sql(`select status || ',' || (payout_ref is not null)::text from public.creator_commissions where dispute_ref = 'du_cbk' and status = 'reinstated'`), "reinstated,true", "8o10 it stays what it is, marked settled");
+    t.eq(svc(`creator_commission_give_back('stripe', 'du_cbk')`).result, "already", "8o11 the same dispute again: nothing");
+    setUp("EARLY");
+    money("EARLY", "early1", 1000);
+    svc(`creator_commission_clawback('stripe', 'early1', null, null, null, 'du_early')`);
+    t.eq(report("EARLY").carry, 0, "8o12 a chargeback lost before any payout: the two cancel out");
+    svc(`creator_commission_give_back('stripe', 'du_early')`);
+    t.eq([report("EARLY").payable, report("EARLY").carry, report("EARLY").clawbacks, givenBack("EARLY")], [0, 1000, -1000, 1000], "8o13 then won: the money is back, and under $25 it carries over like anything else");
+    setUp("YNGB");
+    money("YNGB", "yngb1", 3000, { daysOld: 5 });
+    svc(`creator_commission_clawback('stripe', 'yngb1', null, null, null, 'du_yngb')`);
+    svc(`creator_commission_give_back('stripe', 'du_yngb')`);
+    t.eq([report("YNGB").payable, report("YNGB").young, givenBack("YNGB")], [0, 3000, 0], "8o14 on a payment under 30 days old: it waits with the payment");
     setUp("YOUNG");
     money("YOUNG", "y_ref", 500, { daysOld: 5 });
     svc(`creator_commission_clawback('stripe', 'y_ref', null, null, null)`);
@@ -386,7 +424,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     pair("count2", oOwner, oPartner);
     t.eq(report("OTHER").households, 0, "8p9 a partner's own code earns nothing while they are together, and counts for nothing");
     const shape = sql(`select pg_get_function_result('public.creator_payout_report(timestamptz)'::regprocedure)`);
-    t.eq(shape.replace(/TABLE\(|\)/g, "").split(", ").map((c) => c.split(" ")[0]), ["code", "name", "payout_email", "status", "households_credited", "payable_this_month_cents", "carry_over_cents", "clawbacks_cents", "not_yet_30_days_cents"],
+    t.eq(shape.replace(/TABLE\(|\)/g, "").split(", ").map((c) => c.split(" ")[0]), ["code", "name", "payout_email", "status", "households_credited", "payable_this_month_cents", "carry_over_cents", "clawbacks_cents", "given_back_cents", "not_yet_30_days_cents"],
       "8q the report's columns: the creator's own, and totals. No household, no customer, nothing per household");
 
     // 9 A DELETED ACCOUNT ---------------------------------------------------------------------------------------

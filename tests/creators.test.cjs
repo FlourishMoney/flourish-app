@@ -153,6 +153,8 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       t.eq([creatorCalls(D3).length, D3.db.stripeGets.length], [0, 0], "1d off: a refund touches nothing of the program");
       const D3b = makeDb();
       t.eq([await stripeEvent(D3b, "evt_dispute_off", "charge.dispute.closed", { id: "du_1", charge: "ch_1", amount: 1356, status: "lost" }), (D3b.db.rows.billing_events.find((e) => e.event_id === "evt_dispute_off") || {}).status, creatorCalls(D3b).length, D3b.db.stripeGets.length], [200, "ignored", 0, 0], "1d2 off: a lost chargeback is ignored like any other event: no read, no write");
+      const D3c = makeDb();
+      t.eq([await stripeEvent(D3c, "evt_back_off", "charge.dispute.funds_reinstated", { id: "du_1", charge: "ch_1", amount: 1356, status: "won" }), (D3c.db.rows.billing_events.find((e) => e.event_id === "evt_back_off") || {}).status, creatorCalls(D3c).length, D3c.db.stripeGets.length], [200, "ignored", 0, 0], "1d3 off: funds coming back too");
       const D4 = makeDb();
       await rcEvent(D4, storeEvt());
       t.eq(creatorCalls(D4).length, 0, "1e off: a store payment touches nothing of the program");
@@ -296,52 +298,86 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       t.eq(D.db.alerts.map((a) => a.flag), ["creator_refund_unmatched"], "5g a refund matching no commission, for an account with a creator: support hears");
     }
 
-    // 5b ── STRIPE: A LOST CHARGEBACK ──────────────────────────────────────────────────────────────────────────────
+    // 5b ── STRIPE: A LOST CHARGEBACK, AND ONE THAT TURNS INTO A WIN ─────────────────────────────────────────────────
     {
+      const CLOSED = "charge.dispute.closed", BACK = "charge.dispute.funds_reinstated";
       const dispute = (o = {}) => ({ id: "du_1", object: "dispute", charge: "ch_1", payment_intent: "pi_1", amount: 1356, currency: "cad", status: "lost", ...o });
-      const charge = (o = {}) => (p) => (p.startsWith("/charges/") ? { id: "ch_1", customer: "cus_1", amount: 1356, amount_refunded: 0, invoice: "in_1", payment_intent: "pi_1", ...o } : { data: [{ invoice: "in_found" }] });
-      const base = (o = {}) => makeDb({ stripeAnswer: charge(), answers: { creator_commission_clawback: { result: "clawback", cents: 240 }, creator_for_payer: true }, rows: { subscriptions: [{ user_id: uid(1), provider_customer_id: "cus_1" }], billing_events: [], profiles: [] }, ...o });
+      // Stripe's answers: the dispute as it is now, and its charge.
+      const stripe = ({ now = {}, charge = {} } = {}) => (p) => (p.startsWith("/disputes/") ? dispute(now)
+        : p.startsWith("/charges/") ? { id: "ch_1", customer: "cus_1", amount: 1356, amount_refunded: 0, invoice: "in_1", payment_intent: "pi_1", ...charge } : { data: [{ invoice: "in_found" }] });
+      const base = (o = {}) => makeDb({ stripeAnswer: stripe(), answers: { creator_commission_clawback: { result: "clawback", cents: 240 }, creator_commission_give_back: { result: "nothing" }, creator_for_payer: true }, rows: { subscriptions: [{ user_id: uid(1), provider_customer_id: "cus_1" }], billing_events: [], profiles: [] }, ...o });
       const statusOf = (D, id) => (D.db.rows.billing_events.find((e) => e.event_id === id) || {}).status;
+      const won = { now: { status: "won" } };
       let D = base();
-      t.eq(await stripeEvent(D, "evt_d1", "charge.dispute.closed", dispute()), 200, "5h a closed dispute is handled when the program is on");
+      t.eq(await stripeEvent(D, "evt_d1", CLOSED, dispute()), 200, "5h a closed dispute is handled when the program is on");
       t.eq(callsTo(D, "creator_commission_clawback")[0], { p_provider: "stripe", p_payment_ref: "in_1", p_original_ref: null, p_payment_date: null, p_refunded_cents: 1356, p_dispute_ref: "du_1" }, "5i a lost chargeback claws back the commission on the invoice its charge paid, under the dispute's id");
-      t.eq([D.db.stripeGets, statusOf(D, "evt_d1"), D.db.alerts.length], [["/charges/ch_1"], "processed", 0], "5j a dispute names its charge, not its invoice: the charge is read, and the event is done");
+      t.eq([D.db.stripeGets, statusOf(D, "evt_d1"), D.db.alerts.length], [["/disputes/du_1", "/charges/ch_1"], "processed", 0], "5j Stripe is asked how the dispute stands now, then for its charge, which names the invoice; the event is done");
       t.eq(callsTo(D, "founding_seat_release").length, 0, "5k …and a founding seat is left alone: this is about the creator's commission, nothing else");
-      for (const status of ["won", "warning_closed", "prevented", "needs_response"]) {
-        D = base();
-        t.eq([await stripeEvent(D, `evt_${status}`, "charge.dispute.closed", dispute({ status })), creatorCalls(D).length, D.db.stripeGets.length, statusOf(D, `evt_${status}`)], [200, 0, 0, "processed"], `5l ${status}: changes nothing`);
+      for (const status of ["warning_closed", "prevented", "needs_response"]) {
+        D = base({ stripeAnswer: stripe({ now: { status } }) });
+        t.eq([await stripeEvent(D, `evt_${status}`, CLOSED, dispute({ status })), creatorCalls(D).length, D.db.stripeGets.length, statusOf(D, `evt_${status}`)], [200, 0, 1, "processed"], `5l ${status}: changes nothing`);
       }
       D = base();
-      await stripeEvent(D, "evt_d2", "charge.dispute.closed", dispute());
-      await stripeEvent(D, "evt_d2", "charge.dispute.closed", dispute());
+      await stripeEvent(D, "evt_d2", CLOSED, dispute());
+      await stripeEvent(D, "evt_d2", CLOSED, dispute());
       t.eq(callsTo(D, "creator_commission_clawback").length, 1, "5m the same event again is not worked twice (the database also refuses the same dispute: tests/creators.sql.test.cjs)");
-      D = base();
-      await stripeEvent(D, "evt_d3", "charge.dispute.closed", dispute({ amount: 500 }));
+      D = base({ stripeAnswer: stripe({ now: { amount: 500 } }) });
+      await stripeEvent(D, "evt_d3", CLOSED, dispute({ amount: 500 }));
       t.eq(callsTo(D, "creator_commission_clawback")[0].p_refunded_cents, 500, "5n a dispute of part of a payment passes its own amount");
-      D = base({ stripeAnswer: charge({ invoice: undefined }) });
-      await stripeEvent(D, "evt_d4", "charge.dispute.closed", dispute());
-      t.eq([callsTo(D, "creator_commission_clawback")[0].p_payment_ref, /invoice_payments\?.*payment_intent.*pi_1/.test(D.db.stripeGets[1] || "")], ["in_found", true], "5o a charge that no longer names its invoice (the newer API): found through its payment intent");
-      D = base({ stripeAnswer: (p) => (p.startsWith("/charges/") ? { id: "ch_1", customer: "cus_1", payment_intent: "pi_1" } : { data: [] }) });
-      await stripeEvent(D, "evt_d5", "charge.dispute.closed", dispute());
+      D = base({ stripeAnswer: stripe({ charge: { invoice: undefined } }) });
+      await stripeEvent(D, "evt_d4", CLOSED, dispute());
+      t.eq([callsTo(D, "creator_commission_clawback")[0].p_payment_ref, /invoice_payments\?.*payment_intent.*pi_1/.test(D.db.stripeGets[2] || "")], ["in_found", true], "5o a charge that no longer names its invoice (the newer API): found through its payment intent");
+      D = base({ stripeAnswer: (p) => (p.startsWith("/disputes/") ? dispute() : p.startsWith("/charges/") ? { id: "ch_1", customer: "cus_1", payment_intent: "pi_1" } : { data: [] }) });
+      await stripeEvent(D, "evt_d5", CLOSED, dispute());
       t.eq([callsTo(D, "creator_commission_clawback").length, D.db.alerts.map((a) => a.flag)], [0, ["creator_chargeback_unmatched"]], "5p no invoice found, for an account with a creator: nothing clawed back, and support hears");
       D = base({ answers: { creator_commission_clawback: { result: "not_found" }, creator_for_payer: true } });
-      await stripeEvent(D, "evt_d6", "charge.dispute.closed", dispute());
+      await stripeEvent(D, "evt_d6", CLOSED, dispute());
       t.eq([D.db.alerts.map((a) => a.flag), noteOn(D, "evt_d6")], [["creator_chargeback_unmatched"], "flag: creator_chargeback_unmatched"], "5q a chargeback matching no commission, for an account with a creator: support hears, and the event says so");
       D = base({ answers: { creator_commission_clawback: { result: "not_found" }, creator_for_payer: false } });
-      await stripeEvent(D, "evt_d7", "charge.dispute.closed", dispute());
+      await stripeEvent(D, "evt_d7", CLOSED, dispute());
       t.eq(D.db.alerts.length, 0, "5r for an account with no creator: nothing to report");
       D = base({ answers: { creator_commission_clawback: { result: "already" }, creator_for_payer: true } });
-      await stripeEvent(D, "evt_d8", "charge.dispute.closed", dispute());
+      await stripeEvent(D, "evt_d8", CLOSED, dispute());
       t.eq(D.db.alerts.length, 0, "5s already taken: nothing to report");
       D = base({ stripeAnswer: () => { throw new Error("stripe 500"); } });
-      t.eq([await stripeEvent(D, "evt_d9", "charge.dispute.closed", dispute()), statusOf(D, "evt_d9")], [500, "failed"], "5t Stripe can't be read: 500 and marked failed, so Stripe tries again");
+      t.eq([await stripeEvent(D, "evt_d9", CLOSED, dispute()), statusOf(D, "evt_d9")], [500, "failed"], "5t Stripe can't be read: 500 and marked failed, so Stripe tries again");
       D = base({ answers: { creator_commission_clawback: () => ({ data: null, error: { code: "XX000" } }), creator_for_payer: true } });
-      t.eq([await stripeEvent(D, "evt_d10", "charge.dispute.closed", dispute()), statusOf(D, "evt_d10")], [500, "failed"], "5u the database fails: the same");
+      t.eq([await stripeEvent(D, "evt_d10", CLOSED, dispute()), statusOf(D, "evt_d10")], [500, "failed"], "5u the database fails: the same");
       const msg = (await import("node:module")).createRequire(__filename);
       delete require.cache[ALERT_PATH];
       const A = msg(ALERT_PATH).supportAlertMessage({ flag: "creator_chargeback_unmatched", userId: uid(1), provider: "stripe" });
       t.ok(!/\$|\d+\.\d\d|@/.test(A.text) && /lost chargeback/.test(A.text) && A.text.includes(uid(1)), "5v the note says what happened, with the account id, and no amount or address");
+      const B = msg(ALERT_PATH).supportAlertMessage({ flag: "creator_chargeback_given_back", userId: uid(1), provider: "stripe" });
+      t.ok(!/\$|\d+\.\d\d|@/.test(B.text) && /goes back on the next payout/.test(B.text) && B.text.includes(uid(1)), "5v2 so does the note for one given back");
       delete require.cache[ALERT_PATH];
+      // The late win.
+      const backNow = (o = {}) => ({ creator_commission_give_back: { result: "given_back", cents: 240, user_id: uid(1), ...o }, creator_commission_clawback: { result: "already" }, creator_for_payer: true });
+      for (const [how, type] of [["the dispute closing as won", CLOSED], ["the funds coming back", BACK]]) {
+        D = base({ stripeAnswer: stripe(won), answers: backNow() });
+        t.eq(await stripeEvent(D, `evt_w_${type}`, type, dispute({ status: "won" })), 200, `5w ${how}: handled`);
+        t.eq([callsTo(D, "creator_commission_give_back"), callsTo(D, "creator_commission_clawback").length, D.db.stripeGets], [[{ p_provider: "stripe", p_dispute_ref: "du_1" }], 0, ["/disputes/du_1"]], `5x ${how}: what the dispute took goes back, by its id`);
+        t.eq([D.db.alerts, noteOn(D, `evt_w_${type}`)], [[{ flag: "creator_chargeback_given_back", userId: uid(1), provider: "stripe" }], "flag: creator_chargeback_given_back"], `5y ${how}: support hears, and the event says so`);
+      }
+      let firstAnswer = true;
+      D = base({ stripeAnswer: stripe(won), answers: { creator_commission_give_back: () => { const a = firstAnswer ? { result: "given_back", cents: 240, user_id: uid(1) } : { result: "already" }; firstAnswer = false; return { data: a, error: null }; } } });
+      await stripeEvent(D, "evt_w1", CLOSED, dispute({ status: "won" }));
+      await stripeEvent(D, "evt_w2", BACK, dispute({ status: "won" }));
+      t.eq([callsTo(D, "creator_commission_give_back").length, D.db.alerts.length], [2, 1], "5z both events for one late win: the database gives back once, and support hears once");
+      D = base({ stripeAnswer: stripe(won) });
+      await stripeEvent(D, "evt_w3", CLOSED, dispute({ status: "won" }));
+      await stripeEvent(D, "evt_w4", BACK, dispute({ status: "won" }));
+      t.eq([callsTo(D, "creator_commission_clawback").length, D.db.alerts.length], [0, 0], "5z2 an ordinary win took nothing: nothing to give back, and nothing to report");
+      D = base({ stripeAnswer: stripe(won), answers: backNow() });
+      await stripeEvent(D, "evt_w5", CLOSED, dispute({ status: "lost" }));
+      t.eq([callsTo(D, "creator_commission_clawback").length, callsTo(D, "creator_commission_give_back").length], [0, 1], "5z3 a delivery still saying lost, on a dispute Stripe now says is won: no clawback, whatever order they arrive in");
+      D = base();
+      await stripeEvent(D, "evt_w6", BACK, dispute());
+      t.eq([creatorCalls(D).length, D.db.alerts.length, statusOf(D, "evt_w6")], [0, 0, "processed"], "5z4 funds back on a dispute still lost (a partially refunded payment): the customer still won, so nothing moves");
+      D = base({ stripeAnswer: stripe(won), answers: backNow({ user_id: null }) });
+      await stripeEvent(D, "evt_w7", BACK, dispute({ status: "won" }));
+      t.eq(D.db.alerts.map((a) => a.userId), ["deleted account"], "5z5 the account has since been deleted: support still hears");
+      D = base({ stripeAnswer: stripe(won), answers: { creator_commission_give_back: () => ({ data: null, error: { code: "XX000" } }) } });
+      t.eq([await stripeEvent(D, "evt_w8", BACK, dispute({ status: "won" })), statusOf(D, "evt_w8")], [500, "failed"], "5z6 the database fails: 500 and marked failed, so Stripe tries again");
     }
 
     // 6 ── THE STORES: PROCEEDS ──────────────────────────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
 const { reconcileHouseholdBilling } = require("./_lib/household");
-const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, clawbackStripeDispute } = require("./_lib/creators");
+const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -38,8 +38,9 @@ const HANDLED = Object.freeze([
 // THE CREATOR PROGRAM (behind CREATORS_ENABLED). invoice.paid is the only event that says what each payment was, renewals
 // included. With the flag off it is ignored like any other event not handled here.
 const CREATOR_EVENT = "invoice.paid";
-// And a chargeback that is over: a lost one takes the commission on that payment back, as a refund does. The same: off, ignored.
-const CREATOR_DISPUTE_EVENT = "charge.dispute.closed";
+// And a chargeback that is over: a lost one takes the commission on that payment back, as a refund does, and one that later
+// turns into a win gives it back. Stripe's docs don't say which event a late win sends, so both are read. Off, ignored.
+const CREATOR_DISPUTE_EVENTS = Object.freeze(["charge.dispute.closed", "charge.dispute.funds_reinstated"]);
 
 const reply = (statusCode, body) => ({
   statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -171,7 +172,7 @@ exports.handler = async (event) => {
   }
 
   const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();
-  const creatorDispute = evt.type === CREATOR_DISPUTE_EVENT && creatorsEnabled();
+  const creatorDispute = CREATOR_DISPUTE_EVENTS.includes(evt.type) && creatorsEnabled();
   if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute) {
     await admin.from("billing_events")
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
@@ -328,8 +329,8 @@ exports.handler = async (event) => {
 
     // THE CREATOR PROGRAM: a payment, the first or a renewal. Changes nothing about the household's plan.
     if (creatorInvoice) creatorNotes = await creditStripeInvoice(admin, object, evt.created);
-    // THE CREATOR PROGRAM: a chargeback closed. Changes nothing about the household's plan.
-    if (creatorDispute) creatorNotes = await clawbackStripeDispute(admin, object);
+    // THE CREATOR PROGRAM: a chargeback over, or its money back. Changes nothing about the household's plan.
+    if (creatorDispute) creatorNotes = await settleStripeDispute(admin, evt.type, object);
 
     if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
       const user_id = userIdFrom(object);

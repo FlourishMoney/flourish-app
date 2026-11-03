@@ -15805,6 +15805,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
     outline: "none", boxSizing: "border-box", display: "block",
   });
   const fieldErrStyle = { color: AUTH_C.error, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
+  // A label above the field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
+  const fieldLabelStyle = { display: "block", color: AUTH_C.ink, fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs };
   // Text buttons (Back, Forgot password?, Wrong email?): underlined, and a 44 px target however short the label.
   const authLinkStyle = { background: "none", border: "none", minHeight: LAYOUT.minTap, padding: "0 4px", color: AUTH_C.link, fontSize: 13,
     fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", textUnderlineOffset: 2 };
@@ -16261,7 +16263,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
                     aria-invalid={fieldErr.email || undefined} aria-describedby={fieldErr.email ? "auth-email-error" : undefined} autoComplete="email" name="email" />
                   {fieldErr.email && <div id="auth-email-error" data-field-error="email" style={fieldErrStyle}>{SIGNUP_COPY.emailError}</div>}
-                  <input style={{ ...inpStyle(fieldErr.password), marginTop: SPACE.md }} type="password" placeholder="Password (min 8 characters)" value={password}
+                  <label htmlFor="auth-password" style={fieldLabelStyle}>Password (min 8 characters)</label>
+                  <input id="auth-password" style={inpStyle(fieldErr.password)} type="password" value={password}
                     onChange={e => setPassword(e.target.value)} onBlur={() => password && setTouched(t => ({ ...t, password: true }))}
                     aria-invalid={fieldErr.password || undefined} aria-describedby={fieldErr.password ? "auth-password-error" : undefined}
                     autoComplete={mode === "signup" ? "new-password" : "current-password"} name="password" />
@@ -16273,7 +16276,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                   )}
                   {mode==="signup"&&creatorsOn&&(
                     <div data-creator-field="">
-                      <input style={{ ...inpStyle(false), marginTop: SPACE.md }} type="text" aria-label={CREATOR_WORDS.signupLabel} placeholder={CREATOR_WORDS.signupLabel} value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
+                      <label htmlFor="auth-creator-code" style={fieldLabelStyle}>{CREATOR_WORDS.signupLabel}</label>
+                      <input id="auth-creator-code" style={inpStyle(false)} type="text" value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
                       <div style={{ color: AUTH_C.muted, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs }}>{CREATOR_WORDS.signupHint}</div>
                     </div>
                   )}

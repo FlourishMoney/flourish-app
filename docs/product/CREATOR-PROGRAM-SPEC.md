@@ -1,6 +1,6 @@
 # Creator Program: spec (2026-11-02)
 
-Approved terms: `~/Documents/Flourish/01 Marketing/Creator Program/CREATOR-PROGRAM-APPROVED-2026-11-02.md` (ChatGPT and Grok agreed).
+Approved terms: `~/Documents/Flourish/01 Marketing/Creator Program/CREATOR-PROGRAM-APPROVED-2026-11-02.md` (v4, ChatGPT and Grok agreed).
 
 Ships dark, behind `CREATORS_ENABLED` (exactly "true"). With it off: sign-up ignores a code, `/api/creator` answers 404, the app shows no field and no card, neither webhook looks at a payment for a creator, and the sweep reads nothing. The migration is written, **not run**.
 
@@ -26,10 +26,12 @@ Ships dark, behind `CREATORS_ENABLED` (exactly "true"). With it off: sign-up ign
 - **A refund** claws back the commission on that one payment, in proportion to what was refunded. A clawback is its own row carrying its payment's date: against a payment under 30 days old the two cancel out; against one already paid it comes off later payouts until recovered.
   - A refund that matches no payment changes nothing and tells support.
   - A refund the store later takes back (`REFUND_REVERSED`) tells support; nothing moves on its own.
-- **A lost chargeback** works as a refund does (Amanda, 2026-11-03). Stripe's `charge.dispute.closed` with status `lost` claws back the commission on that one payment, in proportion to the amount disputed. It comes off the next payout, then later ones if short. **Go-live step: add `charge.dispute.closed` to the Stripe webhook endpoint (Amanda).**
+- **A lost chargeback** works as a refund does (Amanda, 2026-11-03). Stripe's `charge.dispute.closed` with status `lost` claws back the commission on that one payment, in proportion to the amount disputed. It comes off the next payout, then later ones if short. **Go-live step: add `charge.dispute.closed` and `charge.dispute.funds_reinstated` to the Stripe webhook endpoint (Amanda).**
   - The clawback carries the dispute's id, so the same dispute never takes anything twice. A payment can have more than one dispute: each takes its own share, and with any refund they never take more than the payment earned.
-  - `won`, `warning_closed` and anything else change nothing. A dispute that matches no commission changes nothing and tells support.
-  - A dispute Stripe later turns from lost to won (a "late win") leaves the clawback standing, and nothing tells anyone.
+  - An ordinary win, `warning_closed` and anything else change nothing. A dispute that matches no commission changes nothing and tells support.
+  - **A late win** (Amanda, 2026-11-03): Stripe turns a lost dispute to won and returns the money. What that dispute took goes back on the next payout, once and never more than it took, and support is told. It is a row of its own (`reinstated`), shown as `given_back_cents`, and joins the month's total, so the $25 minimum applies as it does to anything else.
+  - Stripe's docs don't say which event a late win sends, so `charge.dispute.closed` and `charge.dispute.funds_reinstated` are both read. Either way the status comes from asking Stripe at that moment, not from the delivery, so a delivery held up by retries can't claw back a dispute since won.
+  - Funds reinstated on a dispute still marked lost give nothing back. Stripe does that for a partially refunded payment, and the customer still won.
   - The stores: a chargeback that reaches us as a refund is handled as a refund. See `docs/ops/CREATOR-PAYOUTS.md`.
 
 ## Who sees what
@@ -45,6 +47,6 @@ No table or function is reachable by anyone signed in, or by anon. A creator is 
 ## Going live, in order
 1. Run the migration.
 2. Check the first iOS event since the Small Business Program was set in RevenueCat shows a 15% fee. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
-3. Merge, and deploy. Add `invoice.paid` and `charge.dispute.closed` to the Stripe endpoint.
+3. Merge, and deploy. Add `invoice.paid`, `charge.dispute.closed` and `charge.dispute.funds_reinstated` to the Stripe endpoint.
 4. Set `CREATORS_ENABLED=true` in production and redeploy.
 5. iPhone and Android show the field only from the next store build.

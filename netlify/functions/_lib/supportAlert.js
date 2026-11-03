@@ -25,6 +25,7 @@ const WHAT = Object.freeze({
   creator_amounts_unknown: "a payment by a household with a creator, whose amounts could not be read (no tax or store fee given): no commission was recorded",
   creator_refund_unmatched: "a refund for a household with a creator that matches no commission: nothing was clawed back",
   creator_chargeback_unmatched: "a lost chargeback for a household with a creator that matches no commission: nothing was clawed back",
+  creator_chargeback_given_back: "a lost chargeback for a household with a creator turned into a win and Stripe returned the money: what it took from the creator goes back on the next payout",
   creator_refund_reversed: "a store took back a refund for a household with a creator: any clawback is unchanged",
   creator_own_code: "a payment by a household that includes the creator whose code it holds: no commission was recorded",
   creator_not_cad: "a payment by a household with a creator, not in Canadian dollars: no commission was recorded",
