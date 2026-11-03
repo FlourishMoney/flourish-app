@@ -474,6 +474,14 @@ const storeEvt = (o = {}) => ({ type: "RENEWAL", app_user_id: uid(1), store: "AP
       const f = await withStubs(E, null, () => require(SWEEP_PATH).handler({}, {}, { admin: E.admin }));
       t.eq(f.statusCode, 500, "8b a failure says so");
       t.ok(/\[functions\."creator-commissions-sweep"\]\s*\n\s*schedule = "@daily"/.test(read("netlify.toml")) && /from\s+= "\/api\/creator"/.test(read("netlify.toml")), "8c it is scheduled, and /api/creator is routed");
+      // The setup doc against the code that reads the events: charge.refunded was missing from it, though the webhook relied on it.
+      const webhook = read("netlify", "functions", "stripe-webhook.js"), setup = read("docs", "ops", "BILLING-SETUP.md");
+      const names = (text) => [...text.matchAll(/["`]([a-z_]+(?:\.[a-z_]+)+)["`]/g)].map((m) => m[1]).sort();
+      const between = (text, from, to) => text.slice(text.indexOf(from), text.indexOf(to));
+      const programReads = webhook.split("\n").filter((l) => /^const CREATOR_(EVENT|DISPUTE_EVENTS) = /.test(l)).join("\n");
+      t.eq(names(between(setup, "Subscribe to these four", "Add these three")), names(between(webhook, "const HANDLED", "// THE CREATOR PROGRAM")), "8d BILLING-SETUP's four events are the ones the webhook handles today");
+      t.eq(names(between(setup, "Add these three", "Copy the **signing secret**")), names(programReads), "8e …and its three for go-live are the ones the program reads");
+      t.eq(names(programReads).length, 3, "8f (three of them)");
     }
 
     // 9 ── THE WORDS ─────────────────────────────────────────────────────────────────────────────────────────────

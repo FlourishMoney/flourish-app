@@ -15106,6 +15106,10 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
   );
 }
 
+// A label above a sign-in field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
+// The reset screen and the sign-in form share these measurements; each adds its own colour.
+const AUTH_FIELD_LABEL = Object.freeze({ display: "block", fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs });
+
 // Sprint Q item 12: set-new-password screen. Shown by FlourishApp when a password-recovery token
 // lands (PASSWORD_RECOVERY). The recovery token establishes a temporary session, so updateUser can
 // set the new password directly. On success we strip the recovery hash and hand back to the app.
@@ -15140,7 +15144,8 @@ function ResetPasswordScreen({ onDone, onCancel }) {
     setBusy(false);
     setDone(true);
   };
-  const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 12 };
+  const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box" };
+  const label = { ...AUTH_FIELD_LABEL, color: "#EDE9E2", fontFamily: "'Plus Jakarta Sans',sans-serif" };
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, ...overlaySafe(24, { bottom: true }), background: "#050D09" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
@@ -15156,8 +15161,11 @@ function ResetPasswordScreen({ onDone, onCancel }) {
             <>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 20, color: "#EDE9E2", marginBottom: 6 }}>Set a new password</div>
               <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
-              <input style={inp} type="password" placeholder="New password (min 8 characters)" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
-              <input style={{ ...inp, marginBottom: 20 }} type="password" placeholder="Confirm new password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
+              <label htmlFor="reset-password" style={label}>New password</label>
+              <input id="reset-password" style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" aria-describedby="reset-password-hint" />
+              <div id="reset-password-hint" style={{ color: "rgba(237,233,226,0.62)", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5, marginTop: SPACE.xs }}>At least 8 characters</div>
+              <label htmlFor="reset-password-confirm" style={label}>Confirm new password</label>
+              <input id="reset-password-confirm" style={{ ...inp, marginBottom: 20 }} type="password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
               {err && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
               <button onClick={submit} disabled={busy}
                 style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? "#6B7A6E" : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
@@ -15805,8 +15813,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
     outline: "none", boxSizing: "border-box", display: "block",
   });
   const fieldErrStyle = { color: AUTH_C.error, fontSize: 13, lineHeight: 1.5, marginTop: SPACE.xs };
-  // A label above the field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
-  const fieldLabelStyle = { display: "block", color: AUTH_C.ink, fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs };
+  const fieldLabelStyle = { ...AUTH_FIELD_LABEL, color: AUTH_C.ink };
   // Text buttons (Back, Forgot password?, Wrong email?): underlined, and a 44 px target however short the label.
   const authLinkStyle = { background: "none", border: "none", minHeight: LAYOUT.minTap, padding: "0 4px", color: AUTH_C.link, fontSize: 13,
     fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", textUnderlineOffset: 2 };
@@ -16259,7 +16266,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       <button onClick={retrySignupStatus} style={{ ...authLinkStyle, padding: "0 10px" }}>Try again</button>
                     </div>
                   )}
-                  <input style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Email address" value={email}
+                  <label htmlFor="auth-email" style={fieldLabelStyle}>Email address</label>
+                  <input id="auth-email" style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
                     aria-invalid={fieldErr.email || undefined} aria-describedby={fieldErr.email ? "auth-email-error" : undefined} autoComplete="email" name="email" />
                   {fieldErr.email && <div id="auth-email-error" data-field-error="email" style={fieldErrStyle}>{SIGNUP_COPY.emailError}</div>}

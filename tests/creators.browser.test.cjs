@@ -5,7 +5,7 @@
 //   2  on: a creator's link starts the sign-up field filled in, the code goes with the sign-up, and a refusal shows its line
 //   3  Settings: the card shows only while a code can be added; adding one; a wrong code
 //   4  /get?c=CODE: on a computer the website's link carries it; on a phone the store redirect is exactly as it was
-//   5  the field fits the narrowest phone
+//   5  the field fits the narrowest phone, and the labels on the sign-in and reset screens show in full at every text size
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -83,6 +83,16 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
     await page.locator('input[name="password"]').first().fill("long-enough-password");
   };
   const submit = (page) => page.getByRole("button", { name: "Create Account", exact: true }).click();
+  // Every text size: each rendered font size times k, worked out first so nested sizes don't compound.
+  const biggerText = (k) => { const els = [...document.querySelectorAll("body *")]; const sizes = els.map((e) => parseFloat(getComputedStyle(e).fontSize)); els.forEach((e, i) => { if (sizes[i]) e.style.fontSize = sizes[i] * k + "px"; }); };
+  const labels = (selectors) => selectors.map((sel) => {
+    const input = document.querySelector(sel), label = document.querySelector(`label[for="${input.id}"]`);
+    const range = document.createRange(); range.selectNodeContents(label);
+    const text = range.getBoundingClientRect(), box = input.getBoundingClientRect(), css = getComputedStyle(label);
+    return { name: input.name || input.id, placeholder: input.getAttribute("placeholder"), inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" || label.scrollWidth > label.clientWidth + 1, lines: Math.round(text.height / parseFloat(css.lineHeight)) };
+  });
+  const shown = (seen) => seen.map(({ name, placeholder, inside, cut }) => ({ name, placeholder, inside, cut }));
+  const inFull = (names) => names.map((name) => ({ name, placeholder: null, inside: true, cut: false }));
 
   try {
     // 1 ── OFF ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -93,6 +103,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       await page.waitForTimeout(400);
       t.eq(await page.locator(FIELD).count(), 0, "1a off: no field on the sign-up form");
       t.eq(await page.getByLabel("Password (min 8 characters)").getAttribute("name"), "password", "1a2 the password's label doesn't depend on the program");
+      t.eq([await page.getByLabel("Email address").getAttribute("type"), await page.getByLabel("Email address").getAttribute("placeholder")], ["email", null], "1a3 nor does the email's, and it is a label, not a placeholder");
       t.ok(!(await page.content()).includes(W.signupHint) && !(await page.content()).includes(W.signupLabel), "1b off: none of the program's words on the page");
       t.ok(page.url().includes("c=alice") && (await page.evaluate(() => sessionStorage.getItem("flourish_creator_code"))) === null, "1c off: the address and the tab are left exactly as they were");
       await fillAccount(page);
@@ -237,24 +248,65 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
       t.ok(box && box.x >= 0 && box.x + box.width <= 320 && box.height >= 40, "5a at 320px the field fits and can be tapped");
       const fits = (p, sel) => p.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; }, sel);
       t.ok(await fits(page, "[data-creator-field]"), "5b …and the approved hint wraps inside the screen, with nothing to scroll sideways");
-      // Every text size: each rendered font size times k, worked out first so nested sizes don't compound.
-      const biggerText = (k) => { const els = [...document.querySelectorAll("body *")]; const sizes = els.map((e) => parseFloat(getComputedStyle(e).fontSize)); els.forEach((e, i) => { if (sizes[i]) e.style.fontSize = sizes[i] * k + "px"; }); };
-      const labels = () => ["password", "creatorcode"].map((name) => {
-        const input = document.querySelector(`input[name="${name}"]`), label = document.querySelector(`label[for="${input.id}"]`);
-        const range = document.createRange(); range.selectNodeContents(label);
-        const text = range.getBoundingClientRect(), box = input.getBoundingClientRect(), css = getComputedStyle(label);
-        return { name, placeholder: input.getAttribute("placeholder"), inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" || label.scrollWidth > label.clientWidth + 1, lines: Math.round(text.height / parseFloat(css.lineHeight)) };
-      });
+      const SIGNUP = ['input[name="email"]', 'input[name="password"]', 'input[name="creatorcode"]'];
       for (const k of [1, 1.3, 1.6, 2]) {
         await page.reload();
         await toSignup(page);
         await page.locator(FIELD).waitFor();
         await page.evaluate(biggerText, k);
-        const seen = await page.evaluate(labels);
-        t.eq(seen.map(({ name, placeholder, inside, cut }) => ({ name, placeholder, inside, cut })), ["password", "creatorcode"].map((name) => ({ name, placeholder: null, inside: true, cut: false })), `5b2 at 320px and text ×${k}: both labels show in full, inside the field's width`);
+        const seen = await page.evaluate(labels, SIGNUP);
+        t.eq(shown(seen), inFull(["email", "password", "creatorcode"]), `5b2 at 320px and text ×${k}: all three labels show in full, inside the field's width`);
         t.ok((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), `5b3 …with nothing to scroll sideways (×${k})`);
-        if (k === 2) t.ok(seen.every((s) => s.lines >= 2), `5b4 at the largest, each wraps onto more lines instead of being cut (${seen.map((s) => s.lines).join(", ")})`);
+        // "Email address" is short enough to stay on one line; the two long ones can't.
+        if (k === 2) t.ok(seen.filter((s) => s.name !== "email").every((s) => s.lines >= 2), `5b4 at the largest, the long ones wrap onto more lines instead of being cut (${seen.map((s) => s.lines).join(", ")})`);
       }
+      await page.reload();
+      await toSignup(page);
+      await page.getByRole("button", { name: "Log In", exact: true }).first().click();
+      await page.getByRole("button", { name: "Forgot password?" }).waitFor();
+      await page.evaluate(biggerText, 2);
+      t.eq(shown(await page.evaluate(labels, SIGNUP.slice(0, 2))), inFull(["email", "password"]), "5b5 the Log In tab has the same two labels, in full at the largest text");
+      await ctx.close();
+    }
+    // The password reset screen. The program has no part in it.
+    {
+      const { ctx, page } = await open({ on: false, width: 320 });
+      const NEW_PW = page.getByLabel("New password", { exact: true }), CONFIRM = page.getByLabel("Confirm new password", { exact: true });
+      const hint = () => {
+        const input = document.getElementById("reset-password"), h = document.getElementById(input.getAttribute("aria-describedby")), css = getComputedStyle(h);
+        const range = document.createRange(); range.selectNodeContents(h);
+        const text = range.getBoundingClientRect(), box = input.getBoundingClientRect();
+        return { words: h.textContent, under: text.top >= box.bottom, aboveNext: text.bottom <= document.querySelector('label[for="reset-password-confirm"]').getBoundingClientRect().top, inside: text.left >= box.left - 1 && text.right <= box.right + 1, cut: css.overflow !== "visible" || css.whiteSpace === "nowrap" };
+      };
+      await page.goto(`${base}/#type=recovery`);
+      for (const k of [1, 1.3, 1.6, 2]) {
+        await page.reload();
+        await NEW_PW.waitFor();
+        await page.evaluate(biggerText, k);
+        t.eq(shown(await page.evaluate(labels, ["#reset-password", "#reset-password-confirm"])), inFull(["reset-password", "reset-password-confirm"]), `5d at 320px and text ×${k}: the reset screen's labels show in full, inside the field's width`);
+        t.eq(await page.evaluate(hint), { words: "At least 8 characters", under: true, aboveNext: true, inside: true, cut: false }, `5d2 …the rule is under the field, not in it, and shows in full (×${k})`);
+        t.ok((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), `5d3 …with nothing to scroll sideways (×${k})`);
+      }
+      const ratio = await page.evaluate(() => {
+        const rgba = (s) => s.match(/[\d.]+/g).map(Number);
+        const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+        const h = document.getElementById("reset-password-hint");
+        let el = h.parentElement; while (rgba(getComputedStyle(el).backgroundColor)[3] === 0) el = el.parentElement;
+        const bg = rgba(getComputedStyle(el).backgroundColor), fg = rgba(getComputedStyle(h).color), a = fg[3] === undefined ? 1 : fg[3];
+        const [hi, lo] = [lum([0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a))), lum(bg)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      });
+      t.ok(ratio >= 4.5, `5d4 the rule is readable on the card, not just there (${ratio.toFixed(1)}:1, at least 4.5)`);
+      await NEW_PW.fill("short");
+      t.ok(await page.getByText("At least 8 characters", { exact: true }).isVisible(), "5e the rule stays on screen once something is typed");
+      await CONFIRM.fill("short");
+      await page.getByRole("button", { name: "Update password", exact: true }).click();
+      await page.getByText("Password must be at least 8 characters.", { exact: true }).waitFor();
+      t.ok(true, "5e2 the labels drive the same fields: too short is still refused");
+      await NEW_PW.fill("long-enough-password");
+      await page.getByRole("button", { name: "Update password", exact: true }).click();
+      await page.getByText("Those passwords don't match.", { exact: true }).waitFor();
+      t.ok(true, "5e3 …and two that differ");
       await ctx.close();
     }
     {
