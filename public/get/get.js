@@ -12,6 +12,10 @@
 // THE PLAY REFERRER (2026-11-02). Android's link carries referrer=utm_source=<ref>&utm_medium=social&utm_campaign=founding.
 // The address is anyone's to type, so only a plain short word goes on to Google; anything else is "other".
 //
+// THE SHOP QR CODES (2026-11-02). ?ref= one of the six shop tags below, exactly: both badges carry the
+// tag (Apple's campaign link, a Play referrer with utm_medium=qr and utm_campaign=shop, the same links as
+// src/lib/storeLinks.js), and a phone goes to its badge's link. Every other ref is as above.
+//
 // WHAT PLAUSIBLE IS TOLD (cookieless, as on the rest of the public site, src/lib/webAnalytics.js): one event,
 // "Get link", with two properties and nothing else: way (which of the five ways below) and ref (which link it came
 // from: "founding", or "other" for anything else, so nothing typed into the address reaches Plausible). The page
@@ -30,6 +34,9 @@
   var ref = params.get("ref") === "founding" ? "founding" : "other";
   var rawRef = params.get("ref") || "";
   var source = /^[A-Za-z0-9_-]{1,40}$/.test(rawRef) ? rawRef : "other";
+  var SHOP_TAGS = ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"];
+  var shop = SHOP_TAGS.indexOf(rawRef) >= 0 ? rawRef : "";
+  var APPLE_PROVIDER_TOKEN = "128816288";
 
   function device() {
     var ua = navigator.userAgent || "";
@@ -84,12 +91,18 @@
   function start() {
     var appStore = document.getElementById("app-store").href;
     var play = document.getElementById("google-play").href;
+    if (shop) {
+      appStore += "?pt=" + APPLE_PROVIDER_TOKEN + "&ct=" + shop + "&mt=8";
+      play += "&referrer=" + encodeURIComponent("utm_source=" + shop + "&utm_medium=qr&utm_campaign=shop");
+      document.getElementById("app-store").setAttribute("href", appStore);
+      document.getElementById("google-play").setAttribute("href", play);
+    }
     // The website's way in: the founding checkout for the founding link, the home page otherwise.
     if (ref !== "founding") document.getElementById("website").setAttribute("href", "/");
 
     if (d === "ios") { countThenGo(WAYS[0], appStore, true); return; }
     if (d === "android") {
-      countThenGo(WAYS[1], play + "&referrer=" + encodeURIComponent("utm_source=" + source + "&utm_medium=social&utm_campaign=founding"), true);
+      countThenGo(WAYS[1], shop ? play : play + "&referrer=" + encodeURIComponent("utm_source=" + source + "&utm_medium=social&utm_campaign=founding"), true);
       return;
     }
 
