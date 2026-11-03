@@ -6,6 +6,7 @@
 //   3  Settings: the card shows only while a code can be added; adding one; a wrong code
 //   4  /get?c=CODE: on a computer the website's link carries it; on a phone the store redirect is exactly as it was
 //   5  the field fits the narrowest phone, and the labels on the sign-in, reset and /confirmed screens show in full at every text size
+//   7  Log In checks nothing about a password's length: it sends what was typed and the server answers
 //   6  each card's quiet lines are one grey, at least 4.5:1. The white card and the dark card can't share one: a colour that passes on either fails on the other.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -312,6 +313,58 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KH
         t.eq(shown(await page.evaluate(labels, SIGNUP.slice(0, 2))), inFull(["email", "password"]), `5b5 at 320px and text ×${k}: the Log In tab's two labels show in full`);
         t.eq([await page.locator('label[for="auth-password"]').innerText(), await PASSWORD.getAttribute("aria-describedby"), await page.evaluate(placeholders), await page.evaluate(noSideways)], ["Password", null, 0, true], `5g3 …"Password" with nothing tied to it, no placeholder, nothing to scroll sideways (×${k})`);
       }
+      await ctx.close();
+    }
+    // 7 ── LOG IN SENDS WHAT WAS TYPED ───────────────────────────────────────────────────────────────────────────
+    {
+      const { ctx, page, sent } = await open({ on: false, width: 320 });
+      const tries = [];
+      // The stand-in for a wrong password is what a real sign-in server answered (GoTrue v2.196.0, the version on this machine). "abc" is the right one.
+      await page.route("**/auth/v1/token*", (r) => {
+        const b = JSON.parse(r.request().postData() || "{}");
+        tries.push(b);
+        if (b.password === "abc") return r.fallback();
+        return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ code: 400, error_code: "invalid_credentials", msg: "Invalid login credentials" }) });
+      });
+      const EMAIL = page.locator('input[name="email"]'), PASSWORD = page.locator('input[name="password"]'), SEND = page.locator("button[aria-disabled]");
+      const state = async () => [await SEND.innerText(), await SEND.getAttribute("aria-disabled"), await SEND.evaluate((b) => getComputedStyle(b).opacity)];
+      const FADED = ["Log In", "true", "0.55"], READY = ["Log In", "false", "1"];
+      await page.goto(`${base}/`);
+      await toSignup(page);
+      await page.getByRole("button", { name: "Log In", exact: true }).first().click();
+      await page.getByRole("button", { name: "Forgot password?" }).waitFor();
+      t.eq(await state(), FADED, "7a Log In with nothing typed: the button is faded");
+      await SEND.click({ force: true });
+      await page.locator('[data-field-error="email"]').waitFor();
+      t.eq(tries.length, 0, "7b …and a tap asks for the email and sends nothing");
+      await EMAIL.fill("someone@example.test");
+      t.eq(await state(), FADED, "7c an email and no password: still faded");
+      await SEND.click({ force: true });
+      t.eq(tries.length, 0, "7d …and a tap sends nothing");
+      await EMAIL.fill("");
+      await PASSWORD.fill("x");
+      t.eq(await state(), FADED, "7e a password and no email: still faded");
+      await EMAIL.fill("someone@example.test");
+      t.eq(await state(), READY, "7f one character in each is enough: the button is ready");
+      await SEND.click();
+      await page.getByRole("alert").waitFor();
+      t.eq(tries.map((b) => [b.email, b.password]), [["someone@example.test", "x"]], "7g the tap sends what was typed, once");
+      t.eq(await page.getByRole("alert").innerText(), "Invalid login credentials", "7h the existing wrong-password message answers");
+      t.eq([await page.locator('[data-field-error="password"]').count(), await page.getByText("8 characters", { exact: false }).count()], [0, 0], "7i …and nothing on screen talks about the length");
+      t.eq(await state(), READY, "7j …and the button is ready to try again");
+      await page.getByRole("button", { name: "Sign Up", exact: true }).first().click();
+      await page.locator("#auth-password-hint").waitFor();
+      t.eq(await state(), ["Create Account", "true", "0.55"], "7k the same short password on Sign Up: the button is faded, the rule still applies");
+      await SEND.click({ force: true });
+      await page.locator('[data-field-error="password"]').waitFor();
+      t.eq([sent.signup.length, tries.length], [0, 1], "7l …and a tap shows the error and sends nothing");
+      await page.getByRole("button", { name: "Log In", exact: true }).first().click();
+      await page.getByRole("button", { name: "Forgot password?" }).waitFor();
+      t.eq(await state(), READY, "7m back on Log In it is ready again");
+      await PASSWORD.fill("abc");
+      await SEND.click();
+      await page.getByRole("button", { name: "Forgot password?" }).waitFor({ state: "detached" });
+      t.eq(tries.at(-1).password, "abc", "7n a right password under 8 characters logs in");
       await ctx.close();
     }
     // Invite-only: the beta access code, with the program off and on. Nothing else about the form changes.

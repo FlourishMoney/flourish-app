@@ -14328,7 +14328,7 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
 
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s",paddingTop:INSET.top,...safeX(0)}}>
-      <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
+      <div style={{width:"100%",minWidth:0,maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
           <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
@@ -14343,10 +14343,10 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Plan selector */}
-        <div style={{display:"flex",gap:10,marginBottom:20}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:20}}>
           {Object.entries(plans).map(([key,plan])=>(
             <button key={key} onClick={()=>setSelected(key)} style={{flex:1,background:selected===key?C.purple+"22":C.card,border:`2px solid ${selected===key?C.purple:C.border}`,borderRadius:16,padding:"14px 12px",cursor:"pointer",textAlign:"center",position:"relative",transition:"all .2s"}}>
-              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
+              {plan.badge&&<div style={{position:"absolute",bottom:"calc(100% - 12px)",left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
               <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
             </button>
@@ -14368,12 +14368,13 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Promo code */}
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <label htmlFor="paywall-promo" style={{...AUTH_FIELD_LABEL,color:C.cream,marginTop:0}}>Promo code</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
           <input
+            id="paywall-promo"
             value={promo}
             onChange={e=>{setPromo(e.target.value.toUpperCase());setPromoError("");setPromoNote("");}}
-            placeholder="Promo code"
-            style={{flex:1,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
+            style={{flex:"1 1 8em",minWidth:0,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
           />
           <button
             onClick={async ()=>{
@@ -14402,9 +14403,9 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         </div>
 
         {/* Trust footer */}
-        <div style={{marginTop:20,display:"flex",justifyContent:"center",gap:16}}>
+        <div style={{marginTop:20,display:"flex",flexWrap:"wrap",justifyContent:"center",gap:16}}>
           {["🔒 Read-only. No money movement.","🇨🇦 Built in Ontario","🔑 Your bank login is never stored"].map((t,i)=>(
-            <div key={i} style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
+            <div key={i} style={{flex:"1 1 5em",color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
           ))}
         </div>
       </div>
@@ -15108,7 +15109,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
 }
 
 // A label above a sign-in field, not a placeholder in it: a placeholder can't wrap, so on a narrow phone or with larger text it was cut off.
-// The reset screen, the sign-in form and /confirmed share these measurements; each adds its own colour.
+// The reset screen, the sign-in form, /confirmed and the paywall's promo code share these measurements; each adds its own colour.
 const AUTH_FIELD_LABEL = Object.freeze({ display: "block", fontSize: 13, fontWeight: 600, lineHeight: 1.4, marginTop: SPACE.md, marginBottom: SPACE.xs });
 
 // Sprint Q item 12: set-new-password screen. Shown by FlourishApp when a password-recovery token
@@ -15832,8 +15833,9 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 
   // H11: the inline errors, and Create Account / Log In. The button is never `disabled`, so a tap on it while
   // a field is wrong shows that field's error instead of doing nothing; it submits only when canSubmit.
+  // The 8-character rule is for choosing a password. Log In sends whatever was typed and the server answers.
   const fieldErr = fieldErrors({ mode, email, password, touched });
-  const canSubmit = !loading && !!email && password.length >= 8 && codeOk;
+  const canSubmit = !loading && !!email && (mode === "login" ? !!password : password.length >= 8) && codeOk;
   const submitAuth = () => {
     if (!canSubmit) { if (!loading) setTouched({ email: true, password: true }); return; }
     if (mode === "login") handleLogin(); else handleSignup();
