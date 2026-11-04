@@ -348,7 +348,7 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(!/Have an invite code\?/.test(auth) && !/showCodeLink|setShowCodeField/.test(auth), "the invite-code link is gone (H11: hidden while signup is open)");
     t.ok(/const codeOk = mode === "login" \|\| signupSubmittable\(\{ openSignup, code: betaCode \}\)/.test(auth),
          "…and Create Account asks signupSubmittable, the same helper the tests check, rather than restating the rule inline");
-    t.ok(/const canSubmit = !loading && !!email && password\.length >= 8 && codeOk;/.test(auth) && /aria-disabled=\{!canSubmit\}/.test(auth)
+    t.ok(/const canSubmit = !loading && !!email && \(mode === "login" \? !!password : password\.length >= 8\) && codeOk;/.test(auth) && /aria-disabled=\{!canSubmit\}/.test(auth)
          && /if \(!canSubmit\) \{ if \(!loading\) setTouched\(\{ email: true, password: true \}\); return; \}/.test(auth),
          "…so the button and the field cannot drift apart, and a tap while a field is wrong shows its error");
     t.ok(!/OPEN_SIGNUP/.test(auth), "the flag's value is never in the screen, only the server's answer");
@@ -496,7 +496,7 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/aria-invalid=\{fieldErr\.email \|\| undefined\} aria-describedby=\{fieldErr\.email \? "auth-email-error" : undefined\}/.test(form)
       && /<div id="auth-email-error" data-field-error="email" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.emailError\}<\/div>/.test(form),
       "11m the email error is tied to its field for a screen reader");
-    t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{fieldErr\.password \? "auth-password-error" : undefined\}/.test(form)
+    t.ok(/aria-invalid=\{fieldErr\.password \|\| undefined\} aria-describedby=\{\[mode === "signup" && "auth-password-hint", fieldErr\.password && "auth-password-error"\]\.filter\(Boolean\)\.join\(" "\) \|\| undefined\}/.test(form)
       && /<div id="auth-password-error" data-field-error="password" style=\{fieldErrStyle\}>\{SIGNUP_COPY\.passwordError\}<\/div>/.test(form),
       "11n …and so is the password error");
     t.eq([SIGNUP_COPY.emailError, SIGNUP_COPY.passwordError], ["Enter a valid email address.", "Choose a password of at least 8 characters."],

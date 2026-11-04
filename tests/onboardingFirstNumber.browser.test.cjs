@@ -403,21 +403,21 @@ function buildApp(supabaseUrl) {
     const signupTxt = await text(page);
     t.ok(!/invite code|Beta access code/i.test(signupTxt) && beta.some((b) => b.action === "signup_status"), `F1b ${w}: signup is open: no invite link and no code field (H11)`);
     // Inline errors once a field is left.
-    await page.getByPlaceholder("Email address").fill("sam@");
-    await page.getByPlaceholder("Password (min 8 characters)").fill("12345");
-    await page.getByPlaceholder("Email address").click();
+    await page.getByLabel("Email address").fill("sam@");
+    await page.getByLabel("Password", { exact: true }).fill("12345");
+    await page.getByLabel("Email address").click();
     await page.waitForTimeout(200);
     const errsShown = await page.locator("[data-field-error]").evaluateAll((els) => els.map((e) => e.getAttribute("data-field-error")));
     t.eq(errsShown.sort(), ["email", "password"], `F1c ${w}: "sam@" and a 5-character password, once left: an error under each (H11)`);
-    t.eq(await page.getByPlaceholder("Email address").getAttribute("aria-invalid"), "true", `F1d ${w}: …and the field says it is invalid`);
+    t.eq(await page.getByLabel("Email address").getAttribute("aria-invalid"), "true", `F1d ${w}: …and the field says it is invalid`);
     await shot(page, `founding-${w}-signup-errors`);
     // A tap on Create Account while a field is wrong submits nothing. (It is aria-disabled, not disabled, so the tap
     // still lands and shows the errors; Playwright treats aria-disabled as disabled, hence force.)
     await btn(page, "Create Account").click({ force: true });
     t.ok(!beta.some((b) => b.action === "signup"), `F1e ${w}: Create Account with a wrong field sends nothing`);
-    await page.getByPlaceholder("Email address").fill("sam@example.invalid");
-    await page.getByPlaceholder("Password (min 8 characters)").fill("a-long-enough-password");
-    await page.getByPlaceholder("Email address").click();
+    await page.getByLabel("Email address").fill("sam@example.invalid");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
+    await page.getByLabel("Email address").click();
     await page.waitForTimeout(200);
     t.eq(await page.locator("[data-field-error]").count(), 0, `F1f ${w}: corrected, the errors go`);
     await shot(page, `founding-${w}-signup-filled`);
@@ -435,8 +435,8 @@ function buildApp(supabaseUrl) {
     t.ok(await page.getByRole("button", { name: "Wrong email? Start over" }).count() === 1, `F2d ${w}: and "Wrong email? Start over" is there`);
     await shot(page, `founding-${w}-check-email`);
     await page.getByRole("button", { name: "Wrong email? Start over" }).click();
-    t.eq(await page.getByPlaceholder("Email address").inputValue(), "sam@example.invalid", `F2e ${w}: Wrong email? goes back to the form, with the address there to fix`);
-    await page.getByPlaceholder("Email address").fill("sam@example.org");
+    t.eq(await page.getByLabel("Email address").inputValue(), "sam@example.invalid", `F2e ${w}: Wrong email? goes back to the form, with the address there to fix`);
+    await page.getByLabel("Email address").fill("sam@example.org");
     await btn(page, "Create Account").click();
     await page.locator("[data-check-email]").waitFor();
     t.eq(await page.locator("[data-check-email-address]").innerText(), "sam@example.org", `F2f ${w}: the corrected address is the one named`);
@@ -523,8 +523,8 @@ function buildApp(supabaseUrl) {
     const u = await text(page);
     t.ok(!/Beta access code|invite code/i.test(u), "U1b no beta code is asked for on an error");
     t.ok(u.includes("We couldn't check sign-up just now. You can still create your account.") && await page.getByRole("button", { name: "Try again", exact: true }).count() === 1, "U1c the line, and Try again");
-    await page.getByPlaceholder("Email address").fill("sam@example.org");
-    await page.getByPlaceholder("Password (min 8 characters)").fill("a-long-enough-password");
+    await page.getByLabel("Email address").fill("sam@example.org");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
     t.eq(await btn(page, "Create Account").getAttribute("aria-disabled"), "false", "U1d Create Account still works (the server decides)");
     await shot(page, "founding-390-signup-status-unavailable");
     fails = 0;

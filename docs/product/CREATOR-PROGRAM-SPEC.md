@@ -1,0 +1,52 @@
+# Creator Program: spec (2026-11-02)
+
+Approved terms: `~/Documents/Flourish/01 Marketing/Creator Program/CREATOR-PROGRAM-APPROVED-2026-11-02.md` (v4, ChatGPT and Grok agreed).
+
+Ships dark, behind `CREATORS_ENABLED` (exactly "true"). With it off: sign-up ignores a code, `/api/creator` answers 404, the app shows no field and no card, neither webhook looks at a payment for a creator, and the sweep reads nothing. The migration is written, **not run**.
+
+## The rules
+- **A code is tracking only.** No discount, no reward to the person.
+- **Entering one.** Optional at sign-up on the web, iPhone and Android, checked on the server before the account exists. In Settings within 14 days of sign-up and before the first payment. On a computer, `flourishmoney.app/get?c=CODE` fills it in at web sign-up; a phone's store redirect is unchanged.
+- **One per household; the first one entered counts.** An attribution belongs to the account that entered it (`user_id`), because a `households` row exists only after an owner's first invite.
+  - On their own: their own code.
+  - In a household: the household's code, which is the one its payments were first credited to (`household_id`), otherwise the owner's.
+  - A partner joining never changes it. A partner's own code doesn't apply while they are together, and a partner can't add one. If they leave, their own applies again.
+- **A creator can't use their own code.** Matched on email, however it is written (case, spaces, a +tag, Gmail's dots), and for anyone in the household. Sign-up checks the code alone, so it can't be used to test whether an address is a creator's: a creator using their own code gets an account and no attribution. In Settings it answers as a wrong code does.
+- **An ended creator.** `active`: takes new households. `ended`: no new households; those already credited keep earning for the rest of their 12 months. `ended_for_cause` (fraud, spam, a serious breach): no new households and nothing further earned.
+
+## Commissions
+- **What counts.** Every paid event: 20% of the price before sales tax. For the App Store and Google Play, the store's fee comes off first. Canadian dollars only.
+- **Stripe.** `invoice.paid`, using `total_excluding_tax` (after discounts, before tax). The first payment and every renewal come this way. **Go-live step: add `invoice.paid` to the Stripe webhook endpoint (Amanda).** Until then only refunds reach this code.
+- **The stores.** RevenueCat's event: `price_in_purchased_currency × (1 − tax_percentage − commission_percentage)`. The percentages are RevenueCat's estimates. If any figure is missing, there is no commission and support gets a note; nothing is guessed. Never a sandbox purchase (whatever `IAP_ACCEPT_SANDBOX` says about access) and never Family Sharing.
+- **12 months from the household's first payment.** The earliest payment seen. A renewal on the anniversary is outside, and so is one a store dates up to two days early, because Apple charges within the 24 hours before a period ends.
+- **The first payment starts the clock whether or not it earned anything.** A payment whose amounts can't be read, or not in dollars, still starts the 12 months, so a renewal a year later can't count as a "first" payment.
+- **Before the code.** If the household's first payment predates the code (the webhook can arrive after someone adds one), nothing is credited, then or later.
+- **A partner's own older plan.** A partner's subscription from before they joined earns nothing for the household's code: someone who has paid for years doesn't earn a creator a fresh 12 months by joining. A partner who cancelled, joined and bought again is left out too, the cautious way round.
+- **Pending, then payable.** A commission is pending until its payment is more than 30 days old. A daily sweep flips it; the report goes by the date either way.
+- **A refund** claws back the commission on that one payment, in proportion to what was refunded. A clawback is its own row carrying its payment's date: against a payment under 30 days old the two cancel out; against one already paid it comes off later payouts until recovered.
+  - A refund that matches no payment changes nothing and tells support.
+  - A refund the store later takes back (`REFUND_REVERSED`) tells support; nothing moves on its own.
+- **A lost chargeback** works as a refund does (Amanda, 2026-11-03). Stripe's `charge.dispute.closed` with status `lost` claws back the commission on that one payment, in proportion to the amount disputed. It comes off the next payout, then later ones if short. **Go-live step: add `charge.dispute.closed` and `charge.dispute.funds_reinstated` to the Stripe webhook endpoint (Amanda).**
+  - The clawback carries the dispute's id, so the same dispute never takes anything twice. A payment can have more than one dispute: each takes its own share, and with any refund they never take more than the payment earned.
+  - An ordinary win, `warning_closed` and anything else change nothing. A dispute that matches no commission changes nothing and tells support.
+  - **A late win** (Amanda, 2026-11-03): Stripe turns a lost dispute to won and returns the money. What that dispute took goes back on the next payout, once and never more than it took, and support is told. It is a row of its own (`reinstated`), shown as `given_back_cents`, and joins the month's total, so the $25 minimum applies as it does to anything else.
+  - Stripe's docs don't say which event a late win sends, so `charge.dispute.closed` and `charge.dispute.funds_reinstated` are both read. Either way the status comes from asking Stripe at that moment, not from the delivery, so a delivery held up by retries can't claw back a dispute since won.
+  - Funds reinstated on a dispute still marked lost give nothing back. Stripe does that for a partially refunded payment, and the customer still won.
+  - The stores: a chargeback that reaches us as a refund is handled as a refund. See `docs/ops/CREATOR-PAYOUTS.md`.
+
+## Who sees what
+No table or function is reachable by anyone signed in, or by anon. A creator is told counts and totals only (`creator_payout_report`). A deleted account's rows keep their money with the account id cleared.
+
+## Files
+- **Migration:** `supabase/migrations/*_creator_program.sql`: `creators`, `creator_attributions`, `creator_commissions`, and the rules as functions.
+- **Server:** `netlify/functions/_lib/creators.js`, `creator.js` (`/api/creator`), `creator-commissions-sweep.js`; hooks in `beta.js`, `stripe-webhook.js`, `revenuecat-webhook.js`; new flags in `_lib/supportAlert.js`.
+- **App:** `src/lib/creatorWords.js` (the approved words), `src/lib/creatorCode.js`, the sign-up field and `CreatorCodeCard` in `App.jsx`, `public/get/get.js`.
+- **Words:** `docs/product/CREATOR-PROGRAM-WORDS.md`. **Monthly routine:** `docs/ops/CREATOR-PAYOUTS.md`.
+- **Tests:** `tests/creators.sql.test.cjs` (real Postgres), `tests/creators.test.cjs`, `tests/creators.browser.test.cjs`.
+
+## Going live, in order
+1. Run the migration.
+2. Check the first iOS event since the Small Business Program was set in RevenueCat shows a 15% fee. And check the first real App Store refund against its payment (see `docs/ops/CREATOR-PAYOUTS.md`).
+3. Merge, and deploy. Add `invoice.paid`, `charge.dispute.closed` and `charge.dispute.funds_reinstated` to the Stripe endpoint.
+4. Set `CREATORS_ENABLED=true` in production and redeploy.
+5. iPhone and Android show the field only from the next store build.

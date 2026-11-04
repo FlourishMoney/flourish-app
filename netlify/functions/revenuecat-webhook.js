@@ -23,6 +23,7 @@ const { getAdminClient } = require("./_lib/auth");
 const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
+const { creatorsEnabled, creditStoreEvent } = require("./_lib/creators");
 
 // COUPLE MODE (audit round 4 a3): a report ends no purchase hold. RevenueCat never carries our attempt id, so it
 // cannot say WHICH hold it is about; every hold ends at its fixed time (_lib/household.js). A purchase it reports as
@@ -108,6 +109,10 @@ async function handle(event, deps = {}) {
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
       if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }
+    // THE CREATOR PROGRAM (behind CREATORS_ENABLED): what a payment or a refund means for a creator. After the sync, so
+    // access is settled first. It reads the amounts from this delivery, which is authenticated above: they exist nowhere
+    // else, and they decide what a creator is owed and nothing about access.
+    if (creatorsEnabled()) notes.push(...await creditStoreEvent(admin, evt, deps.creators || {}));
     await admin.from("billing_events").update({
       status: conflict ? "ignored" : "processed",
       processed_at: new Date().toISOString(),

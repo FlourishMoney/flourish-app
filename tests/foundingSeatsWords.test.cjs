@@ -55,11 +55,13 @@ const HOLD = /\[WORDS:\s*[a-z0-9-]+/;
 
   // 3. No placeholder left.
   const built = [...walk("src"), ...walk("netlify"), ...walk("public"), "index.html"].filter((f) => /\.(js|jsx|mjs|cjs|html|json)$/.test(f));
-  t.eq(built.filter((f) => HOLD.test(read(f))), [], "3a no [WORDS: placeholder in src/, netlify/, public/ or index.html");
+  // The one exception (tests/_pendingWords.cjs): the Creator Program's listed lines, in its own words file, until they are approved.
+  const PW = require("./_pendingWords.cjs");
+  t.eq(built.filter((f) => HOLD.test(read(f)) && PW.strayPlaceholders(read(f), f).length), [], "3a no [WORDS: placeholder in src/, netlify/, public/ or index.html, but the Creator Program's listed lines in lib/creatorWords.js");
   const { execFileSync } = require("child_process");
   let guard = 0;
   try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-  t.eq(guard, 0, "3b the production build's guard finds none");
+  t.eq(guard, PW.pendingCreatorWordIds().length ? 1 : 0, "3b the production build's guard refuses while one of those is left, and finds none once they are approved");
 
   // 4. The founding list form is gone.
   const APP = read("src", "App.jsx");

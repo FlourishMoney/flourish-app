@@ -32,7 +32,7 @@ Prices are never typed into these lines: the plan card above each one shows the 
 Labels:
 - Sign-up card: "Log In", "Sign Up", "Create Account", "Check your email", "Resend confirmation email",
   "Resend in Ns", "Wrong email? Start over", "Back to log in", "Almost there", "Welcome back",
-  "Create your free account", "Beta access code" (the field's placeholder, shown only when the server says
+  "Create your free account", "Beta access code" (the field's label, shown only when the server says
   signup is invite-only), "Forgot password?", "Email me a magic link", "← Back", and "Try again" (the bank
   link's retry label).
 - Trial countdown: "N days left in your trial" (`trialChip`, the store apps' approved chip) and "Upgrade →".

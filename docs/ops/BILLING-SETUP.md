@@ -33,10 +33,18 @@ products, separate prices, separate webhook endpoints, separate keys.
    https://flourishmoney.app/.netlify/functions/stripe-webhook
    ```
 
-   Subscribe to exactly these three events:
+   Subscribe to these four events. They are what the live destination `flourish-production`
+   listens to (read in the Stripe dashboard, 2026-11-03):
+   - `charge.refunded`
    - `checkout.session.completed`
-   - `customer.subscription.updated`
    - `customer.subscription.deleted`
+   - `customer.subscription.updated`
+
+   Add these three when the Creator Program goes live (`docs/product/CREATOR-PROGRAM-SPEC.md`,
+   going live). With `CREATORS_ENABLED` off, the webhook ignores them:
+   - `invoice.paid`
+   - `charge.dispute.closed`
+   - `charge.dispute.funds_reinstated`
 
    Copy the **signing secret** (`whsec_...`). Anything else Stripe sends is recorded as
    `ignored` and changes nothing, so extra events are harmless but pointless.

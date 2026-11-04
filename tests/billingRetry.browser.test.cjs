@@ -9,6 +9,7 @@
 //   2  Upgrade asks again first: when that answers, the real checkout opens, not the old Paywall
 //   3  when it still cannot be read, the old Paywall offers no trial, never says plans aren't open, shows CAD
 //      prices to a US profile too, and its "Try again" asks once more (and says so when that fails)
+//   4  its promo code has a real label and no placeholder, in both themes, at 320px and every text size
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -66,15 +67,16 @@ const STATUS = { enabled: true, paid: false, provider: null, period_end: null, m
     { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: base, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" } });
   const browser = await playwright.chromium.launch();
   // failUntil: the status call fails (503) for its first n calls; Infinity: always.
-  const open = async (failUntil) => {
+  const open = async (failUntil, { width = 390, theme = null } = {}) => {
     const calls = [];
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: "America/Toronto" });
-    await ctx.addInitScript(([key, session]) => { try {
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, timezoneId: "America/Toronto" });
+    await ctx.addInitScript(([key, session, chosen]) => { try {
+      if (chosen) { localStorage.setItem("flourish_theme", chosen); localStorage.setItem("flourish_theme_manual", "1"); }
       localStorage.setItem(key, session);
       localStorage.setItem("flourish_first_visit_done", "1");
       localStorage.setItem("flourish_tour_done", "1");
       localStorage.setItem("flourish_ai_disclosure_seen", "1");
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.parse("2026-10-26T14:00:00Z") / 1000)))]);
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.parse("2026-10-26T14:00:00Z") / 1000))), theme]);
     await ctx.route("**/api/billing", (r) => {
       let action = null; try { action = JSON.parse(r.request().postData() || "{}").action; } catch {}
       if (action !== "status") return r.fulfill({ status: 404, contentType: "application/json", body: "{}" });
@@ -136,6 +138,62 @@ const STATUS = { enabled: true, paid: false, provider: null, period_end: null, m
       await page.getByText("Couldn't reach the server. Try again in a moment.").waitFor({ timeout: 10000 }).catch(() => {});
       const after = await page.locator("body").innerText();
       t.ok(calls.length === n + 1 && /Couldn't reach the server\. Try again in a moment\./.test(after), `3c ${c}: "Try again" asks once more, and says so when that fails`);
+      await ctx.close();
+    }
+
+    // ── 4. The promo code has a real label ─────────────────────────────────────────────────────────
+    const toPromo = async (page) => {
+      await settle(page);
+      await page.getByText("Get Flourish Plus", { exact: false }).first().click();
+      const PROMO = page.getByLabel("Promo code", { exact: true });
+      await PROMO.waitFor({ timeout: 10000 });
+      return PROMO;
+    };
+    // Each rendered font size times k, worked out first so nested sizes don't compound.
+    const biggerText = (k) => { const els = [...document.querySelectorAll("body *")]; const sizes = els.map((e) => parseFloat(getComputedStyle(e).fontSize)); els.forEach((e, i) => { if (sizes[i]) e.style.fontSize = sizes[i] * k + "px"; }); };
+    const fit = () => {
+      const input = document.getElementById("paywall-promo"), label = document.querySelector('label[for="paywall-promo"]');
+      const apply = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Apply");
+      const range = document.createRange(); range.selectNodeContents(label);
+      const text = range.getBoundingClientRect(), box = input.getBoundingClientRect(), go = apply.getBoundingClientRect(), css = getComputedStyle(label);
+      const onScreen = (r) => r.left >= 0 && r.right <= innerWidth;
+      const leaf = (words) => [...document.querySelectorAll("body *")].find((e) => e.children.length === 0 && e.textContent.trim() === words).getBoundingClientRect();
+      return { words: label.textContent, above: text.bottom <= box.top, inFull: css.overflow === "visible" && css.whiteSpace !== "nowrap" && onScreen(text), fieldOnScreen: onScreen(box), applyOnScreen: onScreen(go), apart: go.left >= box.right || go.top >= box.bottom, pillClear: leaf("Billed yearly").bottom <= leaf("Annual").top, placeholders: document.querySelectorAll("input[placeholder],textarea[placeholder]").length, sideways: document.documentElement.scrollWidth > innerWidth };
+    };
+    const FITS = { words: "Promo code", above: true, inFull: true, fieldOnScreen: true, applyOnScreen: true, apart: true, pillClear: true, placeholders: 0, sideways: false };
+    for (const theme of ["dark", "light"]) {
+      for (const k of [1, 1.3, 1.6, 2]) {
+        const { ctx, page } = await open(Infinity, { width: 320, theme });
+        await toPromo(page);
+        await page.evaluate(biggerText, k);
+        t.eq(await page.evaluate(fit), FITS, `4a ${theme}, 320px, text ×${k}: the label shows in full above the field, no placeholder, field and Apply on screen, "Billed yearly" clear of "Annual", nothing to scroll sideways`);
+        await ctx.close();
+      }
+      const { ctx, page } = await open(Infinity, { theme });
+      await toPromo(page);
+      const look = await page.evaluate(() => {
+        const rgba = (s) => s.match(/[\d.]+/g).map(Number);
+        const blend = (c, under) => { const a = c[3] === undefined ? 1 : c[3]; return [0, 1, 2].map((i) => c[i] * a + under[i] * (1 - a)); };
+        const behind = (e) => { const c = rgba(getComputedStyle(e).backgroundColor); return !e.parentElement || c[3] === undefined || c[3] === 1 ? c.slice(0, 3) : blend(c, behind(e.parentElement)); };
+        const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+        const label = document.querySelector('label[for="paywall-promo"]'), css = getComputedStyle(label), bg = behind(label);
+        const [hi, lo] = [lum(blend(rgba(css.color), bg)), lum(bg)].sort((x, y) => y - x);
+        return { size: css.fontSize, weight: css.fontWeight, display: css.display, gap: css.marginBottom, ratio: (hi + 0.05) / (lo + 0.05) };
+      });
+      t.eq([look.size, look.weight, look.display, look.gap], ["13px", "600", "block", "4px"], `4b ${theme}: the label has the sign-in fields' measurements`);
+      t.ok(look.ratio >= 4.5, `4c ${theme}: the label is readable (${look.ratio.toFixed(1)}, at least 4.5)`);
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await open(Infinity);
+      const asked = [];
+      await page.route("**/api/beta", (r) => { const b = JSON.parse(r.request().postData() || "{}"); if (b.action === "validate") asked.push(b.code); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: false }) }); });
+      const PROMO = await toPromo(page);
+      await PROMO.fill("friend26");
+      t.eq(await PROMO.inputValue(), "FRIEND26", "4d the label drives the same field: what is typed goes in capitals");
+      await page.getByRole("button", { name: "Apply", exact: true }).click();
+      await page.getByText("Invalid code", { exact: true }).waitFor({ timeout: 10000 });
+      t.eq(asked, ["FRIEND26"], "4e …and Apply still checks it and still answers");
       await ctx.close();
     }
   } catch (e) {

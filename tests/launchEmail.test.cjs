@@ -278,8 +278,8 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const scheduled = [...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort();
     const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
-    t.eq([scheduled, scheduled.filter(sends)], [["founding-link-sweep", "limiter-cleanup", "waitlist-sweep"], ["founding-link-sweep", "waitlist-sweep"]],
-      "6n0 three scheduled functions, and the limiter cleanup sends nothing");
+    t.eq([scheduled, scheduled.filter(sends)], [["creator-commissions-sweep", "founding-link-sweep", "limiter-cleanup", "waitlist-sweep"], ["founding-link-sweep", "waitlist-sweep"]],
+      "6n0 four scheduled functions, and the limiter cleanup and the creator commissions sweep send nothing");
     t.eq(scheduled.filter(sends), ["founding-link-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep and the founding link sweep");
     const everywhere = [toml, fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8"),
       ...fs.readdirSync(fnDir).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, f), "utf8")),

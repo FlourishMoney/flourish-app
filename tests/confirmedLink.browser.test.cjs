@@ -67,16 +67,16 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       t.ok(!/You're confirmed/.test(body), "1a an expired link no longer says \"You're confirmed\"");
       t.ok(/Email link is invalid or has expired/.test(body), "1b …it says what Supabase said");
       t.eq(await page.getByRole("heading", { level: 1 }).allInnerTexts(), ["This link no longer works."], "4a an expired link is headed \"This link no longer works.\"");
-      await page.getByPlaceholder("Email address").fill("someone@example.invalid");
+      await page.getByLabel("Email address").fill("someone@example.invalid");
       await page.getByRole("button", { name: "Send it again" }).click();
       await page.getByText("Check your email to confirm your address.").waitFor({ timeout: 10000 }).catch(() => {});
       t.eq(resends, ["someone@example.invalid"], "1c \"Send it again\" sends the confirmation email again, to the address typed (resend_confirmation)");
       t.ok(/Check your email to confirm your address\./.test(await page.locator("body").innerText()), "1d …and says to check the inbox");
       // ── 3. Log In opens the sign-in card ──
       await page.getByRole("button", { name: "Log In" }).first().click();
-      await page.getByPlaceholder("Password (min 8 characters)").waitFor({ timeout: 10000 }).catch(() => {});
+      await page.getByLabel("Password", { exact: true }).waitFor({ timeout: 10000 }).catch(() => {});
       const card = await page.locator("body").innerText();
-      t.ok(new URL(page.url()).pathname === "/" && (await page.getByPlaceholder("Password (min 8 characters)").count()) > 0 && /Log In/.test(card), "3a Log In opens the sign-in card, at \"/\"");
+      t.ok(new URL(page.url()).pathname === "/" && (await page.getByLabel("Password", { exact: true }).count()) > 0 && /Log In/.test(card), "3a Log In opens the sign-in card, at \"/\"");
       await ctx.close();
     }
     // ── 2. No token at all ────────────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
       const { ctx, page } = await visit("?error=server_error&error_code=unexpected_failure&error_description=Error+confirming+user");
       const body = await page.locator("body").innerText();
       t.eq(await page.getByRole("heading", { level: 1 }).allInnerTexts(), ["This link no longer works."], "4b a failed link (in the query) has the same headline");
-      t.ok(/Error confirming user/.test(body) && (await page.getByPlaceholder("Email address").count()) === 1 && /Send it again/.test(body) && /Log In/.test(body) && !/You're confirmed/.test(body),
+      t.ok(/Error confirming user/.test(body) && (await page.getByLabel("Email address").count()) === 1 && /Send it again/.test(body) && /Log In/.test(body) && !/You're confirmed/.test(body),
         "4c …and keeps Supabase's error text, the send-again form and the Log In button");
       await ctx.close();
     }

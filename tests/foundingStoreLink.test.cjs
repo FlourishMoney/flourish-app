@@ -55,8 +55,8 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
   }
   const leftOver = (src) => [...src.matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
   t.ok(leftOver(`${emailSrc}\n${page}\n${script}\n${read("src", "App.jsx")}\n${read("netlify", "functions", "_lib", "pendingWords.js")}`).length === 0
-    && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => /\[WORDS:\s*[a-z0-9-]+/.test(read("src", "lib", f))),
-    "1c no [WORDS: placeholder is left: the email and its words, the device link's page and script, App.jsx, src/lib");
+    && !fs.readdirSync(path.join(ROOT, "src", "lib")).some((f) => require("./_pendingWords.cjs").strayPlaceholders(read("src", "lib", f), path.join("src", "lib", f)).length),
+    "1c no [WORDS: placeholder is left: the email and its words, the device link's page and script, App.jsx, src/lib (but the Creator Program's listed lines in lib/creatorWords.js)");
   const steps = doc.split("### `founding-email-store-steps`")[1].split("\n### ")[0].split("**Facts it must state")[1] || "";
   const order = ["same email address this message went to", "tap the confirmation link", "open **See plans** and choose **Founding annual**"].map((s) => steps.indexOf(s));
   t.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2], "1e the steps line's facts: same email, then the confirmation link, then See plans and Founding annual, in that order");
