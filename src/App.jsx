@@ -16305,11 +16305,11 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
               </div>
               <span>© 2026 GrowSmart Inc. · Flourish Money</span>
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
-                <a href="/newsletter/">Canadian money dates</a>
                 <a href="/privacy">Privacy</a>
                 <a href="/terms">Terms</a>
                 <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
+                <a href="/newsletter/">Canadian money dates</a>
               </div>
             </div>
           </div>
