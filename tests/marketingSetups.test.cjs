@@ -64,7 +64,8 @@ function fakeAdmin(tables = {}) {
     t.ok(/<h1>A guide<\/h1>/.test(html), "1a one H1");
     t.ok(html.includes("<title>A guide | flourish</title>") && html.includes('<meta name="description" content="What it covers.">'), "1b title and meta description");
     t.ok(html.includes('<link rel="canonical" href="https://flourishmoney.app/guides/a-guide/">'), "1c canonical");
-    t.ok(html.includes("Last updated November 2, 2026") && html.includes("flourish team"), "1d last updated, and the flourish team as author and reviewer");
+    t.ok(html.includes("Last updated November 2, 2026. Written by the flourish team."), "1d the approved byline");
+    t.ok(html.includes("<p>flourish is operated by GrowSmart Inc.</p>") && html.includes('<a href="/newsletter/">Canadian money dates</a> · <a href="/privacy">Privacy</a>'), "1d2 the approved footer: the company its own sentence, then the links");
     t.ok(html.includes("How we checked this") && html.includes("We read the source."), "1e the note");
     t.ok(html.includes('<a href="https://www.canada.ca/">'), "1f the source link is inline");
     t.ok(html.includes("<figcaption>Example, sample data</figcaption>"), "1g an app screen carries the label");
@@ -95,6 +96,7 @@ function fakeAdmin(tables = {}) {
     t.ok(sitemap.includes("https://flourishmoney.app/guides/</loc>") && sitemap.includes("/guides/a-guide/</loc>"), "1n the sitemap has /guides and each published guide");
     t.ok(!sitemap.includes("template-test") && !index.includes("template-test"), "1o a draft is in neither the sitemap nor the index");
     t.ok(draft.includes('<meta name="robots" content="noindex">') && draft.includes("Draft, not published."), "1p a draft says noindex");
+    t.ok(draft.includes("Last updated November 4, 2026. Draft template by the flourish team."), "1p2 the draft's approved byline");
     t.ok(draft.includes('property="og:type" content="article"') && draft.includes("application/ld+json"), "1q …and carries the same tags, so the template can be tested");
     const robots = fs.readFileSync(path.join(dist, "robots.txt"), "utf8");
     t.ok(/^Allow: \/$/m.test(robots) && !/Disallow: \/guides/.test(robots) && robots.includes("Sitemap: https://flourishmoney.app/sitemap.xml"), "1r robots.txt allows the guides, so a draft's noindex can be read");
@@ -166,7 +168,7 @@ function fakeAdmin(tables = {}) {
 
     const status = JSON.parse((await fn.route({ httpMethod: "GET", headers: {}, queryStringParameters: {} }, deps)).body);
     t.eq([status.open, status.version, status.wording], [true, N.CONSENT_VERSION, N.CONSENT_VERSIONS[N.CONSENT_VERSION]], "4a the form gets the wording from the server");
-    t.ok(/GrowSmart Inc\. \(flourish\)/.test(status.wording) && /unsubscribe/i.test(status.wording), "4b the wording names the sender and says they can leave");
+    t.eq([status.version, status.wording], ["2026-11-05", "Yes, send me Canadian money dates this week, a weekly email from flourish. I can unsubscribe at any time. Sent by GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app."], "4b the approved consent line, word for word");
     t.ok(!/—/.test(status.wording), "4b2 no em dash");
     t.eq((await post({ ...good, consent: false })).statusCode, 400, "4c no tick, no sign-up");
     t.eq((await post({ ...good, consent: "true" })).statusCode, 400, "4d consent must be a real true");
@@ -182,6 +184,7 @@ function fakeAdmin(tables = {}) {
     t.ok(row.consented_at === clock.toISOString(), "4k the timestamp");
     t.eq(mail.length, 1, "4l one confirmation email");
     const email = mail[0].p;
+    t.ok(email.text.startsWith("You asked for Canadian money dates this week from flourish. You won't receive the weekly email until you confirm."), "4l2 its approved first line");
     t.ok(email.text.includes(N.SENDER_LINE) && email.html.includes("GrowSmart Inc. (flourish)"), "4m the sender's identity and mailing address, in both parts");
     t.ok(/do=unsubscribe/.test(email.text) && /do=unsubscribe/.test(email.html), "4n a one-click unsubscribe");
     t.eq(email.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click", "4o the mailbox's own one-click");
@@ -216,6 +219,9 @@ function fakeAdmin(tables = {}) {
     t.eq(N.uaFamily("anything", true), "flourish_app", "4z8 the store apps");
     const page = read("public", "newsletter", "index.html");
     t.ok(/<input id="consent"[^>]*type="checkbox">/.test(page) && !/checked/.test(page), "4z9 the website's box starts unticked");
+    const AFTER = "Check your email and confirm. You won't receive the weekly email until you do.";
+    t.ok(page.includes(AFTER) && read("src", "App.jsx").includes(AFTER), "4z9b the approved words after sign-up, on the page and in the app");
+    t.ok(page.includes('content="A weekly email of Canadian money dates from flourish. Confirm your email to join, and unsubscribe in one click any time."'), "4z9c the approved meta description");
     const app = read("src", "App.jsx");
     t.ok(/const \[ticked,setTicked\]=useState\(false\)/.test(app), "4z10 the app's too");
     t.ok(/\{!data\?\.demo&&<NewsletterCard\/>\}/.test(app), "4z11 the form is in Settings");

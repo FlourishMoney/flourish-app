@@ -12269,7 +12269,7 @@ function NewsletterCard(){
   },[]);
   if(!info) return null;
   const box={marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`};
-  if(done) return <div data-newsletter-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Check your email and confirm. Nothing is sent until you do.</div>;
+  if(done) return <div data-newsletter-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Check your email and confirm. You won't receive the weekly email until you do.</div>;
   const submit=async()=>{
     if(busy) return;
     if(!email.trim()){ setError("Enter your email address."); return; }

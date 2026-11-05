@@ -15,9 +15,9 @@ const { emailHtml } = require("./emailLayout");
 
 const NEWSLETTER_NAME = "Canadian money dates this week";
 const SENDER_LINE = "Sent by GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app.";
-const CONSENT_VERSION = "2026-11-04";
+const CONSENT_VERSION = "2026-11-05";
 const CONSENT_VERSIONS = Object.freeze({
-  "2026-11-04": `Yes, email me ${NEWSLETTER_NAME} from flourish. I can unsubscribe at any time. ${SENDER_LINE}`,
+  "2026-11-05": `Yes, send me ${NEWSLETTER_NAME}, a weekly email from flourish. I can unsubscribe at any time. ${SENDER_LINE}`,
 });
 const SOURCES = Object.freeze(["site_newsletter", "app_settings_ios", "app_settings_android", "app_settings_web"]);
 const BASE = "https://flourishmoney.app/api/newsletter";
@@ -91,7 +91,7 @@ function confirmationEmail({ to, rowId, now = new Date() }) {
     to, rowId,
     subject: `Confirm your sign-up for ${NEWSLETTER_NAME}`,
     paragraphs: [
-      `You asked for ${NEWSLETTER_NAME} from flourish. Nothing is sent until you confirm.`,
+      `You asked for ${NEWSLETTER_NAME} from flourish. You won't receive the weekly email until you confirm.`,
       line,
       "If this wasn't you, ignore this email and you won't hear from us again. The link works for 7 days.",
     ],

@@ -97,7 +97,8 @@ const STYLE = `<style>
 </style>`;
 
 const FOOT = `<footer>
-  <p>flourish is operated by GrowSmart Inc. <a href="/newsletter/">Canadian money dates this week</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></p>
+  <p>flourish is operated by GrowSmart Inc.</p>
+  <p><a href="/newsletter/">Canadian money dates</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></p>
 </footer>`;
 
 function shell({ head, body, tags }) {
@@ -163,7 +164,7 @@ export function renderGuide(g, tags = []) {
   }).join("\n");
   const body = `<main>
 ${g.status === "draft" ? '<p class="draft">Draft, not published.</p>\n' : ""}<h1>${esc(g.title)}</h1>
-<p class="meta">Last updated ${readableDate(g.updatedAt)}. Written and reviewed by the ${AUTHOR}.</p>
+<p class="meta">Last updated ${readableDate(g.updatedAt)}. ${g.status === "draft" ? "Draft template" : "Written"} by the ${AUTHOR}.</p>
 ${blocks}
 <section class="checked"><h2>How we checked this</h2><p>${esc(g.howWeChecked)}</p></section>
 </main>`;
