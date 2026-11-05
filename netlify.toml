@@ -39,6 +39,11 @@
 [functions."newsletter-retention"]
   schedule = "@daily"
 
+# Scheduled: the privacy policy notice's one-time send. Does nothing unless POLICY_NOTICE_SEND is "dry-run" or "send"
+# (netlify/functions/policy-notice-sweep.js, migration 0040).
+[functions."policy-notice-sweep"]
+  schedule = "*/15 * * * *"
+
 # Security headers
 [[headers]]
   for = "/*"
