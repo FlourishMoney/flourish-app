@@ -4,7 +4,8 @@
 // exactly). [launch date] becomes the date in the newsletter_launch row.
 //
 // A service notice about an account, sent once, to accounts rather than to a mailing list: nothing here reads the waitlist or the
-// newsletter list. Its words carry no unsubscribe line, as approved.
+// newsletter list. Replies come to hello@flourishmoney.app (From and Reply-To both), and whoever asks to stop is added by hand to
+// policy_notice_opt_outs (migration 0040), which the send respects.
 // -----------------------------------------------------------------------------
 "use strict";
 const crypto = require("crypto");
@@ -30,6 +31,7 @@ const BODY = (date) => [
   "• We added our mailing address to the policy.",
   "Nothing about your bank connections or your financial information changed.",
   "Questions? Email privacy@flourishmoney.app.",
+  "Reply to this email to stop getting privacy-policy notices by email.",
 ];
 
 // "2026-11-12" to "November 12, 2026", or null. The same reading as the policy's own date (src/lib/privacyLaunchWords.js).
