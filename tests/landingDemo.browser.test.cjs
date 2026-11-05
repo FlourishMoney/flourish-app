@@ -163,9 +163,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         let header = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
         // An inner scroller (the coach scrolls under its own bar) clips at its own top.
         for (let p = els[0].parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight + 1) { header = Math.max(header, p.getBoundingClientRect().top); break; } }
-        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight };
+        const bar = document.getElementById("tour-actions");
+        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight, barTop: bar ? Math.round(bar.getBoundingClientRect().top) : innerHeight };
       }, targets[k]);
-        clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
+        clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && m.bottom <= m.barTop && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
         if (clear || Date.now() - t0 > 4000) break;
         await page.waitForTimeout(100);
       }
