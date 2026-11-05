@@ -34,6 +34,11 @@
 [functions."creator-commissions-sweep"]
   schedule = "@daily"
 
+# Scheduled: the newsletter's retention (the approved privacy words, 2026-11-05). Once a day it deletes a consent record three
+# years after its unsubscribe, and a sign-up never confirmed within 30 days (netlify/functions/newsletter-retention.js).
+[functions."newsletter-retention"]
+  schedule = "@daily"
+
 # Security headers
 [[headers]]
   for = "/*"

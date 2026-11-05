@@ -161,13 +161,20 @@ function fakeAdmin(tables = {}) {
     const store = { get: async (k) => memory.get(k) ?? null, setJSON: async (k, v) => { memory.set(k, v); } };
     let clock = new Date("2026-11-04T12:00:00Z");
     const mail = [];
-    const admin = fakeAdmin();
+    const admin = fakeAdmin({ newsletter_launch: [{ live_on: "2026-11-12" }] });
     const deps = { admin: () => admin, store: () => store, send: async (p, key) => { mail.push({ p, key }); return true; }, now: () => clock };
     const post = (body, headers = { "x-nf-client-connection-ip": `10.0.0.${mail.length + memory.size}`, "user-agent": "Mozilla/5.0 (iPhone) Version/18 Mobile Safari/604.1" }) => fn.route({ httpMethod: "POST", headers, queryStringParameters: {}, body: JSON.stringify(body) }, deps);
     const good = { email: " Reader@Example.ca ", consent: true, version: N.CONSENT_VERSION, source: "site_newsletter" };
 
     const status = JSON.parse((await fn.route({ httpMethod: "GET", headers: {}, queryStringParameters: {} }, deps)).body);
-    t.eq([status.open, status.version, status.wording], [true, N.CONSENT_VERSION, N.CONSENT_VERSIONS[N.CONSENT_VERSION]], "4a the form gets the wording from the server");
+    t.eq([status.open, status.version, status.wording, status.policyDate], [true, N.CONSENT_VERSION, N.CONSENT_VERSIONS[N.CONSENT_VERSION], "2026-11-12"], "4a the form gets the wording from the server, and the policy its date");
+    {
+      const closed = fakeAdmin();
+      const d2 = { ...deps, admin: () => closed };
+      t.eq(JSON.parse((await fn.route({ httpMethod: "GET", headers: {}, queryStringParameters: {} }, d2)).body), { open: false }, "4a2 no launch row: closed, and no policy date");
+      t.eq((await fn.route({ httpMethod: "POST", headers: {}, queryStringParameters: {}, body: JSON.stringify({ email: "a@b.ca", consent: true, version: N.CONSENT_VERSION, source: "site_newsletter" }) }, d2)).statusCode, 503, "4a3 a sign-up can't get in before then, however it is sent");
+      t.eq((closed.tables.newsletter_subscribers || []).length, 0, "4a4 and stores nothing");
+    }
     t.eq([status.version, status.wording], ["2026-11-05", "Yes, send me Canadian money dates this week, a weekly email from flourish. I can unsubscribe at any time. Sent by GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app."], "4b the approved consent line, word for word");
     t.ok(!/—/.test(status.wording), "4b2 no em dash");
     t.eq((await post({ ...good, consent: false })).statusCode, 400, "4c no tick, no sign-up");
@@ -203,6 +210,7 @@ function fakeAdmin(tables = {}) {
     t.eq([(await link("GET", unsubUrl)).statusCode, row.unsubscribed_at ?? null], [200, null], "4w unsubscribe: opening the link changes nothing");
     t.eq((await link("POST", unsubUrl.replace(/t=.*/, "t=forged"))).statusCode, 400, "4x a forged one does nothing");
     t.eq([(await link("POST", unsubUrl)).statusCode, row.unsubscribed_at], [200, clock.toISOString()], "4y the POST takes effect at once");
+    t.eq([row.email, !!row.email_key, row.consent_wording, !!row.consented_at], [null, true, N.CONSENT_VERSIONS[N.CONSENT_VERSION], true], "4y2 the address is cleared; the consent record stays, as the privacy words say");
     clock = new Date(clock.getTime() + 60000);
     t.eq((await link("POST", confirmUrl)).statusCode, 400, "4z an old confirm link can't undo an unsubscribe");
     t.ok(row.unsubscribed_at, "4z2 …still unsubscribed");
@@ -210,11 +218,11 @@ function fakeAdmin(tables = {}) {
     t.eq((await link("POST", confirmUrl)).statusCode, 410, "4z3 a confirm link expires after 7 days");
 
     await post(good);
-    t.eq([mail.length, row.confirmed_at, !!row.unsubscribed_at], [2, null, true], "4z4 back after unsubscribing: a new confirmation, and off the list until it is confirmed");
+    t.eq([mail.length, row.confirmed_at, !!row.unsubscribed_at, row.email, rows.length], [2, null, true, "reader@example.ca", 1], "4z4 back after unsubscribing: the same record, a new confirmation, and off the list until it is confirmed");
 
     const src = read("netlify", "functions", "newsletter.js") + read("netlify", "functions", "_lib", "newsletter.js") + read("supabase", "migrations", "0037_newsletter.sql").replace(/^--.*$/gm, "");
     t.ok(!/from\("waitlist"\)|public\.waitlist|insert into/i.test(src), "4z5 no waitlist row can reach this list, and the migration adds no rows");
-    t.ok(admin.calls.every((c) => c === "newsletter_subscribers"), "4z6 only its own table is touched");
+    t.ok(admin.calls.every((c) => c === "newsletter_subscribers" || c === "newsletter_launch"), "4z6 only its own tables are touched");
     t.eq(N.uaFamily("Mozilla/5.0 (Windows) Chrome/131 Safari/537 Edg/131"), "edge", "4z7 Edge is Edge");
     t.eq(N.uaFamily("anything", true), "flourish_app", "4z8 the store apps");
     const page = read("public", "newsletter", "index.html");
@@ -266,17 +274,50 @@ function fakeAdmin(tables = {}) {
     t.ok(!/^insert/im.test(sql), "5s the migration adds no code: Amanda chooses them");
   }
 
+  // ── 5b. The approved privacy words and the retention behind them ───────────────────────────
+  {
+    const W = (await import("../src/lib/privacyLaunchWords.js"));
+    const P = W.POLICY_WORDS;
+    t.ok(P.newsletter.startsWith("If you sign up for Canadian money dates this week, our weekly email,") && P.newsletter.endsWith("and people already on the waitlist are not added to it."), "5b1 Newsletter");
+    t.ok(P.cameFrom.startsWith("when you reach us through one of our own links") && P.cameFrom.endsWith("or use it to build an advertising profile."), "5b2 Where you came from");
+    t.ok(P.keep.includes("for three years after you unsubscribe"), "5b3 three years");
+    t.eq([W.policyDateLabel("2026-11-12"), W.policyDateLabel(null), W.policyDateLabel("soon")], ["November 12, 2026", null, null], "5b4 the date");
+    t.ok(!/flourishmoney\.app/.test(Object.values(P).join(" ")), "5b5 a store app's policy doesn't name the website through these words");
+    const R = require("../netlify/functions/newsletter-retention")._test;
+    t.eq(R.threeYearsBefore(new Date("2026-11-05T00:00:00Z")), "2023-11-05T00:00:00.000Z", "5b6 three calendar years");
+    const rows = [
+      { id: "old", unsubscribed_at: "2023-11-04T00:00:00.000Z", confirmed_at: "2020-01-01", consented_at: "2020-01-01" },
+      { id: "kept", unsubscribed_at: "2023-11-06T00:00:00.000Z", confirmed_at: "2020-01-01", consented_at: "2020-01-01" },
+      { id: "stale", unsubscribed_at: null, confirmed_at: null, consented_at: "2026-10-01T00:00:00.000Z" },
+      { id: "pending", unsubscribed_at: null, confirmed_at: null, consented_at: "2026-11-01T00:00:00.000Z" },
+      { id: "on-list", unsubscribed_at: null, confirmed_at: "2026-01-01", consented_at: "2020-01-01T00:00:00.000Z" },
+    ];
+    let live = rows.slice();
+    const del = () => { const f = []; const b = { is: (k, v) => { f.push((r) => r[k] === v); return b; }, lt: (k, v) => { f.push((r) => r[k] && r[k] < v); return b; }, then: (ok) => { live = live.filter((r) => !f.every((x) => x(r))); return Promise.resolve({ error: null }).then(ok); } }; return b; };
+    t.eq(await R.sweep({ from: () => ({ delete: del }) }, new Date("2026-11-05T00:00:00Z")), true, "5b7 the sweep runs");
+    t.eq(live.map((r) => r.id), ["kept", "pending", "on-list"], "5b8 it deletes only a record past three years and a sign-up unconfirmed past 30 days");
+    t.ok(/\[functions\."newsletter-retention"\]\s*\n\s*schedule = "@daily"/.test(read("netlify.toml")), "5b9 daily");
+    const C = await import("../src/lib/attribution.js");
+    const seen = new Map(), st2 = { setItem: (k, v) => seen.set(k, v), getItem: () => null };
+    globalThis.window = { Capacitor: { isNativePlatform: () => true, getPlatform: () => "ios" } };
+    try { C.captureAttribution("?src=ig&cr=a", st2); } finally { delete globalThis.window; }
+    t.eq(seen.size, 0, "5b10 the iPhone app reads no campaign value");
+    const swift = fs.readdirSync(path.join(ROOT, "ios", "App", "App")).filter((f) => f.endsWith(".swift")).map((f) => read("ios", "App", "App", f)).join("");
+    t.ok(!/AdServices|AppTrackingTransparency|ASIdentifierManager|attributionToken/.test(swift), "5b11 and asks Apple for none");
+  }
+
   // ── 6. The wiring ──────────────────────────────────────────────────────────────────────────
   {
     const beta = read("netlify", "functions", "beta.js");
-    t.ok(/recordAccountAttribution\(admin, newAccountId, body\.attribution, accountPlatform\(event\)\)/.test(beta), "6a src and cr go on a new account");
-    t.ok(/!isTestEmail\(email\)\) await recordAccountAttribution/.test(beta), "6b never Flourish's own test addresses");
+    t.ok(/recordAccountAttribution\(admin, newAccountId, platform === "android" \? body\.attribution : null, platform\)/.test(beta), "6a src and cr go on a new Android account");
+    t.ok(/!isTestEmail\(email\)\) \{\s*const platform = accountPlatform\(event\);\s*await recordAccountAttribution/.test(beta), "6b never Flourish's own test addresses");
     t.ok(beta.indexOf("tester_code_invalid") < beta.indexOf("createUser({"), "6c a wrong tester code is refused before an account exists");
     const toml = read("netlify.toml");
     for (const r of ["attribution", "newsletter", "tester"]) t.ok(toml.indexOf(`from   = "/api/${r}"`) > 0 && toml.indexOf(`from   = "/api/${r}"`) < toml.indexOf('from   = "/*"'), `6d /api/${r} comes before the app's fallback`);
     const act = read("netlify", "functions", "activation.js");
     t.ok(/metric === "safe_view" \|\| metric === "first_number_shown"\) await markActivated/.test(act), "6e the first number marks an account activated");
-    t.ok(/newsletter_subscribers"\)\.delete\(\)/.test(read("netlify", "functions", "plaid.js")), "6f deleting an account removes its address from the list");
+    t.ok(!/newsletter/.test(read("netlify", "functions", "plaid.js")), "6f the newsletter is separate from an account, as the privacy words say: deleting one leaves the other, and its CASL record");
+    t.ok(/platform === "android" \? body\.attribution : null/.test(beta), "6f2 only Android's campaign code goes on an account, as the privacy words say");
     const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
     t.ok(LANDING_ONLY.includes("newsletter"), "6g the website's sign-up page stays out of a store build");
   }

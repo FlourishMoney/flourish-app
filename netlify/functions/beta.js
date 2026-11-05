@@ -725,7 +725,12 @@ async function handle(event) {
     }
 
     // Best effort, both: the account exists either way. Flourish's own test addresses stay out of the funnel.
-    if (newAccountId && !isTestEmail(email)) await recordAccountAttribution(admin, newAccountId, body.attribution, accountPlatform(event));
+    // Only Android's Install Referrer code goes on an account: that is what the privacy words approved 2026-11-05 describe.
+    // A website or iPhone account is recorded as direct.
+    if (newAccountId && !isTestEmail(email)) {
+      const platform = accountPlatform(event);
+      await recordAccountAttribution(admin, newAccountId, platform === "android" ? body.attribution : null, platform);
+    }
     if (newAccountId && testerCode) {
       try {
         const { error: tErr } = await admin.from("tester_accounts").insert({ user_id: newAccountId, code: testerCode });

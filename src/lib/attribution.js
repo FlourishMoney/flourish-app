@@ -2,7 +2,8 @@
 // -----------------------------------------------------------------------------
 // SOURCE AND CREATIVE (src, cr) ON THE WAY TO A NEW ACCOUNT (2026-11-04, migration 0036).
 //
-// ON THE WEBSITE: ?src= and ?cr= are kept for the browser session, and go with the signup.
+// ON THE WEBSITE: ?src= and ?cr= are kept for the browser session and sent with the signup, but the server stores only an Android
+// signup's (the approved privacy words, 2026-11-05: netlify/functions/beta.js), so a website account reads as direct.
 // IN THE ANDROID APP: Google's Install Referrer is read once, on first launch, and kept on this install. It sends an install
 // count (with src and cr only), and its src and cr go with the signup on this device. The key is outside the flourish_ prefix,
 // because signing out wipes those. An ordinary Play install reads as direct.
@@ -28,6 +29,7 @@ function nativePlatform() {
 
 // Call on page load. A later link with its own src replaces the one kept.
 export function captureAttribution(search = (typeof window !== "undefined" && window.location ? window.location.search : ""), storage) {
+  if (nativePlatform()) return;          // a store app reads no campaign value from an address
   try {
     const st = storage !== undefined ? storage : globalThis.sessionStorage;
     const q = new URLSearchParams(search || "");
