@@ -5,11 +5,13 @@
     "android": 24
   },
   "notes": [
-    "Small layout fixes.",
+    "Get Canadian money dates this week, a short weekly email, from Settings.",
+    "Got a tester code? Enter it when you sign up.",
     "Small fixes and improvements."
   ],
   "notesAndroid": [
-    "Small layout fixes.",
+    "Get Canadian money dates this week, a short weekly email, from Settings.",
+    "Got a tester code? Enter it when you sign up.",
     "Small fixes and improvements."
   ]
 }

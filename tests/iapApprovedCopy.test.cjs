@@ -30,9 +30,9 @@ const APPROVED = {
   // "The founding price is for the first 50 founding members and stays the same while that subscription stays active."
   founding: "For the first 50 households who subscribe. Stays the same while you stay subscribed.",
   terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
-  // 1.1.5: a DRAFT line, waiting for Amanda's approved What's New (2026-11-05). The same on iPhone and Android.
-  whatsNew115: "- Small layout fixes.\n- Small fixes and improvements.\n",
-  whatsNew115Android: "- Small layout fixes.\n- Small fixes and improvements.\n",
+  // 1.1.5 (approved 2026-11-05, PRIVACY-WORDS-APPROVED-2026-11-05.md): the same on the App Store, Google Play and in the app.
+  whatsNew115: "- Get Canadian money dates this week, a short weekly email, from Settings.\n- Got a tester code? Enter it when you sign up.\n- Small fixes and improvements.\n",
+  whatsNew115Android: "- Get Canadian money dates this week, a short weekly email, from Settings.\n- Got a tester code? Enter it when you sign up.\n- Small fixes and improvements.\n",
 };
 const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
 
