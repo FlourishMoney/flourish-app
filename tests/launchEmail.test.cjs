@@ -180,6 +180,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
       "_lib/waitlistWelcome.js": "waitlist: the welcome email (both callers ask mayEmailWaitlistRow, \"welcome\")",
       "_lib/foundingConfirm.js": "not a waitlist send: a confirmation the account holder asked for, to their own account address",
       "_lib/supportAlert.js": "not a household send at all: an internal alert to our own support inbox when the server flags a store subscription (version 1.1, 2026-10-18)",
+      "_lib/newsletter.js": "not a waitlist send: its own opt-in list, one confirmation per request to the address typed next to a ticked box, at most one per 10 minutes and 3 a day, and it never reads a waitlist row (2026-11-04)",
       "_lib/household.js": "not a waitlist send: couple mode's invite, one per request, to the address the signed-in owner typed after consenting, at most 5 a day, in its approved words and never with a placeholder (2026-10-29)",
     };
     const extra = senders.filter(f => !KNOWN[f]);

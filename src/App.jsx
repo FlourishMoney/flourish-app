@@ -12350,7 +12350,7 @@ function TesterQuestionsCard({demo=false}){
       ))}
       {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
       <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
-        <Btn label={busy?"...":"Save my answers"} onClick={submit} color={C.green} small/>
+        <Btn label={busy?"...":"Send my answers"} onClick={submit} color={C.green} small/>
         <Btn label="Not now" onClick={()=>setState("later")} color={C.mutedHi} outline small/>
       </div>
     </div>
@@ -15340,7 +15340,8 @@ function WaitlistForm({ source = "landing" }) {
   const shownText = CONSENT_TEXT;
   const shownVersion = CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
-  useEffect(() => { captureWaitlistSrc(); captureAttribution(); }, []);
+  useEffect(() => { captureWaitlistSrc(); }, []);
+  useEffect(() => { captureAttribution(); }, []);
 
   const submit = async () => {
     const emailVal = email.trim();
@@ -15680,7 +15681,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // One landing view per browser session, by src and device (lib/landingCounts.js). Web only.
   // The visit's ?src= is kept for the session first (lib/waitlistSrc.js), so the counts and the signup carry it. The
   // founding list form used to do this on the trial-first page; it is gone (2026-10-29), so the landing does it.
-  useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); captureAttribution(); countLandingViewOnce({ base: API_BASE }); } else readInstallReferrerOnce({ apiBase: API_BASE }); }, []);
+  useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); countLandingViewOnce({ base: API_BASE }); } }, []);
+  useEffect(() => { if (isNativeApp()) readInstallReferrerOnce({ apiBase: API_BASE }); else captureAttribution(); }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
