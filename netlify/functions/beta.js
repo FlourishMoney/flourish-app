@@ -36,7 +36,6 @@ const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 const { accountPlatform, recordAccountAttribution } = require("./_lib/attribution");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
-const { isTestEmail } = require("./_lib/foundingCohort");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.

@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Plugins that live in this project rather than in an npm package (src/lib/reviewPrompt.js).
         registerPlugin(FlourishReviewPlugin.class);
+        registerPlugin(FlourishInstallReferrerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

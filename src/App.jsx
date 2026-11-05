@@ -80,6 +80,7 @@ import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
+import { captureAttribution, signupAttribution, readInstallReferrerOnce } from "./lib/attribution.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -6154,6 +6155,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         );
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <TesterQuestionsCard demo={!!data?.demo}/>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
       {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
       {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
@@ -12251,6 +12253,110 @@ function CreatorCodeCard({onAdd}){
   );
 }
 
+// "CANADIAN MONEY DATES THIS WEEK" IN SETTINGS (CASL, netlify/functions/newsletter.js). No card until the server says the list is
+// open. The wording comes from the server and the box starts unticked; confirming by email is what adds someone to the list.
+function NewsletterCard(){
+  const [info,setInfo]=useState(null);
+  const [email,setEmail]=useState("");
+  const [ticked,setTicked]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [done,setDone]=useState(false);
+  useEffect(()=>{
+    let live=true;
+    fetch(`${API_BASE}/api/newsletter`).then(r=>r.ok?r.json():null).then(j=>{ if(live&&j&&j.open===true) setInfo(j); }).catch(()=>{ /* no card */ });
+    return ()=>{ live=false; };
+  },[]);
+  if(!info) return null;
+  const box={marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`};
+  if(done) return <div data-newsletter-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Check your email and confirm. Nothing is sent until you do.</div>;
+  const submit=async()=>{
+    if(busy) return;
+    if(!email.trim()){ setError("Enter your email address."); return; }
+    if(!ticked){ setError("Tick the box to sign up."); return; }
+    setBusy(true); setError(null);
+    const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
+    try{
+      const r=await fetch(`${API_BASE}/api/newsletter`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,consent:true,version:info.version,source:`app_settings_${platform}`})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok) setDone(true);
+      else setError(j.error==="invalid_email"?"Enter a valid email address.":j.error==="rate_limited"?(j.message||"Too many attempts. Try again in an hour."):"That didn't go through. Please try again in a moment.");
+    }catch{ setError("That didn't go through. Please try again in a moment."); }
+    setBusy(false);
+  };
+  return(
+    <div data-newsletter-card="" style={box}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.sm}}>{info.name}</div>
+      <label htmlFor="newsletter-email" style={{display:"block",color:C.mutedHi,fontSize:13,marginBottom:SPACE.xs}}>Email address</label>
+      <input id="newsletter-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"
+        style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",marginBottom:SPACE.sm}}/>
+      <label style={{display:"flex",gap:SPACE.sm,alignItems:"flex-start",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>
+        <input type="checkbox" checked={ticked} onChange={e=>setTicked(e.target.checked)} style={{flex:"none",width:22,height:22,margin:"1px 0 0"}}/>
+        <span style={{minWidth:0}}>{info.wording}</span>
+      </label>
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <Btn label={busy?"...":"Sign me up"} onClick={submit} color={C.green} small/>
+    </div>
+  );
+}
+
+// THE TESTER QUESTIONS ON TODAY (netlify/functions/tester.js). Only for an account marked at sign-up, and the server decides when:
+// day 30 or later, until answered, with the wording it holds. No reward, and nothing about a store rating. Nothing shows for
+// anyone else, and those accounts never make the call.
+function TesterQuestionsCard({demo=false}){
+  const [questions,setQuestions]=useState(null);
+  const [answers,setAnswers]=useState({});
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [state,setState]=useState("asking"); // asking | done | later
+  const post=async(jwt,body)=>fetch(`${API_BASE}/api/tester`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},body:JSON.stringify(body)});
+  useEffect(()=>{
+    if(demo) return undefined;
+    let live=true;
+    (async()=>{
+      try{
+        const { data:{ session } }=await supabase.auth.getSession();
+        if(!session?.access_token||session.user?.app_metadata?.tester!==true) return;
+        const r=await post(session.access_token,{action:"status"});
+        const j=r.ok?await r.json():null;
+        if(live&&j&&j.due===true&&Array.isArray(j.questions)&&j.questions.length) setQuestions(j.questions);
+      }catch{ /* no card */ }
+    })();
+    return ()=>{ live=false; };
+  },[demo]);
+  if(!questions||state==="later") return null;
+  const box={padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`};
+  if(state==="done") return <div data-tester-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Thanks. Your answers are saved.</div>;
+  const submit=async()=>{
+    if(busy) return;
+    if(!questions.some(q=>(answers[q.id]||"").trim())){ setError("Answer at least one question."); return; }
+    setBusy(true); setError(null);
+    try{
+      const { data:{ session } }=await supabase.auth.getSession();
+      const r=await post(session?.access_token,{action:"answer",answers});
+      if(r.ok) setState("done"); else setError("That didn't save. Please try again in a moment.");
+    }catch{ setError("That didn't save. Please try again in a moment."); }
+    setBusy(false);
+  };
+  return(
+    <div data-tester-card="" style={box}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.md}}>A few questions for testers</div>
+      {questions.map(q=>(
+        <div key={q.id} style={{marginBottom:SPACE.md}}>
+          <label htmlFor={`tester-${q.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:SPACE.xs}}>{q.text}</label>
+          <textarea id={`tester-${q.id}`} value={answers[q.id]||""} maxLength={1000} rows={2} onChange={e=>{ const v=e.target.value; setAnswers(a=>({...a,[q.id]:v})); }}
+            style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",resize:"vertical"}}/>
+        </div>
+      ))}
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+        <Btn label={busy?"...":"Save my answers"} onClick={submit} color={C.green} small/>
+        <Btn label="Not now" onClick={()=>setState("later")} color={C.mutedHi} outline small/>
+      </div>
+    </div>
+  );
+}
+
 // The app shows this only when /api/household answers (the server switch on, migrations 0030 + 0031 run).
 function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLeave, onRemove, onClearLinkToken }) {
   const W = HOUSEHOLD_WORDS;
@@ -12709,6 +12815,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
     </div>
     {creator?.info?.may_add&&<CreatorCodeCard onAdd={creator.onAdd}/>}
+    {!data?.demo&&<NewsletterCard/>}
     {/* ── What's new (tester suggestions, item 7): version, build and notes from src/whatsNew.json ── */}
     <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <button onClick={()=>setShowWhatsNew(v=>!v)} aria-expanded={showWhatsNew} aria-controls="whats-new-notes"
@@ -15233,7 +15340,7 @@ function WaitlistForm({ source = "landing" }) {
   const shownText = CONSENT_TEXT;
   const shownVersion = CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
-  useEffect(() => { captureWaitlistSrc(); }, []);
+  useEffect(() => { captureWaitlistSrc(); captureAttribution(); }, []);
 
   const submit = async () => {
     const emailVal = email.trim();
@@ -15512,6 +15619,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [openSignup, setOpenSignup] = useState(null);
   // THE CREATOR CODE (behind CREATORS_ENABLED on the server: /api/creator answers 404 while it is off, and then there is no
   // field and nothing is sent). A creator's link on a computer starts it filled in (lib/creatorCode.js).
+  // THE TESTER CODE: the field shows only once a code is live (/api/tester, migration 0038). It marks the account as a
+  // tester and grants nothing.
+  const [testerCode, setTesterCode] = useState("");
+  const [testersOn, setTestersOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/tester`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) setTestersOn(true); }).catch(() => { /* no field */ });
+    return () => { live = false; };
+  }, []);
   const [creatorCode, setCreatorCode] = useState("");
   const [creatorsOn, setCreatorsOn] = useState(false);
   useEffect(() => {
@@ -15564,7 +15680,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // One landing view per browser session, by src and device (lib/landingCounts.js). Web only.
   // The visit's ?src= is kept for the session first (lib/waitlistSrc.js), so the counts and the signup carry it. The
   // founding list form used to do this on the trial-first page; it is gone (2026-10-29), so the landing does it.
-  useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); countLandingViewOnce({ base: API_BASE }); } }, []);
+  useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); captureAttribution(); countLandingViewOnce({ base: API_BASE }); } else readInstallReferrerOnce({ apiBase: API_BASE }); }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15677,12 +15793,14 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), attribution: signupAttribution(), ...(testersOn && testerCode.trim() ? { tester_code: testerCode } : {}), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
         const e = out.error;
         if (creatorErrorLine(e))           setError(creatorErrorLine(e));
+        else if (e === "tester_code_invalid")     setError("That tester code isn't right. Check it, or leave it empty.");
+        else if (e === "tester_code_unavailable") setError("We couldn't check that tester code. Try again, or leave it empty.");
         else if (e === "invalid_code")     setError("Invalid beta code. Request one at hello@flourishmoney.app");
         else if (e === "cap_reached")      setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
@@ -16187,6 +16305,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
               </div>
               <span>© 2026 GrowSmart Inc. · Flourish Money</span>
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
+                <a href="/newsletter/">Canadian money dates</a>
                 <a href="/privacy">Privacy</a>
                 <a href="/terms">Terms</a>
                 <a href="/support">Support</a>
@@ -16297,6 +16416,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       <label htmlFor="auth-creator-code" style={fieldLabelStyle}>{CREATOR_WORDS.signupLabel}</label>
                       <input id="auth-creator-code" style={inpStyle(false)} type="text" value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
                       <div style={fieldHintStyle}>{CREATOR_WORDS.signupHint}</div>
+                    </div>
+                  )}
+                  {mode==="signup"&&testersOn&&(
+                    <div data-tester-field="">
+                      <label htmlFor="auth-tester-code" style={fieldLabelStyle}>Tester code (only if you were given one)</label>
+                      <input id="auth-tester-code" style={inpStyle(false)} type="text" value={testerCode} onChange={e => setTesterCode(e.target.value)} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="testercode" maxLength={30}/>
                     </div>
                   )}
                   {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
