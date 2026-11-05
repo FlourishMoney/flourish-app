@@ -1,17 +1,15 @@
 {
-  "version": "1.1.4",
+  "version": "1.1.5",
   "builds": {
-    "ios": 526908,
-    "android": 23
+    "ios": 526909,
+    "android": 24
   },
   "notes": [
-    "A new look for the Flourish app icon: cream by default, with a forest green version when your iPhone uses dark icons.",
-    "Clearer forms: labels now appear above every field on Log In, Sign Up and password reset screens, including at larger text sizes.",
-    "Plus small layout fixes."
+    "Small layout fixes.",
+    "Small fixes and improvements."
   ],
   "notesAndroid": [
-    "A new look for the Flourish app icon.",
-    "Clearer forms: labels now appear above every field on Log In, Sign Up and password reset screens, including at larger text sizes.",
-    "Plus small layout fixes."
+    "Small layout fixes.",
+    "Small fixes and improvements."
   ]
 }
