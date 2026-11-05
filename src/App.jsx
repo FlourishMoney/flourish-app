@@ -108,7 +108,7 @@ import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
 import { pendingWords } from "./lib/pendingWords.js";
 import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, TRIAL_KEEP_COPY, trialConfirmBody, trialKeepShown, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
-import { FOUNDING_PLANS_SHOWN_KEY, foundingPlansAutoOpen, foundingPlansShown, rememberFoundingPlansShown, paywallPlanOrder } from "./lib/foundingPlans.js";
+import { FOUNDING_PLANS_SHOWN_KEY, FOUNDING_FIRST_VISIT_KEY, foundingPlansAutoOpen, foundingPlansShown, rememberFoundingPlansShown, seenOnEarlierVisit, paywallPlanOrder } from "./lib/foundingPlans.js";
 import { pushBackHandler, handleBackLayers, backAction } from "./lib/backButton.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
@@ -18101,19 +18101,33 @@ export default function FlourishApp(){
   // A confirmed subscription closes it.
   useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
   // THE ONE EXCEPTION (1.1.3, Amanda 2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is asked
-  // straight away. The plans screen opens by itself once per account, as soon as the account is in the app, with
-  // Founding annual first; it can be closed, and See plans opens it any time after. Declared after the effect above
-  // so that, when both run, this one has the last word. Every other household: nothing opens on its own.
+  // without having to look. The plans screen opens by itself once per account, with Founding annual first; it can be
+  // closed, and See plans opens it any time after. FLOURISH FIRST (Amanda, 2026-11-05): never on the first open, never over
+  // onboarding; only once onboarding is done and the account was in the app on an earlier visit. Declared after the effect
+  // above so that, when both run, this one has the last word. Every other household: nothing opens on its own.
   const foundingOpenedRef = useRef(new Set());
+  // A visit: this run of the app, and each return to it from the background.
+  const [appVisit,setAppVisit]=useState(()=>`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  useEffect(()=>{
+    let wasHidden=false;
+    const onChange=()=>{
+      if(document.visibilityState==="hidden"){ wasHidden=true; return; }
+      if(wasHidden){ wasHidden=false; setAppVisit(`${Date.now()}-${Math.random().toString(36).slice(2)}`); }
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return ()=>document.removeEventListener("visibilitychange", onChange);
+  },[]);
   useEffect(()=>{
     const store = deviceStorage();
     const shown = !!user?.id && (foundingOpenedRef.current.has(user.id) || foundingPlansShown(store, user.id));
+    const inApp = hydrated && aiDisclosureSeen && onboarded;
+    const earlierVisit = inApp && !!user?.id && seenOnEarlierVisit(store, user.id, appVisit);
     if(!foundingPlansAutoOpen({ storeBilling, userId: user?.id, askedFor: storeAskedFor, status: storeStatus,
-      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown })) return;
+      planKnown: storeEntitledNow!==null, inApp, earlierVisit, shown })) return;
     foundingOpenedRef.current.add(user.id);
     rememberFoundingPlansShown(store, user.id);
     setPaywallUp(true);
-  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen]);
+  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, appVisit]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
@@ -19732,7 +19746,7 @@ export default function FlourishApp(){
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY && k !== FOUNDING_FIRST_VISIT_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
