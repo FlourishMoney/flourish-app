@@ -55,6 +55,11 @@ function checkConfirm(id, x, token, now = new Date(), secret = unsubscribeSecret
   return Number(x) * 1000 < now.getTime() ? "expired" : "ok";
 }
 
+// The address as a keyed hash, which is all that stays on a record after an unsubscribe. Null with no secret.
+function emailKeyOf(email, secret = unsubscribeSecret()) {
+  return secret ? crypto.createHmac("sha256", secret).update(`newsletter/email/v1/${String(email).trim().toLowerCase()}`).digest("hex") : null;
+}
+
 // The browser family only. The user agent itself is read here and never kept.
 function uaFamily(userAgent, native = false) {
   if (native) return "flourish_app";
@@ -122,4 +127,4 @@ async function sendEmail(payload, idempotencyKey, fetchImpl = fetch) {
   }
 }
 
-module.exports = { NEWSLETTER_NAME, SENDER_LINE, CONSENT_VERSION, CONSENT_VERSIONS, SOURCES, CONFIRM_DAYS, RESEND_AGAIN_MS, unsubscribeLink, checkUnsubscribe, confirmLink, checkConfirm, uaFamily, newsletterEmail, confirmationEmail, sendEmail };
+module.exports = { emailKeyOf, NEWSLETTER_NAME, SENDER_LINE, CONSENT_VERSION, CONSENT_VERSIONS, SOURCES, CONFIRM_DAYS, RESEND_AGAIN_MS, unsubscribeLink, checkUnsubscribe, confirmLink, checkConfirm, uaFamily, newsletterEmail, confirmationEmail, sendEmail };

@@ -36,7 +36,7 @@ function fakeAdmin(state) {
   };
 }
 
-async function signup(state, testerCode) {
+async function signup(state, testerCode, { origin = "https://flourishmoney.app", attribution } = {}) {
   const saved = { ...process.env }, savedFetch = global.fetch;
   for (const p of [AUTH_PATH, BETA_PATH, BLOBS_PATH]) delete require.cache[p];
   require.cache[BLOBS_PATH] = { id: BLOBS_PATH, filename: BLOBS_PATH, loaded: true, exports: freshBlobs() };
@@ -45,8 +45,8 @@ async function signup(state, testerCode) {
   state.lastCode = String(testerCode || "").trim().toUpperCase();
   try {
     Object.assign(process.env, { SUPABASE_URL: "https://supabase.test.invalid", SUPABASE_SECRET_KEY: "test-secret-not-real", OPEN_SIGNUP: "true" });
-    const body = { action: "signup", email: "tester@example.ca", password: "long-enough-1", ...(testerCode ? { tester_code: testerCode } : {}) };
-    const res = await require(BETA_PATH).handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app" }, body: JSON.stringify(body) });
+    const body = { action: "signup", email: "tester@example.ca", password: "long-enough-1", ...(testerCode ? { tester_code: testerCode } : {}), ...(attribution ? { attribution } : {}) };
+    const res = await require(BETA_PATH).handler({ httpMethod: "POST", headers: { origin }, body: JSON.stringify(body) });
     return JSON.parse(res.body);
   } finally {
     process.env = saved; global.fetch = savedFetch;
@@ -100,6 +100,14 @@ const testerRows = (s) => s.inserts.filter((i) => i.table === "tester_accounts")
     const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0039_tester_free_month.sql"), "utf8").replace(/^--.*$/gm, "");
     t.ok(!/subscriptions|stripe|revenuecat|billing/i.test(sql), "5e no subscription, purchase or card is touched");
     t.ok(/interval '30 days'/.test(sql) && /taken >= 10/.test(sql), "5f 30 days, and a cap of 10");
+  }
+  {
+    const campaign = { src: "ig", cr: "reel_7" };
+    const row = async (origin) => { const st = fresh(); await signup(st, null, { origin, attribution: campaign }); return st.inserts.find((i) => i.table === "account_attribution").row; };
+    const android = await row("https://localhost"), ios = await row("capacitor://localhost"), web = await row("https://flourishmoney.app");
+    t.eq([android.src, android.cr, android.platform], ["ig", "reel_7", "android"], "5g an Android sign-up keeps its campaign code, as the privacy words say");
+    t.eq([ios.src, ios.cr, ios.platform], ["direct", "none", "ios"], "5h an iPhone sign-up holds no campaign code, even if one were sent");
+    t.eq([web.src, web.cr, web.platform], ["direct", "none", "web"], "5i nor a website sign-up");
   }
   {
     const beta = fs.readFileSync(BETA_PATH, "utf8");

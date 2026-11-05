@@ -2,14 +2,15 @@
  * Flourish — the "Canadian money dates this week" list (CASL, double opt-in)
  * netlify/functions/newsletter.js   (/api/newsletter, migration 0037)
  *
- *   GET                          { open, version, wording }. open is false until the table exists and email can be sent,
- *                                and the forms show nothing while it is.
+ *   GET                          { open, version, wording, policyDate }. open is true only from the day the row in
+ *                                newsletter_launch exists and email can be sent; the forms show nothing until then. policyDate
+ *                                is that row's date, which turns on the privacy policy's newsletter words.
  *   POST {email,consent,version,source}   stores the consent and sends the confirmation. The same answer whether or not the
  *                                address is already known. A confirmed address gets no second email.
  *   GET  ?do=confirm&...         one button. GET changes nothing: mail scanners open every link.
  *   POST ?do=confirm&...         confirmed: this is what puts the address on the list.
  *   GET  ?do=unsubscribe&...     one button.
- *   POST ?do=unsubscribe&...     unsubscribed at once (the button, or a mailbox's RFC 8058 one-click).
+ *   POST ?do=unsubscribe&...     unsubscribed at once (the button, or a mailbox's RFC 8058 one-click), and the address is cleared.
  *
  * Only public.newsletter_subscribers is read or written: never the waitlist. No address, IP or signature is logged.
  */
@@ -51,6 +52,13 @@ const clientIp = (event) => {
 };
 const limitStore = () => { try { return getStore("signup_attempts"); } catch { return null; } };
 
+// The launch row's date, or null. Throws only if the read itself fails.
+async function launchDate(admin) {
+  const { data, error } = await admin.from("newsletter_launch").select("live_on").limit(1).maybeSingle();
+  if (error) throw error;
+  return (data && data.live_on) || null;
+}
+
 async function handleLink(event, q, deps) {
   const self = `/api/newsletter?${new URLSearchParams(q).toString()}`;
   const now = deps.now();
@@ -58,7 +66,7 @@ async function handleLink(event, q, deps) {
     if (!N.checkUnsubscribe(q.id, q.t)) return page("invalid", 400);
     if (event.httpMethod === "GET") return page("unsubscribePrompt", 200, self);
     try {
-      const { error } = await deps.admin().from("newsletter_subscribers").update({ unsubscribed_at: now.toISOString() }).eq("id", q.id).is("unsubscribed_at", null);
+      const { error } = await deps.admin().from("newsletter_subscribers").update({ unsubscribed_at: now.toISOString(), email: null }).eq("id", q.id).is("unsubscribed_at", null);
       if (error) throw error;
     } catch { console.error("[newsletter] unsubscribe failed"); return page("error", 500); }
     return page("unsubscribed");
@@ -89,6 +97,13 @@ async function handleSubscribe(event, deps, CORS) {
   const email = cleanEmail(body.email).toLowerCase();
   if (!email || !isEmail(email)) return reply(400, { error: "invalid_email" });
 
+  // Closed until the launch row exists, however the request got here.
+  try { if (!(await launchDate(deps.admin()))) return reply(503, { error: "unavailable" }); }
+  catch { return reply(503, { error: "unavailable" }); }
+
+  const emailKey = N.emailKeyOf(email);
+  if (!emailKey) return reply(503, { error: "unavailable" });
+
   const store = deps.store(event);
   const limit = await checkSignupLimit({ store, ip: clientIp(event), email });
   if (!limit.allowed) return reply(429, { error: "rate_limited", message: limit.message });
@@ -96,12 +111,12 @@ async function handleSubscribe(event, deps, CORS) {
   const now = deps.now();
   const h = event.headers || {};
   const consentRow = {
-    email, consent: true, consent_version: N.CONSENT_VERSION, consent_wording: N.CONSENT_VERSIONS[N.CONSENT_VERSION],
+    email, email_key: emailKey, consent: true, consent_version: N.CONSENT_VERSION, consent_wording: N.CONSENT_VERSIONS[N.CONSENT_VERSION],
     consented_at: now.toISOString(), source: body.source, ua_family: N.uaFamily(h["user-agent"] || h["User-Agent"], isNativeRequest(event)),
   };
   try {
     const admin = deps.admin();
-    const { data: existing, error: readErr } = await admin.from("newsletter_subscribers").select("id,confirmed_at,confirm_sent_at,unsubscribed_at").eq("email", email).maybeSingle();
+    const { data: existing, error: readErr } = await admin.from("newsletter_subscribers").select("id,confirmed_at,confirm_sent_at,unsubscribed_at").eq("email_key", emailKey).maybeSingle();
     if (readErr) throw readErr;
     if (existing && existing.confirmed_at && !existing.unsubscribed_at) return reply(200, { ok: true });
     if (existing && existing.confirm_sent_at && now.getTime() - new Date(existing.confirm_sent_at).getTime() < N.RESEND_AGAIN_MS) return reply(200, { ok: true });
@@ -134,15 +149,12 @@ async function route(event, deps) {
   const q = event.queryStringParameters || {};
   if (q.do === "confirm" || q.do === "unsubscribe") return handleLink(event, q, deps);
   if (event.httpMethod === "POST") return handleSubscribe(event, deps, CORS);
-  let open = false;
-  try {
-    if ((process.env.RESEND_API_KEY || "").trim()) {
-      const { error } = await deps.admin().from("newsletter_subscribers").select("id", { head: true }).limit(1);
-      open = !error;
-    }
-  } catch { open = false; }
+  let policyDate = null;
+  try { policyDate = await launchDate(deps.admin()); } catch { policyDate = null; }
+  const open = !!policyDate && !!(process.env.RESEND_API_KEY || "").trim();
   const headers = { ...CORS, "Cache-Control": "public, max-age=60" };
-  return { statusCode: 200, headers, body: JSON.stringify(open ? { open, name: N.NEWSLETTER_NAME, version: N.CONSENT_VERSION, wording: N.CONSENT_VERSIONS[N.CONSENT_VERSION] } : { open }) };
+  const body = open ? { open, policyDate, name: N.NEWSLETTER_NAME, version: N.CONSENT_VERSION, wording: N.CONSENT_VERSIONS[N.CONSENT_VERSION] } : { open, ...(policyDate ? { policyDate } : {}) };
+  return { statusCode: 200, headers, body: JSON.stringify(body) };
 }
 
 const LIVE = {

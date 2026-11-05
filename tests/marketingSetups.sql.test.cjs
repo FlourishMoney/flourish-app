@@ -54,7 +54,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     for (const f of FILES) psql(["-f", path.join(MIGRATIONS, f)]);
     t.ok(true, "0b and a second time, with no error");
 
-    const TABLES = ["attribution_counts", "account_attribution", "newsletter_subscribers", "tester_codes", "tester_accounts", "tester_answers"];
+    const TABLES = ["attribution_counts", "account_attribution", "newsletter_subscribers", "newsletter_launch", "tester_codes", "tester_accounts", "tester_answers"];
     for (const tb of TABLES) {
       t.ok(refused(`set role anon; select * from public.${tb}`) && refused(`set role authenticated; select * from public.${tb}`), `1a ${tb}: anon and authenticated are refused`);
       t.eq(sql(`select relrowsecurity from pg_class where oid = 'public.${tb}'::regclass`), "t", `1b ${tb}: RLS is on`);
@@ -92,12 +92,17 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     sql(`delete from auth.users where id = '${u1}'`);
     t.eq([sql(`select count(*) from public.account_attribution where user_id = '${u1}'`), sql(`select count(*) from public.tester_accounts where user_id = '${u1}'`), sql(`select count(*) from public.tester_answers where user_id = '${u1}'`)], ["0", "0", "0"], "4c a deleted account takes its rows with it");
 
-    const sub = (email, consent = "true") => `insert into public.newsletter_subscribers (email, consent, consent_version, consent_wording, source, ua_family) values ('${email}', ${consent}, 'v', 'w', 'site_newsletter', 'safari')`;
+    const sub = (email, consent = "true") => `insert into public.newsletter_subscribers (email, email_key, consent, consent_version, consent_wording, source, ua_family) values ('${email}', 'key-${email.toLowerCase()}', ${consent}, 'v', 'w', 'site_newsletter', 'safari')`;
     sql(sub("a@example.ca"));
     t.ok(refused(sub("b@example.ca", "false")), "5a no consent, no row");
     t.ok(refused(sub("Upper@example.ca")), "5b an address is stored lowercased");
     t.ok(refused(sub("a@example.ca")), "5c one row per address");
-    t.ok(refused("insert into public.newsletter_subscribers (email, consent, consent_version, consent_wording, source, ua_family) values ('c@example.ca', true, 'v', 'w', 'waitlist', 'safari')"), "5d the waitlist is not a source");
+    t.ok(refused("insert into public.newsletter_subscribers (email, email_key, consent, consent_version, consent_wording, source, ua_family) values ('c@example.ca', 'k-c', true, 'v', 'w', 'waitlist', 'safari')"), "5d the waitlist is not a source");
+    sql("update public.newsletter_subscribers set email = null, unsubscribed_at = now() where email = 'a@example.ca'");
+    t.eq(sql("select count(*) from public.newsletter_subscribers where email is null and consent_wording = 'w'"), "1", "5d2 an unsubscribe clears the address and keeps the consent record");
+    t.eq(sql("select count(*) from public.newsletter_launch"), "0", "5d3 running the file opens nothing: no launch row");
+    sql("insert into public.newsletter_launch (live_on) values ('2026-11-12')");
+    t.ok(refused("insert into public.newsletter_launch (live_on) values ('2026-11-13')"), "5d4 and there is only ever one");
     t.eq(sql("select count(*) from information_schema.columns where table_name = 'newsletter_subscribers' and column_name ~ 'ip|user_agent'"), "0", "5e no column for an IP or a user agent");
   } finally {
     if (started) { try { execFileSync(path.join(bin, "pg_ctl"), ["-D", path.join(dir, "data"), "-m", "immediate", "stop"], { env, stdio: "ignore" }); } catch {} }
