@@ -6,6 +6,7 @@
 //   1  a sign-up: trial_ends_at moves to 30 days after signup; once only
 //   2  the 11th gets nothing and keeps the ordinary 14 days; a deleted account's place is not given away
 //   3  a founder or a paid account takes no place; an unknown account gets nothing
+//   4  the privacy notice's guard (migration 0040): one claim per account, and a claimed account is never owed again
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -86,6 +87,24 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     sql(`set request.jwt.claims = '{"role":"service_role"}'; update public.profiles set plan = 'plus' where user_id = '${paid}'`);
     t.eq(grant(paid), "false,9", "3b nor a paid account");
     t.eq(grant("00000000-0000-4000-8000-00000000abcd"), "false,9", "3c an unknown account gets nothing");
+
+    // The privacy notice's guard (migration 0040), in the real database.
+    const N = "privacy-newsletter-launch";
+    const claim = (id, st) => last(sql(`set role service_role; select public.policy_notice_claim('${N}', '${id}'${st ? `, '${st}'` : ""})`));
+    const owedCount = (before) => last(sql(`set role service_role; select count(*) from public.policy_notice_pending('${N}', ${before}, 5000)`));
+    t.ok(refused("set role anon; select * from public.policy_notice_sends") && refused("set role authenticated; select * from public.policy_notice_sends"), "4a anon and authenticated can't read the sends");
+    t.ok(refused(`set role authenticated; select public.policy_notice_claim('${N}', '${first}')`) && refused(`set role anon; select * from public.policy_notice_pending('${N}', now(), 10)`), "4b nor claim, nor list who is owed");
+    t.eq(sql("select relrowsecurity from pg_class where oid = 'public.policy_notice_sends'::regclass"), "t", "4c RLS is on");
+    const before = owedCount("now()");
+    t.ok(Number(before) > 0, "4d accounts are owed the notice");
+    t.eq(owedCount("'2000-01-01'::timestamptz"), "0", "4e none created after the cutoff");
+    t.eq([claim(first), claim(first)], ["t", "f"], "4f one claim per account: the second call gets false");
+    t.eq(owedCount("now()"), String(Number(before) - 1), "4g a claimed account is no longer owed, whatever became of its send");
+    sql(`set role service_role; update public.policy_notice_sends set status = 'failed' where user_id = '${first}'`);
+    t.eq([claim(first), owedCount("now()")], ["f", String(Number(before) - 1)], "4h a failed send is not owed again");
+    t.ok(refused(`select public.policy_notice_claim('${N}', '${eleventh}', 'nonsense')`), "4i only the known statuses");
+    sql(`delete from auth.users where id = '${first}'`);
+    t.eq(sql(`select count(*) from public.policy_notice_sends where user_id = '${first}'`), "0", "4j a deleted account leaves no row");
   } finally {
     if (started) { try { execFileSync(path.join(bin, "pg_ctl"), ["-D", path.join(dir, "data"), "-m", "immediate", "stop"], { env, stdio: "ignore" }); } catch {} }
   }
