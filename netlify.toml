@@ -119,6 +119,25 @@
   to     = "/.netlify/functions/creator"
   status = 200
 
+# Redirect: the /get page's and the Android app's counts (src, cr) → Netlify function. POST only; adds 1 to a daily
+# count and keeps nothing else (netlify/functions/attribution.js, migration 0036).
+[[redirects]]
+  from   = "/api/attribution"
+  to     = "/.netlify/functions/attribution"
+  status = 200
+
+# Redirect: the "Canadian money dates this week" sign-up, confirm and unsubscribe links → Netlify function.
+[[redirects]]
+  from   = "/api/newsletter"
+  to     = "/.netlify/functions/newsletter"
+  status = 200
+
+# Redirect: tester codes and the day 30 questions → Netlify function (netlify/functions/tester.js, migration 0038).
+[[redirects]]
+  from   = "/api/tester"
+  to     = "/.netlify/functions/tester"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

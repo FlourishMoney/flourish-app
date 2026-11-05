@@ -34,6 +34,9 @@ const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
+const { accountPlatform, recordAccountAttribution } = require("./_lib/attribution");
+const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
+const { isTestEmail } = require("./_lib/foundingCohort");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
@@ -592,6 +595,20 @@ async function handle(event) {
       }
     }
 
+    // THE TESTER CODE (optional, migration 0038). Checked before an account exists, so a typo costs nothing. It marks the
+    // account as a tester and grants nothing. The rate limit above has already counted this try.
+    let testerCode = null;
+    if (typeof body.tester_code === "string" && body.tester_code.trim()) {
+      testerCode = cleanTesterCode(body.tester_code);
+      if (!testerCode) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "tester_code_invalid" }) };
+      try {
+        if (!(await testerCodeIsLive(admin, testerCode))) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "tester_code_invalid" }) };
+      } catch {
+        console.error("[beta:signup] tester code check failed");
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "tester_code_unavailable" }) };
+      }
+    }
+
     // WHO IS CONFIRMED ON CREATION (billing day, round 3). With signup shut, an invited (coded) signup is
     // confirmed on creation, as it always has been. Once signup is open, nobody is: a code shows Amanda
     // handed it out, not that this person owns the address they typed, and the founding price follows the
@@ -670,7 +687,8 @@ async function handle(event) {
         // service role can modify"): "link" when the person must click the link we email, "auto" when it
         // was confirmed here. _lib/foundingCohort.js offers the founding price only to "link" accounts
         // whose address has been confirmed, so an auto-confirmed address never gets it.
-        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link" },
+        // `tester` only saves everyone else a call from the app; /api/tester checks the tester_accounts row.
+        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link", ...(testerCode ? { tester: true } : {}) },
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
@@ -705,6 +723,15 @@ async function handle(event) {
         const outcome = await attributeCreatorCode(admin, newAccountId, creatorCode, creatorSourceOf(event));
         if (outcome !== "attributed") console.error("[beta:signup] creator code not recorded:", outcome);
       } catch (e) { console.error("[beta:signup] creator code not recorded:", e.message); }
+    }
+
+    // Best effort, both: the account exists either way. Flourish's own test addresses stay out of the funnel.
+    if (newAccountId && !isTestEmail(email)) await recordAccountAttribution(admin, newAccountId, body.attribution, accountPlatform(event));
+    if (newAccountId && testerCode) {
+      try {
+        const { error: tErr } = await admin.from("tester_accounts").insert({ user_id: newAccountId, code: testerCode });
+        if (tErr) console.error("[beta:signup] tester not recorded");
+      } catch { console.error("[beta:signup] tester not recorded"); }
     }
 
     // signup_completed. There is no analytics pipeline yet (no events table, no Plausible, no GA), so

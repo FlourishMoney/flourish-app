@@ -12,6 +12,6 @@
     { "type": "p", "html": "This draft shows how a guide looks. It holds no guide content." },
     { "type": "h2", "text": "A section heading" },
     { "type": "p", "html": "A source link sits in the sentence it supports, like this one to the <a href=\"https://www.canada.ca/en/financial-consumer-agency.html\">Financial Consumer Agency of Canada</a>." },
-    { "type": "screen", "src": "/app-screens/home.jpg", "alt": "The flourish Today screen with sample figures", "width": 900, "height": 1800 }
+    { "type": "screen", "src": "/app-screens/home.jpg", "alt": "The flourish Today screen with sample figures", "width": 680, "height": 1474 }
   ]
 }

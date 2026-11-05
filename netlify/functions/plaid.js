@@ -849,6 +849,9 @@ exports.handler = async (event) => {
           // residual marketing PII shouldn't survive an account deletion (Apple 5.1.1(v) / privacy).
           const { error: wlErr } = await admin.from("waitlist").delete().eq("email", email);
           if (wlErr) console.warn("[delete_account] waitlist delete:", wlErr.message);
+          // The newsletter list (email-keyed too). Best-effort, for the same reason.
+          const { error: nlErr } = await admin.from("newsletter_subscribers").delete().eq("email", String(email).toLowerCase());
+          if (nlErr) console.warn("[delete_account] newsletter delete:", nlErr.message);
         } else {
           console.warn("[delete_account] no email found for user; beta seat (if any) not freed:", user_id);
         }

@@ -39,6 +39,8 @@ const { corsHeadersFor } = require("./_lib/cors");
 // (migration 0028) through onboarding_bump. Until 0028 runs the bump fails, the answer is 503, and the app carries
 // on exactly as before: no count is ever load-bearing.
 const { ONBOARDING_EVENTS, onboardingRows } = require("./_lib/onboardingCounts");
+// The funnel by src and cr (migration 0036): the first number within 24 hours of signup marks the account activated.
+const { markActivated } = require("./_lib/attribution");
 
 // Flourish's own test addresses (Amanda, 2026-10-14). The same two domains as migration 0019's report;
 // PR #69 adds the shared helper (_lib/foundingCohort.js isTestEmail) and this can use it once merged.
@@ -110,6 +112,7 @@ async function handler(event, _context, now = new Date()) {
     if (error) { console.error("[activation] account read failed"); return retryLater; }
     const user = data && data.user;
     if (!user || isTestEmail(user.email) || isSampleAccount(user.email)) return done;
+    if (metric === "safe_view" || metric === "first_number_shown") await markActivated(admin, user_id, user.created_at, now);
     if (onboarding) {
       const cohortDay = torontoDay(new Date(user.created_at));
       for (const row of onboardingRows(body, user.created_at, now)) {
