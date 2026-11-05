@@ -265,14 +265,18 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
-    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.5", "1.1.5", ["1.1.5"], "1.1.5"], "7a one version, 1.1.4, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526909, [526909], 24, 24], "7b the builds in whatsNew.json are the ones the projects build: iOS 526908, Android 23");
+    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.5", "1.1.5", ["1.1.5"], "1.1.5"], "7a one version, 1.1.5, in whatsNew.json, package.json, Xcode and Gradle");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526909, [526909], 24, 24], "7b the builds in whatsNew.json are the ones the projects build: iOS 526909, Android 24");
     const allNotes = [...W.notes, ...(W.notesAndroid || []), ...(W.alsoNotes || [])];
     t.ok(Array.isArray(W.notes) && W.notes.length >= 1 && allNotes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", [W.intro, ...allNotes, W.alsoTitle || ""].join(" "));
     // The intro (approved 2026-10-23) opens "Get your first Safe to spend number", which the scan's imperative
     // check reads as an instruction; it is not money advice, and the notes themselves are scanned in full.
-    noAdvice("7e release notes", allNotes);
+    // The same for 1.1.5's first note (approved 2026-11-05), "Get Canadian money dates this week, a short weekly email, from
+    // Settings.": it names an email, not what to do with money. Only that exact line is left out; every other note is scanned.
+    const NOT_MONEY_ADVICE = "Get Canadian money dates this week, a short weekly email, from Settings.";
+    t.eq(allNotes.filter((x) => x === NOT_MONEY_ADVICE).length, 2, "7e0 that exact line is in the notes, for iPhone and Android");
+    noAdvice("7e release notes", allNotes.filter((x) => x !== NOT_MONEY_ADVICE));
     const st = settingsText();
     t.ok(st.includes("What's new") && st.includes("Version 1.1.5") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
