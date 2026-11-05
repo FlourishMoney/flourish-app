@@ -147,9 +147,12 @@ async function route(event, deps) {
 
 const LIVE = {
   admin: () => getAdminClient(),
-  store: (event) => { connectBlobs(event); return limitStore(); },
+  store: () => limitStore(),
   send: (payload, key) => N.sendEmail(payload, key),
   now: () => new Date(),
 };
-exports.handler = (event) => route(event, LIVE);
+exports.handler = async (event) => {
+  connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
+  return route(event, LIVE);
+};
 exports._test = { route, PAGES };
