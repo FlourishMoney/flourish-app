@@ -731,6 +731,12 @@ async function handle(event) {
         const { error: tErr } = await admin.from("tester_accounts").insert({ user_id: newAccountId, code: testerCode });
         if (tErr) console.error("[beta:signup] tester not recorded");
       } catch { console.error("[beta:signup] tester not recorded"); }
+      // THE FREE MONTH (migration 0039): 30 days from signup on the trial date the app already reads, for the first 10 testers
+      // only. No purchase, no card, and it ends by itself. A failure leaves the ordinary 14 days.
+      try {
+        const { error: gErr } = await admin.rpc("tester_free_month_grant", { p_user_id: newAccountId });
+        if (gErr) console.error("[beta:signup] tester free month not granted");
+      } catch { console.error("[beta:signup] tester free month not granted"); }
     }
 
     // signup_completed. There is no analytics pipeline yet (no events table, no Plausible, no GA), so
