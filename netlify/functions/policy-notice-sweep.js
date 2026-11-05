@@ -6,7 +6,8 @@
  *   POLICY_NOTICE_SEND=dry-run   logs the recipient count and one rendered copy. Sends nothing, writes nothing.
  *   POLICY_NOTICE_SEND=send      needs the newsletter_launch row. Sends in batches until none are owed. Then unset it.
  *
- * WHO. Every account that existed when the launch row was added, with an address, except the screenshot and App Review accounts.
+ * WHO. Every account that existed when the launch row was added, with an address, except the screenshot and App Review accounts
+ * and anyone on policy_notice_opt_outs (added by hand when they reply; the insert is in migration 0040).
  * ONCE. An account is claimed in policy_notice_sends before its email goes, and one claim per account is all the table allows. A
  * failed send keeps its row and is never retried here: a failure stops the run so a person can look.
  * LOGS: counts and the rendered words only. Never an address or an account id.
@@ -46,16 +47,19 @@ async function run({ mode, admin, send = sendNotice, now = () => new Date(), log
 
   let owed;
   try { owed = await pending(admin, row ? row.created_at : FOREVER); } catch { console.error("[policy-notice] recipients unreadable"); return { mode, stopped: "recipients" }; }
-  const people = owed.filter((a) => !isSampleAccount(a.email));
-  const skipped = owed.length - people.length;
+  const samples = owed.filter((a) => isSampleAccount(a.email));
+  const notSample = owed.filter((a) => !isSampleAccount(a.email));
+  const people = notSample.filter((a) => a.opted_out !== true);
+  const skipped = samples.length;
+  const optedOut = notSample.length - people.length;
 
   if (mode === "dry-run") {
-    log(`[policy-notice] dry run: ${people.length} recipients (${people.filter((a) => a.confirmed).length} confirmed, ${people.filter((a) => !a.confirmed).length} unconfirmed), ${skipped} sample accounts left out; nothing sent`);
+    log(`[policy-notice] dry run: ${people.length} recipients (${people.filter((a) => a.confirmed).length} confirmed, ${people.filter((a) => !a.confirmed).length} unconfirmed), ${skipped} sample accounts left out, ${optedOut} opted out; nothing sent`);
     log(`[policy-notice] from: ${FROM}\n[policy-notice] subject: ${SUBJECT}\n${noticeText(date || NO_DATE)}`);
-    return { mode, recipients: people.length, skipped, sent: 0 };
+    return { mode, recipients: people.length, skipped, optedOut, sent: 0 };
   }
 
-  for (const a of owed.filter((x) => isSampleAccount(x.email))) await admin.rpc("policy_notice_claim", { p_notice: NOTICE_ID, p_user_id: a.user_id, p_status: "skipped_sample" });
+  for (const a of samples) await admin.rpc("policy_notice_claim", { p_notice: NOTICE_ID, p_user_id: a.user_id, p_status: "skipped_sample" });
   const started = now().getTime();
   let sent = 0, failed = 0;
   for (const a of people) {

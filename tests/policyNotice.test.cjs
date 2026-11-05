@@ -31,6 +31,8 @@ Nothing about your bank connections or your financial information changed.
 
 Questions? Email privacy@flourishmoney.app.
 
+Reply to this email to stop getting privacy-policy notices by email.
+
 GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0`;
 
 // A stand-in database: one claim per account, as the primary key is.
@@ -61,6 +63,9 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
   t.eq(N.noticeText("November 12, 2026"), APPROVED, "1a the words, exactly as approved");
   const p = N.noticePayload("a@example.ca", "November 12, 2026");
   t.eq([p.from, p.subject, p.to], ["flourish <hello@flourishmoney.app>", "We've updated the flourish privacy policy", ["a@example.ca"]], "1b the sender and subject");
+  t.eq(p.reply_to, "hello@flourishmoney.app", "1b2 a reply reaches hello@flourishmoney.app");
+  t.ok(p.html.includes("Reply to this email to stop getting privacy-policy notices by email."), "1b3 the stop line is in the HTML part too");
+  t.ok(APPROVED.indexOf("Questions? Email") < APPROVED.indexOf("Reply to this email") && APPROVED.indexOf("Reply to this email") < APPROVED.indexOf("GrowSmart Inc. (flourish), PO Box"), "1b4 after the questions line, before the sender line");
   t.ok(p.html.includes("dated November 12, 2026") && p.html.includes("GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0") && p.html.includes("We added our mailing address"), "1c the HTML part carries the same words");
   t.eq(N.dateLabel("2026-11-12"), "November 12, 2026", "1d the launch row's date");
 
@@ -78,11 +83,11 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
 
   // Dry run.
   {
-    const accounts = [...people(4), { user_id: "snap", email: "snap@flourish.app", confirmed: true }];
+    const accounts = [...people(4), { user_id: "snap", email: "snap@flourish.app", confirmed: true }, { user_id: "out", email: "out@example.ca", confirmed: true, opted_out: true }];
     const db = fakeDb(accounts); let sent = 0; const lines = [];
     const r = await run({ mode: "dry-run", admin: db, send: async () => { sent += 1; return true; }, log: (x) => lines.push(x) });
-    t.eq([r.recipients, r.skipped, r.sent, sent, db.writes], [4, 1, 0, 0, 0], "3a counts them, sends nothing, writes nothing");
-    t.ok(lines[0].includes("4 recipients (2 confirmed, 2 unconfirmed), 1 sample accounts left out; nothing sent"), "3b prints the recipient count");
+    t.eq([r.recipients, r.skipped, r.optedOut, r.sent, sent, db.writes], [4, 1, 1, 0, 0, 0], "3a counts them, sends nothing, writes nothing");
+    t.ok(lines[0].includes("4 recipients (2 confirmed, 2 unconfirmed), 1 sample accounts left out, 1 opted out; nothing sent"), "3b prints the recipient count");
     t.ok(lines[1].includes(APPROVED), "3c prints one rendered copy");
     t.ok(!lines.join("\n").includes("@example.ca") && !lines.join("\n").includes("snap@"), "3d and no address");
     const none = fakeDb(people(1), null), l2 = [];
@@ -106,6 +111,10 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
     t.ok(!to.some(([a]) => a.startsWith("snap@")), "4f the sample account gets nothing");
     const r2 = await run({ mode: "send", admin: db, send, log: () => {} });
     t.eq([r2.sent, to.length], [0, 3], "4g running it again sends nothing: never twice");
+
+    const optDb = fakeDb([...people(2), { user_id: "out", email: "out@example.ca", confirmed: true, opted_out: true }]); const optTo = [];
+    const r9 = await run({ mode: "send", admin: optDb, send: async (pl) => { optTo.push(pl.to[0]); return true; }, log: () => {} });
+    t.eq([r9.sent, optTo.includes("out@example.ca"), optDb.sends.has("out")], [2, false, false], "4g2 an account on the opt-out list gets nothing and isn't claimed");
 
     const big = fakeDb(people(PER_RUN_CAP + 5)); let n = 0;
     t.eq((await run({ mode: "send", admin: big, send: async () => { n += 1; return true; }, log: () => {} })).sent, PER_RUN_CAP, "4h a batch at a time");

@@ -6,7 +6,7 @@
 //   1  a sign-up: trial_ends_at moves to 30 days after signup; once only
 //   2  the 11th gets nothing and keeps the ordinary 14 days; a deleted account's place is not given away
 //   3  a founder or a paid account takes no place; an unknown account gets nothing
-//   4  the privacy notice's guard (migration 0040): one claim per account, and a claimed account is never owed again
+//   4  the privacy notice's guard (migration 0040): one claim per account, a claimed account is never owed again, and the opt-out list
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -103,6 +103,19 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     sql(`set role service_role; update public.policy_notice_sends set status = 'failed' where user_id = '${first}'`);
     t.eq([claim(first), owedCount("now()")], ["f", String(Number(before) - 1)], "4h a failed send is not owed again");
     t.ok(refused(`select public.policy_notice_claim('${N}', '${eleventh}', 'nonsense')`), "4i only the known statuses");
+    const opted = (id) => last(sql(`set role service_role; select opted_out from public.policy_notice_pending('${N}', now(), 5000) where user_id = '${id}'`));
+    t.ok(refused("set role anon; select * from public.policy_notice_opt_outs") && refused("set role authenticated; select * from public.policy_notice_opt_outs"), "4i2 anon and authenticated can't read the opt-out list");
+    t.eq(sql("select relrowsecurity from pg_class where oid = 'public.policy_notice_opt_outs'::regclass"), "t", "4i3 RLS is on");
+    t.eq(opted(eleventh), "f", "4i4 not on the list yet");
+    const eleventhEmail = sql(`select email from auth.users where id = '${eleventh}'`);
+    // The insert the migration documents, run twice, with the address in another case.
+    const optIn = `insert into public.policy_notice_opt_outs (user_id) select id from auth.users where lower(email) = lower('${eleventhEmail.toUpperCase()}') on conflict do nothing`;
+    sql(optIn); sql(optIn);
+    t.eq([opted(eleventh), sql("select count(*) from public.policy_notice_opt_outs")], ["t", "1"], "4i5 the documented insert puts the account on the list, once");
+    sql("insert into public.policy_notice_opt_outs (user_id) select id from auth.users where lower(email) = lower('nobody@nowhere.invalid') on conflict do nothing");
+    t.eq(sql("select count(*) from public.policy_notice_opt_outs"), "1", "4i6 an address with no account adds nothing");
+    sql(`delete from auth.users where id = '${eleventh}'`);
+    t.eq(sql("select count(*) from public.policy_notice_opt_outs"), "0", "4i7 the row goes with the account");
     sql(`delete from auth.users where id = '${first}'`);
     t.eq(sql(`select count(*) from public.policy_notice_sends where user_id = '${first}'`), "0", "4j a deleted account leaves no row");
   } finally {
