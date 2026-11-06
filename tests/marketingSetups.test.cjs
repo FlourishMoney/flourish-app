@@ -73,7 +73,8 @@ function fakeAdmin(tables = {}) {
     const ld = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)[1]);
     t.eq([ld["@type"], ld.headline, ld.datePublished, ld.dateModified, ld.author.name], ["Article", "A guide", "2026-11-01", "2026-11-02", "flourish team"], "1i JSON-LD Article");
     t.ok(!html.includes("noindex"), "1j a published guide is indexable");
-    t.ok(!/<script(?! type="application\/ld\+json")/.test(html), "1k no script runs on a guide page");
+    t.ok(!/<script(?! type="application\/ld\+json"| src="\/clarity\/loader\.js" defer><\/script>)/.test(html) && html.split("<script").length === 3,
+      "1k no script runs on a guide page but Clarity's loader (public/clarity/loader.js, 2026-11-06)");
     t.ok(!/—/.test(html), "1l no em dash");
 
     const refuse = (patch, why) => { let threw = false; try { G.checkGuide({ ...good, ...patch }); } catch { threw = true; } t.ok(threw, `1m refused: ${why}`); };
