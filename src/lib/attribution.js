@@ -60,7 +60,15 @@ export function signupAttribution() {
 }
 
 // Android only, and once per install. A failed read tries again next launch, and so does a count that could not be sent.
-export async function readInstallReferrerOnce({ apiBase = "", now = Date.now() } = {}) {
+// Called once, when the app starts (App.jsx), whatever screen comes first. One run at a time: a second call while one is in
+// flight shares it, so an install is never counted twice.
+let _referrerRun = null;
+export function readInstallReferrerOnce(opts = {}) {
+  if (!_referrerRun) _referrerRun = readReferrer(opts).finally(() => { _referrerRun = null; });
+  return _referrerRun;
+}
+
+async function readReferrer({ apiBase = "", now = Date.now() } = {}) {
   if (nativePlatform() !== "android") return;
   try {
     let rec = JSON.parse(localStorage.getItem(REFERRER_KEY) || "null");

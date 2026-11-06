@@ -148,6 +148,9 @@ function fakeAdmin(tables = {}) {
 
     const java = read("android", "app", "src", "main", "java", "com", "flourishmoney", "app", "FlourishInstallReferrerPlugin.java");
     t.ok(/InstallReferrerClient/.test(java) && /@CapacitorPlugin\(name = "FlourishInstallReferrer"\)/.test(java), "3p the Android plugin");
+    const appSrc = read("src", "App.jsx");
+    t.ok(/const \[user,setUser\]=useState\(null\);[\s\S]{0,400}useEffect\(\(\)=>\{ if\(isNativeApp\(\)\) readInstallReferrerOnce\(\{ apiBase: API_BASE \}\); \},\[\]\);/.test(appSrc), "3p2 read when the app starts, not only on the sign-in screen: an app that opens signed in still reads it");
+    t.eq((appSrc.match(/readInstallReferrerOnce\(/g) || []).length, 1, "3p3 from one place only");
     t.ok(/registerPlugin\(FlourishInstallReferrerPlugin\.class\)/.test(read("android", "app", "src", "main", "java", "com", "flourishmoney", "app", "MainActivity.java")), "3q …is registered");
     t.ok(/com\.android\.installreferrer:installreferrer:/.test(read("android", "app", "build.gradle")), "3r …with Google's library");
   }

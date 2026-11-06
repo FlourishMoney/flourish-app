@@ -15696,7 +15696,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // The visit's ?src= is kept for the session first (lib/waitlistSrc.js), so the counts and the signup carry it. The
   // founding list form used to do this on the trial-first page; it is gone (2026-10-29), so the landing does it.
   useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); countLandingViewOnce({ base: API_BASE }); } }, []);
-  useEffect(() => { if (isNativeApp()) readInstallReferrerOnce({ apiBase: API_BASE }); else captureAttribution(); }, []);
+  useEffect(() => { if (!isNativeApp()) captureAttribution(); }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -17391,6 +17391,9 @@ export default function FlourishApp(){
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
+  // Google Play's Install Referrer, read on the first open of a store install whatever screen comes first (lib/attribution.js):
+  // an app that opens signed in, from restored data, still reads it.
+  useEffect(()=>{ if(isNativeApp()) readInstallReferrerOnce({ apiBase: API_BASE }); },[]);
   const [authLoading,setAuthLoading]=useState(true);
   // Sprint Q item 12: password recovery. supabase-js fires PASSWORD_RECOVERY when the email link's
   // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
