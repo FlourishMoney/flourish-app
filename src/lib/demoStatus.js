@@ -5,9 +5,22 @@
 // means a claim keyed on bankConnected — "· live", "updated 3m ago" — was true of the flag and false of
 // the numbers. The header chip was worse: it never looked at demo at all.
 //
-// These are pure functions so the rule can be tested; App.jsx renders whatever they return. Every
-// non-demo branch below reproduces the wording and thresholds the shell used before, byte for byte —
-// tests/demoStatus.test.cjs holds a copy of the old expressions and compares the two.
+// These are pure functions so the rule can be tested; App.jsx renders whatever they return.
+//
+// balance-truth (2026-11-06): a bank balance is "live" only while the bank has answered within the hour
+// (lib/balanceTruth.js bankFreshness). Before, the chip read "· up to date" whenever the last refresh was over an
+// hour old or missing, and the stamp read "updated today" for anything over a day, so balances from a bank link
+// whose sign-in had run out were shown as live for weeks. Now a balance that is not live says when the bank last
+// answered (or that it can't say), and "live" appears nowhere. `freshness` is bankFreshness's answer; a caller
+// that leaves it out gets one worked out from flourish_last_refresh, under the same rule.
+import { LIVE_WINDOW_MS, lastUpdatedLine } from "./balanceTruth.js";
+
+function freshnessFrom(freshness, lastRefreshRaw, nowMs) {
+  if (freshness && typeof freshness === "object" && freshness.state) return freshness;
+  const at = parseInt(lastRefreshRaw || "0");
+  if (!Number.isFinite(at) || at <= 0) return { state: "unknown", at: null };
+  return { state: nowMs - at < LIVE_WINDOW_MS ? "live" : "stale", at };
+}
 
 // The wording Meet uses for sample data. One string, so Today, Watch, Do, Learn and Meet can't drift
 // (the coach header had "Sample data" with a capital S). Meet uppercases it with CSS; the case here is
@@ -22,18 +35,18 @@ export const DEMO_STATUS_LABEL = "Example · sample data";
 //                    chip at all when it entered none (null). Left out (undefined), the chip reads as it
 //                    always did, which is what every caller from before this rule gets.
 //   enteredBalances — the household has entered at least one balance (lib/manualBalances.js)
+//   freshness      — lib/balanceTruth.js bankFreshness: "live" chips say Live and the minutes; "stale" and
+//                    "unknown" say when the bank last answered (stale:true, no live dot); "none" (no bank link
+//                    behind the figures) is the entered-balances chip or nothing.
 export const ENTERED_STATUS_LABEL = "Balances you entered";
-export function statusChip({ demo, lastRefreshRaw, nowMs, bankConnected, enteredBalances = false }) {
+export function statusChip({ demo, lastRefreshRaw, nowMs, bankConnected, enteredBalances = false, freshness }) {
   if (demo) return { label: DEMO_STATUS_LABEL, detail: "" };
   if (bankConnected === false) return enteredBalances ? { label: ENTERED_STATUS_LABEL, detail: "" } : null;
-  let detail;
-  if (!lastRefreshRaw) {
-    detail = "· up to date";
-  } else {
-    const m = Math.round((nowMs - parseInt(lastRefreshRaw)) / 60000);
-    detail = m < 1 ? "· just refreshed" : m < 60 ? `· updated ${m}m ago` : "· up to date";
-  }
-  return { label: "Live", detail };
+  const fresh = freshnessFrom(freshness, lastRefreshRaw, nowMs);
+  if (fresh.state === "none") return enteredBalances ? { label: ENTERED_STATUS_LABEL, detail: "" } : null;
+  if (fresh.state !== "live") return { label: lastUpdatedLine(fresh, nowMs), detail: "", stale: true };
+  const m = Math.round((nowMs - fresh.at) / 60000);
+  return { label: "Live", detail: m < 1 ? "· just refreshed" : `· updated ${m}m ago` };
 }
 
 // The suffix on the safe-to-spend headline. `kind` lets the caller keep its existing colours:
@@ -41,23 +54,25 @@ export function statusChip({ demo, lastRefreshRaw, nowMs, bankConnected, entered
 // In demo the suffix carries NO leading separator: it is long enough to wrap onto its own line at phone
 // width, and a line that starts with "·" separates nothing. App.jsx renders it as a small tag instead,
 // which reads correctly whether it sits inline or wraps.
-export function heroFreshness({ demo, bankConnected }) {
+// balance-truth: "· live" only while the bank balances are live. A linked household whose balances are not live
+// gets no suffix (kind "stale", text ""): the stamp under the figure says when the bank last answered, once.
+export function heroFreshness({ demo, bankConnected, freshness, lastRefreshRaw, nowMs }) {
   if (demo) return { text: DEMO_STATUS_LABEL, kind: "example" };
-  return bankConnected
-    ? { text: "· live", kind: "live" }
-    : { text: "· estimated", kind: "estimated" };
+  if (!bankConnected) return { text: "· estimated", kind: "estimated" };
+  const fresh = freshnessFrom(freshness, lastRefreshRaw, nowMs);
+  if (fresh.state === "none") return { text: "· estimated", kind: "estimated" };
+  return fresh.state === "live" ? { text: "· live", kind: "live" } : { text: "", kind: "stale" };
 }
 
-// The small "updated Nm ago" stamp under the headline, or null when there is nothing honest to say.
+// The small stamp under the headline, or null when there is nothing honest to say. Live: "just updated" or
+// "updated Nm ago". Not live: when the bank last answered (lastUpdatedLine), never "updated today".
 // Never in demo: sample data was not updated from anywhere, whatever an earlier real session left in
 // localStorage on this browser.
-export function refreshStamp({ demo, bankConnected, isRefreshing, lastRefreshRaw, nowMs }) {
+export function refreshStamp({ demo, bankConnected, isRefreshing, lastRefreshRaw, nowMs, freshness }) {
   if (demo || !bankConnected || isRefreshing) return null;
-  const lastRefresh = parseInt(lastRefreshRaw || "0");
-  if (!lastRefresh) return null;
-  const mins = Math.round((nowMs - lastRefresh) / 60000);
-  return mins < 1 ? "just updated"
-    : mins < 60 ? `updated ${mins}m ago`
-    : mins < 1440 ? `updated ${Math.floor(mins / 60)}h ago`
-    : "updated today";
+  const fresh = freshnessFrom(freshness, lastRefreshRaw, nowMs);
+  if (fresh.state === "none") return null;
+  if (fresh.state !== "live") return lastUpdatedLine(fresh, nowMs);
+  const mins = Math.round((nowMs - fresh.at) / 60000);
+  return mins < 1 ? "just updated" : `updated ${mins}m ago`;
 }
