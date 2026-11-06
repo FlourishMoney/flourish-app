@@ -11,7 +11,7 @@
 // These pure functions are the rules; App.jsx and lib/demoStatus.js render what they return.
 //   - A bank balance is "live" only when the bank answered for EVERY linked account within the last hour and no
 //     linked bank needs a fresh sign-in. Otherwise the app says when the bank last answered, or that it can't say.
-//   - balanceAsOf is stamped on an account only when the bank answers for it (stampBalanceAsOf at every site that
+//   - bankAnsweredAt is stamped on an account only when the bank answers for it (stampBankAnswer at every site that
 //     maps a get_accounts answer). An account kept from an earlier answer keeps its stamp.
 // The words are in lib/balanceWords.js.
 // -----------------------------------------------------------------------------
@@ -32,9 +32,9 @@ export function isBankAccount(a) {
 }
 
 /** Each account the bank just answered for, stamped with that moment (ISO). */
-export function stampBalanceAsOf(accounts, nowMs) {
+export function stampBankAnswer(accounts, nowMs) {
   const at = new Date(nowMs).toISOString();
-  return (Array.isArray(accounts) ? accounts : []).map((a) => (a && typeof a === "object" ? { ...a, balanceAsOf: at } : a));
+  return (Array.isArray(accounts) ? accounts : []).map((a) => (a && typeof a === "object" ? { ...a, bankAnsweredAt: at } : a));
 }
 
 // The banks that need a fresh sign-in, from list_items' rows ({ item_id, institution_name, status, linked_by }).
@@ -54,7 +54,7 @@ export function itemsNeedingSignIn(items) {
 export function bankFreshness({ accounts, nowMs, signIn = [] } = {}) {
   const linked = (Array.isArray(accounts) ? accounts : []).filter(isBankAccount);
   if (!linked.length) return { state: "none", at: null };
-  const times = linked.map((a) => Date.parse(a.balanceAsOf));
+  const times = linked.map((a) => Date.parse(a.bankAnsweredAt));
   if (times.some((t) => !Number.isFinite(t))) return { state: "unknown", at: null };
   const at = Math.min(...times);
   const needing = new Set((Array.isArray(signIn) ? signIn : []).map((s) => s && s.item_id).filter(Boolean));

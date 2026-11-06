@@ -20,6 +20,7 @@ export const BALANCE_WORDS = Object.freeze({
   "balance-last-updated-unknown": "[WORDS: balance-last-updated-unknown]",
   // A bank whose sign-in has run out: the Today card and its button.
   "balance-signin-title": "[WORDS: balance-signin-title]",
+  "balance-signin-partner": "[WORDS: balance-signin-partner]",
   "balance-signin-body": "[WORDS: balance-signin-body]",
   "balance-signin-button": "[WORDS: balance-signin-button]",
   // The bank window closed without linking (Settings: connect another bank, reconnect). A reason, then an outcome.
@@ -36,6 +37,8 @@ export const BALANCE_WORDS = Object.freeze({
   "balance-history-slow": "[WORDS: balance-history-slow]",
   // Debts in Settings: the header over card balances from the bank, when they are not live.
   "balance-debts-from-bank": "[WORDS: balance-debts-from-bank]",
+  // {bank} when Plaid did not say which bank (a window closed before one was chosen).
+  "balance-bank-unnamed": "[WORDS: balance-bank-unnamed]",
 });
 
 const PLACEHOLDER = /^\[WORDS: [a-z0-9-]+\]$/;
@@ -48,5 +51,6 @@ export function balanceWords(id, vars = {}) {
     const shown = ["bank", "when"].filter((k) => vars[k] != null && vars[k] !== "").map((k) => String(vars[k]));
     return shown.length ? `${line} (${shown.join(", ")})` : line;
   }
-  return line.replace(/\{(bank|when)\}/g, (_, k) => (vars[k] == null ? "" : String(vars[k])));
+  const filled = { ...vars, bank: vars.bank ? vars.bank : balanceWords("balance-bank-unnamed") };
+  return line.replace(/\{(bank|when)\}/g, (_, k) => (filled[k] == null ? "" : String(filled[k])));
 }

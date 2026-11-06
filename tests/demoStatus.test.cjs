@@ -71,56 +71,70 @@ const t = create();
          "2b a stale real-session timestamp in localStorage cannot make the demo chip say 'updated 5m ago'");
   }
 
-  // ── 3. DEMO OFF: identical to what the shell said before this change ─────────────────────────
-  // These are main's expressions from App.jsx as of the rebase onto bc63a30, kept here as an oracle.
-  const legacyChip = (raw) => {
-    const l = raw;
-    let detail;
-    if (!l) detail = "· up to date";
-    else {
-      const mm = Math.round((NOW - parseInt(l)) / 60000);
-      detail = mm < 1 ? "· just refreshed" : mm < 60 ? `· updated ${mm}m ago` : "· up to date";
-    }
-    return { label: "Live", detail };
-  };
-  const legacyHero = (bank) => (bank ? "· live" : "· estimated");
-  const legacyStamp = (bank, refreshing, raw) => {
-    if (!(bank && !refreshing)) return null;
-    const lastRefresh = parseInt(raw || "0");
-    if (!lastRefresh) return null;
-    const mins = Math.round((NOW - lastRefresh) / 60000);
-    return mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins / 60)}h ago` : "updated today";
-  };
+  // ── 3. DEMO OFF: "live" only while the bank answered within the hour (balance-truth, 2026-11-06) ─────────
+  // This section used to pin the shell's original expressions, and with them their fault: the chip read "· up to date"
+  // whenever the last refresh was over an hour old or missing, and the stamp read "updated today" for anything over a
+  // day, so balances from a bank whose sign-in had run out were shown as live for weeks. The rule now: under an hour,
+  // the same words as before ("· just refreshed", "· updated Nm ago", "just updated", "updated Nm ago", "· live");
+  // otherwise when the bank last answered (lib/balanceTruth.js lastUpdatedLine), never "up to date" or "today".
+  const BT = await import("../src/lib/balanceTruth.js");
+  const BW = await import("../src/lib/balanceWords.js");
+  const UNKNOWN = BW.balanceWords("balance-last-updated-unknown");
+  const AT = (ms) => BW.balanceWords("balance-last-updated", { when: BT.whenText(ms, NOW) });
   {
+    const want = (raw) => {
+      const at = parseInt(raw || "0");
+      if (!Number.isFinite(at) || at <= 0) return { chip: { label: UNKNOWN, detail: "", stale: true }, hero: "", stamp: UNKNOWN };
+      const mm = Math.round((NOW - at) / 60000);
+      if (NOW - at >= 60 * MIN) return { chip: { label: AT(at), detail: "", stale: true }, hero: "", stamp: AT(at) };
+      return { chip: { label: "Live", detail: mm < 1 ? "· just refreshed" : `· updated ${mm}m ago` }, hero: "· live", stamp: mm < 1 ? "just updated" : `updated ${mm}m ago` };
+    };
     const diffs = [];
     let n = 0;
     for (const raw of RAW) {
+      const w = want(raw);
       const got = statusChip({ demo: false, lastRefreshRaw: raw, nowMs: NOW });
-      const want = legacyChip(raw);
       n++;
-      if (got.label !== want.label || got.detail !== want.detail) diffs.push(`chip raw=${raw}: ${JSON.stringify(got)} vs ${JSON.stringify(want)}`);
+      if (JSON.stringify(got) !== JSON.stringify(w.chip)) diffs.push(`chip raw=${raw}: ${JSON.stringify(got)} vs ${JSON.stringify(w.chip)}`);
       for (const bank of BOOL) {
-        const gh = heroFreshness({ demo: false, bankConnected: bank });
+        const gh = heroFreshness({ demo: false, bankConnected: bank, lastRefreshRaw: raw, nowMs: NOW });
         n++;
-        if (gh.text !== legacyHero(bank)) diffs.push(`hero bank=${bank}: ${gh.text} vs ${legacyHero(bank)}`);
-        if (gh.kind !== (bank ? "live" : "estimated")) diffs.push(`hero kind bank=${bank}: ${gh.kind}`);
+        const wh = bank ? w.hero : "· estimated";
+        if (gh.text !== wh) diffs.push(`hero bank=${bank} raw=${raw}: ${JSON.stringify(gh.text)} vs ${JSON.stringify(wh)}`);
         for (const refreshing of BOOL) {
           const gs = refreshStamp({ demo: false, bankConnected: bank, isRefreshing: refreshing, lastRefreshRaw: raw, nowMs: NOW });
           n++;
-          if (gs !== legacyStamp(bank, refreshing, raw)) diffs.push(`stamp bank=${bank} refreshing=${refreshing} raw=${raw}: ${gs} vs ${legacyStamp(bank, refreshing, raw)}`);
+          const ws = bank && !refreshing ? w.stamp : null;
+          if (gs !== ws) diffs.push(`stamp bank=${bank} refreshing=${refreshing} raw=${raw}: ${JSON.stringify(gs)} vs ${JSON.stringify(ws)}`);
         }
       }
     }
-    t.eq(diffs, [], `3a demo off: ${n} outputs identical to the original expressions`);
-    t.eq(statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW }), { label: "Live", detail: "· up to date" }, "3b the chip still reads 'Live · up to date' with no refresh on record");
-    t.eq(statusChip({ demo: false, lastRefreshRaw: String(NOW - 5 * MIN), nowMs: NOW }).detail, "· updated 5m ago", "3c and still counts minutes since a real refresh");
-    t.eq(heroFreshness({ demo: false, bankConnected: true }).text, "· live", "3d a linked household still gets '· live'");
-    t.eq(heroFreshness({ demo: false, bankConnected: false }).text, "· estimated", "3e an unlinked one still gets '· estimated'");
-    t.eq(refreshStamp({ demo: false, bankConnected: true, isRefreshing: false, lastRefreshRaw: String(NOW - 2 * HR), nowMs: NOW }), "updated 2h ago", "3f the stamp still counts hours");
-    t.eq(refreshStamp({ demo: false, bankConnected: true, isRefreshing: true, lastRefreshRaw: String(NOW - 2 * HR), nowMs: NOW }), null, "3g and is still hidden while a refresh is running");
+    t.eq(diffs, [], `3a demo off: ${n} outputs follow the rule (live under an hour, else when the bank last answered)`);
+    const every = [];
+    for (const raw of RAW) {
+      every.push(JSON.stringify(statusChip({ demo: false, lastRefreshRaw: raw, nowMs: NOW })));
+      for (const r of BOOL) every.push(String(refreshStamp({ demo: false, bankConnected: true, isRefreshing: r, lastRefreshRaw: raw, nowMs: NOW })));
+    }
+    t.eq(every.filter((x) => /up to date|updated today/.test(x)), [], "3b no input says \"up to date\" or \"updated today\" any more");
+    t.eq(statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW }), { label: UNKNOWN, detail: "", stale: true }, "3c with no bank answer on record the chip says it can't say when, with no live dot (stale)");
+    t.eq(statusChip({ demo: false, lastRefreshRaw: String(NOW - 5 * MIN), nowMs: NOW }).detail, "· updated 5m ago", "3d …and still counts minutes since a real refresh");
+    t.eq(heroFreshness({ demo: false, bankConnected: true, lastRefreshRaw: String(NOW - 5 * MIN), nowMs: NOW }).text, "· live", "3e a linked household refreshed 5 minutes ago still gets '· live'");
+    t.eq(heroFreshness({ demo: false, bankConnected: false }).text, "· estimated", "3f an unlinked one still gets '· estimated'");
+    t.eq(refreshStamp({ demo: false, bankConnected: true, isRefreshing: false, lastRefreshRaw: String(NOW - 2 * HR), nowMs: NOW }), AT(NOW - 2 * HR), "3g two hours old: when the bank last answered, not \"updated 2h ago\" beside a live claim");
+    t.eq(refreshStamp({ demo: false, bankConnected: true, isRefreshing: true, lastRefreshRaw: String(NOW - 2 * HR), nowMs: NOW }), null, "3h and is still hidden while a refresh is running");
+
+    // The app passes bankFreshness's answer, which also knows a bank that needs a fresh sign-in.
+    const acct = (id, at, item = "item-1") => ({ id, type: "depository", institution: "Scotiabank", _item: item, balance: 100, bankAnsweredAt: at == null ? undefined : new Date(at).toISOString() });
+    const fresh = (accounts, signIn = []) => BT.bankFreshness({ accounts, nowMs: NOW, signIn });
+    t.eq(statusChip({ demo: false, nowMs: NOW, freshness: fresh([acct("a", NOW - 3 * MIN)]) }), { label: "Live", detail: "· updated 3m ago" }, "3i answered 3 minutes ago: Live");
+    t.eq(statusChip({ demo: false, nowMs: NOW, freshness: fresh([acct("a", NOW - 3 * MIN)], [{ item_id: "item-1" }]) }).stale, true, "3j …but its bank needs a fresh sign-in: not live");
+    t.eq(statusChip({ demo: false, nowMs: NOW, freshness: fresh([acct("a", NOW - 3 * MIN), acct("b", NOW - 3 * DAY, "item-2")]) }).label, AT(NOW - 3 * DAY), "3k two banks: the OLDEST answer decides, and is the date shown");
+    t.eq(statusChip({ demo: false, nowMs: NOW, freshness: fresh([acct("a", NOW - 3 * MIN), acct("b", null, "item-2")]) }).label, UNKNOWN, "3l one account with no answer on record: it can't say when");
+    t.eq(statusChip({ demo: false, nowMs: NOW, bankConnected: true, freshness: fresh([{ id: "m", institution: "Manual", balance: 5, balanceEntered: true }]) }), null, "3m no bank-linked account at all: no bank chip");
+    t.eq(heroFreshness({ demo: false, bankConnected: true, nowMs: NOW, freshness: fresh([acct("a", NOW - 2 * DAY)]) }), { text: "", kind: "stale" }, "3n the hero has no suffix when not live (the stamp under the figure says when)");
   }
   // demo undefined/absent must behave as "off", not as "on"
-  t.eq(statusChip({ lastRefreshRaw: null, nowMs: NOW }).label, "Live", "3h a missing demo flag is treated as off");
+  t.eq(statusChip({ lastRefreshRaw: null, nowMs: NOW }).label, UNKNOWN, "3o a missing demo flag is treated as off");
 
   // ── 4. App.jsx routes every site through the helper ──────────────────────────────────────────
   const raw = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
@@ -164,8 +178,8 @@ const t = create();
        "6g …and every one of them is wrapped in exampleTagStyle()");
   // The Activity subtitle keeps 'Live from your bank', but only behind isDemo (data.demo) AND a linked
   // bank (tester suggestions item 4: a household with no bank says "From your statements and entries").
-  t.ok(/isDemo\?"Sample data · connect your bank for real insights":data\.bankConnected\?"Live from your bank":"From your statements and entries"/.test(code),
-       "6d the Activity subtitle checks isDemo, and a linked bank, before it may say 'Live from your bank'");
+  t.ok(/isDemo\?"Sample data · connect your bank for real insights":data\.bankConnected&&spendFresh\.state!=="none"\?\(spendFresh\.state==="live"\?"Live from your bank":lastUpdatedLine\(spendFresh, Date\.now\(\)\)\):"From your statements and entries"/.test(code),
+       "6d the Activity subtitle checks isDemo, a linked bank account (not statements only), and that the bank answered within the hour (balance-truth), before it may say 'Live from your bank'");
 
   t.summary("demoStatus.test");
 })();

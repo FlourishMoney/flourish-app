@@ -97,6 +97,8 @@ exports.handler = async (event) => {
   }
 
   const { action } = body;
+  // balance-truth: whose bank this request reached and its stored status (resolveAccessToken fills it), for the catch.
+  const reqCtx = {};
 
   try {
     // 1. create_link_token — auth-required (Tier 1.3). Every mint (new or
@@ -249,12 +251,14 @@ exports.handler = async (event) => {
 
     // 3. get_accounts
     if (action === "get_accounts") {
-      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       const data = await plaid("/accounts/get", { access_token });
       // Couple mode (audit round 2 c): who linked each account, from Plaid's own answer, for the cleanups. A record
       // that cannot be written answers 503 and no accounts (round 3: the catch below, err.ownerRecord).
       await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id, (data.accounts || []).map((a) => a.account_id));
+      // balance-truth: the bank answered, so a sign-in recorded as run out is no longer.
+      if (STATUSES_CLEARED_BY_AN_ANSWER.includes(reqCtx.status)) await setItemStatus(owner_id, body.item_id, "active");
       return ok({
         accounts: data.accounts.map(a => ({
           id:      a.account_id,
@@ -275,7 +279,7 @@ exports.handler = async (event) => {
     // 4. get_transactions
     if (action === "get_transactions") {
       const { days = 90, full_resync = false } = body;
-      const { access_token, user_id, owner_id, item_row_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, user_id, owner_id, item_row_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
 
       const cappedDays = Math.min(Math.max(1, days), 730);
@@ -292,24 +296,42 @@ exports.handler = async (event) => {
       let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, owner_id, item_row_id, fullResync: !!full_resync, recordOwners });
       // Fall back to /transactions/get ONLY on an empty FULL sync (fresh sandbox items sometimes
       // return nothing from /sync at first). An empty INCREMENTAL sync just means "no changes".
-      if (result.full && result.transactions.length === 0 && result.removed.length === 0) {
-        const fallback = await getTransactions(access_token, startDate, endDate);
-        await recordOwners(fallback.map((t) => t && t.account_id));
-        result = { transactions: fallback, removed: [], truncated: false, full: true };
+      // balance-truth: never while Plaid says the first pull has not started (NOT_READY): /transactions/get answers
+      // PRODUCT_NOT_READY then, which used to fail the whole call. Either way the app is told the history is still
+      // coming (update_status), and asks again.
+      if (result.full && result.transactions.length === 0 && result.removed.length === 0 && result.updateStatus !== "NOT_READY") {
+        try {
+          const fallback = await getTransactions(access_token, startDate, endDate);
+          await recordOwners(fallback.map((t) => t && t.account_id));
+          result = { ...result, transactions: fallback, removed: [], truncated: false, full: true };
+        } catch (err) {
+          if (err.errorCode !== "PRODUCT_NOT_READY") throw err;
+          result = { ...result, updateStatus: "NOT_READY" };
+        }
+      }
+      // balance-truth: the webhook marks a bank's new transactions waiting (transactions_pending); a sync that took
+      // them all clears it, so the app's next look at list_items knows there is nothing new. Own banks only: a
+      // partner's bank keeps its linker's flag.
+      if (!result.truncated && owner_id === user_id) {
+        try {
+          const { error: flagErr } = await getAdminClient().from("plaid_items").update({ transactions_pending: false }).eq("user_id", user_id).eq("item_id", body.item_id);
+          if (flagErr) console.error("[transactions_pending clear]", flagErr.code || "error");
+        } catch (e) { console.error("[transactions_pending clear] threw"); }
       }
 
       return ok({
-        transactions: result.transactions,
-        removed:      result.removed,
-        truncated:    result.truncated,
-        full:         result.full,
-        total:        result.transactions.length,
+        transactions:  result.transactions,
+        removed:       result.removed,
+        truncated:     result.truncated,
+        full:          result.full,
+        total:         result.transactions.length,
+        update_status: result.updateStatus || null,
       });
     }
 
     // 5. get_investments
     if (action === "get_investments") {
-      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/investments/holdings/get", { access_token });
@@ -353,7 +375,7 @@ exports.handler = async (event) => {
 
     // 6. get_liabilities
     if (action === "get_liabilities") {
-      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/liabilities/get", { access_token });
@@ -486,11 +508,7 @@ exports.handler = async (event) => {
       const { user_id, error: authError } = await getUserFromRequest(event);
       if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
       const admin = getAdminClient();
-      const { data, error } = await admin
-        .from("plaid_items")
-        .select("id, item_id, institution_id, institution_name, status, created_at, updated_at")
-        .eq("user_id", user_id)
-        .order("created_at", { ascending: true });
+      const { data, error } = await listItemRows(admin, (q) => q.eq("user_id", user_id));
       if (error) {
         console.error("[plaid_items list]", error.message);
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to load accounts." }) };
@@ -502,11 +520,7 @@ exports.handler = async (event) => {
       try {
         const peers = await household.peerIdsOf(admin, user_id);
         if (peers.length) {
-          const { data: theirs, error: peerErr } = await admin
-            .from("plaid_items")
-            .select("id, item_id, institution_id, institution_name, status, created_at, updated_at")
-            .in("user_id", peers)
-            .order("created_at", { ascending: true });
+          const { data: theirs, error: peerErr } = await listItemRows(admin, (q) => q.in("user_id", peers));
           if (peerErr) console.error("[plaid_items list] household:", peerErr.message);
           else shared = (theirs || []).map((r) => ({ ...r, linked_by: "partner" }));
         }
@@ -873,7 +887,10 @@ exports.handler = async (event) => {
     // Couple mode (audit round 3): who linked the accounts could not be recorded: no bank data goes back.
     if (err.ownerRecord) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
     if (err.errorCode === "ITEM_LOGIN_REQUIRED") {
-      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Bank session expired. Please reconnect.", needs_reconnect: true }) };
+      // balance-truth: recorded on the bank's row, so every device (and list_items) knows this bank needs a fresh
+      // sign-in, not only the phone that happened to ask. The answer to the app is unchanged, plus which bank.
+      if (reqCtx.owner_id && reqCtx.status !== STATUS_LOGIN_REQUIRED) await setItemStatus(reqCtx.owner_id, reqCtx.item_id, STATUS_LOGIN_REQUIRED);
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Bank session expired. Please reconnect.", needs_reconnect: true, item_id: reqCtx.item_id || null }) };
     }
     if (err.name === "AbortError") {
       return { statusCode: 504, headers: CORS, body: JSON.stringify({ error: "Plaid request timed out. Please try again." }) };
@@ -902,7 +919,9 @@ exports.handler = async (event) => {
 // household linked is the caller's to read too (accounts, transactions, investments, liabilities), never
 // to revoke (ownOnly). The caller's own bank is looked up exactly as before; the household is asked only
 // when it is not theirs, and a failed household read finds nothing (the bank is refused, never widened).
-async function resolveAccessToken(event, body, { ownOnly = false } = {}) {
+// balance-truth: `ctx` (the request's own object) learns whose bank this is and what plaid_items says about it, so
+// the handler's catch can record a sign-in that has run out against the right row, and a good answer can clear it.
+async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } = {}) {
   if (!body.item_id) {
     return { access_token: null, error: "item_id required", statusCode: 400 };
   }
@@ -910,31 +929,58 @@ async function resolveAccessToken(event, body, { ownOnly = false } = {}) {
   if (!user_id) {
     return { access_token: null, error: authError || "unauthorized", statusCode: 401 };
   }
+  const note = (owner_id, status) => { if (ctx) Object.assign(ctx, { owner_id, item_id: body.item_id, status: status || null }); };
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("plaid_items")
-    .select("access_token")
+    .select("access_token, status")
     .eq("user_id", user_id)
     .eq("item_id", body.item_id)
     .single();
-  if (!error && data) return { access_token: data.access_token, user_id, owner_id: user_id, error: null };
+  if (!error && data) { note(user_id, data.status); return { access_token: data.access_token, user_id, owner_id: user_id, error: null }; }
   if (!ownOnly) {
     try {
       const peers = await household.peerIdsOf(admin, user_id);
       if (peers.length) {
         const { data: theirs, error: peerErr } = await admin
           .from("plaid_items")
-          .select("id, user_id, access_token")
+          .select("id, user_id, access_token, status")
           .in("user_id", peers)
           .eq("item_id", body.item_id)
           .maybeSingle();
         if (!peerErr && theirs && theirs.access_token) {
+          note(theirs.user_id, theirs.status);
           return { access_token: theirs.access_token, user_id, owner_id: theirs.user_id, item_row_id: theirs.id, error: null };
         }
       }
     } catch (e) { console.error("[resolveAccessToken] household:", e.message); }
   }
   return { access_token: null, error: "item not found for this user", statusCode: 400 };
+}
+
+// list_items' rows, oldest first. balance-truth adds transactions_pending (the webhook's "new transactions are
+// waiting"). Production has that column; a database built only from supabase/migrations does not (00001 says
+// production is right there), so a missing column falls back to the columns listed before, never to no banks.
+const ITEM_COLUMNS = "id, item_id, institution_id, institution_name, status, created_at, updated_at";
+async function listItemRows(admin, scope) {
+  const run = (cols) => scope(admin.from("plaid_items").select(cols)).order("created_at", { ascending: true });
+  const first = await run(ITEM_COLUMNS + ", transactions_pending");
+  if (first.error && (first.error.code === "42703" || /transactions_pending/.test(String(first.error.message || "")))) return run(ITEM_COLUMNS);
+  return first;
+}
+
+// balance-truth: plaid_items.status for a bank whose sign-in has run out (Plaid's ITEM_LOGIN_REQUIRED), and the
+// statuses a good answer from the bank clears. The webhook writes "error" for ITEM:ERROR; the app treats both as
+// "this bank needs a fresh sign-in" (src/lib/balanceTruth.js SIGN_IN_STATUSES).
+const STATUS_LOGIN_REQUIRED = "login_required";
+const STATUSES_CLEARED_BY_AN_ANSWER = ["login_required", "error"];
+// Best-effort: a failed write is logged by its code only and never changes the answer to the app.
+async function setItemStatus(ownerId, itemId, status) {
+  if (!ownerId || !itemId) return;
+  try {
+    const { error } = await getAdminClient().from("plaid_items").update({ status }).eq("user_id", ownerId).eq("item_id", itemId);
+    if (error) console.error("[plaid_items status]", error.code || "error");
+  } catch (e) { console.error("[plaid_items status] threw"); }
 }
 
 // /transactions/sync — cursor-based incremental sync (Sprint Z #1/#3).
@@ -987,6 +1033,7 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
     const accounts = new Map(); // account_id → { type, subtype }, from the sync pages themselves
     let hasMore   = true;
     let pages     = 0;
+    let updateStatus = null; // balance-truth: how far Plaid's first pull has got (the last page says)
 
     try {
       while (hasMore && pages < SYNC_PAGE_CAP) {
@@ -1000,6 +1047,7 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
         (page.accounts || []).forEach(a => { if (a && a.account_id) accounts.set(a.account_id, a); });
         cursor  = page.next_cursor;
         hasMore = page.has_more;
+        if (page.transactions_update_status) updateStatus = page.transactions_update_status;
         pages++;
       }
     } catch (err) {
@@ -1046,6 +1094,7 @@ async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
       removed,
       truncated,
       full: isFull,
+      updateStatus,
     };
   }
 }

@@ -323,7 +323,8 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     t.ok(/From the balance you entered\./.test(E) && !/estimated/i.test(E) && !/Connect bank for real numbers/.test(E),
       `7h Today, entered only: the source line, and no "· estimated" tag or "Estimated · Connect bank" line ("${E.slice(E.indexOf("Safe to spend until"), E.indexOf("Safe to spend until") + 260)}")`);
     t.ok(/No debts entered\s*Add\b/.test(E) && !/Debt free!/.test(E) && !/Amazing!/.test(E), "7i …\"No debts entered\" with Add, never \"Debt free! Amazing!\"");
-    const linkedHome = { ...shared("pl_chq"), transactions: [], debts: [], accounts: [{ ...linked, id: "pl_chq", balance: 2150 }], bankConnected: true };
+    // balance-truth: the bank answered for this account a moment ago, so it is live (7r2 has one with no answer on record).
+    const linkedHome = { ...shared("pl_chq"), transactions: [], debts: [], accounts: [{ ...linked, id: "pl_chq", balance: 2150, bankAnsweredAt: new Date().toISOString() }], bankConnected: true };
     const L = home(linkedHome);
     t.ok(/· live/.test(L) && !/From the balance you entered|From your bank and the balances/.test(L) && !/Connect bank for real numbers/.test(L),
       "7j Today, linked only: \"· live\" as before, no source line");
@@ -354,10 +355,14 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
           DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: false }),
           DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: true, enteredBalances: true }),
           DS.statusChip({ demo: true, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: true }).label],
-      [{ label: "Balances you entered", detail: "" }, null, { label: "Live", detail: "· up to date" }, DS.DEMO_STATUS_LABEL],
-      "7p header chip: no bank and balances entered, \"Balances you entered\"; no bank and nothing entered, no chip; a linked bank, \"Live · up to date\" as before; demo as before");
+      [{ label: "Balances you entered", detail: "" }, null, { label: (await import("../src/lib/balanceWords.js")).balanceWords("balance-last-updated-unknown"), detail: "", stale: true }, DS.DEMO_STATUS_LABEL],
+      "7p header chip: no bank and balances entered, \"Balances you entered\"; no bank and nothing entered, no chip; a linked bank with no bank answer on record says it can't say when (balance-truth: it used to say \"Live · up to date\"); demo as before");
     t.ok(/Balances you entered/.test(E) && !/Live\s*· up to date/.test(E), "7q Today, entered only: the header says \"Balances you entered\", not \"Live · up to date\"");
-    t.ok(/Live\s*· up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only: \"Live · up to date\", unchanged");
+    // balance-truth (2026-11-06): a linked bank is "Live" only while the bank answered within the hour. This account has
+    // no answer on record, so Today says so, and never "Live · up to date"; answered a moment ago, it is Live again.
+    t.ok(/Live\s*·\s*just refreshed/.test(L) && !/up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only, the bank answered a moment ago: \"Live · just refreshed\"");
+    const LU = home({ ...linkedHome, accounts: linkedHome.accounts.map(({ bankAnsweredAt, ...a }) => a) });
+    t.ok(/\[WORDS: balance-last-updated-unknown\]/.test(LU) && !/Live\s*·/.test(LU) && !/up to date/.test(LU), "7r2 …and with no bank answer on record, it can't say when, and never \"Live · up to date\"");
     t.ok(!/Live\s*·/.test(S0) && !/Balances you entered/.test(S0), "7s Today, no bank and no balance entered: no chip at all");
     for (const s of [DS.ENTERED_STATUS_LABEL]) t.ok(!BANNED.test(s) && !adviceProblems(s).length, `7t "${s}" passes both copy rules`);
 
