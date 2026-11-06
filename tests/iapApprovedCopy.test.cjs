@@ -95,9 +95,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   {
     const P = O.PAYWALL_COPY;
     t.eq([P.title, P.lead, P.dataSafe, P.close, P.checking, P.checkAgain, P.storeUnavailable], [
-      // PROPOSED 2026-11-05 (Amanda: Flourish isn't Flourish Plus, and Plus is an add-on), replacing the 2026-10-20 pair.
-      "Add Flourish Plus",
-      "Flourish Plus is an optional add-on to Flourish. It adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+      "Flourish Plus",
+      "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
       "Your accounts, bills and history stay as they are.",
       "Close",
       "Confirming with the store…",

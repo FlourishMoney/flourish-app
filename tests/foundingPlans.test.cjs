@@ -68,7 +68,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
   const saved = { ...process.env };
   process.env.IAP_ENABLED = "true";
   const status = async (admin) => JSON.parse((await loadBilling(admin).handler(post({ action: "store_status" }))).body);
-  const ready = (st, extra = {}) => ({ storeBilling: true, userId: U1, askedFor: U1, status: st, planKnown: true, inApp: true, earlierVisit: true, shown: false, ...extra });
+  const ready = (st, extra = {}) => ({ storeBilling: true, userId: U1, askedFor: U1, status: st, planKnown: true, inApp: true, tourDone: true, shown: false, ...extra });
 
   const holder = await status(fakeAdmin({ email: HOLDER, position: 36 }));
   const offerPkgs = { monthly: { id: "m" }, annual: null, founding: { id: "f" } };
@@ -86,7 +86,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.eq(JSON.parse(s.getItem(F.FOUNDING_PLANS_SHOWN_KEY)), [U1], "1e remembered once per account (no duplicates)");
     t.eq(F.foundingPlansShown(s, U2), false, "1f another account on the same phone is its own account");
     t.eq(F.paywallPlanOrder(offerPkgs).map(([p]) => p), ["founding_annual", "monthly"], "1g Founding annual is the first plan, then Monthly");
-    for (const [k, v] of [["askedFor", null], ["askedFor", U2], ["planKnown", false], ["inApp", false], ["earlierVisit", false], ["storeBilling", false], ["userId", null], ["status", null]])
+    for (const [k, v] of [["askedFor", null], ["askedFor", U2], ["planKnown", false], ["inApp", false], ["tourDone", false], ["storeBilling", false], ["userId", null], ["status", null]])
       t.eq(F.foundingPlansAutoOpen(ready(holder, { [k]: v })), false, `1h not before every part is in: ${k}=${JSON.stringify(v)}`);
   }
 
@@ -116,11 +116,11 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
   {
     const APP = read("src", "App.jsx");
     const out = APP.slice(APP.indexOf("  const signOut = async ()=>{"), APP.indexOf("  const signOut = async ()=>{") + 700);
-    t.ok(/k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY && k !== FOUNDING_FIRST_VISIT_KEY\)\.forEach\(k => localStorage\.removeItem\(k\)\)/.test(out), "4a signing out keeps the marker: signing back in is the same account");
+    t.ok(/k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY\)\.forEach\(k => localStorage\.removeItem\(k\)\)/.test(out), "4a signing out keeps the marker: signing back in is the same account");
     t.ok(F.FOUNDING_PLANS_SHOWN_KEY.startsWith("flourish_"), "4b deleting the account (clearAllUserLocal, every flourish_ key) clears it with everything else");
     t.eq([F.foundingPlansShown(blocked, U1), F.foundingPlansShown(null, U1)], [false, false], "4c storage blocked or missing reads as not shown…");
     F.rememberFoundingPlansShown(blocked, U1); F.rememberFoundingPlansShown(null, U1);
-    const fx = APP.slice(APP.indexOf("  const foundingOpenedRef = useRef(new Set());"), APP.indexOf("  const foundingOpenedRef = useRef(new Set());") + 2400);
+    const fx = APP.slice(APP.indexOf("  const foundingOpenedRef = useRef(new Set());"), APP.indexOf("  const foundingOpenedRef = useRef(new Set());") + 900);
     t.ok(/const shown = !!user\?\.id && \(foundingOpenedRef\.current\.has\(user\.id\) \|\| foundingPlansShown\(store, user\.id\)\);/.test(fx) && /foundingOpenedRef\.current\.add\(user\.id\);/.test(fx),
       "4d …so the app also remembers it for the session: with storage blocked it still opens at most once per session");
     t.ok(!/setPaywallUp\(false\)|onClose/.test(fx), "4e closing it changes nothing in the marker: once opened is once");
@@ -130,19 +130,6 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.eq(F.foundingPlansShown(s, U1), true, "4g …rewritten");
   }
 
-  // ── 4b. Flourish first (Amanda, 2026-11-05): never on the first visit ───────────────────────
-  {
-    const mem = new Map(); const st = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-    t.eq(F.seenOnEarlierVisit(st, U1, "visit-1"), false, "4h the first visit with this account: not earlier, and it is recorded");
-    t.eq(F.seenOnEarlierVisit(st, U1, "visit-1"), false, "4i the same visit again: still not earlier");
-    t.eq(F.seenOnEarlierVisit(st, U1, "visit-2"), true, "4j the next visit (a cold start, or back from the background): earlier");
-    t.eq(F.seenOnEarlierVisit(st, U2, "visit-2"), false, "4k another account on this phone starts its own first visit");
-    t.eq(F.seenOnEarlierVisit(null, U1, "visit-3"), false, "4l storage unavailable: never treated as an earlier visit");
-    const broken = { getItem: () => "not json", setItem: () => {} };
-    t.eq(F.seenOnEarlierVisit(broken, U1, "visit-3"), false, "4m storage unreadable: the same");
-    t.eq(F.FOUNDING_FIRST_VISIT_KEY, "flourish_founding_first_visit", "4n its key");
-  }
-
   // ── 5. The wiring and the words ──────────────────────────────────────────────────────────────────
   {
     const APP = read("src", "App.jsx");
@@ -150,14 +137,11 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     const auto = APP.indexOf("  const foundingOpenedRef = useRef(new Set());");
     t.ok(close > 0 && auto > close && auto - close < 1200, "5a the founding opening is declared straight after the entitlement close, so it has the last word when both run");
     const fx = APP.slice(auto, auto + 900);
-    const fx2 = APP.slice(auto, auto + 2400);
-    t.ok(/const inApp = hydrated && aiDisclosureSeen && onboarded;/.test(fx2) && /const earlierVisit = inApp && !!user\?\.id && seenOnEarlierVisit\(store, user\.id, appVisit\);/.test(fx2)
-      && /planKnown: storeEntitledNow!==null, inApp, earlierVisit, shown \}\)\) return;/.test(fx2)
-      && /\},\[storeBilling, user\?\.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, appVisit\]\);/.test(fx2),
-      "5b it waits for this account's answer, its plan, its data, Apple's AI disclosure (5.1.2), the end of onboarding and an earlier visit (Flourish first, 2026-11-05)");
-    t.ok(/k !== FOUNDING_PLANS_SHOWN_KEY && k !== FOUNDING_FIRST_VISIT_KEY\)/.test(APP), "5b2 signing out keeps the first-visit record too");
+    t.ok(/planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown \}\)\) return;/.test(fx)
+      && /\},\[storeBilling, user\?\.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep\]\);/.test(fx),
+      "5b it waits for this account's answer, its plan, its data, Apple's AI disclosure (5.1.2), the end of onboarding and the intro tips (Flourish first, 2026-11-05)");
     t.ok(/if\(!onboarded\)return <><Onboarding\n/.test(APP) && /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\/>\{storePaywallOverlay\}<\/>;/.test(APP),
-      "5c the overlay is still drawn over onboarding (See plans can open it), but it never opens there by itself: inApp needs onboarding finished (5b)");
+      "5c the overlay is still drawn over onboarding, but it never opens there by itself: inApp needs onboarding finished (5b)");
     t.ok(/return <><FirstVisitScreen /.test(APP) && /signalOnboarding\("first_number_shown",[^\n]*\}\}\/>\{storePaywallOverlay\}<\/>;/.test(APP), "5d …and over the first-number screen");
     t.ok(APP.indexOf("const storePaywallOverlay =") < APP.indexOf("if(!user && !appData?.demo)return <AuthScreen"), "5e the overlay is built before the early returns that use it");
     const sp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
