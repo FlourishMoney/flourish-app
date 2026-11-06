@@ -5149,7 +5149,8 @@ function NetWorthSparkline({history, color}){
 
 // ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
 // balance-truth: opts.force skips the 30-minute wait (a new bank's history being polled, or the webhook's "new
-// transactions are waiting"); opts.items reuses a list_items answer the caller already has. It answers what it
+// transactions are waiting"); opts.items reuses a list_items answer the caller already has (and opts.jwt its
+// session token). It answers what it
 // learned, for the app's bank status: { ran, signIn: item ids whose bank needs a fresh sign-in, updateStatus:
 // { item_id: Plaid's first-pull status } }.
 async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts = {}) {
@@ -5162,7 +5163,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts
   const THIRTY_MIN = 30 * 60 * 1000;
   if(!opts.force && Date.now() - lastFetch < THIRTY_MIN) return learned;
   // Phase D1-F-B: multi-bank refresh via list_items + item_id (server-side token lookup)
-  const jwt = await getJwt();
+  const jwt = opts.jwt || await getJwt();
   if(!jwt) return learned;
   const items = Array.isArray(opts.items) ? opts.items : await getUserItems();
   if(items.length === 0) return learned;
@@ -18281,6 +18282,8 @@ export default function FlourishApp(){
       // (category→amount); per-category spend then tracks live off the demo transactions.
       const { suggestions: demoBudgets } = generateBudgetSuggestions(dd);
       setAppData({ ...dd, bankConnected: true, demo: false, budgets: demoBudgets,
+        // balance-truth: the sample's accounts count as just answered when it loads, as a real bank's would.
+        accounts: (dd.accounts || []).map(a => ({ ...a, bankAnsweredAt: new Date().toISOString() })),
         transactions: markTransfers(dd.transactions || [], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance) });
       setOnboarded(true);
       setAiDisclosureSeen(true);
@@ -19488,7 +19491,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
