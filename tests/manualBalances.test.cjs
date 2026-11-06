@@ -362,7 +362,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     // no answer on record, so Today says so, and never "Live · up to date"; answered a moment ago, it is Live again.
     t.ok(/Live\s*·\s*just refreshed/.test(L) && !/up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only, the bank answered a moment ago: \"Live · just refreshed\"");
     const LU = home({ ...linkedHome, accounts: linkedHome.accounts.map(({ bankAnsweredAt, ...a }) => a) });
-    t.ok(/\[WORDS: balance-last-updated-unknown\]/.test(LU) && !/Live\s*·/.test(LU) && !/up to date/.test(LU), "7r2 …and with no bank answer on record, it can't say when, and never \"Live · up to date\"");
+    t.ok(LU.includes("Last update time not available") && !/Live\s*·/.test(LU) && !/up to date/.test(LU), "7r2 …and with no bank answer on record, it can't say when, and never \"Live · up to date\"");
     t.ok(!/Live\s*·/.test(S0) && !/Balances you entered/.test(S0), "7s Today, no bank and no balance entered: no chip at all");
     for (const s of [DS.ENTERED_STATUS_LABEL]) t.ok(!BANNED.test(s) && !adviceProblems(s).length, `7t "${s}" passes both copy rules`);
 

@@ -17,7 +17,7 @@
 //   5  new transactions keep coming: the webhook's flag is listed and cleared, the refresh can be forced, and it runs
 //      when the app comes back on screen
 //   6  one card, from the bank: a card's debt takes the card's balance at every answer, and one debt per card
-// The words are placeholders until approved (lib/balanceWords.js); tests check the facts beside them.
+// The words were approved word for word on 2026-11-06 (ChatGPT and Grok agreed); section 7 pins each line.
 // -----------------------------------------------------------------------------
 "use strict";
 const fs = require("fs");
@@ -116,7 +116,7 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     t.eq(BT.whenText(NOW - 2 * HR, NOW), new Date(NOW - 2 * HR).toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" }), "1i {when} today is the time");
     t.eq(BT.whenText(Date.parse("2026-10-30T12:00:00-04:00"), NOW), "Oct 30", "1j {when} on another day is the date");
     t.eq(BT.whenText(Date.parse("2025-12-30T12:00:00-05:00"), NOW), "Dec 30, 2025", "1k …with the year when it is not this year");
-    t.ok(/\[WORDS: balance-last-updated\] \(Oct 30\)/.test(BT.lastUpdatedLine({ state: "stale", at: Date.parse("2026-10-30T12:00:00-04:00") }, NOW)), "1l the not-live line carries the date (a placeholder until the words are approved)");
+    t.eq(BT.lastUpdatedLine({ state: "stale", at: Date.parse("2026-10-30T12:00:00-04:00") }, NOW), "Last updated Oct 30", "1l the not-live line carries the date");
     t.eq(BT.lastUpdatedLine({ state: "unknown", at: null }, NOW), W("balance-last-updated-unknown"), "1m …or says it can't say when");
     const stamped = BT.stampBankAnswer([bank("a", null)], NOW);
     t.eq(stamped[0].bankAnsweredAt, iso(NOW), "1n stampBankAnswer stamps the moment the bank answered");
@@ -151,19 +151,19 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
       const home = (data, props = {}) => render(A.Dashboard, { data, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop, setGoalsTab: noop, ...props });
       const old = household([bank("chq", Date.parse("2026-10-30T12:00:00-04:00"))]);
       const T = home(old);
-      t.ok(/\[WORDS: balance-last-updated\] \(Oct 30\)/.test(T) && !/Live\s*·/.test(T) && !/up to date|updated today|· live/.test(T), "1t Today, last answer Oct 30: \"Last updated\" with the date, and no \"Live\" anywhere");
+      t.ok(T.includes("Last updated Oct 30") && !/Live\s*·/.test(T) && !/up to date|updated today|· live/.test(T), "1t Today, last answer Oct 30: \"Last updated\" with the date, and no \"Live\" anywhere");
       const L = home(household([bank("chq", NOW - 2 * MIN)]));
       t.ok(/Live\s*·\s*updated 2m ago/.test(L) && /· live/.test(L), "1u Today, answered 2 minutes ago: Live, as before");
 
       // ── 2. The sign-in card on Today ─────────────────────────────────────────────────────────
       const signIn = [{ item_id: "item-scotia", bank: "Scotiabank", partner: false }];
       const S = home(household([bank("chq", Date.parse("2026-10-30T12:00:00-04:00"))], { signIn, history: [], fresh: BT.bankFreshness({ accounts: [bank("chq", Date.parse("2026-10-30T12:00:00-04:00"))], nowMs: NOW, signIn }) }), { onReconnectBank: noop });
-      t.ok(/\[WORDS: balance-signin-title\] \(Scotiabank\)/.test(S) && /\[WORDS: balance-signin-body\]/.test(S) && /\[WORDS: balance-signin-button\] \(Scotiabank\)/.test(S),
+      t.ok(S.includes("Scotiabank needs you to sign in again") && S.includes("Until then, its balances may be out of date and new transactions can't come in.") && S.includes("Sign in to Scotiabank"),
         "2a Today shows the card: Scotiabank needs a sign-in, what that means, and the button to sign in");
       const html = A.render(A.h(A.BankStatusCards, { status: { signIn, history: [] }, onReconnect: noop }));
       t.ok(/role="alert"/.test(html) && /data-bank-signin="item-scotia"/.test(html) && /<button/.test(html), "2b …as an alert, with a real button for that bank");
       const P = textOf(A.render(A.h(A.BankStatusCards, { status: { signIn: [{ item_id: "item-p", bank: "RBC", partner: true }], history: [] }, onReconnect: noop })));
-      t.ok(/\[WORDS: balance-signin-partner\] \(RBC\)/.test(P) && !/balance-signin-button/.test(P), "2c a bank the partner linked: says so, and no button (only the linker can sign in to it)");
+      t.ok(P.includes("RBC needs your partner to sign in again") && !P.includes("Sign in to"), "2c a bank the partner linked: says so, and no button (only the linker can sign in to it)");
       t.eq(BT.itemsNeedingSignIn([{ item_id: "a", institution_name: "Scotiabank", status: "login_required" }, { item_id: "b", status: "error", linked_by: "partner" }, { item_id: "c", status: "active" }, { item_id: "d", status: "pending_expiration" }]),
         [{ item_id: "a", bank: "Scotiabank", partner: false }, { item_id: "b", bank: null, partner: true }], "2d list_items' rows: login_required and error need a sign-in; active and pending_expiration still answer");
       const how = render(A.HowWeGotThis, { title: "Safe to spend", value: "$1", inputs: [], onClose: noop, bankNotes: ["note one", "note two"] });
@@ -178,16 +178,16 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
 
       // ── 4 (rendered). History still coming ───────────────────────────────────────────────────
       const H = textOf(A.render(A.h(A.BankStatusCards, { status: { signIn: [], history: [{ item_id: "item-t", bank: "Tangerine", state: "loading" }, { item_id: "item-u", bank: "EQ Bank", state: "slow" }] } })));
-      t.ok(/\[WORDS: balance-history-loading\] \(Tangerine\)/.test(H) && /\[WORDS: balance-history-loading-body\]/.test(H) && /\[WORDS: balance-history-slow\] \(EQ Bank\)/.test(H),
+      t.ok(H.includes("Loading your history from Tangerine…") && H.includes("Your balances are in. Up to 90 days of transactions can take a few minutes to arrive.") && H.includes("EQ Bank is still sending your history. flourish checks again each time you open it."),
         "4a Today: \"loading your history\" for a new bank, and the slow line after 10 minutes");
-      t.eq(render(A.Dashboard, { data: { ...household([bank("chq", NOW)], { signIn, history: [{ item_id: "x", bank: "X", state: "loading" }] }), demo: true }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop, setGoalsTab: noop }).includes("balance-signin"), false,
+      t.eq(/needs you to sign in again|Loading your history/.test(render(A.Dashboard, { data: { ...household([bank("chq", NOW)], { signIn, history: [{ item_id: "x", bank: "X", state: "loading" }] }), demo: true }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop, setGoalsTab: noop })), false,
         "4b never in demo");
 
       // ── 6 (rendered). Debts in Settings say live only when it is ─────────────────────────────
       const card = { id: "amex", name: "Scotiabank Gold Amex Card", type: "credit", subtype: "credit card", institution: "Scotiabank", _item: "item-scotia", balance: -4980.93 };
       const debtsOf = (at) => render(A.SettingsSectionContent, { sectionKey: "debts", data: { accounts: [{ ...card, bankAnsweredAt: iso(at) }], debts: [{ name: "Scotiabank Gold Amex Card", balance: "4980.93", rate: "", min: "", fromBank: true, account_id: "amex" }] }, setAppData: noop, color: "#888" });
       const staleDebts = debtsOf(Date.parse("2026-10-30T12:00:00-04:00")), liveDebts = debtsOf(NOW - MIN);
-      t.ok(/\[WORDS: balance-debts-from-bank\]/.test(staleDebts) && /Oct 30/.test(staleDebts) && !/imported live/.test(staleDebts), "6a Debts: an old card balance is \"from your bank\" with the date, not \"imported live\"");
+      t.ok(staleDebts.includes("Balances from your bank · Last updated Oct 30") && !/imported live/.test(staleDebts), "6a Debts: an old card balance is \"from your bank\" with the date, not \"imported live\"");
       t.ok(/Balances imported live from your bank/.test(liveDebts), "6b …and a fresh one is still \"imported live\"");
     } finally { Date.now = realNow; }
   }
@@ -233,9 +233,10 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     t.eq(["INVALID_CREDENTIALS", "ITEM_LOCKED"].map((c) => m({ error_code: c }).reasonId), ["balance-link-login-wrong", "balance-link-login-wrong"], "3d the bank didn't accept the sign-in");
     t.eq(m({ error_code: "INTERNAL_SERVER_ERROR" }).reasonId, "balance-link-other", "3e anything else");
     const add = m({ error_code: "INSTITUTION_NOT_RESPONDING" }, { intent: "add", bank: "RBC" });
-    t.ok(/\[WORDS: balance-link-bank-down\] \(RBC\)/.test(add.message) && /\[WORDS: balance-link-nothing-added\]/.test(add.message), `3f adding a bank: the reason, then that nothing was added ("${add.message}")`);
+    t.eq(add.message, "RBC didn't respond. Nothing was added.", "3f0 the words, whole");
+    t.ok(add.message.startsWith("RBC didn't respond.") && add.message.endsWith("Nothing was added."), `3f adding a bank: the reason, then that nothing was added ("${add.message}")`);
     const re = m(null, { intent: "reconnect", bank: "Scotiabank" });
-    t.ok(/\[WORDS: balance-link-closed\]/.test(re.message) && /\[WORDS: balance-link-still-needed\] \(Scotiabank\)/.test(re.message), "3g signing in again: the reason, then that the bank still needs it");
+    t.eq(re.message, "You closed the bank window before it finished. Scotiabank still needs you to sign in again.", "3g signing in again: the reason, then that the bank still needs it");
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/usePlaidLinkSDK\(reconnectToken, onReconnectSuccess, onReconnectExit\)/.test(APP), "3h the Settings bank window (add and reconnect) now hears every exit");
     t.ok(/const onReconnectExit = useCallback\(\(err, meta\) => \{[\s\S]{0,400}setReconnectToken\(null\);\s*alertModal\(\{ message: linkExitMessage\(err, \{ intent, bank \}\)\.message \}\);/.test(APP),
@@ -376,24 +377,51 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     }
   }
 
-  // ── 7. The words are placeholders, listed, and held back from shipping ───────────────────────
+  // ── 7. The approved words, word for word (ChatGPT and Grok agreed, 2026-11-06) ─────────────
   {
+    const APPROVED = {
+      "balance-last-updated": "Last updated {when}",
+      "balance-last-updated-unknown": "Last update time not available",
+      "balance-signin-title": "{bank} needs you to sign in again",
+      "balance-signin-partner": "{bank} needs your partner to sign in again",
+      "balance-signin-body": "Until then, its balances may be out of date and new transactions can't come in.",
+      "balance-signin-button": "Sign in to {bank}",
+      "balance-link-closed": "You closed the bank window before it finished.",
+      "balance-link-bank-down": "{bank} didn't respond.",
+      "balance-link-code-wrong": "The security code didn't match.",
+      "balance-link-login-wrong": "Your bank didn't accept that sign-in.",
+      "balance-link-other": "The connection didn't finish.",
+      "balance-link-nothing-added": "Nothing was added.",
+      "balance-link-still-needed": "{bank} still needs you to sign in again.",
+      "balance-history-loading": "Loading your history from {bank}…",
+      "balance-history-loading-body": "Your balances are in. Up to 90 days of transactions can take a few minutes to arrive.",
+      "balance-history-slow": "{bank} is still sending your history. flourish checks again each time you open it.",
+      "balance-debts-from-bank": "Balances from your bank",
+      "balance-bank-unnamed": "Your bank",
+    };
     const PW = require("./_pendingWords.cjs");
     const ids = Object.keys(BW.BALANCE_WORDS);
-    t.eq(PW.pendingBalanceWordIds().sort(), ids.slice().sort(), `7a every line (${ids.length}) is listed in docs/product/BALANCE-TRUTH-WORDS.md as a placeholder`);
-    t.eq(ids.filter((id) => BW.BALANCE_WORDS[id] !== `[WORDS: ${id}]`), [], "7b …and each is still its placeholder in lib/balanceWords.js");
-    t.eq(PW.strayPlaceholders("[WORDS: balance-signin-title]", "src/App.jsx"), ["balance-signin-title"], "7c the exception covers lib/balanceWords.js only");
+    t.eq(BW.BALANCE_WORDS, APPROVED, `7a all ${ids.length} lines in lib/balanceWords.js are the approved text, word for word`);
+    const doc = fs.readFileSync(path.join(REPO, "docs", "product", "BALANCE-TRUTH-WORDS.md"), "utf8");
+    const rows = [...doc.matchAll(/^\| `(balance-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+) \| (\d+) \|$/gm)].map((m) => ({ id: m[1], line: m[2], limit: Number(m[3]) }));
+    t.eq(rows.map((r) => [r.id, r.line]), Object.entries(APPROVED), "7b the words doc lists every line, in order, as approved");
+    const sized = (line) => line.replace(/\{bank\}/g, "x".repeat(20)).replace(/\{when\}/g, "x".repeat(8)).length;
+    t.eq(rows.filter((r) => sized(r.line) > r.limit).map((r) => `${r.id}: ${sized(r.line)} > ${r.limit}`), [], "7c each line fits its limit ({bank} as 20, {when} as 8)");
+    t.eq(PW.pendingBalanceWordIds(), [], "7d no balance- line is still a placeholder, so the test exception covers nothing");
+    t.eq(PW.strayPlaceholders("[WORDS: balance-signin-title]", "src/lib/balanceWords.js"), ["balance-signin-title"], "7e …and a placeholder would now be refused even in lib/balanceWords.js");
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.eq((APP.match(/\[WORDS:/g) || []).length, 0, "7d App.jsx itself holds no placeholder: it asks balanceWords()");
+    t.eq((APP.match(/\[WORDS:/g) || []).length, 0, "7f App.jsx holds no placeholder: it asks balanceWords()");
     const literal = (src) => [...src.matchAll(/"(balance-[a-z0-9-]+)"/g)].map((m) => m[1]);
     const wordsSrc = fs.readFileSync(path.join(REPO, "src", "lib", "balanceWords.js"), "utf8");
-    const used = [...new Set([...literal(APP), ...literal(fs.readFileSync(path.join(REPO, "src", "lib", "balanceTruth.js"), "utf8")), ...[...wordsSrc.matchAll(/balanceWords\("(balance-[a-z0-9-]+)"\)/g)].map((m) => m[1])])];
-    t.eq(used.filter((id) => !ids.includes(id)), [], "7e every id the app asks for exists");
-    t.eq(ids.filter((id) => !used.includes(id)), [], "7f …and every listed line is used somewhere");
+    const used = [...new Set([...literal(APP), ...literal(fs.readFileSync(path.join(REPO, "src", "lib", "balanceTruth.js"), "utf8")), ...[...wordsSrc.matchAll(/BALANCE_WORDS\["(balance-[a-z0-9-]+)"\]/g)].map((m) => m[1])])];
+    t.eq(used.filter((id) => !ids.includes(id)), [], "7g every id the app asks for exists");
+    t.eq(ids.filter((id) => !used.includes(id)), [], "7h …and every line is used somewhere");
+    t.eq([W("balance-link-bank-down", { bank: "" }), W("balance-signin-title", { bank: "TD" }), W("balance-last-updated", { when: "3:40 p.m." })],
+      ["Your bank didn't respond.", "TD needs you to sign in again", "Last updated 3:40 p.m."], "7i {bank} and {when} are filled in; a bank Plaid didn't name is \"Your bank\" (this once called itself forever, found when the words went in)");
     const { execFileSync } = require("child_process");
     let guard = 0;
-    try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-    t.eq(guard, 1, "7g the production and store builds' guard refuses while the lines are placeholders");
+    try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
+    t.eq(guard, PW.pendingCreatorWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
   }
 
   t.summary("balanceTruth.test");

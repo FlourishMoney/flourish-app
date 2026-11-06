@@ -10,7 +10,7 @@
 //   4  Settings > Connect Another Bank: a window that closes says nothing was added
 //   5  a new bank (Tangerine) whose history is not ready: "loading your history", asked again every 20 seconds,
 //      gone once the 90 days are in, with the transactions there
-// The words are placeholders until approved; the checks look for the facts beside them.
+// The words are the approved ones (ChatGPT and Grok agreed, 2026-11-06).
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -124,15 +124,15 @@ const tangerineTxns = () => Array.from({ length: 12 }, (_, i) => ({ id: `tg-${i}
       await page.clock.runFor(2500); await settle(page);
       await page.locator("[data-bank-signin]").first().waitFor({ timeout: 15000 }).catch(() => {});
       const txt = await body(page);
-      t.ok(/\[WORDS: balance-last-updated\] \(Oct 30\)/.test(txt), "1a Today says when the bank last answered (Oct 30)");
+      t.ok(txt.includes("Last updated Oct 30"), "1a Today says when the bank last answered: \"Last updated Oct 30\"");
       t.ok(!/Live\s*·/.test(txt) && !/up to date/.test(txt) && !/updated today/.test(txt) && !/· live/.test(txt), "1b …and nowhere says Live, up to date, updated today or · live");
-      t.ok(/\[WORDS: balance-signin-title\] \(Scotiabank\)/.test(txt) && /\[WORDS: balance-signin-body\]/.test(txt), "1c the card: Scotiabank needs a sign-in, and what that means");
+      t.ok(txt.includes("Scotiabank needs you to sign in again") && txt.includes("Until then, its balances may be out of date and new transactions can't come in."), "1c the card: Scotiabank needs you to sign in again, and what that means");
       t.ok(asked.some((b) => b.action === "list_items") && asked.some((b) => b.action === "get_accounts"), "1d it asked the server which banks need a sign-in, and tried the bank");
       const chip = await page.locator("[data-bank-chip='stale']").count();
       t.ok(chip >= 1, "1e the header chip is the not-live one (no live dot)");
 
       // ── 2. The card's button: consent, then Scotiabank's own sign-in ───────────────────────────
-      await page.getByRole("button", { name: /\[WORDS: balance-signin-button\] \(Scotiabank\)/ }).click();
+      await page.getByRole("button", { name: "Sign in to Scotiabank" }).click();
       await page.getByRole("button", { name: "Connect My Bank" }).click();
       await page.waitForFunction(() => (window.__plaidOpened || 0) >= 1, null, { timeout: 10000 }).catch(() => {});
       const token = await page.evaluate(() => window.__plaidToken);
@@ -140,26 +140,26 @@ const tangerineTxns = () => Array.from({ length: 12 }, (_, i) => ({ id: `tg-${i}
       t.eq(token, "link-update-item-scotia", "2b …and the bank window opens with that token");
       await page.getByRole("dialog").waitFor({ timeout: 10000 }).catch(() => {});
       const d = await body(page);
-      t.ok(/\[WORDS: balance-link-closed\]/.test(d) && /\[WORDS: balance-link-still-needed\] \(Scotiabank\)/.test(d), "2c closing it says so, and that Scotiabank still needs a sign-in");
+      t.ok(d.includes("You closed the bank window before it finished. Scotiabank still needs you to sign in again."), "2c closing it says so, and that Scotiabank still needs you to sign in again");
       await ctx.close();
     }
 
     // ── 3. Every way the window can close, on a reconnect ───────────────────────────────────────
     const exits = [
-      [{ error_code: "INSTITUTION_NOT_RESPONDING", error_type: "INSTITUTION_ERROR" }, "balance-link-bank-down", "3a the bank didn't respond"],
-      [{ error_code: "INVALID_MFA", error_type: "ITEM_ERROR" }, "balance-link-code-wrong", "3b the security code didn't match"],
-      [{ error_code: "INVALID_CREDENTIALS", error_type: "ITEM_ERROR" }, "balance-link-login-wrong", "3c the bank didn't accept the sign-in"],
-      [{ error_code: "INTERNAL_SERVER_ERROR", error_type: "API_ERROR" }, "balance-link-other", "3d anything else"],
+      [{ error_code: "INSTITUTION_NOT_RESPONDING", error_type: "INSTITUTION_ERROR" }, "Scotiabank didn't respond.", "3a the bank didn't respond"],
+      [{ error_code: "INVALID_MFA", error_type: "ITEM_ERROR" }, "The security code didn't match.", "3b the security code didn't match"],
+      [{ error_code: "INVALID_CREDENTIALS", error_type: "ITEM_ERROR" }, "Your bank didn't accept that sign-in.", "3c the bank didn't accept the sign-in"],
+      [{ error_code: "INTERNAL_SERVER_ERROR", error_type: "API_ERROR" }, "The connection didn't finish.", "3d anything else"],
     ];
-    for (const [err, id, label] of exits) {
+    for (const [err, line, label] of exits) {
       const { ctx, page } = await open({ plaid: scotiaExpired, plaidMode: { err, bank: "Scotiabank" } });
       await page.clock.runFor(2500); await settle(page);
       await page.locator("[data-bank-signin]").first().waitFor({ timeout: 15000 }).catch(() => {});
-      await page.getByRole("button", { name: /\[WORDS: balance-signin-button\]/ }).click();
+      await page.getByRole("button", { name: "Sign in to Scotiabank" }).click();
       await page.getByRole("button", { name: "Connect My Bank" }).click();
       await page.getByRole("dialog").waitFor({ timeout: 10000 }).catch(() => {});
       const d = await body(page);
-      t.ok(new RegExp(`\\[WORDS: ${id}\\]`).test(d) && /\[WORDS: balance-link-still-needed\]/.test(d), `${label} (${err.error_code}), and that the bank still needs a sign-in`);
+      t.ok(d.includes(`${line} Scotiabank still needs you to sign in again.`), `${label} (${err.error_code}): "${line}", and that Scotiabank still needs you to sign in again`);
       await ctx.close();
     }
 
@@ -172,7 +172,7 @@ const tangerineTxns = () => Array.from({ length: 12 }, (_, i) => ({ id: `tg-${i}
       await page.getByRole("button", { name: "Connect My Bank" }).click();
       await page.getByRole("dialog").waitFor({ timeout: 10000 }).catch(() => {});
       const d = await body(page);
-      t.ok(/\[WORDS: balance-link-bank-down\] \(RBC Royal Bank\)/.test(d) && /\[WORDS: balance-link-nothing-added\]/.test(d), "4a a new bank that didn't respond: says which, and that nothing was added");
+      t.ok(d.includes("RBC Royal Bank didn't respond. Nothing was added."), "4a a new bank that didn't respond: \"RBC Royal Bank didn't respond. Nothing was added.\"");
       await ctx.close();
     }
 
@@ -207,7 +207,7 @@ const tangerineTxns = () => Array.from({ length: 12 }, (_, i) => ({ id: `tg-${i}
       await settle(page, 800);
       await page.locator("[data-history-loading='loading']").first().waitFor({ timeout: 10000 }).catch(() => {});
       const before = await body(page);
-      t.ok(/\[WORDS: balance-history-loading\] \(Tangerine\)/.test(before) && /\[WORDS: balance-history-loading-body\]/.test(before), "5a a new bank whose 90 days aren't ready: Today says the history is loading, for Tangerine");
+      t.ok(before.includes("Loading your history from Tangerine…") && before.includes("Your balances are in. Up to 90 days of transactions can take a few minutes to arrive."), "5a a new bank whose 90 days aren't ready: Today says the history is loading, for Tangerine");
       const n0 = asked.filter((b) => b.action === "get_transactions" && b.item_id === "item-tg").length;
       await page.clock.runFor(20500); await settle(page, 1200);
       const n1 = asked.filter((b) => b.action === "get_transactions" && b.item_id === "item-tg").length;
@@ -215,7 +215,7 @@ const tangerineTxns = () => Array.from({ length: 12 }, (_, i) => ({ id: `tg-${i}
       historyReady = true;
       await page.clock.runFor(20500); await settle(page, 1500);
       const after = await body(page);
-      t.ok(!/balance-history-loading/.test(after), "5c once the 90 days are in, the loading card goes");
+      t.ok(!/Loading your history/.test(after), "5c once the 90 days are in, the loading card goes");
       const kept = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem("flourish_v1") || "{}"); } catch { return {}; } });
       const txns = ((kept.appData || kept.core?.appData || {}).transactions || []).filter((x) => x.account_id === "acct-tg");
       t.ok(txns.length >= 10, `5d …and Tangerine's transactions are there (${txns.length})`);
