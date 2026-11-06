@@ -1514,6 +1514,26 @@ export function netWorthRows(data = {}) {
   return { rows, totalCents, total: totalCents / 100, matches };
 }
 
+// DOES THIS PAYMENT PAY THIS BILL? The one rule (forecastEdits.js billArrived reads it for "already paid", and
+// avgDailySpendEstimate for "not daily spending"): money going out (never money in, a transfer markTransfers paired,
+// or a refund, reversal or return), not pending, whose name contains the bill's name or is contained by it (the
+// bill's name at least 3 characters), for an amount within 5% or $2 of the bill's, unless the bill varies.
+// The date is the caller's: "already paid" asks about one occurrence, daily spending about the whole history.
+const _normBillName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+export const NOT_A_PAYMENT_RX = /\b(refund(ed)?|revers(al|ed|e)|return(ed)?|charge ?back)\b/i;
+export function paysABill(t, b) {
+  if (!t || !b) return false;
+  if (!(Number(t.amount) > 0) || t.pending || t.transferPairId || NOT_A_PAYMENT_RX.test(String(t.name || ""))) return false;
+  const billName = _normBillName(b.vendorPattern || b.name);
+  const billAmt = num(b.amount);
+  if (billName.length < 3 || !(billAmt > 0)) return false;
+  const name = _normBillName(t.name);
+  const nameMatch = !!name && (name.includes(billName) || billName.includes(name));
+  const variable = b.type === "variable" || b.variable === true;
+  const amtMatch = variable || Math.abs(Math.abs(Number(t.amount)) - billAmt) <= Math.max(2, billAmt * 0.05);
+  return nameMatch && amtMatch;
+}
+
 export const FinancialCalcEngine = {
   /** Net Worth = all assets − all liabilities: the sum of netWorthRows (demo-fixes B1, B4). */
   netWorth(data) {
@@ -1621,7 +1641,13 @@ export const FinancialCalcEngine = {
     // matches one of those minimums (paysADebtMinimum). Everything else is as it always was, because
     // for a statement import a card paid in full, a loan with no debt entered, or a bill paid by
     // online banking IS the household's spending, and nothing else would count it.
+    //
+    // A payment of a bill the household has (found or entered) is not daily spending either, whatever its category
+    // (balance-truth, Amanda 2026-11-06): safe to spend and Watch already take the bill on its own date, so a
+    // Netflix charge (Entertainment, not a bill category) was counted twice. paysABill is the same "this payment
+    // paid this bill" rule "already paid" uses. Spending that pays no bill is counted as before.
     const minimums = unbilledDebtMinimums(data.debts, data.bills).map(x => x.amount);
+    const bills = (data.bills || []).filter(b => b && num(b.amount) > 0);
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&
@@ -1630,7 +1656,8 @@ export const FinancialCalcEngine = {
       t.cat !== "Fees" &&
       !BILL_CATS.has(t.cat) &&
       !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw)) &&
-      !paysADebtMinimum(t, minimums, data.debts || [])
+      !paysADebtMinimum(t, minimums, data.debts || []) &&
+      !bills.some(b => paysABill(t, b))
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);

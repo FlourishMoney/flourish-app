@@ -97,8 +97,9 @@ const { create } = require("./_runner.cjs");
   // ── 4. Safe to spend on Today does not change ─────────────────────────────────────────────────
   const ss = SafeSpendEngine.calculate(demo, NOW);
   const view = safeToSpendView(ss);
-  t.eq(view.rows.map(r => r.display), [3083, 65, 348, 435, 291], "4a Today: $3,083 - 65 - 348 - 435 - 291");
-  t.eq(view.headline, 1944, "4b = $1,944");
+  // balance-truth 2026-11-06: the demo's Netflix payment is no longer also daily spending (buffer $435 -> $428).
+  t.eq(view.rows.map(r => r.display), [3083, 65, 348, 428, 291], "4a Today: $3,083 - 65 - 348 - 428 - 291");
+  t.eq(view.headline, 1951, "4b = $1,951");
 
   // ── 5. A payment of a minimum the forecast pays is not also daily spend ───────────────────────
   // Only the payment that IS a minimum is taken out: a card, loan or transfer payment whose amount
@@ -129,7 +130,7 @@ const { create } = require("./_runner.cjs");
        "5c with no debts entered, nothing is paid as a minimum, so nothing is taken out of the spend");
   t.eq(FC.isLoanPayment({ name: "TD AUTO FINANCE", amount: 280 }) && FC.isLoanPayment({ name: "Student loan payment", amount: 195 }), true, "5d TD Auto Finance and a student loan payment are loan payments");
   t.eq(FC.isLoanPayment(spend[0]) || FC.isLoanPayment({ name: "Loan refund", amount: -100 }), false, "5e groceries, and money coming in, are not");
-  t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate(demo), 33.46171428571429, "5f the demo's own daily spend is unchanged ($33.46, to the last digit it had before)");
+  t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate(demo), 32.91914285714286, "5f the demo's own daily spend: $32.92, to the last digit (it was $33.46 until a bill's payment, the demo's Netflix, stopped counting as daily spending too, balance-truth 2026-11-06)");
   // A linked bill takes the debt off the minimum list, so its payment is ordinary spending again.
   const carId = { ...demo.debts[1], id: "debt-car" };
   t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate({ transactions: [...spend, minPayments[1]], debts: [demo.debts[0], carId],
