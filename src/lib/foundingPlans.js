@@ -13,6 +13,10 @@
 // Founding annual is the first plan on it. It can always be closed, and once it has opened by itself it never does
 // again for that account: See plans opens it any time. Every other household sees exactly what it saw before.
 //
+// FLOURISH FIRST (Amanda, 2026-11-05, from the 1.1.5 phone test). A first open starts with Flourish, never with the plans: the
+// screen waits for onboarding to finish and for the intro tips to be done (Done or Skip), then opens in that same visit. An
+// account that saw the tips on an earlier visit gets it as soon as it is in the app. After it is closed, as before.
+//
 // "Once" is kept on the phone, per account (no server write): a list of the account ids it has opened for, which
 // signing out keeps (App.jsx signOut). Deleting the account clears it with everything else.
 // -----------------------------------------------------------------------------
@@ -48,12 +52,14 @@ export function rememberFoundingPlansShown(storage, userId) {
  *   status         that answer: founding.available true, paid false, no founding switch (held_on_regular_plan),
  *                  no web subscription the store must not sell on top of (web_attention)
  *   planKnown      the account's plan is known too (App's storeEntitledNow), so nothing closes it straight after
- *   inApp          the account is in the app: its data is loaded and Apple's AI disclosure has been answered
+ *   inApp          the account is in the app: its data is loaded, Apple's AI disclosure has been answered, and onboarding
+ *                  is finished
+ *   tourDone       the intro tips are not on screen: done or skipped, now or on an earlier visit
  *   shown false    it has not opened by itself for this account before
  */
-export function foundingPlansAutoOpen({ storeBilling = false, userId = null, askedFor = null, status = null, planKnown = false, inApp = false, shown = false } = {}) {
+export function foundingPlansAutoOpen({ storeBilling = false, userId = null, askedFor = null, status = null, planKnown = false, inApp = false, tourDone = false, shown = false } = {}) {
   if (!storeBilling || !userId || askedFor !== userId || !status || typeof status !== "object") return false;
-  if (!planKnown || !inApp || shown) return false;
+  if (!planKnown || !inApp || !tourDone || shown) return false;
   if (status.paid === true || status.web_attention === true) return false;
   const f = status.founding;
   if (!f || f.available !== true || f.held_on_regular_plan) return false;

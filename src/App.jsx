@@ -80,6 +80,8 @@ import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
+import { captureAttribution, signupAttribution, readInstallReferrerOnce } from "./lib/attribution.js";
+import { POLICY_WORDS as PW, policyDateLabel } from "./lib/privacyLaunchWords.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -6154,6 +6156,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         );
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <TesterQuestionsCard demo={!!data?.demo}/>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
       {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
       {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
@@ -12251,6 +12254,110 @@ function CreatorCodeCard({onAdd}){
   );
 }
 
+// "CANADIAN MONEY DATES THIS WEEK" IN SETTINGS (CASL, netlify/functions/newsletter.js). No card until the server says the list is
+// open. The wording comes from the server and the box starts unticked; confirming by email is what adds someone to the list.
+function NewsletterCard(){
+  const [info,setInfo]=useState(null);
+  const [email,setEmail]=useState("");
+  const [ticked,setTicked]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [done,setDone]=useState(false);
+  useEffect(()=>{
+    let live=true;
+    fetch(`${API_BASE}/api/newsletter`).then(r=>r.ok?r.json():null).then(j=>{ if(live&&j&&j.open===true) setInfo(j); }).catch(()=>{ /* no card */ });
+    return ()=>{ live=false; };
+  },[]);
+  if(!info) return null;
+  const box={marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`};
+  if(done) return <div data-newsletter-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Check your email and confirm. You won't receive the weekly email until you do.</div>;
+  const submit=async()=>{
+    if(busy) return;
+    if(!email.trim()){ setError("Enter your email address."); return; }
+    if(!ticked){ setError("Tick the box to sign up."); return; }
+    setBusy(true); setError(null);
+    const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
+    try{
+      const r=await fetch(`${API_BASE}/api/newsletter`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,consent:true,version:info.version,source:`app_settings_${platform}`})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok) setDone(true);
+      else setError(j.error==="invalid_email"?"Enter a valid email address.":j.error==="rate_limited"?(j.message||"Too many attempts. Try again in an hour."):"That didn't go through. Please try again in a moment.");
+    }catch{ setError("That didn't go through. Please try again in a moment."); }
+    setBusy(false);
+  };
+  return(
+    <div data-newsletter-card="" style={box}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.sm}}>{info.name}</div>
+      <label htmlFor="newsletter-email" style={{display:"block",color:C.mutedHi,fontSize:13,marginBottom:SPACE.xs}}>Email address</label>
+      <input id="newsletter-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"
+        style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",marginBottom:SPACE.sm}}/>
+      <label style={{display:"flex",gap:SPACE.sm,alignItems:"flex-start",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>
+        <input type="checkbox" checked={ticked} onChange={e=>setTicked(e.target.checked)} style={{flex:"none",width:22,height:22,margin:"1px 0 0"}}/>
+        <span style={{minWidth:0}}>{info.wording}</span>
+      </label>
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <Btn label={busy?"...":"Sign me up"} onClick={submit} color={C.green} small/>
+    </div>
+  );
+}
+
+// THE TESTER QUESTIONS ON TODAY (netlify/functions/tester.js). Only for an account marked at sign-up, and the server decides when:
+// day 30 or later, until answered, with the wording it holds. No reward, and nothing about a store rating. Nothing shows for
+// anyone else, and those accounts never make the call.
+function TesterQuestionsCard({demo=false}){
+  const [questions,setQuestions]=useState(null);
+  const [answers,setAnswers]=useState({});
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState(null);
+  const [state,setState]=useState("asking"); // asking | done | later
+  const post=async(jwt,body)=>fetch(`${API_BASE}/api/tester`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},body:JSON.stringify(body)});
+  useEffect(()=>{
+    if(demo) return undefined;
+    let live=true;
+    (async()=>{
+      try{
+        const { data:{ session } }=await supabase.auth.getSession();
+        if(!session?.access_token||session.user?.app_metadata?.tester!==true) return;
+        const r=await post(session.access_token,{action:"status"});
+        const j=r.ok?await r.json():null;
+        if(live&&j&&j.due===true&&Array.isArray(j.questions)&&j.questions.length) setQuestions(j.questions);
+      }catch{ /* no card */ }
+    })();
+    return ()=>{ live=false; };
+  },[demo]);
+  if(!questions||state==="later") return null;
+  const box={padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`};
+  if(state==="done") return <div data-tester-card="" role="status" style={{...box,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Thanks. Your answers are saved.</div>;
+  const submit=async()=>{
+    if(busy) return;
+    if(!questions.some(q=>(answers[q.id]||"").trim())){ setError("Answer at least one question."); return; }
+    setBusy(true); setError(null);
+    try{
+      const { data:{ session } }=await supabase.auth.getSession();
+      const r=await post(session?.access_token,{action:"answer",answers});
+      if(r.ok) setState("done"); else setError("That didn't save. Please try again in a moment.");
+    }catch{ setError("That didn't save. Please try again in a moment."); }
+    setBusy(false);
+  };
+  return(
+    <div data-tester-card="" style={box}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.md}}>A few questions for testers</div>
+      {questions.map(q=>(
+        <div key={q.id} style={{marginBottom:SPACE.md}}>
+          <label htmlFor={`tester-${q.id}`} style={{display:"block",color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:SPACE.xs}}>{q.text}</label>
+          <textarea id={`tester-${q.id}`} value={answers[q.id]||""} maxLength={1000} rows={2} onChange={e=>{ const v=e.target.value; setAnswers(a=>({...a,[q.id]:v})); }}
+            style={{width:"100%",boxSizing:"border-box",minHeight:LAYOUT.minTap,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",resize:"vertical"}}/>
+        </div>
+      ))}
+      {error&&<div role="alert" style={{color:C.redBright,fontSize:13,lineHeight:1.5,marginBottom:SPACE.sm}}>{error}</div>}
+      <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+        <Btn label={busy?"...":"Send my answers"} onClick={submit} color={C.green} small/>
+        <Btn label="Not now" onClick={()=>setState("later")} color={C.mutedHi} outline small/>
+      </div>
+    </div>
+  );
+}
+
 // The app shows this only when /api/household answers (the server switch on, migrations 0030 + 0031 run).
 function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLeave, onRemove, onClearLinkToken }) {
   const W = HOUSEHOLD_WORDS;
@@ -12709,6 +12816,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
     </div>
     {creator?.info?.may_add&&<CreatorCodeCard onAdd={creator.onAdd}/>}
+    {!data?.demo&&<NewsletterCard/>}
     {/* ── What's new (tester suggestions, item 7): version, build and notes from src/whatsNew.json ── */}
     <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <button onClick={()=>setShowWhatsNew(v=>!v)} aria-expanded={showWhatsNew} aria-controls="whats-new-notes"
@@ -13549,11 +13657,20 @@ function CreditScreen({data,setScreen}){
 }
 
 // ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
-function PrivacyPolicy({onBack}){
+function PrivacyPolicy({onBack,launchDate=null}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="October 26, 2026";
+  // The newsletter's words, and the new date, only from the day it goes live (lib/privacyLaunchWords.js).
+  const [fetchedDate,setFetchedDate]=useState(null);
+  useEffect(()=>{
+    let live=true;
+    fetch(`${API_BASE}/api/newsletter`).then(r=>r.ok?r.json():null).then(j=>{ if(live&&j&&j.policyDate) setFetchedDate(j.policyDate); }).catch(()=>{ /* the policy as it was */ });
+    return ()=>{ live=false; };
+  },[]);
+  const launchLabel=policyDateLabel(launchDate||fetchedDate);
+  const launched=!!launchLabel;
+  const last=launchLabel||"October 26, 2026";
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();
@@ -13573,16 +13690,19 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>1. Information We Collect</div>
       <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connections (Plaid; one or more institutions). We also collect an email address and password when you create an account.</div>
-      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes. We use it briefly to limit repeated sign-up and coach requests, which protects your account and the service from abuse.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes. {launched?PW.ipSentence:"We use it briefly to limit repeated sign-up and coach requests, which protects your account and the service from abuse."}</div>
+      {launched&&<div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Where you came from:</strong> {PW.cameFrom}</div>}
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
       <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Payments:</strong> {native?"":"If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax. We receive your subscription status, plan, renewal dates, and the amounts and tax charged. We never see or store your full card number. "}If you subscribe in the iPhone or Android app, Apple or Google processes your payment. RevenueCat sends us subscription information such as the store, product, subscription status and renewal or expiry dates, linked to your account ID. We do not receive your full payment card details from Apple or Google.</div>
       <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Waitlist:</strong> If you join the waitlist, we collect your email address and country, the page or link you joined from, and a record of what you agreed to receive and when.</div>
+      {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Newsletter:</strong> {PW.newsletter}</div>}
+      {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Testers:</strong> {PW.testers}</div>}
 
       <div style={h2}>2. How We Use Your Information</div>
-      <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.</div>
+      <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.{launched?` ${PW.use}`:""}</div>
 
       <div style={h2}>3. Legal Basis for Processing (Canada: PIPEDA)</div>
-      <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law. Payment and tax records are kept as required by Canadian tax law, generally for six years from the end of the last tax year they relate to, even after you delete your account.</div>
+      <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law. Payment and tax records are kept as required by Canadian tax law, generally for six years from the end of the last tax year they relate to, even after you delete your account.{launched?` ${PW.keep}`:""}</div>
 
       <div style={h2}>4. Legal Basis for Processing (United States)</div>
       <div style={p}>For US residents, we comply with applicable state and federal privacy laws. California residents have rights under the CCPA/CPRA including the right to know, delete, and opt out of sale of personal information. We do not sell personal information. To exercise your rights, contact us at privacy@flourishmoney.app.</div>
@@ -13602,10 +13722,11 @@ function PrivacyPolicy({onBack}){
       {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Apple and Google</strong>: payments for subscriptions bought in the iPhone or Android app</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
-      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: sends account and waitlist emails</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}</div>
+      {launched&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Google Play</strong>: {PW.googlePlay}</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}
-      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.</div>}
+      {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.{launched?` ${PW.analytics}`:""}</div>}
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
 
       <div style={h2}>7. Your Rights</div>
@@ -13616,13 +13737,13 @@ function PrivacyPolicy({onBack}){
       </div>
 
       <div style={h2}>8. Children's Privacy</div>
-      <div style={p}>The App is not intended for individuals under the age of 18. We do not knowingly collect personal information from minors. If we learn that we have collected personal information from a minor, we will promptly delete it.</div>
+      <div style={p}>The App is not intended for individuals under the age of 18. We do not knowingly collect personal information from minors. If we learn that we have collected personal information from a minor, we will promptly delete it.{launched?` ${PW.age}`:""}</div>
 
       <div style={h2}>9. Changes to This Policy</div>
       <div style={p}>We may update this Privacy Policy periodically. We will notify you of material changes via the App or by email. Continued use of the App after changes constitutes your acceptance of the updated policy.</div>
 
       <div style={h2}>10. Contact Us</div>
-      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Website: flourishmoney.app</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>{launched&&<>{PW.address}<br/></>}Website: flourishmoney.app</div>
       <a href="mailto:privacy@flourishmoney.app" style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:12,background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"10px 18px",color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,textDecoration:"none",minHeight:44}}>
         ✉️ privacy@flourishmoney.app
       </a>
@@ -15234,6 +15355,7 @@ function WaitlistForm({ source = "landing" }) {
   const shownVersion = CONSENT_VERSION;
   // Read ?src= as the page loads, so a later reload without it still knows the campaign.
   useEffect(() => { captureWaitlistSrc(); }, []);
+  useEffect(() => { captureAttribution(); }, []);
 
   const submit = async () => {
     const emailVal = email.trim();
@@ -15512,6 +15634,15 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   const [openSignup, setOpenSignup] = useState(null);
   // THE CREATOR CODE (behind CREATORS_ENABLED on the server: /api/creator answers 404 while it is off, and then there is no
   // field and nothing is sent). A creator's link on a computer starts it filled in (lib/creatorCode.js).
+  // THE TESTER CODE: the field shows only once a code is live (/api/tester, migration 0038). It marks the account as a
+  // tester and grants nothing.
+  const [testerCode, setTesterCode] = useState("");
+  const [testersOn, setTestersOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/tester`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j && j.enabled === true) setTestersOn(true); }).catch(() => { /* no field */ });
+    return () => { live = false; };
+  }, []);
   const [creatorCode, setCreatorCode] = useState("");
   const [creatorsOn, setCreatorsOn] = useState(false);
   useEffect(() => {
@@ -15565,6 +15696,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // The visit's ?src= is kept for the session first (lib/waitlistSrc.js), so the counts and the signup carry it. The
   // founding list form used to do this on the trial-first page; it is gone (2026-10-29), so the landing does it.
   useEffect(() => { if (!isNativeApp()) { captureWaitlistSrc(); countLandingViewOnce({ base: API_BASE }); } }, []);
+  useEffect(() => { if (!isNativeApp()) captureAttribution(); }, []);
 
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
@@ -15677,12 +15809,14 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode, src: currentWaitlistSrc(), attribution: signupAttribution(), ...(testersOn && testerCode.trim() ? { tester_code: testerCode } : {}), ...(creatorsOn && creatorCode ? { creator_code: creatorCode } : {}) }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
         const e = out.error;
         if (creatorErrorLine(e))           setError(creatorErrorLine(e));
+        else if (e === "tester_code_invalid")     setError("That tester code isn't right. Check it, or leave it empty.");
+        else if (e === "tester_code_unavailable") setError("We couldn't check that tester code. Try again, or leave it empty.");
         else if (e === "invalid_code")     setError("Invalid beta code. Request one at hello@flourishmoney.app");
         else if (e === "cap_reached")      setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
@@ -16191,6 +16325,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                 <a href="/terms">Terms</a>
                 <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
+                <a href="/newsletter/">Canadian money dates</a>
               </div>
             </div>
           </div>
@@ -16297,6 +16432,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       <label htmlFor="auth-creator-code" style={fieldLabelStyle}>{CREATOR_WORDS.signupLabel}</label>
                       <input id="auth-creator-code" style={inpStyle(false)} type="text" value={creatorCode} onChange={e => setCreatorCode(creatorCodeInput(e.target.value))} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="creatorcode" maxLength={20}/>
                       <div style={fieldHintStyle}>{CREATOR_WORDS.signupHint}</div>
+                    </div>
+                  )}
+                  {mode==="signup"&&testersOn&&(
+                    <div data-tester-field="">
+                      <label htmlFor="auth-tester-code" style={fieldLabelStyle}>Tester code (only if you were given one)</label>
+                      <input id="auth-tester-code" style={inpStyle(false)} type="text" value={testerCode} onChange={e => setTesterCode(e.target.value)} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} name="testercode" maxLength={30}/>
                     </div>
                   )}
                   {error && <div role="alert" style={{ color: AUTH_C.error, fontSize: 13, marginTop: SPACE.md, lineHeight: 1.5 }}>{error}</div>}
@@ -17250,6 +17391,9 @@ export default function FlourishApp(){
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
+  // Google Play's Install Referrer, read on the first open of a store install whatever screen comes first (lib/attribution.js):
+  // an app that opens signed in, from restored data, still reads it.
+  useEffect(()=>{ if(isNativeApp()) readInstallReferrerOnce({ apiBase: API_BASE }); },[]);
   const [authLoading,setAuthLoading]=useState(true);
   // Sprint Q item 12: password recovery. supabase-js fires PASSWORD_RECOVERY when the email link's
   // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
@@ -17300,10 +17444,15 @@ export default function FlourishApp(){
       const sc=scrollerOf(els[0]);
       // Below the app header, and below the top of an inner scroller (the coach scrolls under its own bar).
       const topSafe=Math.round(Math.max((bell?bell.getBoundingClientRect().bottom:0), sc?sc.getBoundingClientRect().top:0)+12);
-      const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
+      // ONE PLACE FOR THE BUTTONS (2026-11-05): Skip and Next sit in their own bar, always just above the tab bar, so they
+      // never move from one step to the next. Only the words move: under the bar's top when the target fits above them,
+      // otherwise at the top of the screen with the target between the words and the bar.
+      const actions=document.getElementById("tour-actions");
+      const bar=(actions?actions.offsetHeight:0)+8;
+      const vh=window.innerHeight, sh=sheet.offsetHeight+bar, gap=12, tabBar=100;
       const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
       const sheetTop = fitsAbove ? null : topSafe;
-      const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
+      const want = fitsAbove ? topSafe : topSafe + sheet.offsetHeight + gap; // where the target's top should sit
       const dy=Math.round(top-want);
       if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
       setTourSheetTop(sheetTop);
@@ -17659,19 +17808,20 @@ export default function FlourishApp(){
   // A confirmed subscription closes it.
   useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
   // THE ONE EXCEPTION (1.1.3, Amanda 2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is asked
-  // straight away. The plans screen opens by itself once per account, as soon as the account is in the app, with
-  // Founding annual first; it can be closed, and See plans opens it any time after. Declared after the effect above
-  // so that, when both run, this one has the last word. Every other household: nothing opens on its own.
+  // straight away. The plans screen opens by itself once per account, with Founding annual first; it can be closed, and
+  // See plans opens it any time after. FLOURISH FIRST (Amanda, 2026-11-05): never over onboarding, and not while the intro
+  // tips are on screen: it opens as soon as they are done or skipped, in the same visit. Declared after the effect above so
+  // that, when both run, this one has the last word. Every other household: nothing opens on its own.
   const foundingOpenedRef = useRef(new Set());
   useEffect(()=>{
     const store = deviceStorage();
     const shown = !!user?.id && (foundingOpenedRef.current.has(user.id) || foundingPlansShown(store, user.id));
     if(!foundingPlansAutoOpen({ storeBilling, userId: user?.id, askedFor: storeAskedFor, status: storeStatus,
-      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown })) return;
+      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown })) return;
     foundingOpenedRef.current.add(user.id);
     rememberFoundingPlansShown(store, user.id);
     setPaywallUp(true);
-  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen]);
+  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
@@ -19463,20 +19613,19 @@ input,button,select,textarea { font-family:inherit; }
           const step=TOUR[tourStep];
           const isLast=tourStep===TOUR.length-1;
           return(
-            <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
+            <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),...centredInSafeArea(20, 390),
-                background:C.surface,borderRadius:20,padding:"20px 20px 16px",
-                border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
-                pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
+              {/* The words: right above the buttons, or at the top of the screen when what they describe needs the room. */}
+              <div id="tour-sheet" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:"calc(100px + var(--tour-actions-h, 76px) + 8px)"}),...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"20px 20px 16px",animation:"slideUp .3s ease"}}>
                 <div style={{display:"flex",gap:5,marginBottom:14,justifyContent:"center"}}>
                   {TOUR.map((_,i)=>(
                     <div key={i} style={{width:i===tourStep?20:6,height:6,borderRadius:99,transition:"width .3s",
                       background:i<=tourStep?C.green:C.border}}/>
                   ))}
                 </div>
-                <div style={{marginBottom:SPACE.md}}>
+                <div>
                   <div style={{color:C.muted,fontSize:13,fontWeight:600,marginBottom:SPACE.xs}}>Step {tourStep+1} of {TOUR.length}</div>
                   <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
                     {step.title}
@@ -19484,6 +19633,10 @@ input,button,select,textarea { font-family:inherit; }
                   {/* The Today step names only the parts in this household's number (lib/tour.js stepBody). */}
                   <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{stepBody(step, step.target==="today"&&dataWithHousehold ? SafeSpendEngine.calculate(dataWithHousehold) : null)}</div>
                 </div>
+              </div>
+              {/* The buttons: one place on every step, just above the tab bar (2026-11-05). */}
+              <div id="tour-actions" ref={el=>{ if(el) document.documentElement.style.setProperty("--tour-actions-h", el.offsetHeight+"px"); }} style={{position:"absolute",bottom:100,...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"12px 16px"}}>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
