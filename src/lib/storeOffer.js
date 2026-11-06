@@ -111,8 +111,9 @@ export function foundingSpotLine(status) {
 }
 
 export const PAYWALL_COPY = Object.freeze({
-  title: "Flourish Plus",
-  lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+  // 2026-11-05 (ChatGPT and Grok AGREE, Amanda): the screen sells the main flourish plan, so no "Plus" and no free plan.
+  title: "Subscribe to flourish",
+  lead: "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If.",
   dataSafe: "Your accounts, bills and history stay as they are.",
   terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
   privacy: "Privacy Policy",      // approved 2026-10-20
