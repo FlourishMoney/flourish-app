@@ -24,6 +24,7 @@ const MOCK = require("./_mockSupabase.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2", ".xml": "application/xml", ".txt": "text/plain" };
+const POLICY_LINE = "Microsoft Clarity: on our public website pages only, we use Microsoft Clarity heatmaps and session recordings to understand how visitors use a page, such as where they tap and how far they scroll, so we can improve those pages. Clarity is not used in the flourish app, on sign-in or sign-up pages, at checkout, or on any page shown while you are signed in, and it does not load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. We use Clarity's Strict masking setting, which masks all text on the page, and we have turned off Clarity cookies, so Clarity does not use those cookies to link page views into multi-page sessions. Clarity receives interaction and technical information, including information used for IP-based location and information about the visitor's browser and device. Microsoft's privacy statement applies to Microsoft's handling of that information.";
 const STUB = `(function(){var w=window,q=(w.clarity&&w.clarity.q)||[];w.__clarity={at:performance.now(),calls:[]};
 q.forEach(function(a){w.__clarity.calls.push([].slice.call(a))});w.clarity=function(){w.__clarity.calls.push([].slice.call(arguments))};})();`;
 
@@ -145,8 +146,8 @@ function household() {
       t.eq(tag.length, 1, "6a /privacy, signed out: Clarity loads");
       const link = page.getByRole("link", { name: "Microsoft's privacy statement" });
       const words = await page.evaluate(() => { const el = [...document.querySelectorAll("strong")].find((s) => s.textContent === "Microsoft Clarity"); return el ? el.parentElement.textContent : ""; });
-      if (/\[WORDS:/.test(words)) t.ok(words.includes("[WORDS: clarity-policy]"), "6b the policy's Clarity bullet shows (its approved words still to come)");
-      else t.eq(await link.getAttribute("href"), "https://privacy.microsoft.com/privacystatement", "6b the policy's Clarity bullet links Microsoft's privacy statement");
+      t.eq(words, "• " + POLICY_LINE, "6b the policy's Clarity bullet, on the page, word for word");
+      t.eq([await link.count(), await link.getAttribute("href")], [1, "https://privacy.microsoft.com/privacystatement"], "6b2 …and \"Microsoft's privacy statement\" links to it");
       const order = await page.evaluate(() => { const s = [...document.querySelectorAll("strong")].map((x) => x.textContent); return [s.indexOf("Website analytics"), s.indexOf("Microsoft Clarity")]; });
       t.ok(order[0] >= 0 && order[1] === order[0] + 1, "6c …directly after the Website analytics bullet");
       await ctx.close();

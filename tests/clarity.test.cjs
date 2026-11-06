@@ -23,6 +23,9 @@ const { spawnSync } = require("child_process");
 const REPO = path.join(__dirname, "..");
 const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
 const TAG = "https://www.clarity.ms/tag/z9lh2hoxvh";
+// The two approved lines (ChatGPT and Grok, 2026-11-06; claude/CLARITY-WORDS-APPROVED-2026-11-06.md), word for word.
+const POLICY_LINE = "Microsoft Clarity: on our public website pages only, we use Microsoft Clarity heatmaps and session recordings to understand how visitors use a page, such as where they tap and how far they scroll, so we can improve those pages. Clarity is not used in the flourish app, on sign-in or sign-up pages, at checkout, or on any page shown while you are signed in, and it does not load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. We use Clarity's Strict masking setting, which masks all text on the page, and we have turned off Clarity cookies, so Clarity does not use those cookies to link page views into multi-page sessions. Clarity receives interaction and technical information, including information used for IP-based location and information about the visitor's browser and device. Microsoft's privacy statement applies to Microsoft's handling of that information.";
+const NOTICE_LINE = "• On our public website pages we now use Microsoft Clarity heatmaps and session recordings to understand taps, scrolling and other page interactions. Page content is masked, Clarity cookies are off, and Clarity doesn't load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. It isn't used in the flourish app, on sign-in or sign-up pages, at checkout, or on any signed-in page.";
 
 function loadLib(native = false) {
   const esbuild = require(path.join(REPO, "node_modules", "esbuild"));
@@ -251,13 +254,13 @@ function fakeWindow({ path: p = "/", search = "", hash = "", native = false, rea
     const notice = require(path.join(REPO, "netlify", "functions", "_lib", "policyNotice.js"));
     const text = notice.noticeText("November 12, 2026");
     t.eq([(text.match(/^• /gm) || []).length, text.split("\n\n").filter((x) => x.startsWith("Hi,")).length], [7, 1], "5k the launch notice: one new bullet (seven), and still one email");
-    const pending = [W.POLICY_WORDS.clarity, text].filter((x) => /\[WORDS:/.test(x)).length;
-    if (pending) {
-      const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "privacyLaunchWords.js"), path.join(REPO, "netlify", "functions")], { encoding: "utf8" });
-      t.ok(r.status !== 0 && /clarity-(policy|notice)/.test(r.stderr), "5l while the approved Clarity words are still to come, the production build is refused");
-    } else {
-      t.ok(W.POLICY_WORDS.clarity.includes("Microsoft's privacy statement"), "5l the approved policy words are in, with the link text");
-    }
+    t.eq("Microsoft Clarity: " + W.POLICY_WORDS.clarity, POLICY_LINE, "5l the policy's Clarity bullet: the approved line, word for word (its label in bold)");
+    t.eq(W.microsoftLinkParts(W.POLICY_WORDS.clarity)[1], "Microsoft's privacy statement", "5m …with \"Microsoft's privacy statement\" as the link");
+    const paras = text.split("\n\n");
+    const linksAt = paras.findIndex((x) => x.startsWith("• Our own links can carry a short code"));
+    t.eq([paras.filter((x) => x === NOTICE_LINE).length, paras[linksAt + 1]], [1, NOTICE_LINE], "5n the launch notice's Clarity bullet: the approved line, word for word, once, after the bullet about our own counts");
+    const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "privacyLaunchWords.js"), path.join(REPO, "netlify", "functions")], { encoding: "utf8" });
+    t.eq(r.status, 0, "5o no Clarity placeholder is left: the production build's words check passes");
   }
 
   t.summary("clarity.test");
