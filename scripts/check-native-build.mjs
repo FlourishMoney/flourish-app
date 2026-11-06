@@ -71,6 +71,22 @@ if (mode === "artifact") {
         `    Build the store bundle with npm run build:native (it sets VITE_NATIVE_BUILD=true).`);
   }
 
+  // Microsoft Clarity never ships inside the store apps either (src/lib/webClarity.js, public/clarity/loader.js): every
+  // text file in dist/ is read, not only the bundle.
+  const withClarity = [];
+  const walk = (dir) => {
+    for (const f of fs.readdirSync(dir)) {
+      const p = path.join(dir, f);
+      if (fs.statSync(p).isDirectory()) walk(p);
+      else if (/\.(js|mjs|html?|json|css|txt|xml|svg|webmanifest)$/i.test(f) && fs.readFileSync(p, "utf8").includes("clarity.ms")) withClarity.push(path.relative(root, p));
+    }
+  };
+  if (fs.existsSync(path.join(root, "dist"))) walk(path.join(root, "dist"));
+  if (withClarity.length) {
+    die(`dist/ mentions clarity.ms (${withClarity.join(", ")}): Microsoft Clarity would ship inside the iOS and Android apps.\n` +
+        `    Build the store bundle with npm run build:native (it sets VITE_NATIVE_BUILD=true and strips dist/clarity).`);
+  }
+
   const indexHtml = path.join(root, "dist", "index.html");
   if (fs.existsSync(indexHtml) && fs.readFileSync(indexHtml, "utf8").includes("LANDING-META")) {
     die(`dist/index.html still holds the landing's link-preview tags, which name the website.\n` +

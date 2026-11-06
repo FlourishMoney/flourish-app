@@ -45,6 +45,7 @@ import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { coachRequestBody, setCoachNames, redactStatementText } from "./lib/coachPrivacy.js";
 import { confirmLinkResult } from "./lib/confirmLink.js";
 import { analyticsPage, setAnalyticsPage, track, EVENT } from "./lib/webAnalytics.js";
+import { clarityPage, setClarityPage, setClarityAuthForm } from "./lib/webClarity.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
@@ -83,7 +84,7 @@ import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { captureAttribution, signupAttribution, readInstallReferrerOnce } from "./lib/attribution.js";
-import { POLICY_WORDS as PW, policyDateLabel } from "./lib/privacyLaunchWords.js";
+import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -13828,6 +13829,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}
       {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Website analytics</strong>: on our public web pages only, never in the iPhone or Android apps and never after you sign in, we use Plausible Analytics to count page visits and a few button taps. It uses no cookies, does not store personal information, and never receives your email or account details.{launched?` ${PW.analytics}`:""}</div>}
+      {/* Microsoft Clarity (src/lib/webClarity.js): website only, and only from the policy's new date, when Clarity is switched on. */}
+      {!native&&launched&&(()=>{ const [before,link,after]=microsoftLinkParts(PW.clarity); return <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Microsoft Clarity</strong>: {before}{link&&<a href={MICROSOFT_PRIVACY_URL} target="_blank" rel="noopener noreferrer" style={{color:C.greenBright}}>{link}</a>}{after}</div>; })()}
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
 
       <div style={h2}>7. Your Rights</div>
@@ -15771,6 +15774,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
   // page for people who cannot use the product yet; someone who has installed the app already can.
   // The founding link (src/lib/foundingLink.js) opens the card too, with one line about which address to use.
   const [showAuth, setShowAuth] = useState(isNativeApp() || !!foundingNote);
+  // The sign-in or sign-up form is never recorded (lib/webClarity.js): opening it stops Clarity for the visit.
+  useEffect(() => { setClarityAuthForm(showAuth); }, [showAuth]);
   // /confirmed's Log In button (B5) opens the card too, on the login tab.
   useEffect(() => { if (startOnLogin) { setMode("login"); setShowAuth(true); } }, [startOnLogin]);
   // THE LANDING'S WAITLIST AREA (signupUi.js landingWaitlistArea): today's waitlist form while signup is shut;
@@ -17504,6 +17509,10 @@ export default function FlourishApp(){
   // never in the store apps. Signing in, onboarding, checkout, /confirmed or a reset link stops it.
   const _analyticsPage = analyticsPage({ native: isNativeApp(), signedIn: !!user, authLoading, screen, demo: !!appData?.demo, recovery: recoveryMode });
   useEffect(()=>{ setAnalyticsPage(_analyticsPage); },[_analyticsPage]);
+  // Microsoft Clarity (lib/webClarity.js): the landing, the demo, privacy and terms only, under the same conditions, where the
+  // edge allows it. Anything else showing stops it for the rest of the visit. The sign-in form tells it from AuthScreen.
+  const _clarityPage = clarityPage(_analyticsPage);
+  useEffect(()=>{ setClarityPage(_clarityPage); },[_clarityPage]);
   // The confirmation link signed a web signup in: on into the app, with "/" in the address bar (2026-10-23).
   useEffect(()=>{
     if(screen!=="confirmed" || authLoading || !user || confirmedFromApp(user)) return;

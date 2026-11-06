@@ -44,6 +44,9 @@
 [functions."policy-notice-sweep"]
   schedule = "*/15 * * * *"
 
+# Microsoft Clarity (src/lib/webClarity.js): the tag and its script come from www.clarity.ms and scripts.clarity.ms, and its
+# recordings go to *.clarity.ms. img-src is left alone on purpose: the tag's Microsoft cookie sync (c.clarity.ms/c.gif) is
+# refused, as well as switched off in Clarity.
 # Security headers
 [[headers]]
   for = "/*"
@@ -51,7 +54,7 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com https://plausible.io; connect-src 'self' https://plausible.io api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com https://plausible.io https://www.clarity.ms https://scripts.clarity.ms; connect-src 'self' https://plausible.io https://*.clarity.ms api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
 
 # The self-unregistering kill-switch SW (public/sw.js) must NEVER be cached, so a returning visitor's
 # browser re-fetches it on its next service-worker update check and retires the old (pre-Vite) zombie
