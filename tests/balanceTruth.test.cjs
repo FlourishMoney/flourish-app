@@ -320,6 +320,18 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
         const forced = await A.backgroundRefresh(true, setAppData, false, { items: [{ item_id: "item-scotia", institution_name: "Scotiabank" }], force: true, jwt: "test-jwt" });
         t.eq([forced.ran, forced.signIn, forced.answered], [true, ["item-scotia"], []], "5f forced (new transactions waiting, or a history loading): it runs, and reports the bank that needs a sign-in");
         t.eq(state.accounts[0].bankAnsweredAt, iso(Date.parse("2026-10-30T12:00:00-04:00")), "5g a refresh the bank refused keeps the old balance AND its old time: nothing is re-stamped as fresh");
+        // Two banks, one answers and one refuses: only the one that answered is stamped fresh.
+        global.fetch = async (url, init) => {
+          const q = JSON.parse((init && init.body) || "{}");
+          if (q.item_id === "item-td" && q.action === "get_accounts") return { ok: true, status: 200, json: async () => ({ accounts: [{ id: "td-chq", name: "TD Chequing", type: "depository", subtype: "checking", mask: "0002", balance: { available: 410, current: 410, currency: "CAD" } }] }) };
+          if (q.item_id === "item-td" && q.action === "get_transactions") return { ok: true, status: 200, json: async () => ({ transactions: [], removed: [], truncated: false, full: false, update_status: "HISTORICAL_UPDATE_COMPLETE" }) };
+          return { ok: false, status: 400, json: async () => ({ error: "Bank session expired. Please reconnect.", needs_reconnect: true }) };
+        };
+        state = household([bank("chq", Date.parse("2026-10-30T12:00:00-04:00")), { ...bank("td-chq", Date.parse("2026-10-30T12:00:00-04:00"), "item-td"), institution: "TD" }]);
+        const mixed = await A.backgroundRefresh(true, setAppData, false, { items: [{ item_id: "item-scotia" }, { item_id: "item-td" }], force: true, jwt: "test-jwt" });
+        const byId = Object.fromEntries(state.accounts.map((a) => [a.id, a]));
+        t.ok(mixed.answered.join() === "item-td" && mixed.signIn.join() === "item-scotia" && byId["td-chq"].balance === 410 && Date.parse(byId["td-chq"].bankAnsweredAt) > Date.parse("2026-11-01")
+          && byId.chq.bankAnsweredAt === iso(Date.parse("2026-10-30T12:00:00-04:00")), "5j two banks, one answers: it is stamped fresh, and the one that refused keeps its old time (so Today still says when)");
       } catch (e) { t.ok(false, `5e-5g backgroundRefresh: ${describe(e)}`); } finally { global.fetch = realFetch; }
     }
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
