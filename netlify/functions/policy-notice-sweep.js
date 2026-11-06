@@ -44,6 +44,8 @@ async function run({ mode, admin, send = sendNotice, now = () => new Date(), log
   try { row = await launchRow(admin); } catch { console.error("[policy-notice] launch row unreadable"); return { mode, stopped: "launch_row" }; }
   const date = row ? dateLabel(row.live_on) : null;
   if (mode === "send" && !date) { console.error("[policy-notice] no launch row: nothing sent"); return { mode, stopped: "no_launch_row" }; }
+  // Words still to come (a "[WORDS: …]" placeholder): nothing is claimed or sent, so no account loses its notice to it.
+  if (mode === "send" && /\[WORDS:/.test(noticeText(date))) { console.error("[policy-notice] words still to come: nothing sent"); return { mode, stopped: "pending_words" }; }
 
   let owed;
   try { owed = await pending(admin, row ? row.created_at : FOREVER); } catch { console.error("[policy-notice] recipients unreadable"); return { mode, stopped: "recipients" }; }

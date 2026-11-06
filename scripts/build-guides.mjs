@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 export const SITE = "https://flourishmoney.app";
 export const AUTHOR = "flourish team";
 export const SAMPLE_LABEL = "Example, sample data";
+export const CLARITY_LOADER = '<script src="/clarity/loader.js" defer></script>';
 export const TITLE_MAX = 60;
 export const DESCRIPTION_MAX = 160;
 const SLUG_RX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -112,6 +113,9 @@ function shell({ head, body, tags }) {
     ...tags,
     '<link rel="icon" href="/flourish-adult-favicon-32.png">',
     STYLE,
+    // Microsoft Clarity's loader (public/clarity/loader.js, 2026-11-06): the only script that runs on a guide page. It
+    // loads Clarity after the page is interactive, where the edge allows it, and never inside a store app.
+    CLARITY_LOADER,
     "</head>",
     "<body>",
     '<header><a href="/guides/" style="text-decoration:none">flourish guides</a></header>',

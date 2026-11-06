@@ -17,9 +17,22 @@ export const POLICY_WORDS = Object.freeze({
   resend: "sends account emails, waitlist emails, and the weekly newsletter, including its confirmation and unsubscribe links",
   googlePlay: "when you install the Android app from one of our own links, Google Play passes us the campaign code that link carried (Google Play Install Referrer)",
   analytics: "We also keep our own count, on our own servers, of page visits and taps through to the App Store or Google Play, with the campaign code described above. We do not store an IP address, cookie or other identifier with those counts.",
+  // Section 6, the bullet after "Website analytics" (website only), from claude/CLARITY-WORDS-APPROVED-2026-11-06.md, word for
+  // word. "Microsoft's privacy statement" in it becomes the link (MICROSOFT_PRIVACY_URL).
+  clarity: "[WORDS: clarity-policy]",
   age: "The newsletter is also intended for people aged 18 and over.",
   address: "PO Box 29, Foxboro ON K0K 2B0",
 });
+
+export const MICROSOFT_PRIVACY_TEXT = "Microsoft's privacy statement";
+export const MICROSOFT_PRIVACY_URL = "https://privacy.microsoft.com/privacystatement";
+
+// The Clarity bullet as [before, link text, after], so the policy can link "Microsoft's privacy statement". No link text: [all].
+export function microsoftLinkParts(text) {
+  const t = String(text || "");
+  const i = t.indexOf(MICROSOFT_PRIVACY_TEXT);
+  return i < 0 ? [t] : [t.slice(0, i), MICROSOFT_PRIVACY_TEXT, t.slice(i + MICROSOFT_PRIVACY_TEXT.length)];
+}
 
 // "2026-11-12" to "November 12, 2026". null for anything else, which keeps the policy as it was.
 export function policyDateLabel(iso) {
