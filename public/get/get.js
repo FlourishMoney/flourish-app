@@ -20,6 +20,12 @@
 // tag (Apple's campaign link, a Play referrer with utm_medium=qr and utm_campaign=shop, the same links as
 // src/lib/storeLinks.js), and a phone goes to its badge's link. Every other ref is as above.
 //
+// SOURCE AND CREATIVE (?src=, ?cr=, 2026-11-04). A link with src or cr gets both badges tagged: Apple's campaign link with ct =
+// src_cr, cut to the 30 characters App Store Connect allows, and a Play referrer of utm_source=src&utm_campaign=cr. A value that is
+// not a plain short word is dropped. ?ref= links keep the store links above, so printed QR codes and sent emails do not change.
+// Our own count (/api/attribution, netlify/functions/attribution.js, a daily number with no IP or user agent kept) gets one
+// landing_visit, and one store_click when someone goes to a store. It uses sendBeacon, so a redirect never waits for it or cuts it off.
+//
 // WHAT PLAUSIBLE IS TOLD (cookieless, as on the rest of the public site, src/lib/webAnalytics.js): one event,
 // "Get link", with two properties and nothing else: way (which of the five ways below) and ref (which link it came
 // from: "founding", or "other" for anything else, so nothing typed into the address reaches Plausible). The page
@@ -41,6 +47,19 @@
   var SHOP_TAGS = ["shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"];
   var shop = SHOP_TAGS.indexOf(rawRef) >= 0 ? rawRef : "";
   var APPLE_PROVIDER_TOKEN = "128816288";
+  var APPLE_CT_MAX = 30;
+  var TAG = /^[a-z0-9_-]{1,40}$/;
+  function tag(name) { var v = (params.get(name) || "").trim().toLowerCase(); return TAG.test(v) ? v : ""; }
+  var cr = tag("cr");
+  var src = tag("src") || (cr ? "direct" : "");
+  // What gets counted: src and cr when the link has them, otherwise a ?ref= link's tag.
+  var countSrc = src || (rawRef && source !== "other" ? source.toLowerCase() : "");
+  function countOwn(event) {
+    try {
+      var body = new Blob([JSON.stringify({ event: event, src: countSrc, cr: cr })], { type: "application/json" });
+      navigator.sendBeacon("/api/attribution", body);
+    } catch (e) { /* a count is never worth a failed redirect */ }
+  }
   var rawCode = (params.get("c") || "").trim().toUpperCase();
   var creatorCode = /^[A-Z0-9]{3,20}$/.test(rawCode) ? rawCode : null;
 
@@ -97,7 +116,12 @@
   function start() {
     var appStore = document.getElementById("app-store").href;
     var play = document.getElementById("google-play").href;
-    if (shop) {
+    if (src) {
+      appStore += "?pt=" + APPLE_PROVIDER_TOKEN + "&ct=" + (cr ? src + "_" + cr : src).slice(0, APPLE_CT_MAX) + "&mt=8";
+      play += "&referrer=" + encodeURIComponent("utm_source=" + src + (cr ? "&utm_campaign=" + cr : ""));
+      document.getElementById("app-store").setAttribute("href", appStore);
+      document.getElementById("google-play").setAttribute("href", play);
+    } else if (shop) {
       appStore += "?pt=" + APPLE_PROVIDER_TOKEN + "&ct=" + shop + "&mt=8";
       play += "&referrer=" + encodeURIComponent("utm_source=" + shop + "&utm_medium=qr&utm_campaign=shop");
       document.getElementById("app-store").setAttribute("href", appStore);
@@ -106,13 +130,21 @@
     // The website's way in: the founding checkout for the founding link, the home page otherwise.
     if (ref !== "founding") document.getElementById("website").setAttribute("href", "/");
 
-    if (d === "ios") { countThenGo(WAYS[0], appStore, true); return; }
+    countOwn("landing_visit");
+    if (d === "ios") { countOwn("store_click"); countThenGo(WAYS[0], appStore, true); return; }
     if (d === "android") {
-      countThenGo(WAYS[1], shop ? play : play + "&referrer=" + encodeURIComponent("utm_source=" + source + "&utm_medium=social&utm_campaign=founding"), true);
+      countOwn("store_click");
+      countThenGo(WAYS[1], src || shop ? play : play + "&referrer=" + encodeURIComponent("utm_source=" + source + "&utm_medium=social&utm_campaign=founding"), true);
       return;
     }
 
-    // A computer: the page. A creator's code goes along with the website's link. Each link is counted, then followed.
+    // A computer: the page. src and cr go along with the website's link, for the signup (src/lib/attribution.js).
+    if (src) {
+      var siteLink = document.getElementById("website");
+      var siteTo = siteLink.getAttribute("href");
+      siteLink.setAttribute("href", siteTo + (siteTo.indexOf("?") >= 0 ? "&" : "?") + "src=" + src + (cr ? "&cr=" + cr : ""));
+    }
+    // A creator's code goes along with the website's link. Each link is counted, then followed.
     if (creatorCode) {
       var site = document.getElementById("website");
       var to = site.getAttribute("href");
@@ -121,6 +153,7 @@
     [["app-store", WAYS[2]], ["google-play", WAYS[3]], ["website", WAYS[4]]].forEach(function (pair) {
       var a = document.getElementById(pair[0]);
       a.addEventListener("click", function (e) {
+        if (pair[0] !== "website") countOwn("store_click");
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) { try { window.plausible(EVENT, { props: { way: pair[1], ref: ref } }); } catch (x) { /* nothing */ } return; }
         e.preventDefault();
         countThenGo(pair[1], a.href, false);
