@@ -19,7 +19,7 @@ What changed:
 
 • Our own links can carry a short code naming the post they came from. On our web pages we count visits and taps through to the App Store or Google Play with that code, and we store no IP address, cookie or other identifier with those counts.
 
-• [WORDS: clarity-notice]
+• On our public website pages we now use Microsoft Clarity heatmaps and session recordings to understand taps, scrolling and other page interactions. Page content is masked, Clarity cookies are off, and Clarity doesn't load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. It isn't used in the flourish app, on sign-in or sign-up pages, at checkout, or on any signed-in page.
 
 • If you install the Android app from one of our links, Google Play can pass that code to the app the first time you open it. We keep it with your account and delete it when your account is deleted.
 
@@ -72,10 +72,7 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
   const withText = (edit) => ({ ...N,
     noticeText: (d) => edit(N.noticeText(d)),
     noticePayload: (to, d) => { const pl = N.noticePayload(to, d); return { ...pl, text: edit(pl.text), html: edit(pl.html) }; } });
-  // The send tests run on the words as written. While the Clarity line (2026-11-06) is still to come, a stand-in fills it;
-  // once the approved line is in, this changes nothing.
-  const WRITTEN = (x) => x.split("[WORDS: clarity-notice]").join("Clarity stand-in");
-  const { run, PER_RUN_CAP } = sweepWith(withText(WRITTEN));
+  const { run, PER_RUN_CAP } = sweepWith(N);
 
   t.eq(N.noticeText("November 12, 2026"), APPROVED, "1a the words, exactly as approved");
   const p = N.noticePayload("a@example.ca", "November 12, 2026");
@@ -105,7 +102,7 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
     const r = await run({ mode: "dry-run", admin: db, send: async () => { sent += 1; return true; }, log: (x) => lines.push(x) });
     t.eq([r.recipients, r.skipped, r.optedOut, r.sent, sent, db.writes], [4, 1, 1, 0, 0, 0], "3a counts them, sends nothing, writes nothing");
     t.ok(lines[0].includes("4 recipients (2 confirmed, 2 unconfirmed), 1 sample accounts left out, 1 opted out; nothing sent"), "3b prints the recipient count");
-    t.ok(lines[1].includes(WRITTEN(APPROVED)), "3c prints one rendered copy");
+    t.ok(lines[1].includes(APPROVED), "3c prints one rendered copy");
     t.ok(!lines.join("\n").includes("@example.ca") && !lines.join("\n").includes("snap@"), "3d and no address");
     const none = fakeDb(people(1), null), l2 = [];
     await run({ mode: "dry-run", admin: none, log: (x) => l2.push(x) });

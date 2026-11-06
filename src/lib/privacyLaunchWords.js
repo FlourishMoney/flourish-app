@@ -17,9 +17,9 @@ export const POLICY_WORDS = Object.freeze({
   resend: "sends account emails, waitlist emails, and the weekly newsletter, including its confirmation and unsubscribe links",
   googlePlay: "when you install the Android app from one of our own links, Google Play passes us the campaign code that link carried (Google Play Install Referrer)",
   analytics: "We also keep our own count, on our own servers, of page visits and taps through to the App Store or Google Play, with the campaign code described above. We do not store an IP address, cookie or other identifier with those counts.",
-  // Section 6, the bullet after "Website analytics" (website only), from claude/CLARITY-WORDS-APPROVED-2026-11-06.md, word for
-  // word. "Microsoft's privacy statement" in it becomes the link (MICROSOFT_PRIVACY_URL).
-  clarity: "[WORDS: clarity-policy]",
+  // Section 6, the bullet after "Website analytics" (website only), approved 2026-11-06 (claude/CLARITY-WORDS-APPROVED-2026-11-06.md),
+  // word for word after its "Microsoft Clarity:" label. "Microsoft's privacy statement" in it becomes the link (MICROSOFT_PRIVACY_URL).
+  clarity: "on our public website pages only, we use Microsoft Clarity heatmaps and session recordings to understand how visitors use a page, such as where they tap and how far they scroll, so we can improve those pages. Clarity is not used in the flourish app, on sign-in or sign-up pages, at checkout, or on any page shown while you are signed in, and it does not load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. We use Clarity's Strict masking setting, which masks all text on the page, and we have turned off Clarity cookies, so Clarity does not use those cookies to link page views into multi-page sessions. Clarity receives interaction and technical information, including information used for IP-based location and information about the visitor's browser and device. Microsoft's privacy statement applies to Microsoft's handling of that information.",
   age: "The newsletter is also intended for people aged 18 and over.",
   address: "PO Box 29, Foxboro ON K0K 2B0",
 });
