@@ -266,7 +266,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
     t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.5", "1.1.5", ["1.1.5"], "1.1.5"], "7a one version, 1.1.5, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526909, [526909], 24, 24], "7b the builds in whatsNew.json are the ones the projects build: iOS 526909, Android 24");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526909, [526909], 25, 25], "7b the builds in whatsNew.json are the ones the projects build: iOS 526909, Android 25");
     const allNotes = [...W.notes, ...(W.notesAndroid || []), ...(W.alsoNotes || [])];
     t.ok(Array.isArray(W.notes) && W.notes.length >= 1 && allNotes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", [W.intro, ...allNotes, W.alsoTitle || ""].join(" "));

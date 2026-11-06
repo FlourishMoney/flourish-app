@@ -2,7 +2,7 @@
   "version": "1.1.5",
   "builds": {
     "ios": 526909,
-    "android": 24
+    "android": 25
   },
   "notes": [
     "Get Canadian money dates this week, a short weekly email, from Settings.",
