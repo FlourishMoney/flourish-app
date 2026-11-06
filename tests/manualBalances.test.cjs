@@ -24,7 +24,7 @@
 // Both households must give exactly these figures, and the same coach and What-If figures.
 // Mutation check: if entered balances are ignored, the ENTERED household starts from $0 and section 4
 // fails.
-// The demos are unchanged (section 5): CA $3,083 in accounts, $1,944 safe to spend, $138 pace, and the
+// The demos (section 5), since balance-truth 2026-11-06: CA $3,083 in accounts, $1,951 safe to spend, $139 pace, and the
 // Watch check lines captured from main b003f5b on the same pinned date.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -234,13 +234,15 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, today), incomes: D.buildDemoIncomes(today, c),
       bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true });
     const ca = figures(demo("CA")), us = figures(demo("US"));
-    t.eq([ca.safe[6], ca.safe[7], ca.pace[0]], ["$3,083", "$1,944", "$138"], "5a CA demo: $3,083 in accounts, $1,944 safe to spend, $138 pace");
-    t.eq(ca.watch.map(x => x.split(" low ")[0]), ["7d $3,083.88 + $0.00 − $65.00 − $234.23 = $2,784.65", "30d $3,083.88 + $6,240.00 − $2,176.99 − $1,003.85 = $6,143.04",
-      "90d $3,083.88 + $18,720.00 − $6,530.97 − $3,011.55 = $12,261.36"], "5b CA demo: the Watch 7/30/90 check lines, as main b003f5b printed them on this date");
+    // balance-truth 2026-11-06: the demos' Netflix and Hulu payments are no longer also daily spending, so daily spending
+    // and what follows from it moved ($1,944 safe and a $138 pace before; CA $33.46 a day, now $32.92).
+    t.eq([ca.safe[6], ca.safe[7], ca.pace[0]], ["$3,083", "$1,951", "$139"], "5a CA demo: $3,083 in accounts, $1,951 safe to spend, $139 pace");
+    t.eq(ca.watch.map(x => x.split(" low ")[0]), ["7d $3,083.88 + $0.00 − $65.00 − $230.43 = $2,788.45", "30d $3,083.88 + $6,240.00 − $2,176.99 − $987.57 = $6,159.32",
+      "90d $3,083.88 + $18,720.00 − $6,530.97 − $2,962.72 = $12,310.19"], "5b CA demo: the Watch 7/30/90 check lines on this date (daily spending $32.92 x 7, 30, 90)");
     t.eq(MB.enteredBalanceNote(LINKED.accounts, today), { lines: [], stale: null }, "5c a linked household's How we got this carries no entered line");
-    t.eq([us.safe[6], us.safe[7], us.pace[0], ca.netWorth[3], us.netWorth[3]], ["$3,672", "$2,415", "$172", 12593.88, 18692.55], "5d US demo $3,672 / $2,415 / $172; net worth CA $12,593.88, US $18,692.55");
-    t.eq(us.watch.map(x => x.split(" low ")[0]), ["7d $3,672.55 + $0.00 − $0.00 − $304.09 = $3,368.46", "30d $3,672.55 + $5,350.00 − $2,370.99 − $1,303.26 = $5,348.30",
-      "90d $3,672.55 + $16,050.00 − $7,112.97 − $3,909.79 = $8,699.79"], "5e US demo: Watch 7/30/90 check lines unchanged");
+    t.eq([us.safe[6], us.safe[7], us.pace[0], ca.netWorth[3], us.netWorth[3]], ["$3,672", "$2,425", "$173", 12593.88, 18692.55], "5d US demo $3,672 / $2,425 / $173; net worth CA $12,593.88, US $18,692.55 (unchanged)");
+    t.eq(us.watch.map(x => x.split(" low ")[0]), ["7d $3,672.55 + $0.00 − $0.00 − $298.56 = $3,373.99", "30d $3,672.55 + $5,350.00 − $2,370.99 − $1,279.52 = $5,372.04",
+      "90d $3,672.55 + $16,050.00 − $7,112.97 − $3,838.57 = $8,771.01"], "5e US demo: Watch 7/30/90 check lines (daily spending $42.65, without Hulu, x 7, 30, 90)");
     t.ok(D.demoAccountsFor("CA").every(a => !MB.isEditableAccount(a)) && D.demoAccountsFor("US").every(a => !MB.isEditableAccount(a)), "5f no demo account is editable");
     t.ok(LINKED.accounts.every(a => !MB.isEditableAccount(a)), "5g no linked account is editable: they stay bank-fed");
   }

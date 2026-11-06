@@ -55,13 +55,15 @@ const { create } = require("./_runner.cjs");
   // ── 1. Phase stability ─────────────────────────────────────────────────────────────────────────
   const usSigs = new Set(DATES.map(s => sigFor(new Date(`${s}T12:00:00`), "US")));
   t.eq(usSigs.size, 1, `1a the US fixture yields IDENTICAL figures on all ${DATES.length} dates`);
-  t.eq([...usSigs][0], "$2,415|$172|2465|Full-time Job|13|142|564.75|249.67|$3,672",
-    "1b …and that signature is the published US demo: $2,415 safe, $172/day, a $2,465 paycheck 13 days out, $3,672 balance, $142 of committed bills");
+  // balance-truth 2026-11-06: the demos' Hulu and Netflix payments are no longer also daily spending (US buffer
+  // $564.75 -> $554.46, CA $435 -> $427.95), so the published signatures moved with them.
+  t.eq([...usSigs][0], "$2,425|$173|2465|Full-time Job|13|142|554.46|249.67|$3,672",
+    "1b …and that signature is the published US demo: $2,425 safe, $173/day, a $2,465 paycheck 13 days out, $3,672 balance, $142 of committed bills");
 
   // The Canadian one must be unaffected by the refactor that made the fixture country-keyed.
   const caSigs = new Set(DATES.map(s => sigFor(new Date(`${s}T12:00:00`), "CA")));
   t.eq(caSigs.size, 1, "1c the CA fixture is still stable across the same twelve dates");
-  t.eq([...caSigs][0], "$1,944|$138|2840|Full-time Job|13|65|435|290.95|$3,083",
+  t.eq([...caSigs][0], "$1,951|$139|2840|Full-time Job|13|65|427.95|290.95|$3,083",
     "1d …and its published signature is UNCHANGED by the country-keying");
 
   // ── 2. The five-row breakdown, and a populated "one thing to know" ────────────────────────────
@@ -71,9 +73,9 @@ const { create } = require("./_runner.cjs");
     const ss = SafeSpendEngine.calculate(snap, d);
     const v = safeToSpendView(ss);
     t.eq(v.rows.length, 5, "2a the US breakdown has five rows (balance + four deductions), not a bare balance");
-    t.eq(v.rows.map(r => r.value).join(" "), "$3,672 $142 $300 $565 $250",
-      "2b …the exact displayed rows: $3,672 balance, $142 bills, $300 debt minimums, $565 buffer, $250 savings");
-    t.eq(v.headlineText, "$2,415", "2c …and the headline they reconcile to");
+    t.eq(v.rows.map(r => r.value).join(" "), "$3,672 $142 $300 $555 $250",
+      "2b …the exact displayed rows: $3,672 balance, $142 bills, $300 debt minimums, $555 buffer, $250 savings");
+    t.eq(v.headlineText, "$2,425", "2c …and the headline they reconcile to");
     const rowSum = v.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
     t.eq(rowSum, v.headline, "2d …the five displayed rows sum EXACTLY to the displayed headline");
     t.eq(ss.soonBills.length, 1, "2e exactly one bill sits inside the reservation window");

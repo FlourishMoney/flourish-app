@@ -40,7 +40,9 @@ async function main() {
     const ss = SafeSpendEngine.calculate(data, today);
     t.eq([ss.upcomingBills, ss.billsDueSoon.map((b) => `${b.name} ${b.amount} ${FE.isoOf(b.date)}`)], [1500, ["Rent 1500 2026-11-01"]],
       `1a [${tz}] rent paid Oct 1 does not pay Nov 1's rent: Nov 1 is reserved, and Due soon shows it`);
-    t.eq(safeToSpendView(ss, { hasCashAccount: true }).headlineText, "$791", `1b [${tz}] Today shows $791 safe (was $2,291)`);
+    // balance-truth 2026-11-06: the Oct 1 rent payment is the November rent bill's, never also daily spending, so the
+    // buffer no longer takes $50 a day of it ($550): $3,000 - $1,500 rent - $158.89 savings = $1,341 (was $791, then $2,291).
+    t.eq(safeToSpendView(ss, { hasCashAccount: true }).headlineText, "$1,341", `1b [${tz}] Today shows $1,341 safe (was $791 with the rent counted twice, $2,291 before that)`);
     const fc = ForecastEngine.generate(data, 14, null, today);
     t.ok(fc.forecast.some((f) => FE.isoOf(f.date) === "2026-11-01" && f.bills.some((b) => b.name === "Rent" && b.amount === 1500)), `1c [${tz}] Watch takes the same rent out on Nov 1`);
   }

@@ -5,8 +5,9 @@
 // Two demo households, both on fixed dates:
 //   QA     the demo as the QA saw it: created on 2026-09-04 and opened on 2026-09-29. The demo keeps
 //          the dates it was created with, so by then its $1,650 rent and $348 of minimums fall due
-//          before the next deposit, and Today shows $973 safe to spend.
-//   FIXED  the demo created and opened on 2026-09-29, the published test date: $1,944.
+//          before the next deposit, and Today shows $974 safe to spend ($973 until a bill's payment stopped counting as
+//          daily spending too, balance-truth 2026-11-06).
+//   FIXED  the demo created and opened on 2026-09-29, the published test date: $1,951 ($1,944 until then).
 //
 //   1. Today's Money Plan: "Left over" is after everything due before the next deposit, and the
 //      plan is not "On Track" while cash is tight.
@@ -43,8 +44,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const headline = (data) => safeToSpendView(SafeSpendEngine.calculate(data, VIEW)).headline;
 
   // ── Today's safe to spend does not move ───────────────────────────────────────────────────────
-  t.eq(headline(QA), 973, "0a the QA demo still shows $973 safe to spend");
-  t.eq(headline(FIXED), 1944, "0b the fixed-date demo still shows $1,944");
+  t.eq(headline(QA), 974, "0a the QA demo shows $974 safe to spend");
+  t.eq(headline(FIXED), 1951, "0b the fixed-date demo shows $1,951");
 
   // ── 1. The Money Plan ─────────────────────────────────────────────────────────────────────────
   {
@@ -67,8 +68,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     const planF = DE.AutopilotEngine.generate(FIXED, {}, VIEW);
     t.eq(planF.modeLabel, "Bills accounted for", "1g fixed date: not tight, so \"Bills accounted for\" (W7)");
     // Prompt 3e: the fixed-date plan used to send $240 to savings and $200 to the Visa (its own 40% / 40%
-    // rules). It now shows the one spare amount, $486 = 25% × $1,944, the same figure as Decisions.
-    t.eq([planF.spare, planF.spareFrom, planF.spareReason], [486, 1944, null], "1h …with $486 spare: 25% × $1,944, the Decisions figure");
+    // rules). It now shows the one spare amount, $487 = 25% × $1,951 rounded down, the same figure as Decisions.
+    t.eq([planF.spare, planF.spareFrom, planF.spareReason], [487, 1951, null], "1h …with $487 spare: 25% × $1,951 rounded down, the Decisions figure");
     t.ok(!("savingsTransfer" in planF) && !("buffer" in planF) && ssF.balance > 0, "1i …and no $240 / $200 split and no Left over");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(!/label:"Left over"/.test(app) && /label:"Spare until your next deposit"/.test(app), "1j the card shows the spare amount, and no residual");
@@ -91,15 +92,15 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
     // 2. One rule decides tight cash.
     const tight = (d) => (typeof DE.cashIsTight === "function" ? DE.cashIsTight(d, VIEW).tight : "no cashIsTight rule");
-    t.eq(tight(QA), true, "2a QA: $973 is under 15% of $6,714, so cash is tight");
-    t.eq(tight(FIXED), false, "2b fixed date: $1,944 is not");
+    t.eq(tight(QA), true, "2a QA: $974 is under 15% of $6,714, so cash is tight");
+    t.eq(tight(FIXED), false, "2b fixed date: $1,951 is not");
     t.ok(/Cash is running tight/.test(qa), "2c QA: Decisions warns");
-    t.ok(/Your safe to spend \(\$973\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
+    t.ok(/Your safe to spend \(\$974\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
     t.ok(!/Your balance is below/.test(qa), "2e …not the $3,083 balance");
-    // Prompt 3d: the savings and debt cards state facts ("$486 spare until your next deposit", "Visa card: $150 more a month").
+    // Prompt 3d: the savings and debt cards state facts ("$487 spare until your next deposit", "Visa card: $150 more a month").
     t.ok(!/\$\d+ spare until your next deposit/.test(qa) && !/: \$\d+ more a month/.test(qa), "2f …and shows neither the spare-for-savings card nor the extra-on-debt card");
     // Prompt 3e: the "$150 more a month on the Visa" card is gone (a suggested amount for a debt).
-    t.ok(!/Cash is running tight/.test(fixed) && /\$486 spare until your next deposit/.test(fixed) && !/more a month/.test(fixed),
+    t.ok(!/Cash is running tight/.test(fixed) && /\$487 spare until your next deposit/.test(fixed) && !/more a month/.test(fixed),
          "2g fixed date: no warning, and the spare-amount card is back (with no debt amount card)");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/const lowCash = cashIsTight\(data, todayD\)\.tight;/.test(app), "2h Decisions asks the same rule the Money Plan asks");
@@ -117,9 +118,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq((buildMeetSnapshot(demoMadeOn(now2)).decisions || []).length, 1, "2k (a fresh demo still gets its Meet decision)");
 
     // 4. The daily card's wording.
-    t.ok(/Today's pace: \$138 a day/.test(fixed) && /Today's pace is \$138 a day, rounded down so 14 days stay within \$1,944 safe to spend\. It's a pace, not a limit\./.test(fixed),
-         "4a the daily card: $138 a day, rounded down so 14 days stay within safe to spend; a pace, not a limit");
-    t.ok(/14 days stay within \$973 safe to spend/.test(qa), "4b …$973 over 14 days in the QA demo");
+    t.ok(/Today's pace: \$139 a day/.test(fixed) && /Today's pace is \$139 a day, rounded down so 14 days stay within \$1,951 safe to spend\. It's a pace, not a limit\./.test(fixed),
+         "4a the daily card: $139 a day, rounded down so 14 days stay within safe to spend; a pace, not a limit");
+    t.ok(/14 days stay within \$974 safe to spend/.test(qa), "4b …$974 over 14 days in the QA demo");
     t.ok(!/Keeps you safe until/.test(qa + fixed), "4c …and it no longer claims to keep anyone safe until the next deposit");
 
     // 5. No invented rates.

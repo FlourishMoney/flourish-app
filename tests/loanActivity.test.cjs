@@ -309,8 +309,8 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
     const pace = suggestedDailyView(v.headline, demo.incomes, demo.transactions, today, demo);
     const fc = ForecastEngine.generate(demo, 30, null, today);
     const s30 = W.rangeSummary(fc.forecast, 30, { avgDailySpend: fc.avgDailySpend });
-    t.eq([v.balanceText, `$${v.headline.toLocaleString("en-US")}`, pace && pace.dailyText], ["$3,083", "$1,944", "$138"], "7b the demo still reads $3,083, $1,944 and a $138 pace");
-    t.eq(s30.check.line, "$3,083.88 + $6,240.00 − $2,176.99 − $1,003.85 = $6,143.04", "7c …and its Watch 30-day check line");
+    t.eq([v.balanceText, `$${v.headline.toLocaleString("en-US")}`, pace && pace.dailyText], ["$3,083", "$1,951", "$139"], "7b the demo reads $3,083, $1,951 and a $139 pace (balance-truth 2026-11-06: its Netflix is no longer also daily spending)");
+    t.eq(s30.check.line, "$3,083.88 + $6,240.00 − $2,176.99 − $987.57 = $6,159.32", "7c …and its Watch 30-day check line");
   }
 
   t.summary("loanActivity.test");

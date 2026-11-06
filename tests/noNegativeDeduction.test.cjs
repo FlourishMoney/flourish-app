@@ -5,8 +5,9 @@
 // A deduction is money committed: bills, debt minimums, the spending buffer, savings. None can be below
 // zero. Clamped at the source (SafeSpendEngine's four components, and avgDailySpend under the buffer) and
 // where safeToSpendView builds its rows. MATH-LOCK, hand-worked:
-//   the CA demo on 2026-09-29 is unchanged: $3,083 - $65 - $348 - $435 - $291 = $1,944.
-//   a negative daily-spend override (-$50/day) is never used: the buffer stays $435, headline $1,944.
+//   the CA demo on 2026-09-29: $3,083 - $65 - $348 - $428 - $291 = $1,951 (balance-truth 2026-11-06: the demo's Netflix is
+//   no longer also daily spending; it was $435 and $1,944).
+//   a negative daily-spend override (-$50/day) is never used: the buffer stays $428, headline $1,951.
 //   a view handed a -$200 buffer: before, the row was hidden but still counted, so $1,000 - $100 + $200
 //   - $50 = $1,050 under rows that add up to $850; after, the buffer is $0 and the headline is $850.
 // -----------------------------------------------------------------------------
@@ -26,13 +27,13 @@ const { create } = require("./_runner.cjs");
 
   // ── 1. The demo is unchanged ─────────────────────────────────────────────────────────────────
   const base = safeToSpendView(SafeSpendEngine.calculate(demo(), T));
-  t.eq([base.balanceDisplay, ...parts(base), base.headline], [3083, 65, 348, 435, 291, 1944], "1a the CA demo: $3,083 - $65 - $348 - $435 - $291 = $1,944");
+  t.eq([base.balanceDisplay, ...parts(base), base.headline], [3083, 65, 348, 428, 291, 1951], "1a the CA demo: $3,083 - $65 - $348 - $428 - $291 = $1,951");
 
   // ── 2. A negative daily-spend override is never used ─────────────────────────────────────────
   const withNeg = { ...demo(), forecastEdits: { dailySpend: -50 } };
   t.ok(FinancialCalcEngine.avgDailySpend(withNeg) >= 0, "2a avgDailySpend never returns a negative figure, whatever the override says");
   const v2 = safeToSpendView(SafeSpendEngine.calculate(withNeg, T));
-  t.eq([...parts(v2), v2.headline], [65, 348, 435, 291, 1944], "2b with a -$50/day override, the buffer stays $435 and the headline $1,944");
+  t.eq([...parts(v2), v2.headline], [65, 348, 428, 291, 1951], "2b with a -$50/day override, the buffer stays $428 and the headline $1,951");
   t.ok(parts(v2).every(n => n >= 0), "2c …and no deduction is negative");
 
   // ── 3. The view never shows one, whatever it is handed ───────────────────────────────────────
