@@ -467,7 +467,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const demoOn = (c, made, extra = {}) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, made), incomes: D.buildDemoIncomes(made, c),
       bills: D.buildDemoBills(made, c), transactions: D.buildDemoTxns(made, c), demo: true, ...extra });
     // a. The figure is unchanged on both demos, and every surface reads the one figure
-    for (const [c, safe, spare] of [["CA", 1944, 486], ["US", 2415, 603]]) {
+    // balance-truth 2026-11-06: the demos' Netflix and Hulu payments are no longer also daily spending ($1,944 and $2,415 before).
+    for (const [c, safe, spare] of [["CA", 1951, 487], ["US", 2425, 606]]) {
       const d = demoOn(c, VIEW);
       const before = DE.cashIsTight(d, VIEW).tight ? 0 : DE.computeSavingsOpportunity(DE.displayedSafeToSpend(d, VIEW));
       const now = DE.spareUntilDeposit(d, VIEW);
@@ -477,8 +478,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       t.eq(["savingsTransfer", "debtPayment", "goalContribution", "savingsTarget", "debtTarget", "goalTarget", "buffer", "surplus"].filter(k => k in plan), [],
         `12c ${c}: the plan carries no allocation (no savings, debt or goal amount, no residual)`);
     }
-    t.eq(A.spareWorking(486, 1944), "A quarter of your $1,944 safe to spend: 25% × $1,944 = $486. Flourish does not assign it to anything.", "12d CA: how it was worked out, in full");
-    t.eq(A.spareWorking(603, 2415), "A quarter of your $2,415 safe to spend: 25% × $2,415 = $603.75, rounded down to $603. Flourish does not assign it to anything.", "12e US: …with the rounding shown");
+    t.eq(A.spareWorking(487, 1951), "A quarter of your $1,951 safe to spend: 25% × $1,951 = $487.75, rounded down to $487. Flourish does not assign it to anything.", "12d CA: how it was worked out, in full, with the rounding shown");
+    t.eq(A.spareWorking(606, 2425), "A quarter of your $2,425 safe to spend: 25% × $2,425 = $606.25, rounded down to $606. Flourish does not assign it to anything.", "12e US: …with the rounding shown");
     // b. Today: the fact, and goals and debts by name with their own balances, no suggested amount
     const noop = () => {};
     for (const c of ["CA", "US"]) {
@@ -504,7 +505,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       const safe = DE.displayedSafeToSpend(d, VIEW);
       const dec = textOf(A.render(A.h(A.DecisionEngine, { data: d, safe, bal: 3083, monthlyIncome: FinancialCalcEngine.cashFlow(d, {}, VIEW).monthlyIncome, soonBills: [], todayDate: VIEW,
         dailyPace: suggestedDailyView(safe, d.incomes, d.transactions, VIEW, d), setScreen: noop })));
-      t.ok(dec.includes("$486 spare until your next deposit") && dec.includes("25% × $1,944 = $486") && !/more a month|Extra|toward/.test(dec), "12f2 Decisions: $486 spare, worked out, and no debt amount");
+      t.ok(dec.includes("$487 spare until your next deposit") && dec.includes("25% × $1,951 = $487.75, rounded down to $487") && !/more a month|Extra|toward/.test(dec), "12f2 Decisions: $486 spare, worked out, and no debt amount");
     }
     t.ok(!/plan\.(savingsTransfer|debtPayment|goalContribution|buffer|surplus)\b/.test(APP) && !/modeMultipliers|mult\.(savings|debt|goal)/.test(fs.readFileSync(path.join(REPO, "src", "lib", "decisionEngine.js"), "utf8")),
       "12i the 40% / 40% / 50% rules are gone from the engine and nothing reads an allocation");

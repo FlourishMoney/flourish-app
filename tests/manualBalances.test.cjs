@@ -24,7 +24,7 @@
 // Both households must give exactly these figures, and the same coach and What-If figures.
 // Mutation check: if entered balances are ignored, the ENTERED household starts from $0 and section 4
 // fails.
-// The demos are unchanged (section 5): CA $3,083 in accounts, $1,944 safe to spend, $138 pace, and the
+// The demos (section 5), since balance-truth 2026-11-06: CA $3,083 in accounts, $1,951 safe to spend, $139 pace, and the
 // Watch check lines captured from main b003f5b on the same pinned date.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -234,13 +234,15 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c, today), incomes: D.buildDemoIncomes(today, c),
       bills: D.buildDemoBills(today, c), transactions: D.buildDemoTxns(today, c), bankConnected: true, demo: true });
     const ca = figures(demo("CA")), us = figures(demo("US"));
-    t.eq([ca.safe[6], ca.safe[7], ca.pace[0]], ["$3,083", "$1,944", "$138"], "5a CA demo: $3,083 in accounts, $1,944 safe to spend, $138 pace");
-    t.eq(ca.watch.map(x => x.split(" low ")[0]), ["7d $3,083.88 + $0.00 − $65.00 − $234.23 = $2,784.65", "30d $3,083.88 + $6,240.00 − $2,176.99 − $1,003.85 = $6,143.04",
-      "90d $3,083.88 + $18,720.00 − $6,530.97 − $3,011.55 = $12,261.36"], "5b CA demo: the Watch 7/30/90 check lines, as main b003f5b printed them on this date");
+    // balance-truth 2026-11-06: the demos' Netflix and Hulu payments are no longer also daily spending, so daily spending
+    // and what follows from it moved ($1,944 safe and a $138 pace before; CA $33.46 a day, now $32.92).
+    t.eq([ca.safe[6], ca.safe[7], ca.pace[0]], ["$3,083", "$1,951", "$139"], "5a CA demo: $3,083 in accounts, $1,951 safe to spend, $139 pace");
+    t.eq(ca.watch.map(x => x.split(" low ")[0]), ["7d $3,083.88 + $0.00 − $65.00 − $230.43 = $2,788.45", "30d $3,083.88 + $6,240.00 − $2,176.99 − $987.57 = $6,159.32",
+      "90d $3,083.88 + $18,720.00 − $6,530.97 − $2,962.72 = $12,310.19"], "5b CA demo: the Watch 7/30/90 check lines on this date (daily spending $32.92 x 7, 30, 90)");
     t.eq(MB.enteredBalanceNote(LINKED.accounts, today), { lines: [], stale: null }, "5c a linked household's How we got this carries no entered line");
-    t.eq([us.safe[6], us.safe[7], us.pace[0], ca.netWorth[3], us.netWorth[3]], ["$3,672", "$2,415", "$172", 12593.88, 18692.55], "5d US demo $3,672 / $2,415 / $172; net worth CA $12,593.88, US $18,692.55");
-    t.eq(us.watch.map(x => x.split(" low ")[0]), ["7d $3,672.55 + $0.00 − $0.00 − $304.09 = $3,368.46", "30d $3,672.55 + $5,350.00 − $2,370.99 − $1,303.26 = $5,348.30",
-      "90d $3,672.55 + $16,050.00 − $7,112.97 − $3,909.79 = $8,699.79"], "5e US demo: Watch 7/30/90 check lines unchanged");
+    t.eq([us.safe[6], us.safe[7], us.pace[0], ca.netWorth[3], us.netWorth[3]], ["$3,672", "$2,425", "$173", 12593.88, 18692.55], "5d US demo $3,672 / $2,425 / $173; net worth CA $12,593.88, US $18,692.55 (unchanged)");
+    t.eq(us.watch.map(x => x.split(" low ")[0]), ["7d $3,672.55 + $0.00 − $0.00 − $298.56 = $3,373.99", "30d $3,672.55 + $5,350.00 − $2,370.99 − $1,279.52 = $5,372.04",
+      "90d $3,672.55 + $16,050.00 − $7,112.97 − $3,838.57 = $8,771.01"], "5e US demo: Watch 7/30/90 check lines (daily spending $42.65, without Hulu, x 7, 30, 90)");
     t.ok(D.demoAccountsFor("CA").every(a => !MB.isEditableAccount(a)) && D.demoAccountsFor("US").every(a => !MB.isEditableAccount(a)), "5f no demo account is editable");
     t.ok(LINKED.accounts.every(a => !MB.isEditableAccount(a)), "5g no linked account is editable: they stay bank-fed");
   }
@@ -323,7 +325,8 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
     t.ok(/From the balance you entered\./.test(E) && !/estimated/i.test(E) && !/Connect bank for real numbers/.test(E),
       `7h Today, entered only: the source line, and no "· estimated" tag or "Estimated · Connect bank" line ("${E.slice(E.indexOf("Safe to spend until"), E.indexOf("Safe to spend until") + 260)}")`);
     t.ok(/No debts entered\s*Add\b/.test(E) && !/Debt free!/.test(E) && !/Amazing!/.test(E), "7i …\"No debts entered\" with Add, never \"Debt free! Amazing!\"");
-    const linkedHome = { ...shared("pl_chq"), transactions: [], debts: [], accounts: [{ ...linked, id: "pl_chq", balance: 2150 }], bankConnected: true };
+    // balance-truth: the bank answered for this account a moment ago, so it is live (7r2 has one with no answer on record).
+    const linkedHome = { ...shared("pl_chq"), transactions: [], debts: [], accounts: [{ ...linked, id: "pl_chq", balance: 2150, bankAnsweredAt: new Date().toISOString() }], bankConnected: true };
     const L = home(linkedHome);
     t.ok(/· live/.test(L) && !/From the balance you entered|From your bank and the balances/.test(L) && !/Connect bank for real numbers/.test(L),
       "7j Today, linked only: \"· live\" as before, no source line");
@@ -354,10 +357,14 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b|\bsmarter\b|\bc
           DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: false }),
           DS.statusChip({ demo: false, lastRefreshRaw: null, nowMs: NOW, bankConnected: true, enteredBalances: true }),
           DS.statusChip({ demo: true, lastRefreshRaw: null, nowMs: NOW, bankConnected: false, enteredBalances: true }).label],
-      [{ label: "Balances you entered", detail: "" }, null, { label: "Live", detail: "· up to date" }, DS.DEMO_STATUS_LABEL],
-      "7p header chip: no bank and balances entered, \"Balances you entered\"; no bank and nothing entered, no chip; a linked bank, \"Live · up to date\" as before; demo as before");
+      [{ label: "Balances you entered", detail: "" }, null, { label: (await import("../src/lib/balanceWords.js")).balanceWords("balance-last-updated-unknown"), detail: "", stale: true }, DS.DEMO_STATUS_LABEL],
+      "7p header chip: no bank and balances entered, \"Balances you entered\"; no bank and nothing entered, no chip; a linked bank with no bank answer on record says it can't say when (balance-truth: it used to say \"Live · up to date\"); demo as before");
     t.ok(/Balances you entered/.test(E) && !/Live\s*· up to date/.test(E), "7q Today, entered only: the header says \"Balances you entered\", not \"Live · up to date\"");
-    t.ok(/Live\s*· up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only: \"Live · up to date\", unchanged");
+    // balance-truth (2026-11-06): a linked bank is "Live" only while the bank answered within the hour. This account has
+    // no answer on record, so Today says so, and never "Live · up to date"; answered a moment ago, it is Live again.
+    t.ok(/Live\s*·\s*just refreshed/.test(L) && !/up to date/.test(L) && !/Balances you entered/.test(L), "7r Today, linked only, the bank answered a moment ago: \"Live · just refreshed\"");
+    const LU = home({ ...linkedHome, accounts: linkedHome.accounts.map(({ bankAnsweredAt, ...a }) => a) });
+    t.ok(LU.includes("Last update time not available") && !/Live\s*·/.test(LU) && !/up to date/.test(LU), "7r2 …and with no bank answer on record, it can't say when, and never \"Live · up to date\"");
     t.ok(!/Live\s*·/.test(S0) && !/Balances you entered/.test(S0), "7s Today, no bank and no balance entered: no chip at all");
     for (const s of [DS.ENTERED_STATUS_LABEL]) t.ok(!BANNED.test(s) && !adviceProblems(s).length, `7t "${s}" passes both copy rules`);
 

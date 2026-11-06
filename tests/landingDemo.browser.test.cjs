@@ -204,8 +204,8 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const input = await page.locator("input[placeholder^='e.g. Buy a $450']").inputValue();
     await sim.click(); await page.waitForTimeout(1500);
     txt = await page.evaluate(() => document.body.innerText);
-    t.ok(input === "Buy a $800 laptop" && /Spending \$800 takes safe to spend until payday from \$1,944 to \$1,144\./.test(txt) && !/Spending \$0\b/.test(txt),
-      `8b the laptop preset fills the input, and Simulate after it still reads "Spending $800 … from $1,944 to $1,144." (input "${input}")`);
+    t.ok(input === "Buy a $800 laptop" && /Spending \$800 takes safe to spend until payday from \$1,951 to \$1,151\./.test(txt) && !/Spending \$0\b/.test(txt),
+      `8b the laptop preset fills the input, and Simulate after it reads "Spending $800 … from $1,951 to $1,151." (the demo's figure since its Netflix stopped counting twice, balance-truth 2026-11-06; input "${input}")`);
     await ctx.close();
   }
   // ── howto-picker: "See how it works", one player and a grid of eight tiles ─────────────────────

@@ -83,8 +83,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
       const d = demo("CA", new Date(TODAY));
       const raw = SafeSpendEngine.calculate(d, TODAY).safeAmount;
       const line = DE.coachSafeToSpendLine(d, TODAY);
-      t.eq(DE.displayedSafeToSpend(d, TODAY), 1944, "4b (Today shows $1,944 for the CA demo on Sep 29 2026)");
-      t.ok(line.includes("$1,944 ") && !line.includes(raw.toFixed(2)), `4c the coach is told $1,944, not the raw ${raw.toFixed(2)}: "${line.slice(0, 60)}"`);
+      // balance-truth 2026-11-06: the demo's Netflix payment is no longer also daily spending ($1,944 before).
+      t.eq(DE.displayedSafeToSpend(d, TODAY), 1951, "4b (Today shows $1,951 for the CA demo on Sep 29 2026)");
+      t.ok(line.includes("$1,951 ") && !line.includes(raw.toFixed(2)), `4c the coach is told $1,951, not the raw ${raw.toFixed(2)}: "${line.slice(0, 60)}"`);
       const noInc = DE.coachSafeToSpendLine({ ...d, incomes: [] }, TODAY);
       t.ok(/none shown/.test(noInc) && !/\$\d/.test(noInc), "4d with no income Today shows no figure, and the coach is told none, not a number");
       const noCash = DE.coachSafeToSpendLine({ ...d, accounts: d.accounts.filter(a => !["checking", "savings", "depository"].includes(a.type)) }, TODAY);
@@ -113,11 +114,13 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.ok(!/at 7% for/.test(inv) && /investVerdictReason\(/.test(inv), "5f the invest scenario uses it, and no bare \"at 7% for\" is left");
   }
 
-  // ── 6. Today's figure is unchanged ───────────────────────────────────────────────────────────
+  // ── 6. Today's figure (moved once, on purpose: balance-truth 2026-11-06) ────────────────────────
   {
     // US 25 days old was $1,422 until the engine summed in cents (audit 2026-10-26, M1): its buffer and savings
     // were rounded to the nearest dollar inside the engine, and one rounded down; now each is rounded up once, in the view.
-    const want = { "CA 2026-09-29 0": 1944, "CA 2026-09-29 25": 973, "US 2026-09-29 0": 2415, "US 2026-09-29 25": 1421 };
+    // balance-truth 2026-11-06: the demos' Netflix and Hulu payments are no longer also daily spending, so each figure
+    // moved up by that share of the buffer (it was 1944, 973, 2415 and 1421).
+    const want = { "CA 2026-09-29 0": 1951, "CA 2026-09-29 25": 974, "US 2026-09-29 0": 2425, "US 2026-09-29 25": 1422 };
     for (const [k, v] of Object.entries(want)) {
       const [c, iso, age] = k.split(" ");
       const now = new Date(iso + "T12:00:00"); const made = new Date(now); made.setDate(made.getDate() - Number(age));

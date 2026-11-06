@@ -25,7 +25,7 @@
 // -----------------------------------------------------------------------------
 
 import { depositDatesFor, findAnchor, depositConfidence, isDepositToday } from "./incomeSchedule.js";
-import { billOccursOnDate, isBillArchived, num, clampDayToMonth } from "./financialCalculations.js";
+import { billOccursOnDate, isBillArchived, num, clampDayToMonth, paysABill } from "./financialCalculations.js";
 import { anchorEvidence, incomeEvidence } from "./depositClassify.js";
 
 export const EDIT_LOOKAHEAD_DAYS = 62; // an occurrence moved up to this far earlier still appears
@@ -223,7 +223,7 @@ function prevBillOccurrence(b, orig) {
 // rent paid Oct 1 marks the Oct 1 rent, never Nov 1's; a bill paid ten days early marks the coming one; and one
 // payment marks one occurrence. Exactly halfway belongs to the earlier one, so that occurrence is still reserved.
 // A one-off has no occurrence before it: a payment in the 5 days before it counts.
-const NOT_A_PAYMENT_RX = /\b(refund(ed)?|revers(al|ed|e)|return(ed)?|charge ?back)\b/i;
+// (The refund, reversal and return words are financialCalculations.js NOT_A_PAYMENT_RX.)
 // How early a payment may count for an occurrence when the one before it has no payment of its own (review of
 // 2026-10-26): rent due the 1st and paid Oct 20 may be October's, paid late, so November's is still reserved.
 const EARLY_DAYS = 10;
@@ -234,18 +234,14 @@ function billArrived(b, orig, eff, txns, today) {
   const billName = _normBill(b.vendorPattern || b.name);
   const billAmt = num(b.amount);
   if (billName.length < 3 || !(billAmt > 0)) return false;
-  const variable = b.type === "variable" || b.variable === true;
   const payIn = (fromMs, toMs) => txns.some(t => {
     // Only a payment out pays a bill: never money in (a refund of the same amount and merchant), a move between
     // the household's own accounts (a transfer markTransfers paired: transferPairId), or a refund, reversal or
     // return (audit 2026-10-26, item 15). A card payment or an e-transfer to a landlord is a payment.
-    if (!(Number(t.amount) > 0) || t.pending || t.transferPairId || NOT_A_PAYMENT_RX.test(String(t.name || ""))) return false;
+    // The name and amount test is financialCalculations.js paysABill, which daily spending reads too.
     const d = fromIso(t.date);
     if (!d || !(d.getTime() > fromMs) || d.getTime() > toMs) return false;
-    const name = _normBill(t.name);
-    const nameMatch = name && (name.includes(billName) || billName.includes(name));
-    const amtMatch = variable || Math.abs(Math.abs(Number(t.amount)) - billAmt) <= Math.max(2, billAmt * 0.05);
-    return nameMatch && amtMatch;
+    return paysABill(t, b);
   });
   const early = addDays(at, -EARLY_DAYS).getTime() - 1;
   if (!(prev && noon(prev) < noon(at))) {

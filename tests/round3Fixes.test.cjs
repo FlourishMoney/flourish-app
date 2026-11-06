@@ -55,9 +55,9 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     const d = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA", TODAY), incomes: D.buildDemoIncomes(TODAY, "CA"),
       bills: D.buildDemoBills(TODAY, "CA"), transactions: D.buildDemoTxns(TODAY, "CA"), profile: D.demoProfileFor("CA") };
     t.eq(DE.coachPurchaseLine(d, "Can I afford a $600 phone?", TODAY),
-      "- Purchase in the user's latest message: $600 | Safe to spend after it (computed by Flourish): $1,344",
-      "1k a purchase question carries the amount and what Flourish computes is left ($1,944 less $600)");
-    t.eq(DE.coachPurchaseLine(d, "Can I afford a $2,500 laptop?", TODAY).endsWith("-$556"), true, "1l …negative when it goes past safe to spend");
+      "- Purchase in the user's latest message: $600 | Safe to spend after it (computed by Flourish): $1,351",
+      "1k a purchase question carries the amount and what Flourish computes is left ($1,951 less $600; it was $1,944 until the demo's Netflix stopped counting twice, balance-truth 2026-11-06)");
+    t.eq(DE.coachPurchaseLine(d, "Can I afford a $2,500 laptop?", TODAY).endsWith("-$549"), true, "1l …negative when it goes past safe to spend ($1,951 - $2,500)");
     t.eq(DE.coachPurchaseLine(d, "How is my spending this month?", TODAY), "", "1m no line for a question that is not a purchase");
     t.eq(DE.coachPurchaseLine(d, "When do I get my $2,600 paycheque?", TODAY), "", "1m2 …nor for a question about pay");
     t.eq(DE.coachPurchaseLine(d, "Can I buy 2 tickets at $150 each?", TODAY), "", "1m3 none when the amount would need multiplying");
