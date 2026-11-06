@@ -23,7 +23,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
 (async () => {
   const t = create();
   const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
-  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images");
+  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter", "clarity"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images, Clarity's loader");
 
   // ── 1. the web build keeps every landing file ───────────────────────────────────────────────
   const web = tempDir("landing-media-web");
@@ -51,6 +51,10 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   t.eq(before.filter(n => !after.includes(n)).sort(), [...LANDING_ONLY].sort(), "2b …and nothing else was removed");
   t.ok(["index.html", "assets", "sw.js", "flourish-adult-app-icon-180.png", "flourish-symbol.png"].every(n => after.includes(n)), "2c the app's own files are all there");
   t.ok(/landing-only media kept out of the native build: video, app-screens, og-image\.png, og-image-ca\.png/.test(out), "2d it says what it removed");
+  // Microsoft Clarity (2026-11-06): nothing in the store build names clarity.ms, the bundle, its pages or any file.
+  const withClarity = [];
+  (function walk(p) { for (const f of fs.readdirSync(p)) { const q = path.join(p, f); if (fs.statSync(q).isDirectory()) walk(q); else if (/\.(js|html?|json|css|txt|xml|svg|webmanifest)$/i.test(f) && fs.readFileSync(q, "utf8").includes("clarity.ms")) withClarity.push(path.relative(nat, q)); } })(path.join(nat, "dist"));
+  t.eq([withClarity, after.includes("clarity")], [[], false], "2f the store build holds no Microsoft Clarity: no file names clarity.ms, and Clarity's loader is gone");
   const mb = (d) => { let s = 0; (function walk(p) { for (const f of fs.readdirSync(p)) { const q = path.join(p, f); const st = fs.statSync(q); if (st.isDirectory()) walk(q); else s += st.size; } })(d); return s / 1048576; };
   const wMB = mb(path.join(web, "dist")), nMB = mb(path.join(nat, "dist"));
   t.ok(wMB - nMB > 25, `2e the native dist/ is ${nMB.toFixed(1)} MB, ${(wMB - nMB).toFixed(1)} MB lighter than the web build (${wMB.toFixed(1)} MB)`);
@@ -58,7 +62,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   // ── 3. the native check refuses landing media ───────────────────────────────────────────────
   const check = (cwd) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-native-build.mjs"), "--artifact"], { cwd, env: ENV, encoding: "utf8" });
   const bad = check(web);
-  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png, get, email, newsletter\)/.test(bad.stderr + bad.stdout),
+  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png, get, email, newsletter, clarity\)/.test(bad.stderr + bad.stdout),
     "3a check-native-build --artifact refuses a dist/ that still holds the landing media");
   const good = check(nat);
   t.ok(good.status === 0 && /native build check passed \(artifact\)/.test(good.stdout), "3b …and passes the stripped one");
