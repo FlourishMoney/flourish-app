@@ -6,8 +6,7 @@
 // and run in Chromium as the iPhone or Android app: Capacitor's own custom-platform hook names the platform, and a
 // fake RevenueCat plugin answers through Capacitor's native bridge with the store's packages and price strings.
 // The server (Supabase and /api/billing store_status) is this test's own; nothing reaches the network.
-//   1  founding + confirmed + unpaid: nothing on the first visit (Flourish first, 2026-11-05); on the next visit the plans
-//      screen opens by itself, titled as an add-on, Founding annual first and marked chosen,
+//   1  founding + confirmed + unpaid, the tips already seen: the plans screen opens by itself, Founding annual first and marked chosen,
 //      the store's prices, the approved disclosure, a close button; one tap on Founding annual opens the store's
 //      sheet for the founding package, and the confirmed purchase closes the screen
 //   2  not founding: nothing opens by itself; See plans in Settings still opens the plans, in the old order
@@ -104,18 +103,18 @@ function installStore([platform, uid]) {
   const DIALOG = '[role="dialog"][aria-label="Subscription"]';
 
   // A phone: one browser context is one phone (its storage survives reloads). scenario.status is what the server answers.
-  const phone = async ({ platform = "ios", scenario }) => {
+  const phone = async ({ platform = "ios", scenario, tips = false }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, timezoneId: "America/Toronto", colorScheme: "dark" });
     await ctx.addInitScript(installStore, [platform, MOCK.USER_ID]);
-    await ctx.addInitScript(([key, session]) => { try {
+    await ctx.addInitScript(([key, session, tips]) => { try {
       if (!localStorage.getItem("test_seeded")) {
         localStorage.setItem("test_seeded", "1");
         localStorage.setItem(key, session);
         localStorage.setItem("flourish_first_visit_done", "1");
-        localStorage.setItem("flourish_tour_done", "1");
+        if (!tips) localStorage.setItem("flourish_tour_done", "1");
         localStorage.setItem("flourish_ai_disclosure_seen", "1");
       }
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.now() / 1000)))]);
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.now() / 1000))), tips]);
     const asked = [];
     // Nothing leaves this machine: the store app's API origin is answered here, and any other host is refused.
     await ctx.route((url) => !url.href.startsWith(base), (r) => {
@@ -158,13 +157,8 @@ function installStore([platform, uid]) {
       const scenario = { status: status({ founding: true }) };
       const { ctx, page, asked } = await phone({ scenario });
       await go(page);
-      await quiet(page, asked);
-      t.eq(await dialogUp(page), false, "1a0 Flourish first (2026-11-05): on the first visit nothing opens by itself, the app is what shows");
-      t.ok(await page.getByText("safe to spend", { exact: false }).first().isVisible(), "1a1 …it is Today");
-      await go(page);
       const opened = await until(() => dialogUp(page), 15000);
-      t.ok(opened, "1a on the next visit, the plans screen opens by itself");
-      t.ok((await page.locator(DIALOG).innerText()).includes("Add Flourish Plus") && (await page.locator(DIALOG).innerText()).includes("Flourish Plus is an optional add-on to Flourish."), "1a2 …as an add-on to Flourish");
+      t.ok(opened, "1a the plans screen opens by itself once the account is in the app");
       await page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
       t.eq(await plans(page), [["founding_annual", true], ["monthly", false]], "1b Founding annual first, marked as the chosen plan, then Monthly");
       const text = await page.locator(DIALOG).innerText();
@@ -209,9 +203,7 @@ function installStore([platform, uid]) {
       const scenario = { status: status({ founding: true }) };
       const { ctx, page, asked } = await phone({ scenario });
       await go(page);
-      await quiet(page, asked);
-      await go(page);
-      t.ok(await until(() => dialogUp(page), 15000), "4a (it opened by itself, on the second visit)");
+      t.ok(await until(() => dialogUp(page), 15000), "4a (it opened by itself)");
       await page.locator(`${DIALOG} button[aria-label="Close"]`).click();
       t.ok(await until(async () => !(await dialogUp(page)), 5000), "4b the close button closes it");
       await page.waitForTimeout(2500);
@@ -221,7 +213,7 @@ function installStore([platform, uid]) {
       await quiet(page, asked);
       t.eq(await dialogUp(page), false, "4d after the app is opened again, it does not reopen on its own");
       // Signing out keeps the marker (App.jsx signOut): seed the same session again, as signing back in does.
-      await page.evaluate((key) => { const keep = new Set([key, "flourish_founding_plans_shown", "flourish_founding_first_visit", "flourish_uid", "flourish_v1", "test_seeded"]);
+      await page.evaluate((key) => { const keep = new Set([key, "flourish_founding_plans_shown", "flourish_uid", "flourish_v1", "test_seeded"]);
         Object.keys(localStorage).filter((k) => k.startsWith("flourish_") && !keep.has(k)).forEach((k) => localStorage.removeItem(k));
         localStorage.setItem("flourish_first_visit_done", "1"); localStorage.setItem("flourish_tour_done", "1"); localStorage.setItem("flourish_ai_disclosure_seen", "1"); }, MOCK.storageKey(base));
       asked.length = 0;
@@ -241,14 +233,9 @@ function installStore([platform, uid]) {
       await go(page, null);
       await page.waitForTimeout(6000);
       t.eq(await dialogUp(page), false, "5a Flourish first (2026-11-05): a new founding account is not asked over onboarding");
-      await go(page, null);
-      await page.waitForTimeout(6000);
-      t.eq(await dialogUp(page), false, "5a2 …not even on a later visit while onboarding is unfinished");
       onboarded = true;
       await go(page);
-      await page.waitForTimeout(2500);
-      await go(page);
-      t.ok(await until(() => dialogUp(page), 30000), "5a3 once onboarding is done, it opens on the next visit");
+      t.ok(await until(() => dialogUp(page), 30000), "5a2 once onboarding is done (the tips already seen), it opens in that visit");
       await page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
       t.eq(await plans(page), [["founding_annual", true], ["monthly", false]], "5b Android: Founding annual first, marked chosen");
       const text = await page.locator(DIALOG).innerText();
@@ -261,6 +248,40 @@ function installStore([platform, uid]) {
       await ctx.close();
       onboarded = true;
     }
+    // ── 5b. Flourish first: the intro tips, then the plans, in the same visit (2026-11-05) ──────────────────────────
+    {
+      const scenario = { status: status({ founding: true }) };
+      const { ctx, page, asked } = await phone({ scenario, tips: true });
+      await go(page);
+      await page.getByText("Step 1 of 5").waitFor({ timeout: 40000 });
+      await quiet(page, asked);
+      t.eq(await dialogUp(page), false, "5e the intro tips come first: nothing opens by itself while they are on screen");
+      for (let i = 0; i < 4; i++) {
+        await page.getByRole("button", { name: "Next →" }).click();
+        await page.getByText(`Step ${i + 2} of 5`).waitFor();
+        await page.waitForTimeout(300);
+        t.eq(await dialogUp(page), false, `5f …still nothing on tip ${i + 2}`);
+      }
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      t.ok(await until(() => dialogUp(page), 15000), "5g Done on the last tip: the plans open straight away, in the same visit");
+      await page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
+      t.eq((await plans(page))[0][0], "founding_annual", "5h …with Founding annual first");
+      await shot(page, "ios-after-tips.png");
+      await page.locator(`${DIALOG} button[aria-label="Close"]`).click();
+      t.ok(await until(async () => !(await dialogUp(page)), 5000), "5i closed: as before");
+      asked.length = 0;
+      await go(page);
+      await quiet(page, asked);
+      t.eq(await dialogUp(page), false, "5j and it does not reopen on its own");
+      await ctx.close();
+      const s2 = await phone({ scenario: { status: status({ founding: true }) }, tips: true });
+      await go(s2.page);
+      await s2.page.getByText("Step 1 of 5").waitFor({ timeout: 40000 });
+      await s2.page.getByRole("button", { name: "Skip", exact: true }).click();
+      t.ok(await until(() => dialogUp(s2.page), 15000), "5k Skip on the tips: the plans open straight away too");
+      await s2.ctx.close();
+    }
+
     // ── 6. Keep the trial ────────────────────────────────────────────────────────────────────────
     {
       const O = await import("../src/lib/storeOffer.js");
@@ -268,9 +289,7 @@ function installStore([platform, uid]) {
       const scenario = { status: status({ founding: true, spots: 7 }) };
       const { ctx, page, asked } = await phone({ scenario });
       await go(page);
-      await quiet(page, asked);
-      await go(page);
-      t.ok(await until(() => dialogUp(page), 15000), "6a (it opened by itself on the second visit, the account in its 14-day trial)");
+      t.ok(await until(() => dialogUp(page), 15000), "6a (it opened by itself, the account in its 14-day trial)");
       await page.locator(`${DIALOG} [data-trial-link]`).waitFor({ timeout: 10000 });
       t.eq(await page.locator(`${DIALOG} [data-trial-link]`).innerText(), W.link, "6b the small print under the plans");
       const order = await page.locator(DIALOG).evaluate((d) => { const all = [...d.querySelectorAll("*")]; const at = (sel) => all.indexOf(d.querySelector(sel));
@@ -303,8 +322,6 @@ function installStore([platform, uid]) {
 
       const none = { status: status({ founding: true, spots: null }) };
       const p2 = await phone({ scenario: none });
-      await go(p2.page);
-      await quiet(p2.page, p2.asked);
       await go(p2.page);
       t.ok(await until(() => dialogUp(p2.page), 15000), "6k (founding offered, but no count came with it)");
       await p2.page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });

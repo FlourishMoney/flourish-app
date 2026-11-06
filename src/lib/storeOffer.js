@@ -111,11 +111,8 @@ export function foundingSpotLine(status) {
 }
 
 export const PAYWALL_COPY = Object.freeze({
-  // 2026-11-05 (Amanda, from the 1.1.5 phone test): Flourish isn't Flourish Plus, and Plus is an add-on. PROPOSED words,
-  // not yet approved; the 2026-10-20 approved pair was "Flourish Plus" and "Flourish Plus adds Credit and the coach-run
-  // meeting, and lifts the free plan's limits on the coach and What-If."
-  title: "Add Flourish Plus",
-  lead: "Flourish Plus is an optional add-on to Flourish. It adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+  title: "Flourish Plus",
+  lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
   dataSafe: "Your accounts, bills and history stay as they are.",
   terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
   privacy: "Privacy Policy",      // approved 2026-10-20
