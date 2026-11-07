@@ -19,6 +19,8 @@ What changed:
 
 • Our own links can carry a short code naming the post they came from. On our web pages we count visits and taps through to the App Store or Google Play with that code, and we store no IP address, cookie or other identifier with those counts.
 
+• On our public website pages we now use Microsoft Clarity heatmaps and session recordings to understand taps, scrolling and other page interactions. Page content is masked, Clarity cookies are off, and Clarity doesn't load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. It isn't used in the flourish app, on sign-in or sign-up pages, at checkout, or on any signed-in page.
+
 • If you install the Android app from one of our links, Google Play can pass that code to the app the first time you open it. We keep it with your account and delete it when your account is deleted.
 
 • We now also use your IP address briefly to limit repeated newsletter sign-ups, as we already do for account sign-ups and coach requests. We don't store it with your newsletter sign-up.
@@ -56,9 +58,21 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
 
 (async () => {
   const t = create();
-  const N = require("../netlify/functions/_lib/policyNotice");
-  const fn = require("../netlify/functions/policy-notice-sweep");
-  const { run, PER_RUN_CAP } = fn._test;
+  const NOTICE_PATH = require.resolve("../netlify/functions/_lib/policyNotice");
+  const SWEEP_PATH = require.resolve("../netlify/functions/policy-notice-sweep");
+  const N = require(NOTICE_PATH);
+  // The sweep with the notice's lines as given (the real module, or a stand-in for it).
+  const sweepWith = (notice) => {
+    delete require.cache[SWEEP_PATH];
+    require.cache[NOTICE_PATH].exports = notice;
+    const mod = require(SWEEP_PATH);
+    require.cache[NOTICE_PATH].exports = N;
+    return mod._test;
+  };
+  const withText = (edit) => ({ ...N,
+    noticeText: (d) => edit(N.noticeText(d)),
+    noticePayload: (to, d) => { const pl = N.noticePayload(to, d); return { ...pl, text: edit(pl.text), html: edit(pl.html) }; } });
+  const { run, PER_RUN_CAP } = sweepWith(N);
 
   t.eq(N.noticeText("November 12, 2026"), APPROVED, "1a the words, exactly as approved");
   const p = N.noticePayload("a@example.ca", "November 12, 2026");
@@ -126,6 +140,12 @@ const people = (n) => Array.from({ length: n }, (_, i) => ({ user_id: `u${i}`, e
     t.eq([r3.sent, r3.failed, tried.length, bad.sends.get("u0").status], [0, 1, 1, "failed"], "4j a failure stops the run, and is recorded");
     await run({ mode: "send", admin: bad, send: async (_, id) => { tried.push(id); return true; }, log: () => {} });
     t.ok(tried.filter((x) => x === "u0").length === 1, "4k and that account is not retried");
+
+    // Words still to come: nothing claimed, nothing sent (a "[WORDS: …]" placeholder never reaches an inbox).
+    const pendingRun = sweepWith(withText((x) => x.replace("What changed:", "What changed: [WORDS: some-line]"))).run;
+    const held = fakeDb(people(2)); let heldSent = 0;
+    const r4 = await pendingRun({ mode: "send", admin: held, send: async () => { heldSent += 1; return true; }, log: () => {} });
+    t.eq([r4.stopped, heldSent, held.sends.size], ["pending_words", 0, 0], "4m words still to come: the send stops before claiming or sending anything");
 
     // Two runs at once: the claim decides.
     const race = fakeDb(people(1)); const raced = []; const s = async (_, id) => { raced.push(id); return true; };

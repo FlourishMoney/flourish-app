@@ -25,6 +25,8 @@ const BODY = (date) => [
   "What changed:",
   "• We added Canadian money dates this week, an optional weekly email for people aged 18 and over. You only get it if you sign up and confirm from the email we send you. Having a flourish account doesn't sign you up, and the waitlist wasn't added to it.",
   "• Our own links can carry a short code naming the post they came from. On our web pages we count visits and taps through to the App Store or Google Play with that code, and we store no IP address, cookie or other identifier with those counts.",
+  // Microsoft Clarity on the website's public pages, approved 2026-11-06 (claude/CLARITY-WORDS-APPROVED-2026-11-06.md), word for word.
+  "• On our public website pages we now use Microsoft Clarity heatmaps and session recordings to understand taps, scrolling and other page interactions. Page content is masked, Clarity cookies are off, and Clarity doesn't load for visitors in Quebec, the European Economic Area, the United Kingdom or Switzerland. It isn't used in the flourish app, on sign-in or sign-up pages, at checkout, or on any signed-in page.",
   "• If you install the Android app from one of our links, Google Play can pass that code to the app the first time you open it. We keep it with your account and delete it when your account is deleted.",
   "• We now also use your IP address briefly to limit repeated newsletter sign-ups, as we already do for account sign-ups and coach requests. We don't store it with your newsletter sign-up.",
   "• If you enter a tester code when you sign up, we store the code and the date. Answers you give to the tester questions in the app are saved to your account.",
