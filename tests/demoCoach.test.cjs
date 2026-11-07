@@ -59,8 +59,9 @@ const { create } = require("./_runner.cjs");
                     days, ss.upcomingBills, ss.safetyBuf, ss.savingsAlloc, view.balanceText].join("|"));
   }
   t.eq(signatures.size, 1, `anchored demo fixture yields IDENTICAL figures on all ${DATES.length} dates (was: $2,009 one day, $359 two days later)`);
-  t.eq([...signatures][0], "$1,944|$138|2840|Full-time Job|13|65|435|290.95|$3,083",
-    "…and that one signature is the published demo: $1,944 safe, $138/day, $2,840 paycheque 13 days out, $3,083 balance, $65 of committed bills");
+  // balance-truth 2026-11-06: the demo's Netflix payment is no longer also daily spending (buffer $435 -> $427.95).
+  t.eq([...signatures][0], "$1,951|$139|2840|Full-time Job|13|65|427.95|290.95|$3,083",
+    "…and that one signature is the published demo: $1,951 safe, $139/day, $2,840 paycheque 13 days out, $3,083 balance, $65 of committed bills");
 
   // The demo must SHOW the product's claim — that a balance is not spendable because money is already
   // committed. That needs a bill inside the reservation window, i.e. a five-row breakdown.

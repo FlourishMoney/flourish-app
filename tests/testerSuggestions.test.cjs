@@ -177,7 +177,10 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const noBank = { ...demo(), bankConnected: false, accounts: [{ id: "s1", name: "Chequing", type: "checking", balance: "2400", institution: "Statement" }] };
     const spend = (d) => textOf(A.render(A.h(A.SpendScreen, { data: d, setAppData: noop, setScreen: noop })));
     t.ok(spend(noBank).includes("From your statements and entries") && !spend(noBank).includes("Sample data"), "4i a household with no bank sees its own data as its own, not \"Sample data\"");
-    t.ok(spend({ ...demo(), demo: true }).includes("Sample data") && spend(demo()).includes("Live from your bank"), "4j (the demo is still sample data; a linked bank is still live)");
+    // balance-truth (2026-11-06): "live" is now true only while the bank answered within the hour, so the linked bank here
+    // has just answered (bankAnsweredAt); balanceTruth and demoStatus 6d hold the not-live case.
+    const answered = (d) => ({ ...d, accounts: (d.accounts || []).map((a) => ({ ...a, bankAnsweredAt: new Date().toISOString() })) });
+    t.ok(spend({ ...demo(), demo: true }).includes("Sample data") && spend(answered(demo())).includes("Live from your bank"), "4j (the demo is still sample data; a linked bank the bank just answered for is still live)");
     t.ok(/const isDemo=!!data\.demo;/.test(APP), "4k only the demo counts as sample data on Activity");
   }
 

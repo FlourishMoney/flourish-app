@@ -5,7 +5,7 @@
 // The audit's household, signed in on the built app with the clock pinned to Oct 26, 2026: $3,000 in checking, pay
 // every two weeks with the next payday Nov 6, rent of $1,500 due the 1st, and last month's rent paid Oct 1. Before the
 // fix, Today showed $2,291 safe and no rent due, while Watch took the rent out on Nov 1. Now:
-//   1  Today shows $791, and its breakdown carries Upcoming bills $1,500
+//   1  Today shows $1,341 (balance-truth 2026-11-06: the rent payment is no longer also daily spending), and its breakdown carries Upcoming bills $1,500
 //   2  Watch takes the same rent out on Nov 1
 // (tests/onboardingFirstNumber.browser.test.cjs puts its bill on or after payday, so it never met this.)
 // -----------------------------------------------------------------------------
@@ -71,12 +71,12 @@ function household() {
     await page.clock.install({ time: new Date("2026-10-26T10:00:00-04:00") });
     page.setDefaultTimeout(20000);
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await page.getByText("$791", { exact: false }).first().waitFor({ timeout: 40000 }).catch(() => {});
+    await page.getByText("$1,341", { exact: false }).first().waitFor({ timeout: 40000 }).catch(() => {});
     const today = await page.locator("body").innerText();
-    t.ok(/\$791\b/.test(today), "1a Today shows $791 safe until payday (was $2,291)");
+    t.ok(/\$1,341\b/.test(today), "1a Today shows $1,341 safe until payday (was $791 with the rent counted twice, $2,291 before that)");
     t.ok(!/\$2,291\b/.test(today), "1b …and not the old $2,291");
     // The breakdown: "How Flourish got this number" lists the bills before payday.
-    const how = page.getByText("$791", { exact: false }).first();
+    const how = page.getByText("$1,341", { exact: false }).first();
     await how.click().catch(() => {});
     await page.waitForTimeout(600);
     const sheet = await page.locator("body").innerText();

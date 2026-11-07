@@ -54,6 +54,8 @@ import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDo
 import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
 import { budgetSuggestionBasis, observedMonthlySpend } from "./lib/budgetBasis.js";
 import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp, ENTERED_STATUS_LABEL } from "./lib/demoStatus.js";
+import { bankFreshness, itemsNeedingSignIn, linkExitMessage, historyDone, historyCards, syncBankDebts, lastUpdatedLine, HISTORY_POLL_MS } from "./lib/balanceTruth.js";
+import { balanceWords } from "./lib/balanceWords.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -890,11 +892,13 @@ async function fetchItemTxns(item_id, jwt, fullResync) {
   const transactions = [];
   const removed = [];
   let full = false;
+  let updateStatus = null; // balance-truth: how far Plaid's first pull of this bank's history has got
   let resync = !!fullResync;
   for (let guard = 0; guard < 12; guard++) {
     const resp = await callPlaid("get_transactions", { item_id, days: 90, full_resync: resync }, { jwt });
     if (Array.isArray(resp.transactions)) transactions.push(...resp.transactions);
     if (Array.isArray(resp.removed)) removed.push(...resp.removed);
+    if (resp.update_status) updateStatus = resp.update_status;
     full = full || !!resp.full;
     if (!resp.truncated) break;
     resync = false; // subsequent pages resume from the persisted cursor, never re-full
@@ -906,7 +910,7 @@ async function fetchItemTxns(item_id, jwt, fullResync) {
   // the stored accounts are the fallback.
   const split = splitLoanActivity(transactions, loadState()?.appData?.accounts || []);
   storeLoanActivity(split.loanActivity, removed);
-  return { transactions: split.transactions, removed, full };
+  return { transactions: split.transactions, removed, full, updateStatus };
 }
 
 // Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
@@ -4252,6 +4256,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     setDebts(prePopulated);
   }, [step]);
   const [bankStage,setBankStage]=useState("select");
+  // balance-truth fix 4: the bank linked, but its 90 days of history are not all here yet ({ bank } or null).
+  const [historyComing,setHistoryComing]=useState(null);
   // W4: the person closed Plaid ("cancelled") or the link failed ("failed"). Either way: try again or enter it.
   const [bankOutcome,setBankOutcome]=useState(null);
   // The bank's transactions, kept here so the paycheque screen can tell whether payday is already known.
@@ -4321,6 +4327,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         type:a.type,
         subtype:a.subtype||null,
         balance:normalizeAccountBalance(a),
+        bankAnsweredAt:new Date().toISOString(), // balance-truth: the bank answered for it now (lib/balanceTruth.js)
         institution:ex.institution_name,
         _item:ex.item_id||null, // the Plaid item it came from, stamped now (couple mode: it leaves with whoever linked it)
       }));
@@ -4329,9 +4336,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       // the account promote on purpose — a transaction failure must never discard a good get_accounts
       // (that coupling is exactly what broke the Settings path).
       let fetchedTxns = [];
+      let firstPull = "NOT_READY"; // balance-truth: how far the bank's 90 days have got (a failed fetch: not yet)
       try {
         const td = await fetchItemTxns(ex.item_id, jwt, false);
         fetchedTxns = normaliseTxns(td.transactions||[]);
+        firstPull = td.updateStatus || null;
       } catch (txErr) {
         console.error("[plaid] onboarding transaction fetch failed, accounts still promoted:", txErr?.message||txErr);
         captureError(txErr, { area: "plaid" });
@@ -4348,7 +4357,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       setTimeout(()=>{
         // Promote into appData IMMEDIATELY (single source of truth). Previously this wrote to local
         // state that only reached appData at finish() — and was lost on any unmount before then.
-        onAccountsConnected?.(mappedAccounts, fetchedTxns);
+        onAccountsConnected?.(mappedAccounts, fetchedTxns, { item_id: ex.item_id, bank: ex.institution_name, updateStatus: firstPull });
+        setHistoryComing(historyDone(firstPull) ? null : { bank: ex.institution_name });
         setBankTxns(marked);
         if (found && Number(found.perDeposit) > 0) setIncomes(prev => prev.some(i => i.amount) ? prev : [{
           id:1, label:found.label||"", amount:String(found.perDeposit), freq:found.freq||"monthly", type:"employment", sourceTypes:["employment"],
@@ -4649,6 +4659,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           <div style={{color:C.mutedHi,fontSize:13,marginTop:4}}>
             {connAccts.length} account{connAccts.length!==1?"s":""} connected across {new Set(connAccts.map(a=>a.institution)).size} bank{new Set(connAccts.map(a=>a.institution)).size!==1?"s":""}
           </div>
+          {historyComing&&(
+            /* balance-truth fix 4: the balances are in; the 90 days of history are still on the way. */
+            <div role="status" data-history-loading="1" style={{marginTop:SPACE.md,color:C.gold,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+              <div style={{fontWeight:700}}>{balanceWords("balance-history-loading",{bank:historyComing.bank})}</div>
+              <div style={{color:C.mutedHi}}>{balanceWords("balance-history-loading-body")}</div>
+            </div>
+          )}
         </div>
         {connAccts.map((a,i)=>(
           <div key={i} style={{background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:14,padding:"13px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -5129,19 +5146,26 @@ function NetWorthSparkline({history, color}){
 
 
 // ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
-async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
+// balance-truth: opts.force skips the 30-minute wait (a new bank's history being polled, or the webhook's "new
+// transactions are waiting"); opts.items reuses a list_items answer the caller already has (and opts.jwt its
+// session token). It answers what it
+// learned, for the app's bank status: { ran, signIn: item ids whose bank needs a fresh sign-in, updateStatus:
+// { item_id: Plaid's first-pull status } }.
+async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts = {}) {
+  const learned = { ran: false, signIn: [], answered: [], updateStatus: {} };
   // Sprint Z2 #16: v1 is all-free (ENFORCE_PLAN_LIMITS=false server-side), so auto-refresh is NOT
   // plan-gated — free web users get it too (iOS already did via isPremium=true). The 30-min throttle
   // below still prevents hammering Plaid. Re-introduce a plan gate here when v1.1 IAP ships. (isPremium
   // param retained for call-site stability and the eventual v1.1 re-gate.)
   const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
   const THIRTY_MIN = 30 * 60 * 1000;
-  if(Date.now() - lastFetch < THIRTY_MIN) return;
+  if(!opts.force && Date.now() - lastFetch < THIRTY_MIN) return learned;
   // Phase D1-F-B: multi-bank refresh via list_items + item_id (server-side token lookup)
-  const jwt = await getJwt();
-  if(!jwt) return;
-  const items = await getUserItems();
-  if(items.length === 0) return;
+  const jwt = opts.jwt || await getJwt();
+  if(!jwt) return learned;
+  const items = Array.isArray(opts.items) ? opts.items : await getUserItems();
+  if(items.length === 0) return learned;
+  learned.ran = true;
   try {
     // Fan out: fetch accounts + transactions for each item in parallel
     const [acctResults, txnResults] = await Promise.all([
@@ -5160,16 +5184,19 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         (r.value.accounts || []).forEach(a => rawFreshAccounts.push({ ...a, _item: itemId }));
       } else {
         failedItemIds.add(itemId);
+        if (r.reason?.needs_reconnect) learned.signIn.push(itemId); // balance-truth: this bank needs a fresh sign-in
         console.error(`[backgroundRefresh] get_accounts failed for item ${String(itemId).slice(0,8)}:`, r.reason?.message || r.reason);
       }
     });
+    learned.answered = items.map(it => it.item_id).filter(id => !failedItemIds.has(id));
+    txnResults.forEach((r, idx) => { if (r.status === "fulfilled") learned.updateStatus[items[idx].item_id] = r.value.updateStatus || null; });
     const allSucceeded = failedItemIds.size === 0;
     // Sprint Z/B2: don't strand transaction deltas behind an account-fetch failure. Bail only if
     // EVERY account failed AND there are no txn changes to apply this round.
     const anyTxnData = txnResults.some(r => r.status === "fulfilled" && (((r.value.transactions||[]).length) > 0 || ((r.value.removed||[]).length) > 0));
     if (rawFreshAccounts.length === 0 && !allSucceeded && !anyTxnData) {
       console.error("[backgroundRefresh] all items failed account refresh, keeping cached state");
-      return;
+      return learned;
     }
 
     const allRawTxns = txnResults
@@ -5181,6 +5208,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
       .flatMap(r => r.value.removed || []);
     const normalisedTxns = normaliseTxns(allRawTxns);
     const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
+    const answeredAt = new Date().toISOString(); // balance-truth: when the bank answered for this round's accounts
 
     setAppData(prev => {
       // Sprint D Fix — THE CLOBBER GUARD. The bail above only fires when items FAILED. A refresh where
@@ -5200,6 +5228,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         type: a.type,
         subtype: a.subtype||null,
         balance: normalizeAccountBalance(a),
+        bankAnsweredAt: answeredAt, // balance-truth: only a fresh answer is stamped; a retained account keeps its own
         currency: a.balance?.currency || null, // Sprint Z3 #6 + currency-default fix: null = "not stated", never a guessed CAD
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
         _item: a._item || null,
@@ -5235,9 +5264,11 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
           mergeById(prev.transactions, markTransfers(enrichedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)),
           allRemovedIds
         ),
-        debts: newCCDebts.length > 0
+        // balance-truth fix 6: one card, from the bank. A debt made from a bank card takes the card's balance owed
+        // every time the bank answers, and two such debts for one card become one (lib/balanceTruth.js).
+        debts: syncBankDebts(newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
-          : prev.debts,
+          : prev.debts, freshAccounts.filter(a => isCreditLiability(a))),
       };
     });
     // Keep the 30-min throttle regardless of partial failure (a persistently-failing item
@@ -5247,6 +5278,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
   } catch (e) {
     console.error("[backgroundRefresh] unexpected error:", e?.message || e);
   }
+  return learned;
 }
 
 
@@ -5702,7 +5734,54 @@ function SetupChecklistCard({items,onDismiss,style}){
   );
 }
 
-function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo,tourActive=false}){
+// balance-truth: the lines How we got this adds under a figure built on bank balances: when the bank last answered
+// (when that is not live), each bank that needs a fresh sign-in, and each history still on the way.
+function bankNotesFor(status, fresh, nowMs) {
+  const out = [];
+  if (fresh && (fresh.state === "stale" || fresh.state === "unknown")) out.push(lastUpdatedLine(fresh, nowMs));
+  for (const b of (status && status.signIn) || []) out.push(balanceWords(b.partner ? "balance-signin-partner" : "balance-signin-title", { bank: b.bank }));
+  for (const h of (status && status.history) || []) out.push(balanceWords(h.state === "slow" ? "balance-history-slow" : "balance-history-loading", { bank: h.bank }));
+  return out;
+}
+
+// balance-truth fixes 2 and 4: on Today, a bank whose sign-in has run out (with the way to sign in again, for the
+// person who linked it), and a new bank whose 90 days of history are still on the way. `status` is the app shell's
+// render-only bank status (data.bankStatus: { signIn, history, fresh }).
+function BankStatusCards({ status, onReconnect = null }) {
+  const signIn = (status && Array.isArray(status.signIn)) ? status.signIn : [];
+  const history = (status && Array.isArray(status.history)) ? status.history : [];
+  if (!signIn.length && !history.length) return null;
+  const card = (tone) => ({ background: tone + "14", border: `1px solid ${tone}55`, borderRadius: 16, padding: `${SPACE.md}px ${SPACE.lg}px` });
+  const title = { color: C.cream, ...TYPE.subhead, fontWeight: 800, fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const body = { color: C.mutedHi, ...TYPE.footnote, marginTop: SPACE.xs, lineHeight: 1.5, fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: GAP.controlToControl }}>
+      {signIn.map((b) => (
+        <div key={"signin-" + b.item_id} role="alert" data-bank-signin={b.item_id} style={card(C.gold)}>
+          <div style={title}>{balanceWords(b.partner ? "balance-signin-partner" : "balance-signin-title", { bank: b.bank })}</div>
+          <div style={body}>{balanceWords("balance-signin-body", { bank: b.bank })}</div>
+          {onReconnect && !b.partner && (
+            <button onClick={() => onReconnect(b.item_id)} style={{ marginTop: GAP.textToControl, minHeight: LAYOUT.minTap, background: C.green + "22", border: `1px solid ${C.green}55`, color: C.greenInk, borderRadius: 99, padding: "10px 20px", cursor: "pointer", ...TYPE.footnote, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              {balanceWords("balance-signin-button", { bank: b.bank })}
+            </button>
+          )}
+        </div>
+      ))}
+      {history.map((h) => (
+        <div key={"history-" + h.item_id} role="status" data-history-loading={h.state} style={card(C.teal)}>
+          {h.state === "slow"
+            ? <div style={title}>{balanceWords("balance-history-slow", { bank: h.bank })}</div>
+            : <>
+                <div style={title}>{balanceWords("balance-history-loading", { bank: h.bank })}</div>
+                <div style={body}>{balanceWords("balance-history-loading-body", { bank: h.bank })}</div>
+              </>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=false,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo,tourActive=false,onReconnectBank=null}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -5776,7 +5855,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // entered."), for a household whose figure starts from entered balances. Null for everyone else.
   const balanceSource = data.demo ? null : balanceSourceLine(cashAccountsUsed(data), !!data.bankConnected);
   const hasEnteredBalance = (data.accounts||[]).some(a => a && a.balanceEntered && isEditableAccount(a));
-  const headerChip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now(), bankConnected:!!data.bankConnected, enteredBalances:hasEnteredBalance});
+  // balance-truth: how fresh the bank balances are (lib/balanceTruth.js), worked out by the app shell (data.bankStatus,
+  // render-only); a caller without it gets the same rule from the accounts alone.
+  const bankStatus = data.bankStatus || {};
+  const bankFresh = bankStatus.fresh || bankFreshness({ accounts: data.accounts, nowMs: Date.now(), signIn: bankStatus.signIn || [] });
+  const headerChip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now(), bankConnected:!!data.bankConnected, enteredBalances:hasEnteredBalance, freshness:bankFresh});
   // Tester suggestions item 1: the setup checklist. "First number seen" is recorded the first time this
   // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
   const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
@@ -5887,12 +5970,14 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               {(()=>{
                 // Demo sets bankConnected:true, so this used to say "· live" over sample data. The
                 // wording now comes from demoStatus.js; colours are unchanged (live muted, else gold).
-                const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected});
+                const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected, freshness:bankFresh, nowMs:Date.now()});
                 // Demo: a tag, not a "· suffix", so a wrapped line never starts with a separator.
                 if (fresh.kind==="example") return <span style={exampleTagStyle()}>{fresh.text}</span>;
                 // manual-balances fix round: a figure built on balances the household entered is not
                 // "estimated"; the source line under the working says where it came from instead.
                 if (balanceSource && balanceSource.kind==="entered") return null;
+                // balance-truth: not live, so no suffix; the stamp under the figure says when the bank last answered.
+                if (!fresh.text) return null;
                 return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>{fresh.text}</span>;
               })()}
             </div>
@@ -5937,10 +6022,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             {(()=>{
               // Never in demo: sample data was not updated from anywhere, whatever an earlier real
               // session left in localStorage on this browser. Wording/thresholds live in demoStatus.js.
-              const label = refreshStamp({demo:!!data.demo, bankConnected:!!data.bankConnected, isRefreshing:!!isRefreshing, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
+              const label = refreshStamp({demo:!!data.demo, bankConnected:!!data.bankConnected, isRefreshing:!!isRefreshing, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now(), freshness:bankFresh});
               if (!label) return null;
               return (
-                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
+                <div data-bank-fresh={bankFresh.state} style={{color:bankFresh.state==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:bankFresh.state==="live"?500:700,letterSpacing:0.3,marginBottom:4}}>
                   {label}
                 </div>
               );
@@ -6169,6 +6254,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
           changeLabel="See the full working"
           onChange={()=>{setExplain(null);setShowTransparency(true);}}
           entered={cashNote} onUpdateBalance={openBalance?(id)=>{setExplain(null);openBalance(id);}:null}
+          bankNotes={data.demo?[]:bankNotesFor(bankStatus, bankFresh, Date.now())}
           onClose={()=>setExplain(null)}/>
       )}
       {balanceEdit&&setAppData&&<BalanceSheetFor data={data} setAppData={setAppData} accountId={balanceEdit.add?null:balanceEdit.accountId} onClose={()=>setBalanceEdit(null)}/>}
@@ -6196,8 +6282,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         {headerChip&&<div onClick={()=>setShowTransparency(true)}
           style={data.demo
             ? {...exampleTagStyle(),display:"inline-flex",alignItems:"center",cursor:"pointer"}
-            : headerChip.label===ENTERED_STATUS_LABEL
-              ? {display:"flex",alignItems:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"4px 10px",cursor:"pointer"}
+            : headerChip.label===ENTERED_STATUS_LABEL || headerChip.stale
+              ? {display:"flex",alignItems:"center",background:"none",border:`1px solid ${headerChip.stale?C.gold+"55":C.border}`,borderRadius:99,padding:"4px 10px",cursor:"pointer"}
               : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
           title="How is this calculated?">
           {(()=>{
@@ -6206,6 +6292,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             const chip = headerChip;
             if (data.demo) return chip.label;
             if (chip.label===ENTERED_STATUS_LABEL) return <span style={{color:C.mutedHi,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>;
+            // balance-truth: not live, so no live dot and no green: when the bank last answered.
+            if (chip.stale) return <span data-bank-chip="stale" style={{color:C.gold,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>;
             return <>
               <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
               <span style={{color:C.green,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
@@ -6218,6 +6306,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
           {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
       </div>
+
+      {!data.demo && <BankStatusCards status={data.bankStatus} onReconnect={onReconnectBank}/>}
 
       {/* ── Greeting + Bell ──────────────────────────────────────────────── */}
       <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -7250,7 +7340,7 @@ function DebtLinkPrompt({ match, setAppData }) {
 
 // `entered` (lib/manualBalances.js enteredBalanceNote) says which balances behind the figure the household
 // typed in, and when they were true; onUpdateBalance(accountId) opens that account's balance editor.
-function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose, entered = null, onUpdateBalance = null }) {
+function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose, entered = null, onUpdateBalance = null, bankNotes = [] }) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",...overlaySafe()}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
@@ -7277,6 +7367,10 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
           </div>
         )}
         <EnteredBalanceLines note={entered} onUpdate={onUpdateBalance}/>
+        {/* balance-truth: what is true of the bank figures behind this number (not live, sign-in, history). */}
+        {(bankNotes||[]).filter(Boolean).map((n,ix)=>(
+          <div key={"bn"+ix} data-bank-note="1" style={{color:C.gold,...TYPE.footnote,fontWeight:700,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{n}</div>
+        ))}
         {source&&<div style={{color:C.muted,...TYPE.footnote,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Source: {source}</div>}
         {changeLabel&&onChange&&(
           <button onClick={onChange} style={{marginTop:SPACE.lg,width:"100%",background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:14,
@@ -8742,6 +8836,8 @@ function BudgetPlanCard({data, setAppData}) {
 }
 
 function SpendScreen({data, setAppData, setScreen}){
+  // balance-truth: "Live from your bank" only while the bank's answer is under an hour old (lib/balanceTruth.js).
+  const spendFresh = (data.bankStatus && data.bankStatus.fresh) || bankFreshness({ accounts: data.accounts, nowMs: Date.now(), signIn: (data.bankStatus && data.bankStatus.signIn) || [] });
   const isDesktop = window.innerWidth >= 960;
   // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
@@ -9226,7 +9322,7 @@ function SpendScreen({data, setAppData, setScreen}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div>
-        <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":data.bankConnected?"Live from your bank":"From your statements and entries"}</div>
+        <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":data.bankConnected&&spendFresh.state!=="none"?(spendFresh.state==="live"?"Live from your bank":lastUpdatedLine(spendFresh, Date.now())):"From your statements and entries"}</div>
       </div>
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${formatNumber(totalSpent||0)}</div>
@@ -11706,6 +11802,8 @@ function WidgetScreen({data,onBack}){
 // ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
 // ─── INLINE SETTINGS EDITORS ─────────────────────────────────────────────────
 function InlineDebtEditor({data, setAppData, color, navToScreen, startAdding = false}){
+  // balance-truth fix 6: how fresh the cards' balances from the bank are (the cards' own accounts).
+  const debtsFresh = bankFreshness({ accounts: (data.accounts||[]).filter(a => (data.debts||[]).some(d => d && d.fromBank && d.account_id === a.id)), nowMs: Date.now(), signIn: (data.bankStatus && data.bankStatus.signIn) || [] });
   const [adding, setAdding] = useState(startAdding); // Today's "Add a debt" opens straight on the form
   const [form, setForm] = useState({name:"",balance:"",rate:"",min:""});
   const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
@@ -11731,9 +11829,12 @@ function InlineDebtEditor({data, setAppData, color, navToScreen, startAdding = f
       )}
       {(()=>{ const m = likelyDebtAccountMatches(data)[0]; return m ? <DebtLinkPrompt match={m} setAppData={setAppData}/> : null; })()}
       {(data.debts||[]).some(d=>d.fromBank)&&(
-        <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
+        <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:13}}>🏦</span>
-          <span style={{color:C.green,fontSize:13,fontWeight:600}}>Balances imported live from your bank</span>
+          {/* balance-truth fix 6: "live" only while the bank's answer is under an hour old; else when it last answered. */}
+          {debtsFresh.state==="live"
+            ? <span style={{color:C.green,fontSize:13,fontWeight:600}}>Balances imported live from your bank</span>
+            : <span data-debts-fresh={debtsFresh.state} style={{color:C.gold,fontSize:13,fontWeight:600}}>{balanceWords("balance-debts-from-bank")} · {lastUpdatedLine(debtsFresh, Date.now())}</span>}
         </div>
       )}
       {(data.debts||[]).map((d,i)=>(
@@ -11741,7 +11842,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen, startAdding = f
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{display:"flex",alignItems:"center",gap:7}}>
               <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
-              {d.fromBank&&<span style={{fontSize:13,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
+              {d.fromBank&&debtsFresh.state==="live"&&<span style={{fontSize:13,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
             </div>
             <button aria-label="Remove" onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
           </div>
@@ -17374,6 +17475,19 @@ export default function FlourishApp(){
   // runner (above) is the only remaining consumer of the legacy localStorage keys,
   // and only at one-time migration of existing beta users to Supabase.
   const [needsReconnect,setNeedsReconnect]=useState(false);
+  // balance-truth: the banks that need a fresh sign-in ([{ item_id, bank, partner }]: list_items' status, and any
+  // refresh this session that Plaid answered ITEM_LOGIN_REQUIRED), and the new banks whose 90 days are still on the
+  // way ({ [item_id]: { since, bank } }, kept on this device so a reload keeps checking).
+  const [bankSignIn,setBankSignIn]=useState([]);
+  const [historyPending,setHistoryPending]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem("flourish_history_pending")||"{}"); return v&&typeof v==="object"&&!Array.isArray(v)?v:{}; }catch{ return {}; } });
+  useEffect(()=>{ try{ if(Object.keys(historyPending).length) localStorage.setItem("flourish_history_pending",JSON.stringify(historyPending)); else localStorage.removeItem("flourish_history_pending"); }catch{} },[historyPending]);
+  // A new bank whose first pull is not done yet: shown as "loading your history" until it is (lib/balanceTruth.js).
+  const noteHistory = useCallback((itemId, bank, updateStatus) => {
+    if (!itemId) return;
+    setHistoryPending(p => historyDone(updateStatus)
+      ? (p[itemId] ? Object.fromEntries(Object.entries(p).filter(([k]) => k !== itemId)) : p)
+      : (p[itemId] ? p : { ...p, [itemId]: { since: Date.now(), bank: bank || null } }));
+  }, []);
   const [reconnectToken,setReconnectToken]=useState(null);
   // Apple 5.1.1/5.1.2: which Plaid action is waiting on the consent disclosure — "add" | "reconnect"
   // | null. Replaces the old boolean, which only covered the add path and only fired once.
@@ -18018,6 +18132,8 @@ export default function FlourishApp(){
       // (category→amount); per-category spend then tracks live off the demo transactions.
       const { suggestions: demoBudgets } = generateBudgetSuggestions(dd);
       setAppData({ ...dd, bankConnected: true, demo: false, budgets: demoBudgets,
+        // balance-truth: the sample's accounts count as just answered when it loads, as a real bank's would.
+        accounts: (dd.accounts || []).map(a => ({ ...a, bankAnsweredAt: new Date().toISOString() })),
         transactions: markTransfers(dd.transactions || [], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance) });
       setOnboarded(true);
       setAiDisclosureSeen(true);
@@ -18377,6 +18493,7 @@ export default function FlourishApp(){
             type:a.type,
             subtype:a.subtype||null,
             balance:normalizeAccountBalance(a),
+            bankAnsweredAt:new Date().toISOString(), // balance-truth: the bank answered for it now
             currency:a.balance?.currency||null, // Sprint Z3 #6 (null = not stated)
             institution:a.institution||"Bank",
             _item:a._item||null,
@@ -18662,9 +18779,12 @@ export default function FlourishApp(){
   // reconciliation — funnels through here, so appData is the one store and the paths cannot diverge.
   // Functional updater throughout: a racing save can never capture pre-import state, and this can
   // never clobber a hydrate that landed first (it only ever merges INTO current state).
-  const promoteConnectedAccounts = useCallback((accounts, transactions = []) => {
+  // balance-truth: `history` ({ item_id, bank, updateStatus }) says how far a NEW bank's 90 days have got; until the
+  // first pull is done, Today and How we got this say the history is still loading.
+  const promoteConnectedAccounts = useCallback((accounts, transactions = [], history = null) => {
     const incoming = Array.isArray(accounts) ? accounts : [];
     const incomingTxns = Array.isArray(transactions) ? transactions : [];
+    if (history && history.item_id) noteHistory(history.item_id, history.bank, history.updateStatus);
     if (incoming.length === 0 && incomingTxns.length === 0) return;
     setAppData(prev => {
       const d = prev || {};
@@ -18674,9 +18794,10 @@ export default function FlourishApp(){
       const nextTxns = markTransfers(
         mergeById(d.transactions || [], incomingTxns),
         t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance);
-      return { ...d, accounts, bankConnected, debts, transactions: nextTxns };
+      // balance-truth fix 6: a card's debt takes the balance the bank just gave for the card; one debt per card.
+      return { ...d, accounts, bankConnected, debts: syncBankDebts(debts, incoming.filter(a => isCreditLiability(a))), transactions: nextTxns };
     });
-  }, []);
+  }, [noteHistory]);
 
   // ── Sprint D Fix (req 2+3): SERVER-TRUTH RECONCILIATION ─────────────────────────────────────────
   // Heals any user whose plaid_items exist server-side but whose appData.accounts is empty — the
@@ -18693,6 +18814,8 @@ export default function FlourishApp(){
   //   a restored blob nor be clobbered by a racing save.
   const reconciledUidRef = useRef(null);
   const linkIntentRef = useRef(null);   // "add" | "reconnect" — set before opening Plaid Link
+  const reconnectTargetRef = useRef(null); // balance-truth: the item Today's "sign in again" card named
+  const reconnectBankRef = useRef(null);   // …and the bank being reconnected, for the words if the window closes
   useEffect(()=>{
     if (!user || !hydrated) return;                          // hydrate not settled
     if (hydratedUidRef.current !== user.id) return;           // hydrate not CLEAN for this user
@@ -18745,7 +18868,7 @@ export default function FlourishApp(){
           const inst = it.institution_name || "Your Bank";
           (acct?.accounts||[]).forEach(a => mapped.push({
             id:a.id, name:`${inst} ••${a.mask||"????"}`, type:a.type, subtype:a.subtype||null,
-            balance:normalizeAccountBalance(a), currency:a.balance?.currency||null, institution:inst,
+            balance:normalizeAccountBalance(a), bankAnsweredAt:new Date().toISOString(), currency:a.balance?.currency||null, institution:inst,
             mask:a.mask||null,     // kept raw so the stable dedupe key doesn't have to parse the name
             _item:it.item_id,      // LOAD-BEARING: retainAccounts DROPS unstamped Plaid-shaped accounts
                                    // on a clean refresh, so healed accounts were wiped on the next sync.
@@ -18808,9 +18931,9 @@ export default function FlourishApp(){
           console.error("[plaid] transaction fetch failed on connect, accounts still promoted:", txnRes.reason?.message||txnRes.reason);
           captureError(txnRes.reason, { area: "plaid" });
         }
-        return [acctRes.value, txnRes.status === "fulfilled" ? txnRes.value : { transactions: [], removed: [] }, ex.item_id];
+        return [acctRes.value, txnRes.status === "fulfilled" ? txnRes.value : { transactions: [], removed: [] }, ex.item_id, txnRes.status !== "fulfilled"];
       })
-      .then(async ([acctData, txnData, itemId])=>{
+      .then(async ([acctData, txnData, itemId, txnFetchFailed])=>{
         const instName = metadata?.institution?.name||"Your Bank";
         const accounts = acctData.accounts.map(a=>({
           id:a.id,
@@ -18818,6 +18941,7 @@ export default function FlourishApp(){
           type:a.type,
           subtype:a.subtype||null,
           balance:normalizeAccountBalance(a),
+          bankAnsweredAt:new Date().toISOString(), // balance-truth: the bank answered for it now
           currency:a.balance?.currency||null, // Sprint Z3 #6 (null = not stated)
           institution:instName,
           _item:itemId||null, // stamped now (couple mode: it leaves with whoever linked it)
@@ -18825,7 +18949,10 @@ export default function FlourishApp(){
         const transactions = normaliseTxns(txnData.transactions||[]);
         const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
         // Route through the ONE promote path (dedupes by id, derives bankConnected, syncs CC→debts).
-        promoteConnectedAccounts(accounts, enrichedReconnectTxns);
+        // balance-truth: a NEW bank whose first pull is not done shows "loading your history" until it is.
+        const newBank = linkIntentRef.current !== "reconnect";
+        promoteConnectedAccounts(accounts, enrichedReconnectTxns, newBank ? { item_id: itemId, bank: instName, updateStatus: txnFetchFailed ? "NOT_READY" : txnData.updateStatus } : null);
+        if (!newBank) setBankSignIn(list => list.filter(x => x.item_id !== itemId));
         // Sprint Z #1: apply removals separately (removed is empty on a fresh item; keeps the contract).
         if ((txnData.removed||[]).length) setAppData(d=>({ ...d, transactions: removeByIds(d.transactions||[], txnData.removed) }));
         setNeedsReconnect(false);
@@ -18843,24 +18970,77 @@ export default function FlourishApp(){
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });
   },[promoteConnectedAccounts]);
-  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
+  // balance-truth fix 3: the bank window closed without linking, from Settings (a new bank or a reconnect). Say why,
+  // and what that means, plainly (lib/balanceTruth.js linkExitMessage). The token is spent either way.
+  const onReconnectExit = useCallback((err, meta) => {
+    const intent = linkIntentRef.current === "reconnect" ? "reconnect" : "add";
+    const bank = (intent === "reconnect" ? reconnectBankRef.current : null) || meta?.institution?.name || null;
+    setReconnectToken(null);
+    alertModal({ message: linkExitMessage(err, { intent, bank }).message });
+  }, []);
+  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess, onReconnectExit);
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
 
   // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
+  // balance-truth fixes 2, 4 and 5. One door for every refresh: list_items first (which banks need a fresh sign-in,
+  // and whether the webhook says new transactions are waiting), then backgroundRefresh. The 30-minute wait still
+  // holds, except while new transactions are waiting or a new bank's history is being fetched. It runs 2s after
+  // bank data is ready (as before), each time the app comes back on screen, and every 20s while a history loads.
   const [isRefreshing, setIsRefreshing] = useState(false);
-  useEffect(()=>{
-    if(!appData?.bankConnected) return;
-    const timer = setTimeout(async ()=>{
+  const refreshBanksRef = useRef(null);
+  const refreshingRef = useRef(false);
+  refreshBanksRef.current = async ({ force = false } = {}) => {
+    if (!appData?.bankConnected || appData?.demo || refreshingRef.current) return;
+    refreshingRef.current = true;
+    try {
+      const items = await getUserItems();
+      const waiting = items.some(it => it && it.transactions_pending);
+      const pending = Object.keys(historyPending || {});
       const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
       const THIRTY_MIN = 30 * 60 * 1000;
+      const forced = force || waiting || pending.length > 0;
       // Only show shimmer if we're actually going to refresh
-      const willRefresh = appData?.bankConnected && (Date.now()-lastFetch >= THIRTY_MIN); // Sprint Z2 #16: no plan gate in v1
+      const willRefresh = items.length > 0 && (forced || Date.now()-lastFetch >= THIRTY_MIN); // Sprint Z2 #16: no plan gate in v1
       if(willRefresh) setIsRefreshing(true);
-      await backgroundRefresh(isPremium, setAppData, (appData?.transactions?.length||0)===0 || isFullSyncStale());
+      const learned = await backgroundRefresh(isPremium, setAppData, (appData?.transactions?.length||0)===0 || isFullSyncStale(), { items, force: forced });
+      // Who needs a fresh sign-in: what the server recorded, plus what Plaid said this round, minus every bank that
+      // answered this round.
+      const bankOf = new Map(items.map(it => [it.item_id, it.institution_name || null]));
+      const answered = new Set(learned?.answered || []);
+      const next = itemsNeedingSignIn(items).filter(x => !answered.has(x.item_id));
+      for (const id of (learned?.signIn || [])) if (!next.some(x => x.item_id === id)) next.push({ item_id: id, bank: bankOf.get(id) || null, partner: !!items.find(it => it.item_id === id)?.linked_by });
+      setBankSignIn(next);
+      // A history that finished, or a bank that is no longer listed, stops "loading".
+      const listed = new Set(items.map(it => it.item_id));
+      setHistoryPending(p => {
+        const keep = Object.entries(p).filter(([id]) => listed.has(id) && !(learned?.updateStatus && id in learned.updateStatus && historyDone(learned.updateStatus[id])));
+        return keep.length === Object.keys(p).length ? p : Object.fromEntries(keep);
+      });
+    } catch (e) {
+      console.error("[refreshBanks] unexpected error:", e?.message || e);
+    } finally {
+      refreshingRef.current = false;
       setIsRefreshing(false);
-    }, 2000);
+    }
+  };
+  useEffect(()=>{
+    if(!appData?.bankConnected) return;
+    const timer = setTimeout(()=>{ refreshBanksRef.current?.(); }, 2000);
     return ()=>clearTimeout(timer);
   },[appData?.bankConnected, isPremium]);
+  // Back on screen (a phone app resumed, a browser tab shown again): look again, under the same rules.
+  useEffect(()=>{
+    const onShow = () => { if (document.visibilityState === "visible") refreshBanksRef.current?.(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+  },[]);
+  // A new bank's history: ask every 20 seconds while any is still "loading" (not yet "slow").
+  const historyLoadingNow = historyCards(historyPending, Date.now()).some(c => c.state === "loading");
+  useEffect(()=>{
+    if (!historyLoadingNow) return;
+    const id = setInterval(()=>{ refreshBanksRef.current?.({ force: true }); }, HISTORY_POLL_MS);
+    return () => clearInterval(id);
+  },[historyLoadingNow]);
 
   // Version 1.1, item 3: the store paywall overlay (see paywallUp). zIndex 9998: above every screen and the tab
   // bar, below the sheets and dialogs (9999 and 10000), so a sheet that was open stays usable and its half-finished
@@ -18957,7 +19137,11 @@ export default function FlourishApp(){
       return unreadNotifCount(appData, readIds);   // the same count the panel shows
     } catch { return 0; }
   })();
-  const dataWithHousehold={...appData,isPremium,householdRole};
+  // balance-truth: render-only bank status for the screens (never saved: appData is what is saved). Which banks need a
+  // fresh sign-in, which new banks' histories are on the way, and how fresh the bank balances are.
+  const _bankNow = Date.now();
+  const bankStatus = { signIn: bankSignIn, history: historyCards(historyPending, _bankNow), fresh: bankFreshness({ accounts: appData?.accounts, nowMs: _bankNow, signIn: bankSignIn }) };
+  const dataWithHousehold={...appData,isPremium,householdRole,bankStatus};
 
   // ── Pass isOnline down to AICoach + reset helper ──────────────
   const handleReset = () => { clearState(); window.location.reload(); };
@@ -18976,9 +19160,12 @@ export default function FlourishApp(){
       let payload = { country, user_id: user?.id };
       if (jwt) {
         const items = await getUserItems();
-        // Pick the item that triggered reconnect: prefer status==="error" or "pending_expiration"
-        const broken = items.find(it => it.status === "error" || it.status === "pending_expiration");
-        const target = broken || items[0];
+        // Pick the item that triggered reconnect: the bank named on Today's card when there is one (balance-truth),
+        // else one whose sign-in has run out (login_required, error) or is about to (pending_expiration).
+        const named = reconnectTargetRef.current ? items.find(it => it.item_id === reconnectTargetRef.current) : null;
+        const broken = items.find(it => it.status === "login_required" || it.status === "error" || it.status === "pending_expiration");
+        const target = named || broken || items[0];
+        reconnectBankRef.current = target?.institution_name || null;
         if (target?.item_id) {
           payload = { item_id: target.item_id, country };
         }
@@ -19011,7 +19198,10 @@ export default function FlourishApp(){
   // Reconnect was previously ungated entirely: it called setReconnectToken() directly, and because
   // the auto-open effect above opens Link as a side effect of that token, setting it IS opening
   // Plaid. Consent must therefore gate the caller, not the open.
-  const handleReconnectBank = ()=> setPendingPlaid("reconnect");
+  const handleReconnectBank = ()=> { reconnectTargetRef.current = null; setPendingPlaid("reconnect"); };
+  // balance-truth: Today's "sign in again" card names its bank. Settings opens with the bank consent on top, as for
+  // every Plaid open, and Continue reconnects that bank.
+  const reconnectFromToday = (itemId)=> { reconnectTargetRef.current = itemId || null; setShowSettings(true); setPendingPlaid("reconnect"); };
   const handleAddNewBank = ()=> setPendingPlaid("add");
 
 
@@ -19151,11 +19341,11 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }} tourActive={tourShown}/>;
+    if(screen==="home")return <Dashboard onReconnectBank={reconnectFromToday} data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }} tourActive={tourShown}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
@@ -19196,7 +19386,7 @@ export default function FlourishApp(){
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
+    return <Dashboard onReconnectBank={reconnectFromToday} data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={openUpgrade} billingOn={billingUi.show} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
   };
 
   const ALL_NAV=[
@@ -19368,7 +19558,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1,maxWidth:1320,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-            <div><Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
+            <div><Dashboard onReconnectBank={reconnectFromToday} data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>

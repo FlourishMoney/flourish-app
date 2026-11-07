@@ -61,7 +61,8 @@ const HOLD = /\[WORDS:\s*[a-z0-9-]+/;
   const { execFileSync } = require("child_process");
   let guard = 0;
   try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-  t.eq(guard, PW.pendingCreatorWordIds().length ? 1 : 0, "3b the production build's guard refuses while one of those is left, and finds none once they are approved");
+  // balance-truth (2026-11-06): the second exception's lines (lib/balanceWords.js) hold the build back the same way.
+  t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingBalanceWordIds().length ? 1 : 0, "3b the production build's guard refuses while one of those is left, and finds none once they are approved");
 
   // 4. The founding list form is gone.
   const APP = read("src", "App.jsx");

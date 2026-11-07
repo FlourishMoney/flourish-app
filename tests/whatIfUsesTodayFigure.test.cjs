@@ -39,9 +39,10 @@ const path = require("path");
   const now = new Date();
   const demo = demoAt(now);
   const ss = SafeSpendEngine.calculate(demo, now);
-  t.eq(todayHeadline(demo, now), 1944, "1a Today shows $1,944");
-  t.ok(ss.safeAmount > 1944 && ss.safeAmount < 1945, `1b (the engine's raw figure is ${ss.safeAmount.toFixed(2)})`);
-  t.eq(DE.displayedSafeToSpend(demo, now), 1944, "1c displayedSafeToSpend is Today's $1,944");
+  // balance-truth 2026-11-06: the demo's Netflix payment is no longer also daily spending, so Today moved from $1,944.
+  t.eq(todayHeadline(demo, now), 1951, "1a Today shows $1,951");
+  t.ok(ss.safeAmount > 1951 && ss.safeAmount < 1952, `1b (the engine's raw figure is ${ss.safeAmount.toFixed(2)})`);
+  t.eq(DE.displayedSafeToSpend(demo, now), 1951, "1c displayedSafeToSpend is Today's $1,951");
   // What-If's inputs, as App.jsx now builds them.
   const impact = simulatePurchaseImpact({
     amount: 800,
@@ -51,14 +52,14 @@ const path = require("path");
     monthlyIncome: FinancialCalcEngine.cashFlow(demo, {}, now).monthlyIncome,
     monthlySurplus: FinancialCalcEngine.cashFlow(demo, {}, now).cashFlow,
   });
-  t.eq(impact.newSafeToSpend, 1144, "1d spend $800: $1,144 left, which is Today's $1,944 less $800");
+  t.eq(impact.newSafeToSpend, 1151, "1d spend $800: $1,151 left, which is Today's $1,951 less $800");
   t.eq(impact.newSafeToSpend, todayHeadline(demo, now) - 800, "1e …exactly Today minus the purchase");
 
   // ── 2. Meet's extra and Decisions' move-to-savings are 25% of the same figure ─────────────────
   const dec = (buildMeetSnapshot(demo).decisions || [])[0];
   // Prompt 3e: Meet states the spare amount and moves none of it; the $486 is in the question.
-  t.ok(dec && /^\$486 is spare /.test(dec.question) && /a quarter of your \$1,944 safe to spend/.test(dec.question) && dec.options[1].label === "Savings", "2a Meet: $486, 25% of $1,944");
-  t.eq(DE.computeSavingsOpportunity(DE.displayedSafeToSpend(demo, now)), 486, "2b Decisions: the same $486");
+  t.ok(dec && /^\$487 is spare /.test(dec.question) && /a quarter of your \$1,951 safe to spend/.test(dec.question) && dec.options[1].label === "Savings", "2a Meet: $487, 25% of $1,951 rounded down");
+  t.eq(DE.computeSavingsOpportunity(DE.displayedSafeToSpend(demo, now)), 487, "2b Decisions: the same $487");
   // Across a year of dates, Meet's extra is always 25% of what Today shows, never of the raw amount.
   let agree = 0, checked = 0;
   for (let k = 0; k < 365; k += 7) {

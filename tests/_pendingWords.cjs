@@ -20,14 +20,28 @@ function pendingCreatorWordIds() {
   return [...doc.matchAll(/^\| `(creator-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: (creator-[a-z0-9-]+)\] \| \d+ \|$/gm)]
     .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
-// Every placeholder in a text, by its id.
-const placeholders = (src) => [...String(src).matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
-// The placeholders in a file that the exception does not cover: every one, unless the file is the words file.
-function strayPlaceholders(src, file) {
-  const found = placeholders(src);
-  if (path.normalize(String(file || "")) !== HOME) return found;
-  const pending = pendingCreatorWordIds();
-  return found.filter((id) => !pending.includes(id));
+// A SECOND EXCEPTION, AS NARROW: THE HONEST-BANK-BALANCE WORDS (balance-truth), UNTIL THEY ARE APPROVED (Amanda,
+// 2026-11-06: ChatGPT and Grok agree first, placeholders in the code meanwhile). The same three conditions: the id starts
+// "balance-"; docs/product/BALANCE-TRUTH-WORDS.md lists it with the placeholder as its line; and it is in
+// src/lib/balanceWords.js. The same refusal keeps them from shipping, and once they are in this exception covers nothing.
+const BALANCE_DOC = path.join(__dirname, "..", "docs", "product", "BALANCE-TRUTH-WORDS.md");
+const BALANCE_HOME = path.join("src", "lib", "balanceWords.js");
+function pendingBalanceWordIds() {
+  let doc = "";
+  try { doc = fs.readFileSync(BALANCE_DOC, "utf8"); } catch { return []; }
+  return [...doc.matchAll(/^\| `(balance-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: (balance-[a-z0-9-]+)\] \| \d+ \|$/gm)]
+    .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
 
-module.exports = { pendingCreatorWordIds, placeholders, strayPlaceholders };
+// Every placeholder in a text, by its id.
+const placeholders = (src) => [...String(src).matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
+// The placeholders in a file that the exceptions do not cover: every one, unless the file is one of the two words files.
+function strayPlaceholders(src, file) {
+  const found = placeholders(src);
+  const where = path.normalize(String(file || ""));
+  if (where === HOME) { const pending = pendingCreatorWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
+  return found;
+}
+
+module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, placeholders, strayPlaceholders };
