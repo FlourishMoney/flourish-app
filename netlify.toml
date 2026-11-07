@@ -9,7 +9,7 @@
 
 [build.environment]
   NODE_VERSION           = "22"
-  SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
+  SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV,PINTEREST_DOMAIN_VERIFY,GOOGLE_SITE_VERIFICATION"
 
 # Scheduled: the waitlist welcome sweep. Every 15 minutes it emails any waitlist row whose
 # welcomed_at is still null and that is at least 5 minutes old, then stamps welcomed_at. The request
@@ -33,6 +33,16 @@
 # unless CREATORS_ENABLED is exactly "true" (netlify/functions/creator-commissions-sweep.js).
 [functions."creator-commissions-sweep"]
   schedule = "@daily"
+
+# Scheduled: the newsletter's retention (the approved privacy words, 2026-11-05). Once a day it deletes a consent record three
+# years after its unsubscribe, and a sign-up never confirmed within 30 days (netlify/functions/newsletter-retention.js).
+[functions."newsletter-retention"]
+  schedule = "@daily"
+
+# Scheduled: the privacy policy notice's one-time send. Does nothing unless POLICY_NOTICE_SEND is "dry-run" or "send"
+# (netlify/functions/policy-notice-sweep.js, migration 0040).
+[functions."policy-notice-sweep"]
+  schedule = "*/15 * * * *"
 
 # Security headers
 [[headers]]
@@ -117,6 +127,25 @@
 [[redirects]]
   from   = "/api/creator"
   to     = "/.netlify/functions/creator"
+  status = 200
+
+# Redirect: the /get page's and the Android app's counts (src, cr) → Netlify function. POST only; adds 1 to a daily
+# count and keeps nothing else (netlify/functions/attribution.js, migration 0036).
+[[redirects]]
+  from   = "/api/attribution"
+  to     = "/.netlify/functions/attribution"
+  status = 200
+
+# Redirect: the "Canadian money dates this week" sign-up, confirm and unsubscribe links → Netlify function.
+[[redirects]]
+  from   = "/api/newsletter"
+  to     = "/.netlify/functions/newsletter"
+  status = 200
+
+# Redirect: tester codes and the day 30 questions → Netlify function (netlify/functions/tester.js, migration 0038).
+[[redirects]]
+  from   = "/api/tester"
+  to     = "/.netlify/functions/tester"
   status = 200
 
 # SPA fallback — all routes → index.html

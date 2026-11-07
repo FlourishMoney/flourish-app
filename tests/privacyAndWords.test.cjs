@@ -47,6 +47,18 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
     for (const k of ["A1", "A2", "A3", "A4", "A5"]) t.ok(pp.includes(A[k]), `${k} word for word`);
     t.ok(A.A6.every((line) => pp.includes(line)), "A6 the five new lines in section 6");
     t.ok(pp.includes("Last updated October 26, 2026"), "A7 Last updated October 26, 2026");
+    // The approved newsletter words (2026-11-05): nowhere until the launch date, all there from it, on the website and in a store app.
+    const WORDS = await import("../src/lib/privacyLaunchWords.js");
+    const W = WORDS.POLICY_WORDS;
+    const NEW = [W.newsletter, W.cameFrom, W.testers, W.ipSentence, W.use, W.keep, W.resend, W.googlePlay, W.age, W.address];
+    t.ok(NEW.every((x) => !pp.includes(x)) && !pp.includes(W.analytics), "A8 before the newsletter goes live, none of its words are in the policy");
+    const on = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {}, launchDate: "2026-11-12" }))).replace(/\s+/g, " ").replace(/ :/g, ":");
+    t.ok([...NEW, W.analytics].every((x) => on.includes(x)), "A9 from then, all of them, word for word");
+    t.ok(on.includes("Last updated November 12, 2026") && !on.includes("October 26, 2026"), "A10 with the new date");
+    t.ok(on.includes(`Newsletter: ${W.newsletter}`) && on.includes(`Where you came from: ${W.cameFrom}`) && on.includes(`Testers: ${W.testers}`), "A11 under their labels");
+    t.ok(on.indexOf("Where you came from:") > on.indexOf("Information collected automatically:") && on.indexOf("Where you came from:") < on.indexOf("Bank connection data") && on.indexOf("Newsletter:") > on.indexOf("Waitlist:") && on.indexOf("Testers:") < on.indexOf("2. How We Use"), "A12 in the places approved");
+    t.ok(!on.includes("We use it briefly to limit repeated sign-up and coach requests") && !on.includes("sends account and waitlist emails"), "A13 the changed lines replace the old ones");
+    t.ok(on.includes(`GrowSmart Inc. / Flourish Money ${W.address} Website: flourishmoney.app`) && on.includes("privacy@flourishmoney.app"), "A14 the Contact section");
     const i1 = pp.indexOf("Bank connection data (Plaid):"), i2 = pp.indexOf(A.A2), i3 = pp.indexOf(A.A3), i4 = pp.indexOf("2. How We Use Your Information");
     t.ok(i1 > 0 && i1 < i2 && i2 < i3 && i3 < i4, "A2 and A3 follow the Plaid paragraph, still in section 1");
     const s6 = pp.slice(pp.indexOf("6. Data Sharing"), pp.indexOf("7. Your Rights"));
