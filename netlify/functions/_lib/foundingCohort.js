@@ -98,6 +98,19 @@ async function isBetaFounder(admin, user_id) {
   }
 }
 
+// An account on a complimentary plan: profiles.plan "plus" or "pro", given by hand (recorded outside this public repo),
+// with no founder flag. It already has every feature and nothing to buy, so it is never offered the founding price,
+// in the app or on the website. A failed read is "not complimentary": the seat rule decides, as before.
+async function hasComplimentaryPlan(admin, user_id) {
+  try {
+    const { data, error } = await admin
+      .from("profiles").select("plan, founder_flag").eq("user_id", user_id).maybeSingle();
+    return !error && !!data && data.founder_flag !== true && (data.plan === "plus" || data.plan === "pro");
+  } catch {
+    return false;
+  }
+}
+
 // Did the household confirm this account's address by clicking our link? Never true for an address that
 // was confirmed on creation, and never true without the marker.
 function emailVerifiedByLink(user) {
@@ -120,6 +133,7 @@ async function mayBuyFoundingPrice(admin, user_id, user) {
   if (!user_id) return false;
   if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
   if (await isBetaFounder(admin, user_id)) return true;
+  if (await hasComplimentaryPlan(admin, user_id)) return false;
   if (!emailConfirmed(user) || isTestEmail(user.email)) return false;
   const held = await seatsTaken(admin);
   return held !== null && held < FOUNDING_COHORT_LIMIT;
@@ -127,5 +141,5 @@ async function mayBuyFoundingPrice(admin, user_id, user) {
 
 module.exports = {
   FOUNDING_COHORT_LIMIT, TEST_EMAIL_DOMAINS, normalizeEmail, isTestEmail, isFoundingPosition, foundingPositionForEmail,
-  foundingEndedForAccount, isBetaFounder, emailVerifiedByLink, emailConfirmed, foundingConfirmNeeded, mayBuyFoundingPrice,
+  foundingEndedForAccount, isBetaFounder, hasComplimentaryPlan, emailVerifiedByLink, emailConfirmed, foundingConfirmNeeded, mayBuyFoundingPrice,
 };
