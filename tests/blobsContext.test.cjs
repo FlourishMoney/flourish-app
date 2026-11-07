@@ -66,7 +66,7 @@ const clearContext = () => { delete process.env.NETLIFY_BLOBS_CONTEXT; delete gl
 
   // ── 4. Every function that uses getStore connects first ───────────────────────────────────────
   const users = fs.readdirSync(FN).filter((f) => f.endsWith(".js") && /getStore\(|require\("@netlify\/blobs"\)/.test(fs.readFileSync(path.join(FN, f), "utf8")));
-  t.eq(users.sort(), ["beta.js", "billing.js", "coach.js", "limiter-cleanup.js"], "4a (the functions that use Netlify Blobs)");
+  t.eq(users.sort(), ["beta.js", "billing.js", "coach.js", "limiter-cleanup.js", "newsletter.js"], "4a (the functions that use Netlify Blobs)");
   for (const f of users) {
     const src = fs.readFileSync(path.join(FN, f), "utf8");
     t.ok(/require\("\.\/_lib\/blobsContext"\)/.test(src) && /exports\.handler = async \(event\) => \{\n  connectBlobs\(event\);/.test(src), `4b ${f}: its handler calls connectBlobs(event) before anything else`);

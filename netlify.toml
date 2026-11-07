@@ -9,7 +9,7 @@
 
 [build.environment]
   NODE_VERSION           = "22"
-  SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
+  SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV,PINTEREST_DOMAIN_VERIFY,GOOGLE_SITE_VERIFICATION"
 
 # Scheduled: the waitlist welcome sweep. Every 15 minutes it emails any waitlist row whose
 # welcomed_at is still null and that is at least 5 minutes old, then stamps welcomed_at. The request
@@ -34,6 +34,19 @@
 [functions."creator-commissions-sweep"]
   schedule = "@daily"
 
+# Scheduled: the newsletter's retention (the approved privacy words, 2026-11-05). Once a day it deletes a consent record three
+# years after its unsubscribe, and a sign-up never confirmed within 30 days (netlify/functions/newsletter-retention.js).
+[functions."newsletter-retention"]
+  schedule = "@daily"
+
+# Scheduled: the privacy policy notice's one-time send. Does nothing unless POLICY_NOTICE_SEND is "dry-run" or "send"
+# (netlify/functions/policy-notice-sweep.js, migration 0040).
+[functions."policy-notice-sweep"]
+  schedule = "*/15 * * * *"
+
+# Microsoft Clarity (src/lib/webClarity.js): the tag and its script come from www.clarity.ms and scripts.clarity.ms, and its
+# recordings go to *.clarity.ms. img-src is left alone on purpose: the tag's Microsoft cookie sync (c.clarity.ms/c.gif) is
+# refused, as well as switched off in Clarity.
 # Security headers
 [[headers]]
   for = "/*"
@@ -41,7 +54,7 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com https://plausible.io; connect-src 'self' https://plausible.io api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com https://plausible.io https://www.clarity.ms https://scripts.clarity.ms; connect-src 'self' https://plausible.io https://*.clarity.ms api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
 
 # The self-unregistering kill-switch SW (public/sw.js) must NEVER be cached, so a returning visitor's
 # browser re-fetches it on its next service-worker update check and retires the old (pre-Vite) zombie
@@ -117,6 +130,25 @@
 [[redirects]]
   from   = "/api/creator"
   to     = "/.netlify/functions/creator"
+  status = 200
+
+# Redirect: the /get page's and the Android app's counts (src, cr) → Netlify function. POST only; adds 1 to a daily
+# count and keeps nothing else (netlify/functions/attribution.js, migration 0036).
+[[redirects]]
+  from   = "/api/attribution"
+  to     = "/.netlify/functions/attribution"
+  status = 200
+
+# Redirect: the "Canadian money dates this week" sign-up, confirm and unsubscribe links → Netlify function.
+[[redirects]]
+  from   = "/api/newsletter"
+  to     = "/.netlify/functions/newsletter"
+  status = 200
+
+# Redirect: tester codes and the day 30 questions → Netlify function (netlify/functions/tester.js, migration 0038).
+[[redirects]]
+  from   = "/api/tester"
+  to     = "/.netlify/functions/tester"
   status = 200
 
 # SPA fallback — all routes → index.html

@@ -228,8 +228,8 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     const m = (err, o) => BT.linkExitMessage(err, o);
     t.eq(m(null, { intent: "add" }).reasonId, "balance-link-closed", "3a closed by the person: that is the reason");
     t.eq(["INSTITUTION_NOT_RESPONDING", "INSTITUTION_DOWN", "INSTITUTION_NOT_AVAILABLE"].map((c) => m({ error_code: c }, { bank: "RBC" }).reasonId), ["balance-link-bank-down", "balance-link-bank-down", "balance-link-bank-down"],
-      "3b the bank didn't respond (InstitutionNotResponding, as Lily's second try)");
-    t.eq(m({ error_code: "INVALID_MFA" }).reasonId, "balance-link-code-wrong", "3c the security code didn't match (InvalidMfa, as Lily's first try)");
+      "3b the bank didn't respond (InstitutionNotResponding, as a real second try did)");
+    t.eq(m({ error_code: "INVALID_MFA" }).reasonId, "balance-link-code-wrong", "3c the security code didn't match (InvalidMfa, as a real first try did)");
     t.eq(["INVALID_CREDENTIALS", "ITEM_LOCKED"].map((c) => m({ error_code: c }).reasonId), ["balance-link-login-wrong", "balance-link-login-wrong"], "3d the bank didn't accept the sign-in");
     t.eq(m({ error_code: "INTERNAL_SERVER_ERROR" }).reasonId, "balance-link-other", "3e anything else");
     const add = m({ error_code: "INSTITUTION_NOT_RESPONDING" }, { intent: "add", bank: "RBC" });

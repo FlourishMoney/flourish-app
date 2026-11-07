@@ -89,7 +89,9 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   // (tests/webAnalytics*). No other file in src names it, and nothing else is added.
   const libs = fs.readdirSync(path.join(REPO, "src", "lib")).filter((f) => f.endsWith(".js"));
   t.eq(libs.filter((f) => /plausible\.io/.test(read("src", "lib", f))), ["webAnalytics.js"], "3f2 plausible.io is named only in src/lib/webAnalytics.js");
-  t.ok(libs.every((f) => !/googletagmanager|google-analytics|gtag\(|fbq\(|clarity\.ms|hotjar|segment\.com|mixpanel/i.test(read("src", "lib", f))), "3f3 …and no other tracker anywhere in src/lib");
+  // 2026-11-06: Microsoft Clarity, Amanda's decision, on the public pages only and only through one module (tests/clarity*).
+  t.eq(libs.filter((f) => /clarity\.ms/.test(read("src", "lib", f))), ["webClarity.js"], "3f2b clarity.ms is named only in src/lib/webClarity.js");
+  t.ok(libs.every((f) => !/googletagmanager|google-analytics|gtag\(|fbq\(|hotjar|segment\.com|mixpanel/i.test(read("src", "lib", f))), "3f3 …and no other tracker anywhere in src/lib");
 
   // ── 4. migration 0027 ────────────────────────────────────────────────────────────────────────
   const m = read("supabase", "migrations", "0027_landing_counts.sql");
