@@ -5,9 +5,10 @@
 //   1  the edge (netlify/edge-functions/clarity-gate.js): never Quebec, an EEA country, the UK or Switzerland, a place it
 //      cannot name, or before CLARITY_ENABLED; it logs nothing, keeps nothing and sends no geo value back
 //   2  the app's pages (src/lib/webClarity.js): never a signed-in screen, the sign-in form, /support, a reset link, a
-//      store app, or an address with a query string or hash; only after the page is interactive and the edge says yes;
-//      stopped for the rest of the visit as soon as anything else shows
-//   3  the static pages (public/clarity/loader.js): /get and the guides, under the same rules, and nowhere else
+//      store app, or an address with a query string or hash; only at the addresses /, /demo, /privacy and /terms, never
+//      /app, /signup, /login or an unknown address that shows the landing; only after the page is interactive and the
+//      edge says yes; stopped for the rest of the visit as soon as anything else shows
+//   3  the static pages (public/clarity/loader.js): /get and the guide addresses, under the same rules, and nowhere else
 //   4  a store build: compiled out, stripped, and refused by the artifact check (the real store build: nativeLandingMedia 2f)
 //   5  the CSP, the wiring, and the privacy policy's bullet (website only, from the policy's new date)
 // (The built site in a real browser: tests/clarity.browser.)
@@ -170,6 +171,27 @@ function fakeWindow({ path: p = "/", search = "", hash = "", native = false, rea
       C.setClarityPage("/", f.win); await f.settle();
       t.eq([f.asked.length, f.added.length], [0, 0], `2m ${why}: the edge is not even asked`);
     }
+
+    // The address itself (Amanda, 2026-11-07): every unknown address serves the app, which shows the signed-out landing,
+    // so the page showing is not enough. Only the four addresses of the app's public pages record.
+    for (const p of ["/app", "/app/", "/signup", "/login", "/no-such-page", "/settings", "/support", "/confirmed", "/checkout", "/demo/x", "/privacy/x", "/index.html", "/Privacy", "//", ""]) {
+      C._resetClarity(); f = fakeWindow({ path: p });
+      C.setClarityPage("/", f.win); await f.settle();
+      t.eq([f.asked.length, f.added.length], [0, 0], `2n the landing showing at ${JSON.stringify(p)}: the edge is not even asked, no tag`);
+    }
+    for (const p of ["/", "/demo", "/privacy", "/terms", "/demo/", "/privacy/", "/terms/"]) {
+      C._resetClarity(); f = fakeWindow({ path: p });
+      C.setClarityPage("/", f.win); await f.settle();
+      t.eq([f.asked.length, f.added.length], [1, 1], `2o the address ${p}: the edge, then the tag`);
+    }
+    t.eq([C.clarityAddress("/"), C.clarityAddress("/privacy/"), C.clarityAddress("/app"), C.clarityAddress("/signup"), C.clarityAddress(undefined)], [true, true, false, false, false],
+      "2p clarityAddress: the four addresses (one trailing slash allowed), nothing else");
+    // Loaded at the landing, then the address changes to one that may not be recorded: stopped for good.
+    C._resetClarity(); f = fakeWindow({ path: "/" });
+    C.setClarityPage("/", f.win); await f.settle();
+    f.win.location.pathname = "/app";
+    C.setClarityPage("/", f.win); await f.settle();
+    t.eq([f.added.length, f.calls().slice(-1), C._clarityState()], [1, [["stop"]], "stopped"], "2q the address becomes /app while the landing still shows: clarity(\"stop\"), for the rest of the visit");
     C._resetClarity();
   }
 
@@ -181,7 +203,7 @@ function fakeWindow({ path: p = "/", search = "", hash = "", native = false, rea
       const f = await runLoader({ path: p });
       t.eq([f.asked.map(([u]) => u), f.added.map((s) => s.src)], [["/api/clarity-gate"], [TAG]], `3a ${p}: after the page is interactive, the edge, then the tag`);
     }
-    for (const p of ["/", "/app", "/privacy", "/terms", "/support", "/newsletter/", "/checkout", "/confirmed", "/getting-started"]) {
+    for (const p of ["/", "/app", "/signup", "/login", "/no-such-page", "/privacy", "/terms", "/support", "/newsletter/", "/checkout", "/confirmed", "/getting-started", "/get/x", "/guidesx", "/guides/x/y/", "/guides/X/"]) {
       const f = await runLoader({ path: p });
       t.eq([f.asked.length, f.added.length], [0, 0], `3b ${p}: the static loader does nothing (the app's pages decide for themselves)`);
     }
