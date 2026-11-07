@@ -11,6 +11,9 @@
 //     static pages (/get, the guides) load it with public/clarity/loader.js, under the same rules.
 //   - Never where the edge says no (netlify/edge-functions/clarity-gate.js): Quebec, the EEA, the UK, Switzerland, a place
 //     it cannot name, or before CLARITY_ENABLED is on. The answer is asked for on each visit and never kept here.
+//   - Only at the address of one of those pages (clarityAddress): /, /demo, /privacy or /terms. The host serves the app at
+//     every unknown address and the app shows the signed-out landing there, so /app, /signup, /login or a mistyped address
+//     never records, even with the landing showing (Amanda, 2026-11-07).
 //   - Never with a query string or a hash in the address (an email, a token, a checkout id would go with the page URL).
 //   - After the page is interactive: the load event, then the browser's next idle moment.
 //   - STOPPED FOR THE REST OF THE VISIT the moment a page that may not be recorded shows (signing in, the sign-in form,
@@ -34,6 +37,14 @@ export function clarityPage(analyticsPath, { authForm = false } = {}) {
   return CLARITY_PAGES.includes(analyticsPath) ? analyticsPath : null;
 }
 
+// The addresses Clarity may record: the four pages' own, with at most one trailing slash. Never an address that only
+// falls back to the landing (/app, /signup, /login, anything unknown).
+export const CLARITY_ADDRESSES = Object.freeze(["/", "/demo", "/privacy", "/terms"]);
+const CLARITY_ADDRESS_SET = new Set(CLARITY_ADDRESSES.flatMap((a) => (a === "/" ? [a] : [a, `${a}/`])));
+export function clarityAddress(pathname) {
+  return typeof pathname === "string" && CLARITY_ADDRESS_SET.has(pathname);
+}
+
 // No query string and no hash (beyond a bare "#").
 export function cleanAddress(win) {
   const l = win && win.location;
@@ -45,7 +56,7 @@ let _authForm = false;   // the sign-in or sign-up form is open
 let _state = "idle";     // idle → waiting (for the page to be interactive and the edge's answer) → loaded; or stopped, for good
 
 function allowedNow(win) {
-  return !!_page && !_authForm && !!CLARITY_TAG_SRC && !!win && !!win.document && !isNativeApp(win) && cleanAddress(win);
+  return !!_page && !_authForm && !!CLARITY_TAG_SRC && !!win && !!win.document && !isNativeApp(win) && cleanAddress(win) && clarityAddress(win.location.pathname);
 }
 
 function whenInteractive(win, fn) {

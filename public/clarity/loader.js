@@ -13,7 +13,8 @@
   var w = window, l = w.location, d = w.document;
 
   var p = l.pathname;
-  var page = p === "/get" || p === "/get/" || p === "/guides" || p.indexOf("/guides/") === 0;
+  // The address itself: /get, the guides' index, or one guide (a lowercase slug, as build-guides.mjs requires). Nothing else.
+  var page = p === "/get" || p === "/get/" || p === "/guides" || p === "/guides/" || /^\/guides\/[a-z0-9]+(-[a-z0-9]+)*\/?$/.test(p);
   var clean = !l.search && (!l.hash || l.hash === "#");
   if (!page || !clean || w.Capacitor || typeof w.fetch !== "function") return;
 

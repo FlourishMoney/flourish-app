@@ -11,6 +11,7 @@
 //   5  an address with a checkout id in it: nothing asked
 //   6  /privacy from the policy's new date: Clarity loads, and the policy's bullet links Microsoft's privacy statement
 //   7  the static pages: /get and the guides load it; the newsletter page does not
+//   8  /app, /signup, /login and an unknown address show the landing, and nothing is asked or loaded
 // (The rules themselves, the edge and the store build: tests/clarity.)
 // -----------------------------------------------------------------------------
 "use strict";
@@ -168,6 +169,16 @@ function household() {
       const r = await recorded(page);
       t.eq([edge.length, tag.length], [want, want], `7 ${p}: ${want ? "the edge, then the tag, after the load event" : "nothing asked, nothing loaded"}`);
       if (want) t.ok(!!r && r.at > r.loadEnd, `7 ${p}: …after the load event`);
+      await ctx.close();
+    }
+    // ── 8. Addresses that only fall back to the landing ───────────────────────────────────────────
+    // The host serves the app at every unknown address and the app shows the signed-out landing there, as this server does.
+    for (const p of ["/app", "/signup", "/login", "/no-such-page"]) {
+      const { ctx, page, tag, edge } = await open();
+      await page.goto(base + p, { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "Log in" }).first().waitFor({ timeout: 40000 });
+      await page.waitForTimeout(3000);
+      t.eq([edge.length, tag.length], [0, 0], `8 ${p}: the landing shows, but the edge is not asked and clarity.ms is not loaded`);
       await ctx.close();
     }
   } catch (e) {
