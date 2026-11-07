@@ -30,13 +30,14 @@ const APPROVED = {
   // "The founding price is for the first 50 founding members and stays the same while that subscription stays active."
   founding: "For the first 50 households who subscribe. Stays the same while you stay subscribed.",
   terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
-  // 1.1.3 (approved 2026-10-29: ~/Documents/Flourish/06 Builds/WHATS-NEW-1.1.3.txt), one text for the App Store and
-  // Google Play, word for word: the intro, a note, the line "Also in this update:", two notes.
-  whatsNew113: "New: share your household with your partner.\n" +
-    "- Invite your partner from Settings > Household. You'll each have your own sign-in, and you'll both see and edit the same money: Today, bills, paydays, debts, linked bank accounts, goals and the money meeting.\n" +
-    "Also in this update:\n" +
-    "- Layout fixes for smaller screens and larger text.\n" +
-    "- Fixes for the coach and for purchases.\n",
+  // 1.1.4 (Amanda, 2026-11-03): the App Store Connect What's New with a capital F. Android leaves out the clause about
+  // the iPhone's dark icons.
+  whatsNew114: "- A new look for the Flourish app icon: cream by default, with a forest green version when your iPhone uses dark icons.\n" +
+    "- Clearer forms: labels now appear above every field on Log In, Sign Up and password reset screens, including at larger text sizes.\n" +
+    "- Plus small layout fixes.\n",
+  whatsNew114Android: "- A new look for the Flourish app icon.\n" +
+    "- Clearer forms: labels now appear above every field on Log In, Sign Up and password reset screens, including at larger text sizes.\n" +
+    "- Plus small layout fixes.\n",
 };
 const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
 
@@ -74,10 +75,10 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
 
   // ── 5. What's new ─────────────────────────────────────────────────────────────────────────────
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
-  // The app's text, line by line as the store shows it, is the approved file: the same for iPhone and Android.
-  const asText = [W.intro, ...(W.notes || []).map((x) => "- " + x), W.alsoTitle, ...(W.alsoNotes || []).map((x) => "- " + x)].join("\n") + "\n";
-  t.eq([W.version, asText, W.notesAndroid], ["1.1.3", APPROVED.whatsNew113, undefined],
-    "5a What's new for 1.1.3 is the approved text, word for word and in order (the intro, a note, \"Also in this update:\", two notes), one text for iPhone and Android");
+  // The app's text, line by line as the store shows it, is the approved text for each platform.
+  const asText = (notes) => notes.map((x) => "- " + x).join("\n") + "\n";
+  t.eq([W.version, W.intro, W.alsoTitle, W.alsoNotes, asText(W.notes), asText(W.notesAndroid)], ["1.1.4", undefined, undefined, undefined, APPROVED.whatsNew114, APPROVED.whatsNew114Android],
+    "5a What's new for 1.1.4 is the approved text, word for word and in order, iPhone and Android");
   t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
