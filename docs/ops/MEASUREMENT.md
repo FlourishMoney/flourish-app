@@ -15,7 +15,8 @@ Written 2026-11-08 for the approved plan (Nov 4, v4), which needs the full funne
 | `select * from public.funnel_cohorts('2026-11-09', '2026-11-30');` | one line per cohort day, channel and measure: `count`, `out_of`, `shown`, `pct`, `before_counting_started` |
 | `select * from public.funnel_gates();` (or `funnel_gates('2026-12-01')`) | the plan's activation and repeat-use gates, for all households, then each channel |
 | `select * from public.landing_source_counts(from, to);` (0027) | the home page's visits and main-button taps by src and device |
-| `select * from public.source_funnel(from, to);` (0036) | /get visits, store clicks, Android installs, accounts and activated households by src and cr |
+| `select * from public.funnel_by_source('2026-11-03', '2026-11-09');` (0043) | **the Tuesday review**: home visit, /get visit, store click, install, then households, setup done, first safe-to-spend, first check-in, trial and paid (web, Apple, Google apart), by src and cr; `cr = '(all)'` is the src's total |
+| `select * from public.source_funnel(from, to);` (0036) | the older five-column version of the above (activation there = first number within 24 hours) |
 
 `funnel_gates(as_of)` reads today's data even when you pass a past day. Use it for today's gate, not to rebuild an old one.
 
@@ -25,9 +26,9 @@ Written 2026-11-08 for the approved plan (Nov 4, v4), which needs the full funne
 
 | Measure | Definition | Source |
 |---|---|---|
-| landing page visit (home) | `landing_view`: the home page at flourishmoney.app was shown, once per browser session | the page sends it (`src/lib/landingCounts.js`); `public.landing_counts` (0027), by src and device |
+| landing page visit (home) | `landing_view` / `home_visit`: the home page at flourishmoney.app was shown, once per browser session | the page sends it (`src/lib/landingCounts.js`); `public.landing_counts` (0027) by the waitlist src list and device, and the same visit as `home_visit` in `attribution_counts` (0043) by the link's own src and cr |
 | landing page visit (/get) | `landing_visit`: a visit to the store handoff page /get | `public/get/get.js` by sendBeacon; `public.attribution_counts` (0036), by src, cr and platform |
-| store click | `store_click`: /get sent a phone to its store, or a computer's visitor tapped a store badge on /get | same as above |
+| store click | `store_click`: /get sent a phone to its store, or a visitor tapped a store badge on /get or on the home page | /get as above; the home page's badges by sendBeacon (`src/lib/attribution.js countStoreClick`). The home page's badges now carry src and cr to the store the way /get does: Apple's campaign link with `ct` = `src_cr` cut to 30 characters, and a Play referrer `utm_source=src&utm_campaign=cr` |
 | install | `install`: the Android app's first launch, read once from Google Play's Install Referrer, within 14 days of the install | the Android app (`src/lib/attribution.js`); `attribution_counts`. **iPhone: none.** Apple tells the app nothing, so App Store downloads come from App Store Connect only |
 
 None of these stores an IP, a cookie, a user agent or an account. The user agent is read for the platform or device kind and thrown away.
@@ -67,6 +68,22 @@ Every measure from `setup_done` on is `count` of `out_of` households in the same
 | `either_repeat_use` | either of the two, each household once. The scaling gate passes at 15% with at least 30 eligible. v4's repeat-use check is below 10% |
 
 The three repeat-use measures share one denominator: activated households whose 14 full days since activation are over.
+
+### Which counts carry src and cr
+
+Everything before an account carries the link's `src` and `cr`. On an account, **only an Android one does**: Google Play passes the code to the app on first launch (Install Referrer). A website or iPhone account reads `direct`/`none`. That is what the privacy words approved on 2026-11-05 say, and what was decided ("Website and iPhone stay direct"). So the household lines of `funnel_by_source` can split Android households by creative. For the website and iPhone, compare the visits and store clicks by creative with App Store Connect's downloads by campaign.
+
+## What Apple will hide (read a blank as unknown, never as zero)
+
+From Apple's own pages, read 2026-11-08 ([campaign links](https://developer.apple.com/help/app-store-connect-analytics/acquisition/campaign-links/), [Analytics Reports API](https://developer.apple.com/help/app-store-connect-analytics/overview/analytics-reports-api/)):
+
+- **A campaign metric shows only once it reaches 5 in the date range you pick.** A creative that brought 1 to 4 first-time downloads that week shows nothing for downloads. At our volume most single creatives will be blank most weeks. Widen the date range, or read the src total (a shorter `ct`), before deciding anything.
+- **Usage data (sessions, active devices, retention) comes only from people who opted in** to share analytics with developers. It is a fraction of real users, so iPhone retention by campaign is a sample at best. Our own `returned_day_*` counts every household.
+- **The downloadable reports drop rows with fewer than five users or five devices.**
+- **A new campaign appears only 24 hours after launch.** Apple's days are UTC; ours are Toronto days.
+- **ct is 30 characters.** /get and the home page cut `src_cr` at 30, so two long creatives that share their first 30 characters are one campaign to Apple.
+
+Google Play says it "will not display data that falls under certain minimum thresholds", and may group it into "Other" ([Play Console help](https://support.google.com/googleplay/android-developer/answer/6263332?hl=en)). It publishes no number. Our own `install` count, from the Install Referrer, has no threshold.
 
 ## Where the counting is weaker, plainly
 

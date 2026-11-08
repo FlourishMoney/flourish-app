@@ -83,7 +83,7 @@ import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
-import { captureAttribution, signupAttribution, readInstallReferrerOnce } from "./lib/attribution.js";
+import { captureAttribution, signupAttribution, readInstallReferrerOnce, landingAttribution, countStoreClick } from "./lib/attribution.js";
 import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -15720,9 +15720,9 @@ function StoreBadges(){
   if (isNativeApp()) return null;
   return (
     <div className="fll-stores">
-      {storeBadgesFor(captureWaitlistSrc()).map((b) => (
+      {storeBadgesFor(captureWaitlistSrc(), landingAttribution()).map((b) => (
         <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer"
-          onClick={() => track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" })}>
+          onClick={() => { track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" }); countStoreClick(landingAttribution()); }}>
           <img src={b.src} alt={b.alt} width={b.width} height={b.height} />
         </a>
       ))}

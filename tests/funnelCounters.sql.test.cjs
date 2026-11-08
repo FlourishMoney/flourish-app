@@ -1,6 +1,6 @@
 // tests/funnelCounters.sql.test.cjs
 // -----------------------------------------------------------------------------
-// MIGRATION 0042 (THE FULL FUNNEL) IN A REAL POSTGRES (written, not run in production).
+// MIGRATIONS 0042 (THE FULL FUNNEL) AND 0043 (BY SOURCE) IN A REAL POSTGRES (written, not run in production).
 //   0  it applies on its own, and a second time; counting starts once and the start does not move
 //   1  anon and authenticated reach no table and no report; RLS is on
 //   2  a milestone or channel outside the fixed lists is refused; a second device adds no second row
@@ -8,6 +8,7 @@
 //      Apple and Google never in one number, returns on day 1, 7 and 28 with their denominators, test accounts out
 //   4  the gates: activation and repeat use, numerator and denominator worked out by hand below
 //   5  a deleted account takes its rows with it
+//   6  0043: the home page's visit by src and cr, and the Tuesday report by source and creative
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -18,7 +19,7 @@ const net = require("net");
 const { execFileSync } = require("child_process");
 
 const MIGRATIONS = path.join(__dirname, "..", "supabase", "migrations");
-const FILES = ["0036_source_funnel.sql", "0042_funnel_counters.sql"];
+const FILES = ["0036_source_funnel.sql", "0042_funnel_counters.sql", "0043_funnel_by_source.sql"];
 // Stand-ins for what 0042 reads: Supabase's auth.users, 0001's profiles and 0030's household tables (the columns read).
 const STUB = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
@@ -61,7 +62,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
 
     // ── 0. applies, twice; the start is set once ────────────────────────────────────────────────────────────
     for (const f of FILES) psql(["-f", path.join(MIGRATIONS, f)]);
-    t.ok(true, "0a 0042 applies (after 0036)");
+    t.ok(true, "0a 0042 and 0043 apply (after 0036)");
     const start1 = sql("select started_at from public.funnel_start");
     for (const f of FILES) psql(["-f", path.join(MIGRATIONS, f)]);
     t.ok(true, "0b and a second time, with no error");
@@ -73,7 +74,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq(sql(`select relrowsecurity from pg_class where oid = 'public.${tb}'::regclass`), "t", `1b ${tb}: RLS is on`);
       t.ok(!refused(`set role service_role; select count(*) from public.${tb}`), `1c ${tb}: the service role can read it`);
     }
-    for (const fn of ["funnel_households()", "funnel_cohorts('2026-01-01','2026-01-02')", "funnel_gates()", "funnel_shown(1, 2)"]) {
+    for (const fn of ["funnel_households()", "funnel_cohorts('2026-01-01','2026-01-02')", "funnel_gates()", "funnel_shown(1, 2)", "funnel_by_source('2026-01-01','2026-01-02')"]) {
       t.ok(refused(`set role anon; select * from public.${fn}`) && refused(`set role authenticated; select * from public.${fn}`), `1d ${fn}: anon and authenticated can't run it`);
       t.ok(!refused(`set role service_role; select * from public.${fn}`), `1e ${fn}: the service role can`);
     }
@@ -160,6 +161,26 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(gates[0].split("|")[0], "all", "4h the whole first, then each channel");
     const past = sql(`set role service_role; select shown from public.funnel_gates(${day(25)}) where channel = 'all' and measure = 'either_repeat_use'`);
     t.eq(past, "0 of 0 (no household has finished this window yet)", "4i as of an earlier day, nobody's window was over yet");
+
+    // ── 6. by source and creative (0043) ────────────────────────────────────────────────────────────────────
+    // C came from an Android install with Google Play's code; the website households read direct.
+    sql(`insert into public.account_attribution (user_id, src, cr, platform) values ('${C}', 'ig', 'reel_7', 'android')`);
+    const bump = (e, p) => sql(`set role service_role; select public.bump_attribution_count('${e}', 'ig', 'reel_7', '${p}')`);
+    bump("home_visit", "ios"); bump("home_visit", "ios"); bump("landing_visit", "android"); bump("store_click", "android"); bump("install", "android");
+    t.ok(refused("set role service_role; select public.bump_attribution_count('purchase', 'ig', 'reel_7', 'ios')"), "6a the event list grew by home_visit only");
+    const src = sql(`set role service_role; select src||'|'||cr||'|'||split||'|'||measure||'|'||shown from public.funnel_by_source(${day(30)}, ${day(0)})`).split("\n").filter((l) => l.includes("|"));
+    const line = (l, label) => t.ok(src.includes(l), `${label} (${l})`);
+    line("ig|reel_7|ios|home_visit|2", "6b the home page's visits, by src and cr, on iPhone");
+    line("ig|reel_7|android|get_visit|1", "6c /get's visit");
+    line("ig|reel_7|android|store_click|1", "6d the tap through to the store");
+    line("ig|reel_7|android|install|1", "6e the Android install");
+    line("ig|reel_7|android|households_created|1", "6f the household it made, on the channel it signed up on");
+    line("ig|reel_7|android|first_safe_to_spend|1 of 1 (100.0%)", "6g …activated, with its denominator");
+    line("ig|reel_7|android|paid_google|1 of 1 (100.0%)", "6h …and paid on Google");
+    line("ig|(all)|ios|home_visit|2", "6i a src's total across its creatives");
+    line("direct|none|web|households_created|4", "6j website households read direct (A with her partner, D, E, F)");
+    t.ok(!src.some((l) => l.includes("|paid_store|")), "6k no line adds Apple and Google together");
+    t.ok(src.every((l) => !/%/.test(l) || / of \d+ \(\d+\.\d%\)$/.test(l)), "6l every percentage has its numerator and denominator");
 
     // ── 5. a deleted account takes its rows with it ─────────────────────────────────────────────────────────
     sql(`delete from auth.users where id = '${C}'`);

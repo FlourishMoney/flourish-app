@@ -56,7 +56,7 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
 
   // ── 2. beta.js ───────────────────────────────────────────────────────────────────────────────
   const beta = read("netlify", "functions", "beta.js");
-  t.ok(/if \(action === "landing_count"\) \{\s*if \(CLIENT_COUNT_EVENTS\.includes\(body\.event\)\) \{\s*await bumpLandingCount\(\{ supabaseUrl, secretKey, event, name: body\.event, src: body\.src \}\);\s*\}\s*return \{ statusCode: 200, headers: CORS, body: JSON\.stringify\(\{ ok: true \}\) \};/.test(beta),
+  t.ok(/if \(action === "landing_count"\) \{\s*if \(CLIENT_COUNT_EVENTS\.includes\(body\.event\)\) \{\s*await bumpLandingCount\(\{ supabaseUrl, secretKey, event, name: body\.event, src: body\.src \}\);[\s\S]{0,400}?if \(body\.event === "landing_view"\) \{\s*const h = event\.headers \|\| \{\};\s*await bumpAttributionCount\(\{ supabaseUrl, secretKey, name: "home_visit", attribution: body\.attribution, platform: platformFromUserAgent\(h\["user-agent"\] \|\| h\["User-Agent"\]\) \}\);\s*\}\s*\}\s*return \{ statusCode: 200, headers: CORS, body: JSON\.stringify\(\{ ok: true \}\) \};/.test(beta),
     "2a the page's count: only landing_view or main_tap, and the same answer either way");
   t.ok(/console\.log\(`\[beta:signup\] signup_completed source=\$\{gate\.source\}`\);\s*\/\/[^\n]*\n\s*await bumpLandingCount\(\{ supabaseUrl, secretKey, event, name: "account_created", src: body\.src \}\);/.test(beta),
     "2b account_created, counted once the account exists");
@@ -79,7 +79,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   P.countLanding("account_created", { fetchImpl: pageFetch });
   t.eq(sent.map(s => [s.url, s.body.action, s.body.event]), [["/api/beta", "landing_count", "landing_view"], ["/api/beta", "landing_count", "main_tap"]],
     "3b main_tap is sent; the server's own counts cannot be sent by the page");
-  t.eq(Object.keys(sent[1].body).sort(), ["action", "event", "src"], "3c the page sends the event and the src, nothing else");
+  t.eq(Object.keys(sent[1].body).sort(), ["action", "attribution", "event", "src"], "3c the page sends the event, the src and the visit's own src and cr (0043), nothing else");
+  t.ok(sent[1].body.attribution === null || (Object.keys(sent[1].body.attribution).sort().join() === "cr,src"), "3c2 …and that is src and cr only, or nothing");
   const app = read("src", "App.jsx");
   t.ok(/useEffect\(\(\) => \{ if \(!isNativeApp\(\)\) \{ captureWaitlistSrc\(\); countLandingViewOnce\(\{ base: API_BASE \}\); \} \}, \[\]\);/.test(app),
     "3d the landing counts its view, on the web only, after keeping the visit's ?src= (the founding list form did that until 2026-10-29)");

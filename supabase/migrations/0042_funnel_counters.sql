@@ -94,7 +94,7 @@ returns table (
   paid_web_at timestamptz, paid_apple_at timestamptz, paid_google_at timestamptz,
   cancelled_web_at timestamptz, cancelled_apple_at timestamptz, cancelled_google_at timestamptz,
   refunded_web_at timestamptz, refunded_apple_at timestamptz, refunded_google_at timestamptz,
-  checkin_days date[], open_days date[]
+  checkin_days date[], open_days date[], src text, cr text
 )
 language sql stable security definer set search_path = public as $$
   with counted as (
@@ -148,7 +148,11 @@ language sql stable security definer set search_path = public as $$
          (select ms.at from ms where ms.household = f.household and ms.milestone = 'refunded' and ms.channel = 'apple'),
          (select ms.at from ms where ms.household = f.household and ms.milestone = 'refunded' and ms.channel = 'google'),
          (select dd.ds from dd where dd.household = f.household and dd.kind = 'checkin'),
-         (select dd.ds from dd where dd.household = f.household and dd.kind = 'open')
+         (select dd.ds from dd where dd.household = f.household and dd.kind = 'open'),
+         -- The first account's campaign code (0036): only an Android account carries one (the approved privacy words,
+         -- 2026-11-05); a website or iPhone account reads direct.
+         coalesce((select a.src from public.account_attribution a where a.user_id = f.first_user), 'direct'),
+         coalesce((select a.cr from public.account_attribution a where a.user_id = f.first_user), 'none')
   from firsts f
   join sizes s on s.household = f.household
   left join trials t on t.household = f.household;

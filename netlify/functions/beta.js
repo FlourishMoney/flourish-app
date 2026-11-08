@@ -34,7 +34,7 @@ const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
-const { accountPlatform, recordAccountAttribution } = require("./_lib/attribution");
+const { accountPlatform, recordAccountAttribution, bumpAttributionCount, platformFromUserAgent } = require("./_lib/attribution");
 const { recordMilestone } = require("./_lib/funnel");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
@@ -309,6 +309,12 @@ async function handle(event) {
   if (action === "landing_count") {
     if (CLIENT_COUNT_EVENTS.includes(body.event)) {
       await bumpLandingCount({ supabaseUrl, secretKey, event, name: body.event, src: body.src });
+      // The same visit by src AND cr (migration 0043), so the home page sits beside /get in the source report. The tags are
+      // checked again there; the user agent is read for the platform and not kept.
+      if (body.event === "landing_view") {
+        const h = event.headers || {};
+        await bumpAttributionCount({ supabaseUrl, secretKey, name: "home_visit", attribution: body.attribution, platform: platformFromUserAgent(h["user-agent"] || h["User-Agent"]) });
+      }
     }
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
