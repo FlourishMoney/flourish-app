@@ -10592,7 +10592,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
           Only when the meetings were read (recordsKnown), so a declined question is never asked again by mistake. */}
       {recordsKnown && setAppData && !heldToday && agenda.questions && agenda.questions.length > 0 && (
         <div style={card} data-meet="questions">
-          <div style={{display:"flex",flexDirection:"column",gap:SPACE.md}}>
+          <div style={{display:"flex",flexDirection:"column",gap:SPACE.lg}}>
             {agenda.questions.map(q => (
               <div key={q.id}>
                 <div style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl}}>{q.text}</div>
