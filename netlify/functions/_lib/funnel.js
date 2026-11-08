@@ -23,7 +23,7 @@ const MILESTONES = Object.freeze({
 });
 const DAY_KINDS = Object.freeze(["open", "checkin"]);
 const CHECKIN_KINDS = Object.freeze(["meeting", "weekly"]);
-const DAY_WINDOW = 60;                      // an account's first 60 days: the longest window any report reads is 28
+const DAY_WINDOW = 60;                      // an account's first 60 days: returns to day 28, and repeat use to day 60 (0042)
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

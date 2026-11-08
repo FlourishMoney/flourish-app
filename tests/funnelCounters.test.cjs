@@ -113,7 +113,7 @@ async function call({ body, user, now, upsertError = null }) {
   r = await call({ body: { metric: "checkin" }, user, now: at(9) });
   t.eq(r.res.statusCode, 400, "4d …and so is no kind");
   r = await call({ body: { metric: "checkin", kind: "meeting" }, user, now: at(9), upsertError: { message: "down" } });
-  t.eq(r.res.statusCode, 503, "4e a check-in that can't be written answers 503, so the app sends it again (nothing else keeps it)");
+  t.eq(r.res.statusCode, 503, "4e a check-in that can't be written answers 503, so the device does not mark it sent");
   r = await call({ body: { metric: "checkin", kind: "meeting" }, user, now: at(61) });
   t.eq([r.res.statusCode, r.writes.length], [204, 0], "4f past the first 60 days nothing is kept, and that is not an error");
   t.eq(await F.recordDay(fakeAdmin().admin, UID, "open", user.created_at, new Date(at(60))), true, "4g day 60 is still inside");

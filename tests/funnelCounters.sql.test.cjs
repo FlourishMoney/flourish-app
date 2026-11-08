@@ -107,6 +107,15 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     mark(B, "paid", "apple", 19); mark(C, "paid", "google", 25); mark(X, "paid", "web", 25);
     active(A, "open", 29); active(B, "open", 23); active(A, "open", 22); active(D, "open", 26);
     active(A, "checkin", 29); active(C, "checkin", 28); active(C, "checkin", 19); active(D, "checkin", 22);
+    // K: website, 8 p.m. on day T-8, first number 6 days 14 hours later. Its 7 days end on T-1, so today it is in the
+    // activation denominator AND the numerator (the review's off-by-one case). N: made yesterday, opened today.
+    // P: made at 8 a.m. on the day counting started, before it started at noon.
+    const K = sql(`insert into auth.users (email, created_at) values ('k@example.ca', (((now() at time zone 'America/Toronto')::date - 8) + time '20:00') at time zone 'America/Toronto') returning id`).split("\n")[0];
+    mark(K, "signed_up", "web", 8);
+    sql(`insert into public.account_milestones (user_id, milestone, channel, first_at) values ('${K}', 'first_safe', 'app', (((now() at time zone 'America/Toronto')::date - 1) + time '10:00') at time zone 'America/Toronto')`);
+    const N = person("n@example.ca", 1); mark(N, "signed_up", "web", 1); active(N, "open", 0);
+    const P = sql(`insert into auth.users (email, created_at) values ('p@example.ca', (((now() at time zone 'America/Toronto')::date - 40) + time '08:00') at time zone 'America/Toronto') returning id`).split("\n")[0];
+    mark(P, "signed_up", "web", 40);
 
     // ── 2. the fixed lists, and the first time only ─────────────────────────────────────────────────────────
     t.ok(refused(`insert into public.account_milestones (user_id, milestone, channel) values ('${A}', 'opened_coach', 'app')`), "2a a milestone outside the list is refused");
@@ -143,20 +152,25 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(sql(`set role service_role; select distinct before_counting_started from public.funnel_cohorts(${day(50)}, ${day(50)})`), "t", "3s a cohort from before counting started is marked, so its blanks are not read as zeros");
     t.eq(sql(`set role service_role; select distinct before_counting_started from public.funnel_cohorts(${day(30)}, ${day(30)})`), "f", "3t …and one after is not");
     t.eq(sql(`set role service_role; select count(*) from public.funnel_cohorts(${day(20)}, ${day(20)})`), "0", "3u the partner's own signup day holds no household of its own");
+    t.ok(rows(1, 1).includes("web|returned_day_1|0 of 0 (no household has finished this window yet)"), "3v an open on a day not yet over is not counted: never '1 of 0'");
+    t.eq(sql(`set role service_role; select distinct before_counting_started from public.funnel_cohorts(${day(40)}, ${day(40)})`), "t",
+      "3w a household made that morning, before counting started at noon, marks its day as not fully counted"); 
 
     // ── 4. the gates ───────────────────────────────────────────────────────────────────────────────────────
-    // activation: eligible H, C, D, E (7 days over; F is 3 days old, G before counting, X and S never). Reached it in 7 days: H, C, D.
-    // activated: H, C, D, F. Repeat use, out of H, C, D (14 days since activation over; F's are not):
+    // activation: eligible H, C, D, E, K (7 days over; F is 3 days old, N 1, G and P before counting, X and S never).
+    // Reached it in 7 days: H, C, D, K. activated: H, C, D, F, K. Repeat use, out of H, C, D (14 days since activation over; F's are not):
     //   returned days 6 to 8: H (the partner opened on day 6). Second check-in on another day, days 6 to 14: C (days 1 and 10).
     //   D's only check-in is on day 7: it is the first, not a second. Either: H and C.
     const gates = sql("set role service_role; select channel||'|'||measure||'|'||shown from public.funnel_gates()").split("\n").filter((l) => l.includes("|"));
     const gate = (line, label) => t.ok(gates.includes(line), `${label} (${line})`);
-    gate("all|activation_within_7_days|3 of 4 (75.0%)", "4a activation: abandoned onboarding is in the denominator");
-    gate("all|activated_households|4", "4b activated households");
+    gate("all|activation_within_7_days|4 of 5 (80.0%)", "4a activation: abandoned onboarding is in the denominator");
+    gate("all|activated_households|5", "4b activated households");
     gate("all|returned_days_6_to_8|1 of 3 (33.3%)", "4c returned on days 6 to 8");
     gate("all|second_checkin_days_6_to_14|1 of 3 (33.3%)", "4d a second check-in on a different day, days 6 to 14");
     gate("all|either_repeat_use|2 of 3 (66.7%)", "4e either, each household once");
-    gate("web|activation_within_7_days|2 of 3 (66.7%)", "4f split by the channel the household signed up on");
+    gate("web|activation_within_7_days|3 of 4 (75.0%)", "4f split by the channel the household signed up on");
+    t.eq(sql(`set role service_role; select shown from public.funnel_gates(${day(1)}) where channel = 'web' and measure = 'activation_within_7_days'`), "2 of 3 (66.7%)",
+      "4f2 the day before, K's 7 days were not over: out of the denominator, not a failure in it");
     gate("android|either_repeat_use|1 of 1 (100.0%)", "4g …the Android household");
     t.eq(gates[0].split("|")[0], "all", "4h the whole first, then each channel");
     const past = sql(`set role service_role; select shown from public.funnel_gates(${day(25)}) where channel = 'all' and measure = 'either_repeat_use'`);
@@ -178,7 +192,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     line("ig|reel_7|android|first_safe_to_spend|1 of 1 (100.0%)", "6g …activated, with its denominator");
     line("ig|reel_7|android|paid_google|1 of 1 (100.0%)", "6h …and paid on Google");
     line("ig|(all)|ios|home_visit|2", "6i a src's total across its creatives");
-    line("direct|none|web|households_created|4", "6j website households read direct (A with her partner, D, E, F)");
+    line("direct|none|web|households_created|6", "6j website households read direct (A with her partner, D, E, F, K, N)");
     t.ok(!src.some((l) => l.includes("|paid_store|")), "6k no line adds Apple and Google together");
     t.ok(src.every((l) => !/%/.test(l) || / of \d+ \(\d+\.\d%\)$/.test(l)), "6l every percentage has its numerator and denominator");
 

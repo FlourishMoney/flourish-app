@@ -36,7 +36,8 @@
  *   app_open                               -> an "open" day
  *   {"metric": "checkin", "kind": "meeting" | "weekly"}  -> a "checkin" day (a money meeting marked done, or the
  *                                             weekly check-in finished). Only this one answers 503 when it can't be
- *                                             written, because nothing else keeps it; the others never change an answer.
+ *                                             written, so the device doesn't mark it sent (a second check-in that day can
+ *                                             send it); nothing retries it later. The others never change an answer.
  * Those writes hold the account id, a milestone or kind from a fixed list and a time or a day: nothing else.
  *
  * Env: SUPABASE_URL, SUPABASE_SECRET_KEY (service role, server only). No new variable.

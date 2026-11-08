@@ -5,7 +5,7 @@
 // (src/lib/pendingWords.js, netlify/functions/_lib/pendingWords.js; docs/product/FOUNDING-SEATS-WORDS.md lists
 // them). This refuses a build that still holds one: the production web deploy (netlify.toml [context.production]),
 // every store build (npm run build:native), and every `cap sync` / `cap copy` into the iPhone and Android projects
-// (package.json capacitor:copy:before, 2026-11-08), so an archive made after a plain `npm run build` is refused too. A deploy preview and the test gate still build, so the screens can
+// (package.json capacitor:sync:before and capacitor:copy:before, 2026-11-08): the placeholder never reaches them. A deploy preview and the test gate still build, so the screens can
 // be seen and tested while the words are written.
 //
 //   node scripts/check-pending-words.mjs <dir or file>...     exit 1, naming each id, when any is found

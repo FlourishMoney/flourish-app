@@ -12,6 +12,7 @@
     "test:layout": "node tests/layout.browser.test.cjs",
     "screens:landing": "node scripts/capture-landing-screens.mjs && node scripts/crop-hero-card.mjs",
     "check:native-env": "node scripts/check-native-build.mjs --env",
+    "capacitor:sync:before": "node scripts/check-pending-words.mjs dist",
     "capacitor:copy:before": "node scripts/check-pending-words.mjs dist",
     "build:native": "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact && node scripts/check-pending-words.mjs dist"
   },

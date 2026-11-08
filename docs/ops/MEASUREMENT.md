@@ -6,7 +6,7 @@ Written 2026-11-08 for the approved plan (Nov 4, v4), which needs the full funne
 
 **What a channel is.** It is where the household's first account was made: `web`, `ios` or `android`. It comes from the Origin the store apps' WebViews send (`_lib/attribution.js accountPlatform`). An account made before 0036 has no record and reads `unknown`. Web and store sign-ups are always separate lines. **Apple and Google figures are never added together:** a payment, cancellation or refund is reported as `_web`, `_apple` or `_google`, because the stores define them differently (see each one below).
 
-**Counting starts when 0042 runs.** Nothing before that is in the new tables. `funnel_cohorts` marks earlier cohorts `before_counting_started = true`, so their blanks are not zeros. `funnel_gates` looks only at households created after it. For earlier days, use 0019's `activation_counts` and 0028's `onboarding_counts_report`. Both are device-based estimates that can count a household twice.
+**Counting starts when 0042 runs.** Nothing before that is in the new tables. `funnel_cohorts` marks `before_counting_started = true` on any line that holds a household created before it ran, so their blanks are not zeros. `funnel_gates` looks only at households created after it. For earlier days, use 0019's `activation_counts` and 0028's `onboarding_counts_report`. Both are device-based estimates that can count a household twice.
 
 ## The reports (Supabase SQL editor, service role only)
 
@@ -61,13 +61,13 @@ Every measure from `setup_done` on is `count` of `out_of` households in the same
 
 | Measure | Definition |
 |---|---|
-| `activation_within_7_days` | households that reached `first_safe_to_spend` within 7 days of their first account, out of every household whose 7 days are over. Households that abandoned onboarding are in the denominator. This is v4's early-stop measure: below 25% once 20 are eligible means pause new outreach |
+| `activation_within_7_days` | households that reached `first_safe_to_spend` within 7 days (168 hours) of their first account, out of every household whose 7 days are wholly over (from cohort day + 8). Households that abandoned onboarding are in the denominator. This is v4's early-stop measure: below 25% once 20 are eligible means pause new outreach |
 | `activated_households` | households that reached it at all. The scaling gate needs 30 |
 | `returned_days_6_to_8` | anyone opened the app on day 6, 7 or 8 after activation. Day 0 is the Toronto day of the first safe-to-spend result |
 | `second_checkin_days_6_to_14` | a money check-in on day 6 to 14 after activation, on a different day from the household's first check-in |
 | `either_repeat_use` | either of the two, each household once. The scaling gate passes at 15% with at least 30 eligible. v4's repeat-use check is below 10% |
 
-The three repeat-use measures share one denominator: activated households whose 14 full days since activation are over.
+The three repeat-use measures share one denominator: activated households whose 14 full days since activation are over, and whose day 14 falls in the first 60 days of their account.
 
 ### Which counts carry src and cr
 
@@ -89,7 +89,10 @@ Google Play says it "will not display data that falls under certain minimum thre
 
 - **iPhone installs and iPhone campaign codes are not ours to count.** App Store Connect has them by campaign token.
 - **Check-ins from the store apps start at 1.1.6.** The `checkin` signal is new code. The website sends it from the next deploy; the iPhone and Android apps send it from 1.1.6. Until then a store household's check-ins read as none. Everything else above comes from signals that the installed 1.1.4 and 1.1.5 apps already send, or from the server's own webhooks.
-- **A device that is offline keeps nothing.** A signal that fails is sent again later (`/api/activation` answers 503 only for a check-in, the one signal nothing else keeps). The others are best effort.
+- **A signal that fails is lost, not retried.** If a milestone write fails, `/api/activation` still answers 204, and that device never sends it again. A check-in that can't be written gets a 503, so the device doesn't mark it sent. It is sent only if another check-in of that kind happens on that device the same day: nothing retries it later. Each such loss logs `[funnel] not recorded <name>` (no account, no value), so a count of those lines in the function logs shows how much was missed.
+- **Repeat use only for activations in the first 46 days.** Days are kept for an account's first 60 days, so a household that activates later can't be judged on days 6 to 14 and is left out of that denominator.
+- **A partner can move a household's day.** The cohort day is the household's first account. If a partner with an older account of their own joins, the household moves to that older day, and earlier reports change.
+- **Finish with nothing ticked counts.** The meeting flow's "Finish (0/5 done)" marks the meeting held, so it counts as a check-in, the same as the app's own setup checklist reads it.
 - **Small numbers can point to a person.** A cohort day with one household describes that household. These reports are for Flourish only and are never published.
 
 ## Privacy

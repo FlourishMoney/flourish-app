@@ -27,7 +27,8 @@
 --   select * from public.funnel_gates();                               the plan's activation and repeat-use gates
 --
 -- COUNTING STARTS WHEN THIS RUNS. Nothing before it is recorded here, so an earlier cohort's blanks are not zeros:
--- funnel_cohorts marks those lines before_counting_started, and funnel_gates only looks at households created after.
+-- funnel_cohorts marks before_counting_started any line holding a household created before it ran, and funnel_gates
+-- only looks at households created after.
 --
 -- UNTIL THIS IS APPLIED: every write is refused and dropped (the server logs only "[funnel] not recorded"), and
 -- everything a household sees works as before. Needs 0001 (profiles), 0030 (household_members), 0036
@@ -165,7 +166,6 @@ create or replace function public.funnel_cohorts(p_from date, p_to date)
 returns table (cohort_day date, channel text, measure text, count integer, out_of integer, shown text, pct numeric, before_counting_started boolean)
 language sql stable security invoker set search_path = public as $$
   with today as (select (now() at time zone 'America/Toronto')::date as d),
-  started as (select (s.started_at at time zone 'America/Toronto')::date as d from public.funnel_start s),
   g as (
     select h.cohort_day, h.channel,
            count(*)::integer as hh,
@@ -179,21 +179,22 @@ language sql stable security invoker set search_path = public as $$
            count(h.paid_web_at)::integer as paid_web, count(h.paid_apple_at)::integer as paid_apple, count(h.paid_google_at)::integer as paid_google,
            count(h.cancelled_web_at)::integer as can_web, count(h.cancelled_apple_at)::integer as can_apple, count(h.cancelled_google_at)::integer as can_google,
            count(h.refunded_web_at)::integer as ref_web, count(h.refunded_apple_at)::integer as ref_apple, count(h.refunded_google_at)::integer as ref_google,
-           count(*) filter (where h.open_days @> array[h.cohort_day + 1])::integer as r1,
-           count(*) filter (where h.open_days @> array[h.cohort_day + 7])::integer as r7,
-           count(*) filter (where h.open_days @> array[h.cohort_day + 14])::integer as r14,
-           count(*) filter (where h.open_days @> array[h.cohort_day + 28])::integer as r28,
+           count(*) filter (where h.open_days @> array[h.cohort_day + 1] and h.cohort_day + 1 < (select d from today))::integer as r1,
+           count(*) filter (where h.open_days @> array[h.cohort_day + 7] and h.cohort_day + 7 < (select d from today))::integer as r7,
+           count(*) filter (where h.open_days @> array[h.cohort_day + 14] and h.cohort_day + 14 < (select d from today))::integer as r14,
+           count(*) filter (where h.open_days @> array[h.cohort_day + 28] and h.cohort_day + 28 < (select d from today))::integer as r28,
            count(*) filter (where h.cohort_day + 1 < (select d from today))::integer as e1,
            count(*) filter (where h.cohort_day + 7 < (select d from today))::integer as e7,
            count(*) filter (where h.cohort_day + 14 < (select d from today))::integer as e14,
-           count(*) filter (where h.cohort_day + 28 < (select d from today))::integer as e28
+           count(*) filter (where h.cohort_day + 28 < (select d from today))::integer as e28,
+           bool_or(h.created_at < (select s.started_at from public.funnel_start s)) as early
     from public.funnel_households() h
     where h.cohort_day between p_from and p_to
     group by h.cohort_day, h.channel
   )
   select g.cohort_day, g.channel, m.measure, m.n, m.d, public.funnel_shown(m.n, m.d),
          case when m.d > 0 then round(100.0 * m.n / m.d, 1) end,
-         g.cohort_day < (select d from started)
+         g.early
   from g
   cross join lateral (values
     (1,  'households_created',               g.hh,        null::integer),
@@ -227,8 +228,9 @@ $$;
 --                       account, out of every household whose 7 days are over (abandoned onboarding included)
 --   activated           households that reached it at all (the scaling gate needs 30)
 --   returned_days_6_to_8, second_checkin_days_6_to_14, either_repeat_use
---                       out of activated households whose 14 full days since activation are over; day 0 is the
---                       Toronto day of the first safe-to-spend result. Each household once.
+--                       out of activated households whose 14 full days since activation are over (and fall in the
+--                       first 60 days, the days kept); day 0 is the Toronto day of the first safe-to-spend result.
+--                       Each household once.
 -- channel 'all' is every household; the other lines split it by the channel the household signed up on.
 create or replace function public.funnel_gates(p_as_of date default null)
 returns table (channel text, measure text, numerator integer, denominator integer, shown text, pct numeric)
@@ -242,11 +244,12 @@ language sql stable security invoker set search_path = public as $$
   ),
   f as (
     select h.channel,
-           h.cohort_day + 7 <= (select d from asof) as act_eligible,
-           h.first_safe_at is not null and h.first_safe_at < h.created_at + interval '7 days'
-             and (h.first_safe_at at time zone 'America/Toronto')::date < (select d from asof) as activated_7d,
+           -- The 7 days (168 hours) after the first account end on cohort day + 7, so they are wholly over by day + 8.
+           h.cohort_day + 8 <= (select d from asof) as act_eligible,
+           h.first_safe_at is not null and h.first_safe_at < h.created_at + interval '7 days' as activated_7d,
            h.first_safe_at is not null and h.a < (select d from asof) as activated,
-           h.a is not null and h.a + 14 < (select d from asof) as rep_eligible,
+           -- Days are kept for an account's first 60 days, so a household that activated later than day 46 can't be judged.
+           h.a is not null and h.a + 14 < (select d from asof) and h.a + 14 <= h.cohort_day + 60 as rep_eligible,
            coalesce(exists (select 1 from unnest(h.open_days) o where o between h.a + 6 and h.a + 8), false) as ret_6_8,
            coalesce(exists (select 1 from unnest(h.checkin_days) c where c between h.a + 6 and h.a + 14 and c <> h.checkin_days[1]), false) as ci_6_14
     from h
