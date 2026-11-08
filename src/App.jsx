@@ -10444,14 +10444,24 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
   useEffect(() => { if (meetError) noteReviewTrouble(); }, [meetError]);
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
   // Meeting memory (2026-11-08): the meetings are read again each time Meet opens, so one a partner just held shows.
-  useEffect(() => { if (!data?.demo && meetingMemory) meetingMemory.reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // fresh: what was held is dropped first, so until this read answers there is no opening at all (never one from before
+  // a leave or a join, or from the other household).
+  // readThisVisit: Meet's first draw happens before that effect runs, with whatever this phone already held, so the
+  // opening and the questions wait for THIS visit's read to answer as well. Until then: nothing.
+  const [readThisVisit, setReadThisVisit] = useState(false);
+  useEffect(() => {
+    if (data?.demo || !meetingMemory) return;
+    let live = true;
+    Promise.resolve(meetingMemory.reload({ fresh: true })).catch(() => null).then(() => { if (live) setReadThisVisit(true); });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // How this meeting opens: what the last one decided (meetingRecord.js meetingOpening). Only when the meetings were
   // actually read: a failed read shows nothing, never the first-meeting line.
   const opening = useMemo(() => {
-    if (data.demo || !Array.isArray(data.meetingRecords)) return null;
+    if (data.demo || !readThisVisit || !Array.isArray(data.meetingRecords)) return null;
     try { return meetOpeningFor(data); } catch { return null; }
-  }, [data]);
-  const recordsKnown = !data.demo && Array.isArray(data.meetingRecords) && !!meetingMemory;
+  }, [data, readThisVisit]);
+  const recordsKnown = !data.demo && readThisVisit && Array.isArray(data.meetingRecords) && !!meetingMemory;
   // The household's Yes or No to each question, by its id (the change's signature). Tapping the chosen one again
   // clears it: no answer is a real choice too, and it is not recorded.
   const [choices, setChoices] = useState({});
@@ -18091,8 +18101,10 @@ export default function FlourishApp(){
   const recordsGenRef = useRef(0);
   const meetingUserRef = useRef(null);   // whose meetings these are; a save that finishes for someone else is dropped
   const setRecords = (v) => { meetingRecordsRef.current = v; setMeetingRecords(v); };
-  const reloadMeetingRecords = async () => {
+  // fresh: forget what is held first, so nothing is shown until this read answers (Meet opening, a household change).
+  const reloadMeetingRecords = async ({ fresh = false } = {}) => {
     const gen = ++recordsGenRef.current;
+    if (fresh) setRecords(null);
     const recs = await loadMeetingRecords({ apiBase: API_BASE, getJwt });
     if (gen !== recordsGenRef.current) return meetingRecordsRef.current;
     setRecords(recs);
@@ -18113,6 +18125,15 @@ export default function FlourishApp(){
     setRecords(withRecord(meetingRecordsRef.current, res.record));
     return res;
   };
+  // Joined or left a household on this device: the meetings held are the old household's. Forget them at once (Meet
+  // shows no opening) and read again. Only on a real change, not on the first render.
+  const meetingRoleRef = useRef(householdRole);
+  useEffect(() => {
+    if (meetingRoleRef.current === householdRole) return;
+    meetingRoleRef.current = householdRole;
+    if (!user) return;
+    reloadMeetingRecords({ fresh: true });
+  }, [householdRole]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     recordsGenRef.current++;
     meetingUserRef.current = user?.id || null;

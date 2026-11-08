@@ -27,6 +27,8 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 const TZ = "America/Toronto";
 const SHOTS = process.env.MEETING_SHOTS || "";
 
+// The opening says a day as the app does ("Nov 1"): meetingRecord.js meetingDayLabel.
+const label = (day) => new Date(`${day}T12:00:00`).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
 const dayIn = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
 const iso = (d) => d.toISOString().slice(0, 10);
 const monthsAgo = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d; };
@@ -52,7 +54,7 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
   let store, S;
-  const reset = (over = {}) => { store = createStore(); S = { userData: null, writes: [], meetingCalls: [], ...over }; };
+  const reset = (over = {}) => { store = createStore(); S = { userData: null, writes: [], meetingCalls: [], listDelayMs: 0, ...over }; };
   reset();
   let dist = null;
   const body = (req) => new Promise((ok) => { let d = ""; req.on("data", (c) => { d += c; }); req.on("end", () => ok(d)); });
@@ -68,7 +70,10 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
     }
     if (p === "/api/meeting") {
       const raw = await body(req);
-      try { S.meetingCalls.push(JSON.parse(raw).action); } catch { S.meetingCalls.push("?"); }
+      let action = "?";
+      try { action = JSON.parse(raw).action; } catch {}
+      S.meetingCalls.push(action);
+      if (action === "list" && S.listDelayMs) await new Promise((ok) => setTimeout(ok, S.listDelayMs));   // a slow read
       const r = await store.fn.handler({ httpMethod: req.method, headers: { authorization: req.headers.authorization, origin: req.headers.origin }, body: raw });
       res.writeHead(r.statusCode, { "Content-Type": "application/json" }); res.end(r.body || ""); return;
     }
@@ -183,8 +188,27 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
     t.ok(S.writes.length >= 1 && S.writes.every(w => !w.includes("meetingRecords")), `4f nothing the app saved to user_data carries them (${S.writes.length} saves)`);
     t.eq(await questions(page).count(), 0, "4g once marked done, no question is left waiting for an answer that cannot be saved today");
     await opening(page).first().waitFor();
-    t.ok((await opening(page).innerText()).startsWith(`Last meeting: ${today}.`), "4h the opening now reads from the meeting just held");
+    t.ok((await opening(page).innerText()).startsWith(`Last meeting: ${label(today)}.`), "4h the opening now reads from the meeting just held, its day said as \"Nov 1\" is");
     await shot(page, "04-marked-done.png");
+    const heldRowCopy = JSON.parse(JSON.stringify(store.S.rows[0]));
+
+    // ── 4i. NOTHING STALE WHILE READING ──────────────────────────────────────────────────────────
+    // What this phone holds is now somebody else's history (as after a leave or a join), and the next read is slow.
+    // Opening Meet again must show no opening at all until that read answers, then the new one.
+    store.S.rows = [];
+    S.listDelayMs = 4000;
+    await page.getByRole("button").filter({ hasText: /^Today(\s*\d+)?$/ }).last().click();
+    await page.getByText("safe to spend", { exact: false }).first().waitFor();
+    await page.getByRole("button").filter({ hasText: /^Meet(\s*\d+)?$/ }).last().click();
+    await page.locator('[data-tour="meet"]').first().waitFor();
+    let staleSeen = false;
+    for (let i = 0; i < 10; i++) { if (await opening(page).count()) staleSeen = true; await page.waitForTimeout(200); }
+    t.ok(!staleSeen, "4i while the meetings are being read, Meet shows no opening at all, never the one it held before");
+    await opening(page).first().waitFor({ timeout: 10000 });
+    t.eq((await opening(page).innerText()).trim(), FIRST, "4j …then the opening the read gave (here: nothing held, so the first-meeting line)");
+    t.ok(!(await page.locator("body").innerText()).includes(`Last meeting: ${label(today)}.`), "4k …and the old history is gone from the screen");
+    S.listDelayMs = 0;
+    store.S.rows = [heldRowCopy];
     const heldRow = JSON.parse(JSON.stringify(store.S.rows[0]));
     const savedBlob = JSON.parse(S.writes[S.writes.length - 1]);
     await ctx.close();
@@ -200,7 +224,7 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
       await toMeet(p2);
       await opening(p2).first().waitFor();
       const lines = (await opening(p2).innerText()).split("\n").map(s => s.trim()).filter(Boolean);
-      t.eq(lines, [`Last meeting: ${dayIn(weekAgo)}.`, "Since then, you said yes to Goodlife Gym.", "You said no to Netflix, so it is not being raised again."],
+      t.eq(lines, [`Last meeting: ${label(dayIn(weekAgo))}.`, "Since then, you said yes to Goodlife Gym.", "You said no to Netflix, so it is not being raised again."],
         "5a the next meeting opens with \"Last meeting:\" and what was decided");
       const q2 = await questions(p2).innerText();
       t.ok(!/Netflix/.test(q2), "5b the question they said no to does not come back");

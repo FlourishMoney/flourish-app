@@ -132,6 +132,10 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
     const last = r.buildMeetingRecord({ metOn: "2026-09-16", answers: [ok({ subject: "Netflix" }), ok({ signature: "appeared|gym|?|45", answer: "dismissed", subject: "Gym" })] });
     const opening = r.meetingOpening({ lastRecord: last, snapshot: { healthScore: { current: 71, previous: 66 } } });
     t.eq(opening.metOn, "2026-09-16", "6c a later meeting opens with when the last one was");
+    t.eq(opening.lines[0].text, "Last meeting: Sep 16.", "6c2 …said the way the app shows a day elsewhere (en-CA, short month and day), not as 2026-09-16");
+    t.eq([r.meetingDayLabel("2026-11-01"), r.meetingDayLabel("2026-01-01"), r.meetingDayLabel("2026-12-31")], ["Nov 1", "Jan 1", "Dec 31"],
+      "6c3 …read as the calendar day it is, so no timezone moves it to the day before");
+    t.eq(r.meetingDayLabel("not a day"), "not a day", "6c4 …and a malformed date is shown as stored, never turned into another day");
     t.ok(opening.lines.some(l => /you said yes to Netflix/.test(l.text)), "6d …what was decided");
     // "No" is an answer. Calling it "unanswered" told the household they had not decided
     // something they had just decided.

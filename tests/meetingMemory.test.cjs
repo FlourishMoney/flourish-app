@@ -102,7 +102,7 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     t.eq(await M.loadMeetingRecords(as(st2, P)), null, "2h a partner's meetings whose join date cannot be read: the whole read is unknown, not shown undated");
     // The screen's rule for unknown: no opening, no questions (App.jsx MeetAgenda).
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-    t.ok(/if \(data\.demo \|\| !Array\.isArray\(data\.meetingRecords\)\) return null;\s*\n\s*try \{ return meetOpeningFor\(data\); \}/.test(app),
+    t.ok(/if \(data\.demo \|\| !readThisVisit \|\| !Array\.isArray\(data\.meetingRecords\)\) return null;\s*\n\s*try \{ return meetOpeningFor\(data\); \}/.test(app),
       "2i Meet shows no opening unless the meetings were actually read");
     t.ok(/if \(!data\.demo && !Array\.isArray\(data\.meetingRecords\)\) full\.questions = \[\];/.test(app),
       "2j …and asks no question (on screen or by the coach) while the household's no answers are unknown");
@@ -129,7 +129,7 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     const later = await M.loadMeetingRecords(as(st, O));
     const open2 = snap.meetOpeningFor({ ...data, meetingRecords: later });
     t.eq(open2.lines.map(l => l.text), [
-      "Last meeting: 2026-11-01.",
+      "Last meeting: Nov 1.",
       "Since then, you said yes to Goodlife Gym.",
       "You said no to Netflix, so it is not being raised again.",
     ], "3e the next meeting opens with \"Last meeting:\" and what was decided");
@@ -143,7 +143,7 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     const st3 = createStore();
     await M.saveMeetingRecord({ ...as(st3, O), metOn: "2026-11-02", answers: [] });
     t.eq(snap.meetOpeningFor({ ...data, meetingRecords: await M.loadMeetingRecords(as(st3, O)) }).lines.map(l => l.text),
-      ["Last meeting: 2026-11-02.", "No decisions were recorded at that meeting."], "3f a meeting with no answers opens the next one as exactly that");
+      ["Last meeting: Nov 2.", "No decisions were recorded at that meeting."], "3f a meeting with no answers opens the next one as exactly that");
   }
 
   // ── 6. COUPLE MODE: THE SAME HISTORY FOR BOTH ──────────────────────────────────────────────────
@@ -168,7 +168,7 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     const data = HOUSEHOLD();
     t.eq(snap.meetOpeningFor({ ...data, meetingRecords: ro }).lines.map(l => l.text), snap.meetOpeningFor({ ...data, meetingRecords: rp }).lines.map(l => l.text),
       "6f …so both open the next meeting the same way");
-    t.eq(snap.meetOpeningFor({ ...data, meetingRecords: rp }).lines[0].text, "Last meeting: 2026-10-25.", "6g …with the household's latest meeting, whoever recorded it");
+    t.eq(snap.meetOpeningFor({ ...data, meetingRecords: rp }).lines[0].text, "Last meeting: Oct 25.", "6g …with the household's latest meeting, whoever recorded it");
     t.eq(rp.map(r => r.mine), [true, false, true], "6h each record says whether it is the reader's own (no account id is sent)");
     t.ok(rp.every(r => !("user_id" in r)), "6i …and no account id reaches the app");
     // A former partner (no membership left) sees only their own.
@@ -279,6 +279,23 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     t.eq(M.withRecord(null, { metOn: "2026-11-05", answers: [] }), null, "8j a save while the history is unknown leaves it unknown");
     t.eq(M.withRecord([{ metOn: "2026-11-05", mine: true, answers: [1] }, { metOn: "2026-11-05", mine: false, answers: [2] }], { metOn: "2026-11-05", answers: [3] }).map(r => r.answers[0]),
       [3, 2], "8k a saved record replaces this person's own for that day, never the partner's");
+  }
+
+  // ── 8b. NOTHING STALE WHILE READING (Amanda 2026-11-08) ─────────────────────────────────────────
+  // Until Meet's read answers there is no opening at all, never the one held before (from before a leave or a join).
+  // The behaviour is driven in tests/meetingMemory.browser.test.cjs 4i-4k; these pin the two places that forget first.
+  {
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const rl = app.slice(app.indexOf("const reloadMeetingRecords = async ({ fresh = false } = {}) => {"), app.indexOf("const recordMeeting = async"));
+    t.ok(/const gen = \+\+recordsGenRef\.current;\s*\n\s*if \(fresh\) setRecords\(null\);\s*\n\s*const recs = await loadMeetingRecords/.test(rl),
+      "8b1 a fresh read forgets what is held BEFORE it asks, so nothing old shows while it is in flight");
+    t.ok(/meetingMemory\.reload\(\{ fresh: true \}\)/.test(app.slice(app.indexOf("function MeetAgenda("), app.indexOf("\nfunction Family(", app.indexOf("function MeetAgenda(")))),
+      "8b2 Meet reads fresh each time it opens");
+    t.ok(/if \(data\.demo \|\| !readThisVisit \|\| !Array\.isArray\(data\.meetingRecords\)\) return null;/.test(app)
+      && /const recordsKnown = !data\.demo && readThisVisit && /.test(app),
+      "8b4 …and shows no opening and no question until that visit's read has answered (its first draw holds the old list)");
+    t.ok(/if \(meetingRoleRef\.current === householdRole\) return;[\s\S]{0,160}reloadMeetingRecords\(\{ fresh: true \}\);\s*\n\s*\}, \[householdRole\]\);/.test(app),
+      "8b3 joining or leaving a household on this device forgets the old household's meetings at once and reads again");
   }
 
   // ── 9. NEVER IN A SAVED BLOB ───────────────────────────────────────────────────────────────────

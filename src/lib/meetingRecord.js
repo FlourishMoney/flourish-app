@@ -116,6 +116,17 @@ export function lastMeeting(records) {
   return list.slice().sort((a, b) => String(b.metOn).localeCompare(String(a.metOn)))[0];
 }
 
+// The day a meeting was held, shown the way the app shows a day elsewhere: "Nov 1". The same call Meet's agenda
+// already uses for payday (meetSnapshot.js, toLocaleDateString "en-CA" with a short month and the day). The stored
+// date is a calendar day, so it is read at local noon: no timezone can move it to the day before. A date that is not
+// a real YYYY-MM-DD is shown as stored rather than turned into a different one.
+export function meetingDayLabel(metOn) {
+  if (typeof metOn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(metOn)) return String(metOn || "");
+  const d = new Date(`${metOn}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return metOn;
+  return d.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+}
+
 const VERB = {
   [ANSWER_ACCEPTED]: "you said yes to",
   [ANSWER_DISMISSED]: "you left",
@@ -144,7 +155,7 @@ export function meetingOpening({ lastRecord = null, snapshot = {} } = {}) {
   const accepted = answers.filter(a => a.answer === ANSWER_ACCEPTED);
   const dismissed = answers.filter(a => a.answer === ANSWER_DISMISSED);
 
-  lines.push({ text: `Last meeting: ${last.metOn}.`, source: "meetingRecord" });
+  lines.push({ text: `Last meeting: ${meetingDayLabel(last.metOn)}.`, source: "meetingRecord" });
 
   for (const a of accepted) {
     lines.push({ text: `Since then, ${VERB[a.answer]} ${a.subject || a.kind || "a change"}.`, source: "meetingRecord" });
