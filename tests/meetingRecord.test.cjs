@@ -23,7 +23,14 @@ function loadFn({ user_id = null, authError = null, state }) {
     ...real,
     getUserFromRequest: async () => ({ user_id, error: authError }),
     getAdminClient: () => ({
-      from: () => ({ upsert: async (row) => { state.writes.push(row); return { error: null }; } }),
+      from: () => ({
+        upsert: async (row) => { state.writes.push(row); return { error: null }; },
+        // meeting.js reads the day's row before it writes (same-day answers are merged, 2026-11-08). The latest
+        // write for that person and day stands in for the row.
+        select: () => { const f = {}; const b = { eq: (c, v) => { f[c] = v; return b; },
+          maybeSingle: async () => { const hit = state.writes.filter(w => w.user_id === f.user_id && w.met_on === f.met_on).pop();
+            return { data: hit ? { answers: hit.answers } : null, error: null }; } }; return b; },
+      }),
     }),
   };
   const mod = require(FN_PATH);

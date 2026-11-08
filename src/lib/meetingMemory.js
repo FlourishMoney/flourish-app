@@ -42,19 +42,6 @@ export function answersFor(questions, choices) {
     .map(q => ({ signature: q.id, domain: q.domain, kind: q.kind || undefined, subject: q.subject || undefined, answer: c[q.id] }));
 }
 
-/**
- * The answers to send for today: what this person already recorded today, with today's new answers on top.
- * The server keeps one record per person per day and replaces it, so sending only the new answers would
- * erase an earlier one from the same day (another device, or before a reload).
- */
-export function mergeAnswers(earlier, later) {
-  const out = new Map();
-  for (const a of [...(Array.isArray(earlier) ? earlier : []), ...(Array.isArray(later) ? later : [])]) {
-    if (a && a.signature) out.set(a.signature, a);
-  }
-  return [...out.values()];
-}
-
 /** The list with this person's record for that day replaced or added, newest first. null stays null. */
 export function withRecord(records, record) {
   if (!Array.isArray(records) || !record || !isDay(record.metOn)) return Array.isArray(records) ? records : null;

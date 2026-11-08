@@ -250,13 +250,32 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     const rm = app.slice(app.indexOf("const recordMeeting = async (answers) => {"), app.indexOf("useEffect(() => {", app.indexOf("const recordMeeting = async (answers) => {")));
     t.ok(/const who = meetingUserRef\.current;/.test(rm) && /if \(!who \|\| meetingUserRef\.current !== who\) return \{ ok: false \};/.test(rm),
       "8h3 a save that finishes after another account signed in changes nothing on that account's screen");
-    // Saving the same day again keeps what was already recorded that day.
+    // TWO DEVICES, ONE DAY (Amanda 2026-11-08): the same person marks done twice on one day. The day's answers
+    // are merged by question; where one question got two answers, the later one wins.
     const st2 = createStore();
-    await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: M.mergeAnswers([], [{ signature: "a", domain: "bills", answer: "dismissed" }]) });
-    const known = await M.loadMeetingRecords(as(st2, O));
-    const earlier = known.find(x => x.mine && x.metOn === "2026-11-05").answers;
-    await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: M.mergeAnswers(earlier, [{ signature: "b", domain: "bills", answer: "accepted" }]) });
-    t.eq(st2.S.rows[0].answers.map(a => a.signature).sort(), ["a", "b"], "8i a second save the same day adds to that day's record rather than erasing it");
+    const ans = (signature, answer) => ({ signature, domain: "bills", kind: "amount", answer, subject: signature });
+    const phone = await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: [ans("a", "dismissed"), ans("c", "accepted")] });
+    // The iPad never saw the phone's save: it sends only what was answered on it.
+    const ipad = await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: [ans("b", "accepted"), ans("c", "dismissed")] });
+    t.eq([phone.ok, ipad.ok, st2.S.rows.length], [true, true, 1], "8i two saves the same day are one record for that day");
+    t.eq(st2.S.rows[0].answers.map(a => `${a.signature}:${a.answer}`).sort(), ["a:dismissed", "b:accepted", "c:dismissed"],
+      "8i2 …holding both devices' answers: the phone's no to a is not erased by the iPad's save");
+    t.eq(st2.S.rows[0].answers.find(a => a.signature === "c").answer, "dismissed", "8i3 …and where one question got two answers, the later save's wins");
+    t.eq(ipad.record.answers.map(a => a.signature).sort(), ["a", "b", "c"], "8i4 the second save answers with the whole merged day, so the app shows what was kept");
+    const empty = await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: [] });
+    t.eq([empty.ok, st2.S.rows[0].answers.length], [true, 3], "8i5 marking done again with nothing answered keeps the day's answers");
+    await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-06", answers: [ans("d", "accepted")] });
+    t.eq(st2.S.rows.map(r => `${r.met_on}:${r.answers.length}`), ["2026-11-05:3", "2026-11-06:1"], "8i6 another day is its own record, not merged");
+    const st3 = createStore();
+    st3.S.members.push({ household_id: "h", user_id: O, joined_at: "2026-10-01T09:00:00Z" }, { household_id: "h", user_id: P, joined_at: "2026-10-02T09:00:00Z" });
+    await M.saveMeetingRecord({ ...as(st3, O), metOn: "2026-11-05", answers: [ans("a", "dismissed")] });
+    await M.saveMeetingRecord({ ...as(st3, P), metOn: "2026-11-05", answers: [ans("a", "accepted")] });
+    t.eq(st3.S.rows.map(r => `${r.user_id === O ? "O" : "P"}:${r.answers.map(a => a.answer).join()}`).sort(), ["O:dismissed", "P:accepted"],
+      "8i7 a partner's save the same day is their own record: one person's answers never merge into the other's");
+    const appSrc = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const rmSrc = appSrc.slice(appSrc.indexOf("const recordMeeting = async (answers) => {"), appSrc.indexOf("useEffect(() => {", appSrc.indexOf("const recordMeeting = async (answers) => {")));
+    t.ok(/saveMeetingRecord\(\{ apiBase: API_BASE, getJwt, metOn: localDay\(\), answers \}\)/.test(rmSrc),
+      "8i8 the app sends only this save's answers, so a device with an old list cannot send an old answer back over a newer one");
     t.eq(M.withRecord(null, { metOn: "2026-11-05", answers: [] }), null, "8j a save while the history is unknown leaves it unknown");
     t.eq(M.withRecord([{ metOn: "2026-11-05", mine: true, answers: [1] }, { metOn: "2026-11-05", mine: false, answers: [2] }], { metOn: "2026-11-05", answers: [3] }).map(r => r.answers[0]),
       [3, 2], "8k a saved record replaces this person's own for that day, never the partner's");

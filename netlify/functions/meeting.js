@@ -58,6 +58,21 @@ function recordableAnswer(raw) {
 
 const isDate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+// ONE DAY, ONE RECORD, ANSWERS MERGED (2026-11-08). The table keeps one row per person per day, and a second
+// "Mark this meeting done" the same day (another device, or after a reload) used to REPLACE it, so a "no"
+// answered on the phone was erased by the iPad's save and the question came back. Now the day's answers are
+// merged by question (signature): an answer only on one side is kept, and where one question got two answers,
+// the one in this request (the later save) wins. The app sends only what was answered in this save.
+const MAX_STORED = 200;
+function mergeDay(earlier, later) {
+  const out = new Map();
+  for (const a of [...(Array.isArray(earlier) ? earlier : []).map(recordableAnswer), ...later]) {
+    if (a && a.signature) out.set(a.signature, a);
+  }
+  const list = [...out.values()];
+  return list.length > MAX_STORED ? list.slice(list.length - MAX_STORED) : list;
+}
+
 // The meetings that matter: the latest one (the opening) and every "no" still inside its twelve months
 // (DISMISSAL_REOPEN_DAYS), with a margin. Read by date first, then capped, newest first.
 const LIST_DAYS = 400;
@@ -158,12 +173,22 @@ exports.handler = async (event) => {
 
   try {
     // user_id comes from the verified token, never from the body.
+    // What this person already recorded today, if anything, merged with this save (mergeDay above). Two saves
+    // in the same instant can still race (read, read, write, write); the second then wins whole, as before.
+    const prior = await admin
+      .from("meeting_records")
+      .select("answers")
+      .eq("user_id", user_id)
+      .eq("met_on", metOn)
+      .maybeSingle();
+    if (prior.error) throw new Error(prior.error.message);
+    const stored = mergeDay(prior.data && prior.data.answers, answers);
     const { error } = await admin
       .from("meeting_records")
-      .upsert({ user_id, met_on: metOn, answers }, { onConflict: "user_id,met_on" });
+      .upsert({ user_id, met_on: metOn, answers: stored }, { onConflict: "user_id,met_on" });
     if (error) throw new Error(error.message);
     // The stored answers come back, so the app adds exactly what was kept, not what it sent.
-    return json(200, CORS, { recorded: answers.length, met_on: metOn, answers });
+    return json(200, CORS, { recorded: answers.length, met_on: metOn, answers: stored });
   } catch (e) {
     console.error("[meeting] record:", e.message);
     return json(500, CORS, { error: "record_failed" });

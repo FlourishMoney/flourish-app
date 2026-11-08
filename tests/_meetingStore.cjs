@@ -98,7 +98,22 @@ function createStore() {
           if (i >= 0) S.rows[i] = copy; else S.rows.push(copy);
           return { error: null };
         },
-        select() { S.log.adminReads++; throw new Error("the admin client must not read meeting_records"); },
+        // The writer reads the day's row it is about to replace (meeting.js mergeDay). Counted, so a LIST that used
+        // the service role shows up in log.adminReads (tests/meetingMemory.test.cjs 1b).
+        select() {
+          S.log.adminReads++;
+          if (table !== "meeting_records") throw new Error("unexpected admin table " + table);
+          const f = [];
+          const b = {
+            eq(col, v) { f.push([col, v]); return b; },
+            maybeSingle: async () => {
+              if (S.fail.record) return { data: null, error: { message: "record failed (test)" } };
+              const hit = S.rows.find(r => f.every(([c, v]) => r[c] === v));
+              return { data: hit ? { answers: JSON.parse(JSON.stringify(hit.answers)) } : null, error: null };
+            },
+          };
+          return b;
+        },
       };
     },
   };

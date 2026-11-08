@@ -50,7 +50,7 @@ import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty, meetOpeningFor, applyMeetingAnswers } from "./lib/meetSnapshot.js";
-import { loadMeetingRecords, saveMeetingRecord, answersFor, mergeAnswers, withRecord, localDay } from "./lib/meetingMemory.js";
+import { loadMeetingRecords, saveMeetingRecord, answersFor, withRecord, localDay } from "./lib/meetingMemory.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
@@ -18103,9 +18103,9 @@ export default function FlourishApp(){
     const who = meetingUserRef.current;
     const known = meetingRecordsRef.current || await reloadMeetingRecords();
     if (!Array.isArray(known)) return { ok: false };
-    const metOn = localDay();
-    const earlier = (known.find(r => r && r.mine && r.metOn === metOn) || {}).answers || [];
-    const res = await saveMeetingRecord({ apiBase: API_BASE, getJwt, metOn, answers: mergeAnswers(earlier, answers) });
+    // Only this save's answers: the server merges them into anything already recorded today (meeting.js mergeDay),
+    // so a device whose list is out of date cannot send an old answer back over a newer one.
+    const res = await saveMeetingRecord({ apiBase: API_BASE, getJwt, metOn: localDay(), answers });
     if (!res.ok) return res;
     // Signed out or another account signed in while it saved: nothing of it reaches the screen now showing.
     if (!who || meetingUserRef.current !== who) return { ok: false };
