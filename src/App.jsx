@@ -848,6 +848,10 @@ async function activationSession() {
 let _activationOff = false;
 const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
   : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
+// A money check-in finished (the full funnel, migration 0042): "meeting" when a money meeting is marked done, "weekly"
+// when the weekly check-in's Done is tapped. The server keeps only the day on the account (docs/ops/MEASUREMENT.md).
+const signalCheckIn = (kind, demo) => (_activationOff ? Promise.resolve(false)
+  : sendActivationOnce("checkin", { demo: !!demo, kind, getSession: activationSession, apiBase: API_BASE }));
 // Onboarding counts (2026-10-23): the steps, the first number and the bank link, aggregate only (lib/onboardingCounts.js).
 const signalOnboarding = (event, { detail, mode, demo, userId } = {}) => (_activationOff ? Promise.resolve(false)
   : sendOnboardingCount(event, { detail, mode, demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
@@ -10614,6 +10618,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
         const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
         const markDone = () => {
           setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
+          signalCheckIn("meeting", data.demo);
           // The store's own review sheet after a completed meeting (reviewRules.js decides: once per meeting,
           // at most three times in 365 days, never on the web or in demo mode, never within 24 hours of
           // trouble, and nothing in front of it).
@@ -11148,7 +11153,7 @@ function Family({data,setAppData,setScreen,tourActive=false}){
             {["😰","😟","😐","🙂","😊","🤩"].map(e=><button key={e} onClick={()=>setMood(e)} style={{fontSize:28,background:mood===e?C.purple+"33":"none",border:`2px solid ${mood===e?C.purple:"transparent"}`,borderRadius:12,padding:6,cursor:"pointer",transition:"all .2s"}}>{e}</button>)}
           </div>
         </Card>}
-        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>{setDone2(true);setSchedule({lastMeetingAt:new Date().toISOString()});}} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
+        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>{setDone2(true);setSchedule({lastMeetingAt:new Date().toISOString()});signalCheckIn("meeting", data?.demo);}} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
       </>}
 
       {done2&&<div>
@@ -19257,7 +19262,7 @@ export default function FlourishApp(){
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);signalCheckIn("weekly", appData?.demo);}}/>;
   if(!onboarded)return <><Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}

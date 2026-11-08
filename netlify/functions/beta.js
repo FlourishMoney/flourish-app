@@ -35,6 +35,7 @@ const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 const { accountPlatform, recordAccountAttribution } = require("./_lib/attribution");
+const { recordMilestone } = require("./_lib/funnel");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
@@ -730,6 +731,8 @@ async function handle(event) {
     if (newAccountId && !isTestEmail(email)) {
       const platform = accountPlatform(event);
       await recordAccountAttribution(admin, newAccountId, platform === "android" ? body.attribution : null, platform);
+      // The full funnel (migration 0042): which channel the account was made on, so web and store sign-ups stay apart.
+      await recordMilestone(admin, newAccountId, "signed_up", platform);
     }
     if (newAccountId && testerCode) {
       try {
