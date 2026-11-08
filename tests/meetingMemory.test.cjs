@@ -72,6 +72,13 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
       "1h getUserScopedClient is the publishable key plus the person's own token, never the secret key");
     const r401 = await st.fn.handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "list" }) });
     t.eq(r401.statusCode, 401, "1i no token, no meetings");
+    const from = st.S.log.listFrom[0];
+    const days = from ? Math.round((Date.now() - Date.parse(from[1] + "T00:00:00Z")) / 86400e3) : null;
+    t.ok(from && from[0] === "met_on" && days >= 366 && days <= 402, `1j the read covers every "no" still inside its twelve months (met_on from ${days} days back), then caps`);
+    const day = (n) => new Date(Date.now() + n * 86400e3).toISOString().slice(0, 10);
+    const rec = (metOn) => st.fn.handler({ httpMethod: "POST", headers: { authorization: `Bearer tok:${O}` }, body: JSON.stringify({ action: "record", met_on: metOn, answers: [] }) });
+    t.eq([(await rec(day(1))).statusCode, (await rec(day(3))).statusCode], [200, 400],
+      "1k a meeting dated tomorrow (UTC, someone's today) is recorded; one dated further ahead is refused, so it cannot stay \"last\" and hold a no open");
   }
 
   // ── 2. UNKNOWN IS NOT EMPTY ────────────────────────────────────────────────────────────────────
@@ -168,6 +175,21 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     st.S.members = st.S.members.filter(m => m.user_id !== P);
     t.eq((await M.loadMeetingRecords(as(st, P))).map(r => r.metOn), ["2026-10-25", "2026-10-08"], "6j after leaving, only their own meetings");
   }
+  {
+    // THE DAY THEY JOINED. The partner joined at 15:00 UTC on Nov 8. 0030 compares days, so on its own it lets
+    // each of them read the other's meetings from that whole day, including ones held that morning, before.
+    const st = createStore();
+    st.S.members.push({ household_id: "h", user_id: O, joined_at: "2026-10-01T09:00:00Z" }, { household_id: "h", user_id: P, joined_at: "2026-11-08T15:00:00Z" });
+    st.S.rows.push({ user_id: O, met_on: "2026-11-08", created_at: "2026-11-08T10:00:00Z", answers: [] });   // the owner, that morning
+    st.S.rows.push({ user_id: P, met_on: "2026-11-08", created_at: "2026-11-08T14:00:00Z", answers: [] });   // the partner alone, an hour before
+    t.eq((await M.loadMeetingRecords(as(st, P))).filter(r => !r.mine).length, 0, "6k the partner is not shown the owner's meeting from the morning of the day they joined");
+    t.eq((await M.loadMeetingRecords(as(st, O))).filter(r => !r.mine).length, 0, "6l …and the owner is not shown the partner's solo meeting from an hour before they joined");
+    st.S.rows.push({ user_id: O, met_on: "2026-11-09", created_at: "2026-11-08T16:30:00Z", answers: [] });   // after the join (it is already the 9th east of UTC)
+    t.eq((await M.loadMeetingRecords(as(st, P))).filter(r => !r.mine).map(r => r.metOn), ["2026-11-09"], "6m a meeting held after they joined, the same day, is shown");
+    st.S.rows.push({ user_id: O, met_on: "2026-11-10", answers: [] });
+    st.S.rows[st.S.rows.length - 1].created_at = "not a time";
+    t.ok(!(await M.loadMeetingRecords(as(st, P))).some(r => r.metOn === "2026-11-10"), "6n a partner's row with no readable time is not shown");
+  }
 
   // ── 7. A YES CHANGES THE BILLS EXACTLY ONCE ────────────────────────────────────────────────────
   {
@@ -223,7 +245,11 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     t.ok(iSave > 0 && iSave < iFail && iFail < iApply && iFail < iDone, "8e Meet saves first, stops on a failed save, and only then marks done and applies a yes");
     t.ok(/return; \}/.test(md.slice(iFail, iFail + 120)), "8f …a failed save returns before anything changes");
     t.ok(/if \(savingRef\.current\) return;/.test(md) && /savingRef\.current = true/.test(md), "8g a second tap while saving does nothing");
-    t.ok(/applyMeetingAnswers\(prev \|\| \{\}, stored\)/.test(md), "8h the yes is applied to the latest bills, from what the server stored");
+    t.ok(/applyMeetingAnswers\(prev, stored\)/.test(md), "8h the yes is applied to the latest bills, from what the server stored");
+    t.ok(/if \(!prev\) return prev;/.test(md), "8h2 …and to nothing when the person signed out while it saved");
+    const rm = app.slice(app.indexOf("const recordMeeting = async (answers) => {"), app.indexOf("useEffect(() => {", app.indexOf("const recordMeeting = async (answers) => {")));
+    t.ok(/const who = meetingUserRef\.current;/.test(rm) && /if \(!who \|\| meetingUserRef\.current !== who\) return \{ ok: false \};/.test(rm),
+      "8h3 a save that finishes after another account signed in changes nothing on that account's screen");
     // Saving the same day again keeps what was already recorded that day.
     const st2 = createStore();
     await M.saveMeetingRecord({ ...as(st2, O), metOn: "2026-11-05", answers: M.mergeAnswers([], [{ signature: "a", domain: "bills", answer: "dismissed" }]) });

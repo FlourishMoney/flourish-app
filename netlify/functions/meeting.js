@@ -5,8 +5,9 @@
 // READING THEM BACK (action "list", 2026-11-08): the meetings are read AS THE SIGNED-IN PERSON, with
 // their own token and the publishable key (_lib/auth.js getUserScopedClient), never the secret key, so
 // row-level security decides what comes back: their own records (0011) and their partner's since that
-// partner joined (0030). One more rule is applied here, on top: a partner's record from before THIS
-// person joined is left out too, so nobody is shown a meeting held before they were in the household.
+// partner joined (0030). One more rule is applied here, on top: a partner's record made before EITHER of
+// them joined (full times, not days) is left out too, so nobody is shown a meeting held before they were
+// in the household.
 // Any failed read answers 500 and returns no records at all; the app then shows no opening, never
 // "this is your first money meeting" on a read that did not happen.
 //
@@ -57,8 +58,11 @@ function recordableAnswer(raw) {
 
 const isDate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
-// Enough meetings for a year of weekly ones from both partners, with room. Newest first.
-const MAX_LIST = 120;
+// The meetings that matter: the latest one (the opening) and every "no" still inside its twelve months
+// (DISMISSAL_REOPEN_DAYS), with a margin. Read by date first, then capped, newest first.
+const LIST_DAYS = 400;
+const MAX_LIST = 500;
+const dayOffset = (days) => new Date(Date.now() + days * 86400e3).toISOString().slice(0, 10);
 
 // The household's meetings, read as the signed-in person. Returns { records } or { error }.
 async function listMeetings(event, user_id) {
@@ -71,26 +75,40 @@ async function listMeetings(event, user_id) {
     // that partner joined. Filtering here would only hide what the policies allow.
     const { data, error } = await client
       .from("meeting_records")
-      .select("user_id, met_on, answers")
+      .select("user_id, met_on, answers, created_at")
+      .gte("met_on", dayOffset(-LIST_DAYS))
       .order("met_on", { ascending: false })
       .limit(MAX_LIST);
     if (error) throw new Error(error.message);
     const rows = Array.isArray(data) ? data : [];
 
-    // When this person is in a household, the day they joined it. A partner's record from before that day
-    // is not theirs to see. Read as them too (household_members_select_member).
-    let joinedOn = null;
+    // A partner's record is shown only when it was made after BOTH of them were in the household: after
+    // this person joined (0030 alone checks only the record owner's join date, so a partner could read the
+    // owner's meetings from the day the household was made) and after the record's owner joined. Compared
+    // as full times against the row's created_at, not as days: a meeting held at 10:00 on the day a
+    // partner joined at 15:00 is from before they joined, and a UTC day would show it. The household's
+    // members are read as this person too (household_members_select_member).
+    const since = new Map();
     if (rows.some(r => r && r.user_id !== user_id)) {
-      const mine = await client.from("household_members").select("joined_at").eq("user_id", user_id).maybeSingle();
-      if (mine.error) throw new Error(mine.error.message);
-      joinedOn = mine.data && typeof mine.data.joined_at === "string" ? mine.data.joined_at.slice(0, 10) : null;
-      // A partner's row with no membership of our own to date it against: none of them are shown.
-      if (!isDate(joinedOn)) joinedOn = "9999-12-31";
+      const m = await client.from("household_members").select("user_id, joined_at");
+      if (m.error) throw new Error(m.error.message);
+      for (const row of Array.isArray(m.data) ? m.data : []) {
+        const at = row && typeof row.joined_at === "string" ? Date.parse(row.joined_at) : NaN;
+        if (row && row.user_id && Number.isFinite(at)) since.set(row.user_id, at);
+      }
     }
+    const visible = (r) => {
+      if (r.user_id === user_id) return true;
+      const mine = since.get(user_id), theirs = since.get(r.user_id);
+      const made = typeof r.created_at === "string" ? Date.parse(r.created_at) : NaN;
+      // No membership of our own, no date for theirs, or no time on the row: not shown.
+      if (!Number.isFinite(mine) || !Number.isFinite(theirs) || !Number.isFinite(made)) return false;
+      return made >= Math.max(mine, theirs);
+    };
 
     const records = rows
       .filter(r => r && isDate(r.met_on))
-      .filter(r => r.user_id === user_id || r.met_on >= joinedOn)
+      .filter(visible)
       .map(r => ({
         metOn: r.met_on,
         mine: r.user_id === user_id,
@@ -122,6 +140,9 @@ exports.handler = async (event) => {
 
   const metOn = isDate(body.met_on) ? body.met_on : null;
   if (!metOn) return json(400, CORS, { error: "invalid_met_on" });
+  // A meeting is held today. A date beyond tomorrow (UTC, which covers every timezone's "today") would stay
+  // the "last meeting" and push back when a "no" reopens, so it is refused.
+  if (metOn > dayOffset(1)) return json(400, CORS, { error: "invalid_met_on" });
 
   const raw = Array.isArray(body.answers) ? body.answers : [];
   if (raw.length > 50) return json(400, CORS, { error: "too_many_answers" });

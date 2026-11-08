@@ -10675,7 +10675,8 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
           if (!res || !res.ok) { setSaveFailed(true); savingRef.current = false; setSaving(false); return; }
           const stored = res.record.answers;
           setAppData(prev => {
-            const { bills } = applyMeetingAnswers(prev || {}, stored);
+            if (!prev) return prev;   // signed out (or reset) while it saved: there is nothing to change
+            const { bills } = applyMeetingAnswers(prev, stored);
             return { ...prev, bills, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } };
           });
           setChoices({});
@@ -18088,6 +18089,7 @@ export default function FlourishApp(){
   const [meetingRecords, setMeetingRecords] = useState(null);
   const meetingRecordsRef = useRef(null);
   const recordsGenRef = useRef(0);
+  const meetingUserRef = useRef(null);   // whose meetings these are; a save that finishes for someone else is dropped
   const setRecords = (v) => { meetingRecordsRef.current = v; setMeetingRecords(v); };
   const reloadMeetingRecords = async () => {
     const gen = ++recordsGenRef.current;
@@ -18098,18 +18100,22 @@ export default function FlourishApp(){
   };
   // Save a finished meeting. Returns { ok, record }. Nothing changes here unless the server stored it.
   const recordMeeting = async (answers) => {
+    const who = meetingUserRef.current;
     const known = meetingRecordsRef.current || await reloadMeetingRecords();
     if (!Array.isArray(known)) return { ok: false };
     const metOn = localDay();
     const earlier = (known.find(r => r && r.mine && r.metOn === metOn) || {}).answers || [];
     const res = await saveMeetingRecord({ apiBase: API_BASE, getJwt, metOn, answers: mergeAnswers(earlier, answers) });
     if (!res.ok) return res;
+    // Signed out or another account signed in while it saved: nothing of it reaches the screen now showing.
+    if (!who || meetingUserRef.current !== who) return { ok: false };
     recordsGenRef.current++;   // a read still in flight may predate this save: its answer is dropped
     setRecords(withRecord(meetingRecordsRef.current, res.record));
     return res;
   };
   useEffect(() => {
     recordsGenRef.current++;
+    meetingUserRef.current = user?.id || null;
     setRecords(null);
     if (!user) return;
     reloadMeetingRecords();

@@ -25,9 +25,9 @@ function userFromToken(token) {
 
 function createStore() {
   const S = {
-    rows: [],            // { user_id, met_on, answers }
+    rows: [],            // { user_id, met_on, answers, created_at? } (no created_at: noon UTC on met_on)
     members: [],         // { household_id, user_id, joined_at }
-    log: { scopedTokens: [], adminReads: 0, upserts: 0, listFilters: [] },
+    log: { scopedTokens: [], adminReads: 0, upserts: 0, listFilters: [], listFrom: [] },
     fail: { list: false, record: false, members: false, auth: false },
   };
 
@@ -46,16 +46,19 @@ function createStore() {
     const reader = userFromToken(token);
     return {
       from(table) {
-        const q = { table, filters: [], order: null, limit: null, single: false };
+        const q = { table, filters: [], from: null, order: null, limit: null, single: false };
         const run = async () => {
           if (table === "meeting_records") {
             S.log.listFilters.push(q.filters.slice());
+            S.log.listFrom.push(q.from);
             if (S.fail.list) return { data: null, error: { message: "list failed (test)" } };
             let out = S.rows.filter(r => visibleTo(reader, r));
+            if (q.from) out = out.filter(r => r.met_on >= q.from[1]);
             for (const [col, v] of q.filters) out = out.filter(r => r[col] === v);
             out = out.slice().sort((a, b) => String(b.met_on).localeCompare(String(a.met_on)));
             if (q.limit != null) out = out.slice(0, q.limit);
-            return { data: out.map(r => ({ user_id: r.user_id, met_on: r.met_on, answers: JSON.parse(JSON.stringify(r.answers)) })), error: null };
+            return { data: out.map(r => ({ user_id: r.user_id, met_on: r.met_on, answers: JSON.parse(JSON.stringify(r.answers)),
+              created_at: r.created_at || `${r.met_on}T12:00:00.000Z` })), error: null };
           }
           if (table === "household_members") {
             if (S.fail.members) return { data: null, error: { message: "members failed (test)" } };
@@ -63,13 +66,14 @@ function createStore() {
             let out = h ? S.members.filter(m => m.household_id === h) : [];
             for (const [col, v] of q.filters) out = out.filter(r => r[col] === v);
             if (q.single) return { data: out[0] ? { joined_at: out[0].joined_at } : null, error: null };
-            return { data: out, error: null };
+            return { data: out.map(m => ({ user_id: m.user_id, joined_at: m.joined_at })), error: null };
           }
           return { data: [], error: null };
         };
         const b = {
           select() { return b; },
           eq(col, v) { q.filters.push([col, v]); return b; },
+          gte(col, v) { q.from = [col, v]; return b; },
           order(col, o) { q.order = [col, o]; return b; },
           limit(n) { q.limit = n; return b; },
           maybeSingle() { q.single = true; return run(); },
@@ -88,7 +92,9 @@ function createStore() {
           if (S.fail.record) return { error: { message: "record failed (test)" } };
           S.log.upserts++;
           const i = S.rows.findIndex(r => r.user_id === row.user_id && r.met_on === row.met_on);
-          const copy = { user_id: row.user_id, met_on: row.met_on, answers: JSON.parse(JSON.stringify(row.answers || [])) };
+          // created_at is set when the row is first made and kept when it is replaced (0011's default).
+          const copy = { user_id: row.user_id, met_on: row.met_on, answers: JSON.parse(JSON.stringify(row.answers || [])),
+            created_at: i >= 0 ? S.rows[i].created_at : new Date().toISOString() };
           if (i >= 0) S.rows[i] = copy; else S.rows.push(copy);
           return { error: null };
         },
