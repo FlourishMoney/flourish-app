@@ -329,7 +329,8 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     // (billing.js answers it with { enabled, paid }), so the founding offer can never reach it.
     t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
       "6g a store app keeps only enabled and paid from /api/billing: never the founding offer");
-    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\) \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
+    // TRIAL_PLAN_FIRST (2026-11-10): ...tpf carries only the switch's trial answer (no key while it is off), never founding.
+    t.ok(/if \(isNativeRequest\(event\)\) return json\(200, CORS, \{ enabled: true, paid: isPaidSubscription\(row\), \.\.\.tpf \}\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8")),
       "6g2 …and the server tells a store app nothing about the founding price in the first place");
     const srcFiles = [APP, ...fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8"))].join("\n");
     t.ok(!/FOUNDING_LINK_EMAIL|VITE_FOUNDING/.test(srcFiles), "6h the send switch is a server variable: never in src/, never VITE_");
