@@ -34,15 +34,17 @@ function pendingBalanceWordIds() {
 }
 
 // A THIRD EXCEPTION, AS NARROW: THE PLUS ADD-ON, BANK LOGIN LIMITS AND NET WORTH WORDS (2026-11-10), UNTIL BOTH
-// REVIEWERS APPROVE THEM. The same three conditions: the id starts "plus-", "banks-" or "networth-";
+// REVIEWERS APPROVE THEM. The same three conditions: the id starts "plus-", "banks-", "networth-" or "plan-";
 // docs/product/NET-WORTH-WORDS.md lists it with the placeholder as its line; and it is in src/lib/netWorthWords.js.
 // The same refusal keeps them from shipping, and once they are approved this exception covers nothing.
 const NW_DOC = path.join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md");
 const NW_HOME = path.join("src", "lib", "netWorthWords.js");
+// The server's own lines that named the main plan "Plus" (2026-11-10), same rule: listed in the same doc.
+const NW_SERVER_HOME = path.join("netlify", "functions", "_lib", "planWords.js");
 function pendingNetWorthWordIds() {
   let doc = "";
   try { doc = fs.readFileSync(NW_DOC, "utf8"); } catch { return []; }
-  return [...doc.matchAll(/^\| `((?:plus|banks|networth)-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: ((?:plus|banks|networth)-[a-z0-9-]+)\] \| \d+ \|$/gm)]
+  return [...doc.matchAll(/^\| `((?:plus|banks|networth|plan)-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: ((?:plus|banks|networth|plan)-[a-z0-9-]+)\] \| \d+ \|$/gm)]
     .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
 
@@ -54,7 +56,7 @@ function strayPlaceholders(src, file) {
   const where = path.normalize(String(file || ""));
   if (where === HOME) { const pending = pendingCreatorWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
-  if (where === NW_HOME) { const pending = pendingNetWorthWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (where === NW_HOME || where === NW_SERVER_HOME) { const pending = pendingNetWorthWordIds(); return found.filter((id) => !pending.includes(id)); }
   return found;
 }
 

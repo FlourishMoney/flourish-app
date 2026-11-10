@@ -414,7 +414,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "with a question, a problem or feedback. Write from the address your account uses so we can find it. Never send a password or a bank login.",
       "Don't use AI", "10. Contact Us", "Contact us", "13. Contact",
       // Subscription screens (web only; a store build renders none of them, nativeNoPrice.test).
-      "Get Flourish Plus", "Get Flourish Plus →", "Start 14 days free →", "You can cancel any time.", "14 days free. Cancel any time.", "Keep the free plan",
+      "Start 14 days free →", "You can cancel any time.", "14 days free. Cancel any time.", "Keep the free plan",
       // The Google Play badge's own name, its required alt text (lib/storeLinks.js; Google's badge guidelines): it
       // names the store, it is not an instruction about money. ("Download on the App Store" does not start with a verb on the list.)
       "Get it on Google Play",
@@ -425,7 +425,6 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // household invite), where to cancel a SECOND subscription the household does not need, how to link a joint
       // account in the app so it is not counted twice, and the join limit. None is advice about the household's money.
       "Cancel invite",
-      "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > Flourish Plus > Manage subscription.",
       "If you share a joint account, only one of you should link it, or it will be counted twice.",
       "Too many tries. Wait an hour, then try again.",
     ]);

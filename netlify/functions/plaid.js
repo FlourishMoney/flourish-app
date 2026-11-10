@@ -29,6 +29,7 @@ const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { bankLimitFor, limitBody } = require("./_lib/bankLimits");
+const { planWords } = require("./_lib/planWords");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
 
@@ -192,7 +193,7 @@ exports.handler = async (event) => {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if ((count || 0) >= 1) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: planWords("plan-server-one-bank") }) };
         }
       }
 
@@ -700,7 +701,7 @@ exports.handler = async (event) => {
           }
           // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
           if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more." });
+            failures.push({ error: "plan_limit", message: planWords("plan-server-one-bank-migrate") });
             continue;
           }
           if (bankLimit && !mineIds.has(item_id)) {

@@ -27,6 +27,22 @@ export const NET_WORTH_WORDS = Object.freeze({
   "networth-empty-body": "[WORDS: networth-empty-body]",
   // Today's net worth card, before there are two months of the household's own figures to draw a line between.
   "networth-trend-not-yet": "[WORDS: networth-trend-not-yet]",
+
+  // THE MAIN PLAN'S NAME (Amanda, 2026-11-10): to households the main paid plan is "flourish" (monthly, annual,
+  // founding); "flourish Plus" is only the add-on. Every place a household saw "Flourish Plus" or "Plus" for the main
+  // plan takes one of these. Product and entitlement ids never change. docs/product/PLAN-NAMES.md lists each place.
+  "plan-name": "[WORDS: plan-name]",
+  "plan-get-cta": "[WORDS: plan-get-cta]",
+  "plan-upgrade-cta": "[WORDS: plan-upgrade-cta]",
+  "plan-on": "[WORDS: plan-on]",
+  "plan-includes-title": "[WORDS: plan-includes-title]",
+  "plan-adds-title": "[WORDS: plan-adds-title]",
+  "plan-adds-lead": "[WORDS: plan-adds-lead]",
+  "plan-sim-limit": "[WORDS: plan-sim-limit]",
+  "plan-sim-cta": "[WORDS: plan-sim-cta]",
+  "plan-terms-web-label": "[WORDS: plan-terms-web-label]",
+  "plan-terms-lifts-limits": "[WORDS: plan-terms-lifts-limits]",
+  "plan-household-extra-stripe": "[WORDS: plan-household-extra-stripe]",
 });
 
 /** The words for an id. {used}, {limit} and {count} are filled in; a placeholder carries them after it. */

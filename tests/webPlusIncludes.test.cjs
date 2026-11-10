@@ -25,14 +25,14 @@ const OLD = ["AI Coach with real data", "Full credit coaching", "Tax tips & bene
   const gateSrc = APP.slice(APP.indexOf("function PremiumGate("), APP.indexOf("// ─── PAYWALL"));
   t.eq([OLD.filter((x) => gateSrc.includes(x)), APP.includes('"AI Coach with real data","Full credit coaching"')], [[], false], "2a the six old lines are gone from the locked screen (\"Weekly money meeting\" stays only as the old Paywall's feature card title)");
   const gate = APP.slice(APP.indexOf("function PremiumGate("), APP.indexOf("// ─── PAYWALL"));
-  t.ok(/Flourish Plus includes:<\/div>\s*<div[^>]*>\s*\{PLUS_INCLUDES\.map\(/.test(gate), "2b the web locked screen lists PLUS_INCLUDES under \"Flourish Plus includes:\"");
+  t.ok(/\{netWorthWords\("plan-includes-title"\)\}<\/div>\s*<div[^>]*>\s*\{PLUS_INCLUDES\.map\(/.test(gate), "2b the web locked screen lists PLUS_INCLUDES under \"Flourish Plus includes:\"");
 
   let A = null;
   try { A = loadApp(["PremiumGate"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A) {
     const props = { feature: "Credit Coaching", desc: "x", onUpgrade() {}, billingOn: true };
     const web = textOf(A.render(A.h(A.PremiumGate, props)));
-    t.ok(web.includes("Flourish Plus includes:") && APPROVED.every((x) => web.includes(x)) && !OLD.some((x) => web.includes(x)), "3a the website renders the five lines, and none of the old six");
+    t.ok(web.includes("[WORDS: plan-includes-title]") && APPROVED.every((x) => web.includes(x)) && !OLD.some((x) => web.includes(x)), "3a the website renders the five lines, and none of the old six");
     globalThis.window.Capacitor = { isNativePlatform: () => true, getPlatform: () => "ios" };
     let native = "";
     try { native = textOf(A.render(A.h(A.PremiumGate, props))); } finally { delete globalThis.window.Capacitor; }

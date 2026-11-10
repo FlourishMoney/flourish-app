@@ -2246,7 +2246,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         // Apple's and Google's rules. State the limit and when it lifts, and stop there (founder's wording).
         cashDetail: isNativeApp()
           ? WHAT_IF_LIMIT_LINE
-          : `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
+          : netWorthWords("plan-sim-limit"),
         debtImpact: "none",
         debtDetail: "",
         savingsDelay: "none",
@@ -2553,7 +2553,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
               {_verdictMeta(result.verdict).emoji&&<div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>}
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{cardTitle}</div>
               <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{cardText}</div>
-              {result.verdict === "Upgrade to continue" && onUpgrade && (
+              {result.verdict === "Upgrade to continue" && !isNativeApp() && onUpgrade && (   /* a store app's verdict is "Daily limit reached": never this button there */
                 <button onClick={onUpgrade} style={{
                   marginTop:14,
                   background: verdictColor,
@@ -2566,7 +2566,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
                   fontFamily: "'Plus Jakarta Sans',sans-serif",
                   cursor: "pointer",
                   transition: "all .15s",
-                }}>Unlimited simulations with Plus →</button>
+                }}>{netWorthWords("plan-sim-cta")}</button>
               )}
             </div>
 
@@ -6864,7 +6864,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{fontSize:24}}>✨</div>
               <div>
-                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Get Flourish Plus</div>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-get-cta")}</div>
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
@@ -12877,12 +12877,12 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         entirely unless the server says billing is on and this is not a native shell. */}
     {billingUi?.show&&onOpenUpgrade&&(
       <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
-        <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>{netWorthWords("plan-name")}</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {coveredByPartner ? HOUSEHOLD_WORDS.coveredByPartner
             : billingUi.mode==="manage"
             ? "Change your card or cancel."
-            : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
+            : netWorthWords("plan-adds-lead")}
         </div>
         {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
         {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
@@ -14079,7 +14079,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>{netWorthWords("plan-terms-web-label")}</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -14177,7 +14177,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
       ) : (
         <>
         <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
-          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
+          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-includes-title")}</div>
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
             {PLUS_INCLUDES.map((f,i)=>(
               <div key={i} style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
@@ -14186,7 +14186,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
         </div>
         <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
           {/* Billing on: the button opens the real checkout, which starts no free trial. Off: today's words. */}
-          {billingOn ? "See plans →" : getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+          {billingOn ? "See plans →" : getTrialStartedAt() ? netWorthWords("plan-upgrade-cta") : "Start 14 days free →"}
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
@@ -14274,7 +14274,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",paddingTop:INSET.top,...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
+          <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>{netWorthWords("plan-name")}</div>
           <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
         </div>
 
@@ -14287,7 +14287,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             {/* H4: a renewal that failed (past_due) is not on Plus until the card is fixed: the portal line only. */}
-            {status?.paid!==false&&<div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>}
+            {status?.paid!==false&&<div style={{color:C.cream,fontWeight:700,marginBottom:6}}>{netWorthWords("plan-on")}</div>}
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card or cancel in Stripe's billing portal.</div>
             <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {busy==="__portal__"?"Opening…":"Manage subscription"}
@@ -14559,14 +14559,14 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
       <div style={{width:"100%",minWidth:0,maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
-          <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
+          <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0,flexWrap:"wrap"}}><FlourishMark size={21}/><span style={{minWidth:0,overflowWrap:"anywhere"}}>{netWorthWords("plan-name")}</span></div>
           <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Keep the free plan</button>
         </div>
 
         {/* Hero */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={40} color={C.purpleBright} strokeWidth={1.3}/></div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>What Plus adds</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>{netWorthWords("plan-adds-title")}</div>
           <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.</div>
         </div>
 
@@ -19667,7 +19667,7 @@ input,button,select,textarea { font-family:inherit; }
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
               </div>
-              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Upgrade to Flourish Plus →</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-upgrade-cta")}</div>
               {!trialExpired&&<div style={{height:3,background:C.border,borderRadius:99,marginTop:6,overflow:"hidden"}}>
                 <div style={{width:`${Math.max(4,(trialDaysLeft/14)*100)}%`,height:"100%",background:trialDaysLeft<=2?C.orange:C.purple,borderRadius:99}}/>
               </div>}
@@ -19681,7 +19681,7 @@ input,button,select,textarea { font-family:inherit; }
                 {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
                     "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
                 {/* H13: a household on the trial is not called Plus; the countdown above names the trial. */}
-                {isPremium&&!isNativeApp()&&!trialActive&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {isPremium&&!isNativeApp()&&!trialActive&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ {netWorthWords("plan-name")}</div>}
               </div>
             </div>
           </div>}

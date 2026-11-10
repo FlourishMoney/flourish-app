@@ -63,7 +63,7 @@ function statusFor(row) {
       const screen = (status) => textOf(A.render(A.h(A.UpgradeScreen, { status, mode: V.billingUiState({ status, native: false, paid: status.paid }).mode, onClose: () => {} })));
       const pd = screen(pastDue), paid = screen(active);
       t.ok(/Change your card or cancel in Stripe's billing portal\./.test(pd) && /Manage subscription/.test(pd) && !/\$\d/.test(pd), "2c past_due: the portal line and button, and no price");
-      t.ok(!/You're on Flourish Plus/.test(pd) && /You're on Flourish Plus/.test(paid), "2d …and it is not told it is on Flourish Plus (a paying household still is)");
+      t.ok(!/\[WORDS: plan-on\]/.test(pd) && /\[WORDS: plan-on\]/.test(paid), "2d …and it is not told it is on Flourish Plus (a paying household still is)");
     }
 
     // ── 3. Checkout's refusal keeps its reason ────────────────────────────────────────────────────

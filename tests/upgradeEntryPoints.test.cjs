@@ -47,7 +47,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.eq(opens, ["const openUpgrade = async ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show){ setShowUpgrade(true); return; } if(await recheckBilling()) setShowUpgrade(true); else setShowPaywall(true); };"],
       "1g nothing opens the old Paywall directly (onClick included): only openUpgrade, once the status has been asked again");
     for (const [name, rx] of [
-      ["the sidebar trial card", /<div onClick=\{openUpgrade\} [^\n]*\n(?:[^\n]*\n){1,4}[^\n]*>Upgrade to Flourish Plus →<\/div>/],
+      ["the sidebar trial card", /<div onClick=\{openUpgrade\} [^\n]*\n(?:[^\n]*\n){1,4}[^\n]*>\{netWorthWords\("plan-upgrade-cta"\)\}<\/div>/],
       // H13 (audit 2026-10-26): the countdown is TrialCountdown, on the phone layout and in the desktop sidebar.
       ["the \"N days left\" banner", /\{countdown&&<TrialCountdown countdown=\{countdown\} onUpgrade=\{openUpgrade\}\/>\}/],
       ["the sidebar's trial countdown", /\{countdown&&<TrialCountdown countdown=\{countdown\} onUpgrade=\{openUpgrade\} sidebar\/>\}/],
@@ -63,7 +63,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     A.store.clear();
     t.ok(gate({}).includes("Start 14 days free →") && gate({}).includes("14 days free. Cancel any time."), "2a billing off, no trial yet: today's words");
     A.store.set("flourish_trial_started_at", "2026-09-01T00:00:00Z");
-    t.ok(gate({}).includes("Get Flourish Plus →") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
+    t.ok(gate({}).includes("[WORDS: plan-upgrade-cta]") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
     for (const trial of [null, "2026-09-01T00:00:00Z"]) {
       if (trial) A.store.set("flourish_trial_started_at", trial); else A.store.clear();
       const on = gate({ billingOn: true });
@@ -134,7 +134,7 @@ setImmediate(() => process.exit(0));`;
     t.ok(/const countdown = trialCountdown\(\{ trialActive, daysLeft: trialDaysLeft, native: isNativeApp\(\),\s*paid: billingStatus\?\.paid === true \|\| storeStatus\?\.paid === true \}\);/.test(APP),
       "5i the app asks trialCountdown with the trial, the days left, the store-app test and the server's paid answer");
     t.ok(!/!isPremium&&!isNativeApp\(\)&&trialActive&&trialDaysLeft<=7/.test(APP), "5j the old banner, gated on !isPremium (so it never showed), is gone");
-    t.ok(/isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^\n]*>✦ Flourish Plus<\/div>/.test(APP), "5k the sidebar does not call a trial household \"Flourish Plus\"");
+    t.ok(/isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^\n]*>✦ \{netWorthWords\("plan-name"\)\}<\/div>/.test(APP), "5k the sidebar does not call a trial household \"Flourish Plus\"");
     let A2 = {};
     try { A2 = loadApp(["TrialCountdown"]); } catch (e) { t.ok(false, `5l App.jsx bundles: ${describe(e)}`); }
     if (A2.TrialCountdown) {

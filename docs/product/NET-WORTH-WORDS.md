@@ -13,3 +13,24 @@ Numbers in a line ({used}, {limit}, {count}) are whole numbers of bank logins, f
 | `networth-empty-title` | Today, the net worth card, when nothing is entered or linked | There is no net worth to show yet | [WORDS: networth-empty-title] | 40 |
 | `networth-empty-body` | Today, under that title | Net worth appears once an account, a debt or a balance is added or a bank is connected. No figure, no example, no estimate | [WORDS: networth-empty-body] | 120 |
 | `networth-trend-not-yet` | Today, the net worth card, in place of the line, until there are two months of the household's own figures | The line starts once there are two months of this household's own figures; nothing is drawn before then | [WORDS: networth-trend-not-yet] | 90 |
+
+## The main plan's name (2026-11-10)
+To households the main paid plan is "flourish" (monthly, annual, founding). "flourish Plus" is only the add-on. Each line below named the main plan "Flourish Plus" or "Plus", and goes back to review. Product and entitlement ids never change. `docs/product/PLAN-NAMES.md` lists every place, in the repo and outside it.
+
+| Id | Where it shows | The facts it must say | Line | Limit |
+|---|---|---|---|---|
+| `plan-name` | Website: the Settings plan card title, the upgrade screen title, the plans screen title, the sidebar badge (after "✦ "). Store apps: the paywall title | The main paid plan's name: flourish | [WORDS: plan-name] | 30 |
+| `plan-get-cta` | Website: Today's upgrade card | Open the main plan's plans | [WORDS: plan-get-cta] | 30 |
+| `plan-upgrade-cta` | Website: the locked screen's button after a trial, and the sidebar's upgrade link | Open the main plan's plans | [WORDS: plan-upgrade-cta] | 30 |
+| `plan-on` | Website: the upgrade screen for a household that pays | This household pays for the main plan | [WORDS: plan-on] | 40 |
+| `plan-includes-title` | Website: the locked screen (PremiumGate), above the list | What the main plan includes | [WORDS: plan-includes-title] | 40 |
+| `plan-adds-title` | Website: the plans screen's heading | What the main plan adds to the free plan | [WORDS: plan-adds-title] | 40 |
+| `plan-adds-lead` | Website: the Settings plan card. Store apps: the paywall lead | The main plan adds Credit and the coach-run meeting and lifts the free plan's limits on the coach and What-If | [WORDS: plan-adds-lead] | 140 |
+| `plan-sim-limit` | Website: What-If, when today's free simulations are used | The free simulations for today are used; the main plan has unlimited What-If; or come back tomorrow | [WORDS: plan-sim-limit] | 160 |
+| `plan-sim-cta` | Website: What-If, the button under that line | Unlimited simulations come with the main plan | [WORDS: plan-sim-cta] | 40 |
+| `plan-terms-web-label` | Website: Terms of Service section 7, the label before "Premium features require a paid subscription." | The main plan's name, as a label | [WORDS: plan-terms-web-label] | 30 |
+| `plan-terms-lifts-limits` | Store apps that sell: Terms of Service section 7, the sentence after the free plan's limits | The main plan lifts these limits | [WORDS: plan-terms-lifts-limits] | 60 |
+| `plan-household-extra-stripe` | Couple mode: a member paying on the website while the other's subscription covers them | The partner's subscription includes them; cancel theirs on the website under Settings, the plan, Manage subscription | [WORDS: plan-household-extra-stripe] | 160 |
+| `plan-server-coach-limit` | The coach, when the free plan's weekly messages are used (the server's line; {n} follows it) | The {n} free coach messages this week are used; the main plan has unlimited; they reset on Monday | [WORDS: plan-server-coach-limit] | 160 |
+| `plan-server-one-bank` | Website: connecting a second bank on the free plan (the server's line) | The free plan connects one bank; the main plan connects more | [WORDS: plan-server-one-bank] | 120 |
+| `plan-server-one-bank-migrate` | The same, when banks are moved from an older version (the server's line) | The free plan connects one bank; the main plan connects more | [WORDS: plan-server-one-bank-migrate] | 120 |
