@@ -28,6 +28,18 @@
  * 401 without a valid session, 400 for anything that is not one of the four metrics, 405 for not POST.
  * The app sends each metric once per account (app_open once per day): see src/lib/activation.js.
  *
+ * THE FULL FUNNEL (2026-11-08, migration 0042, docs/ops/MEASUREMENT.md). The same signals, and one new one, also mark
+ * the account's own first-time milestones in public.account_milestones and the days it was active in
+ * public.account_days, so a household on two devices is counted once (_lib/funnel.js):
+ *   safe_view, first_number_shown          -> first_safe (the first valid safe-to-spend result)
+ *   first_number_shown (manual | linked)   -> setup_done manual | bank;  bank_link_completed -> setup_done bank
+ *   app_open                               -> an "open" day
+ *   {"metric": "checkin", "kind": "meeting" | "weekly"}  -> a "checkin" day (a money meeting marked done, or the
+ *                                             weekly check-in finished). Only this one answers 503 when it can't be
+ *                                             written, so the device doesn't mark it sent (a second check-in that day can
+ *                                             send it); nothing retries it later. The others never change an answer.
+ * Those writes hold the account id, a milestone or kind from a fixed list and a time or a day: nothing else.
+ *
  * Env: SUPABASE_URL, SUPABASE_SECRET_KEY (service role, server only). No new variable.
  */
 
@@ -41,6 +53,8 @@ const { corsHeadersFor } = require("./_lib/cors");
 const { ONBOARDING_EVENTS, onboardingRows } = require("./_lib/onboardingCounts");
 // The funnel by src and cr (migration 0036): the first number within 24 hours of signup marks the account activated.
 const { markActivated } = require("./_lib/attribution");
+// The full funnel (migration 0042): first-time milestones and active days, one row per account (_lib/funnel.js).
+const { CHECKIN_KINDS, recordMilestone, recordDay } = require("./_lib/funnel");
 
 // Flourish's own test addresses (Amanda, 2026-10-14). The same two domains as migration 0019's report;
 // PR #69 adds the shared helper (_lib/foundingCohort.js isTestEmail) and this can use it once merged.
@@ -53,7 +67,7 @@ function isTestEmail(email) {
   return TEST_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
 }
 
-const METRICS = ["data_source", "safe_view", "meeting_opened", "app_open"];
+const METRICS = ["data_source", "safe_view", "meeting_opened", "app_open", "checkin"];
 
 // The screenshot account by its address, and the App Review account by the SHA-256 of its address only
 // (src/lib/sampleHouseholdAccount.js; the review address is never written in this repository).
@@ -100,6 +114,8 @@ async function handler(event, _context, now = new Date()) {
   if (!METRICS.includes(metric) && !onboarding) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
   // An onboarding event with a detail, mode or time outside the fixed lists is refused before anything is read.
   if (onboarding && onboardingRows(body, now.toISOString(), now) === null) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
+  // A check-in says which kind it was, from the fixed list, and nothing else.
+  if (metric === "checkin" && !CHECKIN_KINDS.includes(body.kind)) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "unknown_metric" }) };
 
   const { user_id } = await getUserFromRequest(event);
   if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
@@ -113,6 +129,12 @@ async function handler(event, _context, now = new Date()) {
     const user = data && data.user;
     if (!user || isTestEmail(user.email) || isSampleAccount(user.email)) return done;
     if (metric === "safe_view" || metric === "first_number_shown") await markActivated(admin, user_id, user.created_at, now);
+    // The full funnel. Best effort: the counters below answer as they always have.
+    if (metric === "safe_view" || metric === "first_number_shown") await recordMilestone(admin, user_id, "first_safe", "app", now);
+    if (metric === "first_number_shown") await recordMilestone(admin, user_id, "setup_done", body.mode === "linked" ? "bank" : "manual", now);
+    if (metric === "bank_link_completed") await recordMilestone(admin, user_id, "setup_done", "bank", now);
+    if (metric === "app_open") await recordDay(admin, user_id, "open", user.created_at, now);
+    if (metric === "checkin") return (await recordDay(admin, user_id, "checkin", user.created_at, now)) === false ? retryLater : done;
     if (onboarding) {
       const cohortDay = torontoDay(new Date(user.created_at));
       for (const row of onboardingRows(body, user.created_at, now)) {

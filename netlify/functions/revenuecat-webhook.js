@@ -24,6 +24,8 @@ const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStoreEvent } = require("./_lib/creators");
+// The full funnel (migration 0042): a store trial, payment, cancellation or refund, first time only, per store.
+const { revenueCatMilestone, recordMilestone } = require("./_lib/funnel");
 
 // COUPLE MODE (audit round 4 a3): a report ends no purchase hold. RevenueCat never carries our attempt id, so it
 // cannot say WHICH hold it is about; every hold ends at its fixed time (_lib/household.js). A purchase it reports as
@@ -89,6 +91,11 @@ async function handle(event, deps = {}) {
     await admin.from("billing_events").update({ status: "ignored", processed_at: new Date().toISOString(), error: "no account id" }).eq("event_id", eventId);
     return reply(200, { received: true, ignored: true });
   }
+
+  // THE FULL FUNNEL. Before the sync, so a sync that fails and is retried still counts once (the row is first-time
+  // only). Best effort: it never changes the answer RevenueCat gets.
+  const milestone = revenueCatMilestone(evt);
+  if (milestone && isUuid(evt.app_user_id)) await recordMilestone(admin, evt.app_user_id, milestone.milestone, milestone.channel, milestone.at);
 
   try {
     const notes = [];

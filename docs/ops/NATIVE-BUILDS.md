@@ -36,12 +36,18 @@ PR bumps them before each store build. The table shows what those files carry on
 ## Building
 
 Web payload first, always — both platforms bundle `dist/`, and neither has a
-`server.url`, so a stale `dist/` ships stale code:
+`server.url`, so a stale `dist/` ships stale code. Use `build:native`, never `build` (see below):
 
 ```
-npm run build
+npm run build:native
 npx cap sync ios        # and/or: npx cap sync android
 ```
+
+A `dist/` that still holds a `[WORDS: id]` placeholder never reaches the iPhone or Android project
+(package.json, 2026-11-08): `cap sync` stops with an error before it copies anything
+(`capacitor:sync:before`). `cap copy` on its own copies nothing, but Capacitor only prints the error
+and still exits 0 (`capacitor:copy:before`), so read its output. Either way the native project keeps
+the files it had, so an archive made afterwards holds the last web build that passed, not this one.
 
 iOS. **From 2026-10-14 every iOS build needs Xcode 27.1 or later and the UIScene lifecycle**
 (PR #67: Capacitor 8.5.3, `ios/App/App/SceneDelegate.swift`, `UIApplicationSceneManifest` in
