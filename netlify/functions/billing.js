@@ -30,6 +30,7 @@ const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require(".
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
+const { trialPlanFirstState } = require("./_lib/trialPlanFirst");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
@@ -150,23 +151,28 @@ exports.handler = async (event) => {
       // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
       // shown the plans because the database blinked. Retried first, as getUserPlan does.
       const { data: row, error: rowErr } = await readWithRetry(() => admin
-        .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle());
+        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // TRIAL_PLAN_FIRST (_lib/trialPlanFirst.js): only while it is on is there a trial_plan_first key; off, every
+      // answer below is as it was. A profile read that fails is a 503, never a guess about a trial.
+      const tpfState = await trialPlanFirstState(admin, user_id, { row, web: !isNativeRequest(event) });
+      if (tpfState && tpfState.unavailable) return json(503, CORS, { error: "status_unavailable" });
+      const tpf = tpfState ? { trial_plan_first: tpfState } : {};
       // COUPLE MODE: the other member's subscription covers this person too (_lib/household.js). Covered, they are
       // paid, offered nothing, and have nothing of their own to manage. A household read that fails is a 503.
       const cover = isPaidSubscription(row) ? { covered: false } : await householdCover(admin, user_id);
       if (cover.unavailable) return json(503, CORS, { error: "status_unavailable" });
       if (cover.covered) {
-        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner" });
+        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", ...tpf });
         return json(200, CORS, { enabled: true, provider: cover.provider, paid: true, covered_by: "partner", period_end: cover.period_end,
-          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false } });
+          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false }, ...tpf });
       }
 
       // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
       // founding offer, no confirmation link and no portal, because a store app shows no price, no upgrade
       // button and no link to pay (Apple 3.1.1, Google Play's payments policy).
-      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row) });
+      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row), ...tpf });
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
@@ -193,6 +199,7 @@ exports.handler = async (event) => {
         // Not "incomplete": a first payment that failed is retried through checkout, which allows it.
         web_attention: !isPaidSubscription(row) && holdsHousehold(row, isPaidSubscription) && !!row.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
+        ...tpf,
       });
     }
 
@@ -204,6 +211,10 @@ exports.handler = async (event) => {
       const { data: row, error: rowErr } = await admin
         .from("subscriptions").select("provider, status, current_period_end, plan_key, cancel_at_period_end").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store status read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
+      // TRIAL_PLAN_FIRST: as the web's status above; a store app learns trial eligibility from its own store.
+      const tpfState = await trialPlanFirstState(admin, user_id, { row });
+      if (tpfState && tpfState.unavailable) return json(503, CORS, { error: "unavailable" });
+      const tpf = tpfState ? { trial_plan_first: tpfState } : {};
       let state;
       if (action === "store_sync") {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
@@ -219,7 +230,7 @@ exports.handler = async (event) => {
         if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
         if (cover.covered) {
           return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", provider: cover.provider, plan_key: null, conflict: !!state.conflict,
-            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null } });
+            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null }, ...tpf });
         }
       }
       // A web subscription Stripe is still collecting (a renewal that failed): not paid, so no access, but still
@@ -255,6 +266,7 @@ exports.handler = async (event) => {
         // spots_left (2026-10-29): founding spots left, the same public figure the landing shows (/api/founding),
         // for the plans screen's words while the founding price is offered; null otherwise.
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
+        ...tpf,
       });
     }
 

@@ -145,6 +145,12 @@
   to     = "/.netlify/functions/newsletter"
   status = 200
 
+# Redirect: is TRIAL_PLAN_FIRST on (netlify/functions/trial-plan-first.js)? 404 while it is off.
+[[redirects]]
+  from   = "/api/trial-plan-first"
+  to     = "/.netlify/functions/trial-plan-first"
+  status = 200
+
 # Redirect: tester codes and the day 30 questions → Netlify function (netlify/functions/tester.js, migration 0038).
 [[redirects]]
   from   = "/api/tester"

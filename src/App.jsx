@@ -97,6 +97,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial } from "./lib/trialPlanFirst.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -17595,6 +17596,11 @@ export default function FlourishApp(){
   // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
   const [profilePlan,setProfilePlan]=useState(null);
   const webPaidRef = useRef(false);
+  // TRIAL_PLAN_FIRST (lib/trialPlanFirst.js): the server's trial_plan_first answer from the last status call (web or
+  // store), or null while the switch is off; and the last profiles row read, so the plan is worked out again when it
+  // says this account has no account trial.
+  const [tpfStatus,setTpfStatus]=useState(null);
+  const lastProfileRef = useRef(null);
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
@@ -17652,7 +17658,9 @@ export default function FlourishApp(){
   // trialExpired:  true ONLY for users whose trial ENDED (not for users who never had one)
   const trialDaysLeft = getTrialDaysLeft();
   const trialActive = isTrialActive();
-  const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
+  // TRIAL_PLAN_FIRST: an account made after the switch never had the account trial, so it is never told one ended.
+  const accountTrialKept = tpfStatus ? tpfStatus.account_trial !== false : recalledAccountTrial(deviceStorage(), user?.id);
+  const trialExpired = accountTrialKept && !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
   // H13 (audit 2026-10-26): the website's trial countdown, from the trial itself, not from isPremium (which the trial
   // sets, so the old banner never showed). Not for a household the server says pays, and not in a store app, which
   // has NativeTrialChip. lib/upgradeFlow.js trialCountdown.
@@ -17740,7 +17748,8 @@ export default function FlourishApp(){
         .eq("user_id", userId)
         .maybeSingle();
       if (!prof) return null;
-      const cp = derivePlan(prof);
+      lastProfileRef.current = { userId, prof };
+      const cp = derivePlan(prof, Date.now(), { accountTrial: recalledAccountTrial(deviceStorage(), userId) });
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
@@ -17798,6 +17807,20 @@ export default function FlourishApp(){
     window.addEventListener("online", onOnline);
     return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
   },[storeBilling, user?.id, askStore]);
+  // TRIAL_PLAN_FIRST: a store app takes the switch from store_status (the web, from its status call: takeBilling).
+  useEffect(()=>{ if(storeBilling && storeStatus) setTpfStatus(trialPlanFirstOf(storeStatus)); },[storeBilling, storeStatus]);
+  // ...and, once the server has answered, this account's plan is worked out again with its answer about the account
+  // trial (kept on the device for the next sign-in). The switch off: no key, the cache is cleared, and the plan is
+  // the one already worked out. Only a definite answer for this account counts.
+  useEffect(()=>{
+    const answered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
+    if(!user?.id || !answered) return;
+    rememberAccountTrial(deviceStorage(), user.id, { trial_plan_first: tpfStatus });
+    const last = lastProfileRef.current;
+    if(!last || last.userId!==user.id) return;
+    const cp = derivePlan(last.prof, Date.now(), { accountTrial: accountTrialFrom({ trial_plan_first: tpfStatus }) });
+    setProfilePlan(prev => prev===cp ? prev : cp);
+  },[tpfStatus, user?.id, storeBilling, storeAskedFor, storeStatus, billingAskedFor, billingStatus]);
   useEffect(()=>{
     let cancelled = false;
     // A new account, or none: nothing can be bought until RevenueCat is this account. Without this a second
@@ -17836,6 +17859,7 @@ export default function FlourishApp(){
     if(!user?.id) return;
     if(body){
       setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+      if(!storeBilling) setTpfStatus(trialPlanFirstOf(body));
       // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
       if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
     }
