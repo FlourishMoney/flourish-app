@@ -99,10 +99,25 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       t.ok(a.text.includes("On November 27, 2026 you'll be charged $99.99 CAD.") && a.text.includes("before November 26, 2026"), "4b8 Android: charged on day 14 itself, cancel by the day before");
       t.eq(L.reminderDateLabel(Date.parse("2026-11-27T06:30:00Z")), "November 26, 2026", "4b9 Pacific time: 06:30 UTC on the 27th is still the 26th in British Columbia");
 
+      // The approved lines (2026-11-10, ChatGPT 100, Grok 100), as they go out.
       const P = loadLib(false);
       const { sent, send } = outbox(); const S = state();
       const r = await P.sendTrialReminder(fakeAdmin(S), { provider: "app_store", ref: "u1:monthly", userId: U1, trialEndMs: END, platform: "ios", amount: "$11.99 CAD", now: END - 3 * DAY, send });
-      t.eq([r.reason, sent.length, S.trial_reminders.length], ["words_pending", 0, 0], "4c with the real lines still placeholders: nothing is sent, and nothing is claimed");
+      const txt = sent[0] && sent[0].payload.text;
+      t.ok(r.sent === true && sent[0].payload.subject === "Your flourish trial: first charge on November 26, 2026"
+        && txt.startsWith("This is your reminder that your 14-day free trial of flourish is ending.\n\nOn November 26, 2026, you'll be charged $11.99 CAD, plus any applicable tax, unless you cancel first.\n\nTo avoid the first charge, cancel at least 24 hours before your trial ends. On your iPhone, open Settings, tap your name, then Subscriptions, then flourish, and tap Cancel Subscription.\n\nTo keep your plan, you don't need to do anything.\n\nYou're getting this because you started a free trial. It's the only reminder we'll send for it."),
+        "4c the approved email, word for word, with the date and amount");
+      const A2 = []; const S5 = state();
+      await P.sendTrialReminder(fakeAdmin(S5), { provider: "play_store", ref: "u1:annual", userId: U1, trialEndMs: END, platform: "android", amount: "$99.99 CAD", now: END - 3 * DAY, send: async (p) => { A2.push(p); return true; } });
+      t.ok(A2[0].text.includes("On November 27, 2026, you'll be charged $99.99 CAD") && A2[0].text.includes("To cancel, do it before November 26, 2026: open Google Play, tap your profile"), "4c1 …and Android's");
+      // A line changed later goes back to a placeholder, and then nothing is sent or claimed.
+      clearFns();
+      const realW = require(WORDS);
+      const held = { ...realW.TRIAL_EMAIL_WORDS, "trialfirst-email-keep": "[WORDS: trialfirst-email-keep]" };
+      require.cache[WORDS].exports = { TRIAL_EMAIL_WORDS: held, trialEmailWords: (id, f = {}) => { const w = held[id]; return /^\[WORDS:/.test(w) ? w : Object.keys(f).reduce((s, k) => s.split(`{${k}}`).join(String(f[k])), w); } };
+      const H = require(LIB); const box = outbox(); const S6 = state();
+      const rh = await H.sendTrialReminder(fakeAdmin(S6), { provider: "app_store", ref: "u1:monthly", userId: U1, trialEndMs: END, platform: "ios", amount: "$11.99 CAD", now: END - 3 * DAY, send: box.send });
+      t.eq([rh.reason, box.sent.length, S6.trial_reminders.length], ["words_pending", 0, 0], "4c2 a line that is a placeholder again: nothing is sent, and nothing is claimed");
     }
 
     // ── 4d-4h never more than one per trial ────────────────────────────────────────────────────────
@@ -196,11 +211,13 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       t.eq(r.sent.length, 0, "4r five days out: not yet");
       r = await run(S, END - 3 * DAY + 3600000);
       t.ok(r.sent.length === 1 && r.sent[0].payload.text.includes("Settings > your name > Subscriptions") && r.sent[0].payload.text.includes("$11.99 CAD"), "4s 3 days out: the iPhone's reminder, with the plan's price");
+      t.ok(r.sent[0].payload.text.includes("On November 26, 2026 you'll be charged"), "4s2 …its date is the store's own trial end (RevenueCat's expiry on the row), a day early on iPhone");
       r = await run(S, END - 3 * DAY + 2 * 3600000);
       t.eq(r.sent.length, 0, "4t the next hour's sweep: nothing more");
       S = state(); S.subscriptions.push(row({ provider: "play_store", plan_key: "founding_annual", user_id: U2 }));
       r = await run(S, END - 3 * DAY + 60000);
       t.ok(r.sent.length === 1 && r.sent[0].payload.text.includes("Google Play > Payments") && r.sent[0].payload.text.includes("$79.99 CAD"), "4u Android, founding: Android's way, the founding price");
+      t.ok(r.sent[0].payload.text.includes("On November 27, 2026 you'll be charged"), "4u2 …on the store's own trial end");
       S = state(); S.subscriptions.push(row({ cancel_at_period_end: true }), row({ user_id: U2, provider: "stripe" }), row({ user_id: U2, status: "active" }));
       // (a website row is never swept: Stripe sends that trial's reminder itself)
       r = await run(S, END - 3 * DAY + 60000);

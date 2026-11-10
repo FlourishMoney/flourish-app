@@ -175,3 +175,12 @@ export async function askTrialPlanFirstOn(fetchImpl, base = "") {
     return !!body && body.on === true ? true : null;
   } catch { return null; }
 }
+
+// THE CHIP'S DATE (reviewers' check, 2026-11-10): the expected first charge from the store's or Stripe's own trial end
+// (the server's trial_ends: RevenueCat's expiry, or Stripe's trial_end), never an estimate. On an iPhone, the day before:
+// Apple may charge up to 24 hours before the trial ends (as the plans screen and the reminder email state it).
+export function chipChargeDate(platform, trialEndsIso) {
+  const t = Date.parse(trialEndsIso || "");
+  if (!Number.isFinite(t)) return null;
+  return new Date(platform === "ios" ? t - 86400000 : t);
+}

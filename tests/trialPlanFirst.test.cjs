@@ -157,17 +157,18 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.eq(d.claim, true, "2e eligible: the plan claims the 14 days");
     // Review round (H2): Apple may charge up to 24 hours before the trial ends, and a cancellation in those 24 hours still
     // renews. So on an iPhone the first charge is stated a day early, and "cancel before" is the day before, everywhere.
-    t.eq(d.lines, ["[WORDS: trialfirst-free-days]", "[WORDS: trialfirst-then] [price $11.99 a month]", "[WORDS: trialfirst-first-charge] [date November 26, 2026]",
-      "[WORDS: trialfirst-cancel-before] [date November 26, 2026]", "[WORDS: trialfirst-cancel-ios]"],
+    // The approved words (2026-11-10, ChatGPT 100, Grok 100).
+    t.eq(d.lines, ["14 days free", "Then $11.99 a month, renewing until you cancel.", "First charge: November 26, 2026",
+      "Cancel before November 26, 2026 to avoid the first charge.", "To cancel: open Settings, tap your name, then Subscriptions."],
       "2f …14 days free, the price after and how often, the first charge's date (iPhone: a day early), cancel before it and nothing is charged, how to cancel on an iPhone");
     const dw = lib.trialDisclosure({ platform: "web", eligible: true, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
-    t.eq([dw.lines[2], dw.lines[3]], ["[WORDS: trialfirst-first-charge] [date November 27, 2026]", "[WORDS: trialfirst-cancel-before] [date November 26, 2026]"],
+    t.eq([dw.lines[2], dw.lines[3]], ["First charge: November 27, 2026", "Cancel before November 26, 2026 to avoid the first charge."],
       "2f2 the website: charged on day 14 itself, and still told to cancel the day before (a day of margin)");
-    t.eq(lib.trialDisclosure({ platform: "android", eligible: true, price: "$99.99 a year", planKey: "annual", now: NOWD, words: W.trialWords }).lines[4], "[WORDS: trialfirst-cancel-android]", "2g …on Android, Android's way to cancel");
-    t.eq(lib.trialDisclosure({ platform: "web", eligible: true, price: "$79.99 a year", planKey: "founding_annual", now: NOWD, words: W.trialWords }).lines[4], "[WORDS: trialfirst-cancel-web]", "2h …on the website, the website's (founding included)");
+    t.eq(lib.trialDisclosure({ platform: "android", eligible: true, price: "$99.99 a year", planKey: "annual", now: NOWD, words: W.trialWords }).lines[4], "To cancel: open Google Play, tap your profile, then Payments & subscriptions, then Subscriptions.", "2g …on Android, Android's way to cancel");
+    t.eq(lib.trialDisclosure({ platform: "web", eligible: true, price: "$79.99 a year", planKey: "founding_annual", now: NOWD, words: W.trialWords }).lines[4], "To cancel: in flourish, go to Settings, then Manage subscription.", "2h …on the website, the website's (founding included)");
     const no = lib.trialDisclosure({ platform: "ios", eligible: false, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
-    t.eq([no.claim, no.lines], [false, ["[WORDS: trialfirst-no-trial] [price $11.99 a month]", "[WORDS: trialfirst-cancel-ios]"]], "2i not eligible: the plain price and how to cancel");
-    t.ok(!JSON.stringify(no).includes("free-days") && !JSON.stringify(no).includes("first-charge") && !JSON.stringify(no).includes("cancel-before"), "2j …and no trial claim of any kind");
+    t.eq([no.claim, no.lines], [false, ["$11.99 a month, charged today. Renews until you cancel.", "To cancel: open Settings, tap your name, then Subscriptions."]], "2i not eligible: the plain price and how to cancel");
+    t.ok(!/free|trial|First charge|Cancel before/i.test(JSON.stringify(no.lines)), "2j …and no trial claim of any kind");
     t.eq(lib.chargeDateLabel(lib.firstChargeAt(NOWD)), "November 27, 2026", "2k the first charge is 14 days out");
 
     // the stores' own answer
@@ -256,13 +257,30 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const W = await import(path.join(REPO, "src", "lib", "trialWords.js"));
     const SW = require("../netlify/functions/_lib/trialWords.js");
     const ids = [...Object.keys(W.TRIAL_WORDS), ...Object.keys(SW.TRIAL_EMAIL_WORDS)].sort();
-    t.eq(PW.pendingTrialWordIds().slice().sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md with its placeholder");
-    t.ok([...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === `[WORDS: ${id}]`), "5b …and every one is still a placeholder");
+    // Approved 2026-11-10 (ChatGPT 100, Grok 100): every line is in, word for word as the words doc lists it, and none is a
+    // placeholder any more (the doc's third exception covers nothing now).
+    const doc = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-WORDS.md"), "utf8");
+    const rows = Object.fromEntries([...doc.matchAll(/^\| `(trialfirst-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+?) \| \d+ \|$/gm)].map((m) => [m[1], m[2]]));
+    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (26)");
+    t.ok(ids.length === 26 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
+      "5b …each in the code word for word as approved, and none a placeholder");
+    const APPROVED = {
+      "trialfirst-cancel-before": "Cancel before {date} to avoid the first charge.",
+      "trialfirst-button": "Start free trial",
+      "trialfirst-plans-lead": "Pick a plan to keep using flourish. If you qualify for 14 days free, you'll be charged automatically on the first-charge date shown unless you cancel.",
+      "trialfirst-welcome": "Made for Canadian households",
+      "trialfirst-landing": "Choose a plan to get started. Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled. Also on iPhone and Android.",
+    };
+    t.ok(Object.entries(APPROVED).every(([id, w]) => W.TRIAL_WORDS[id] === w)
+      && SW.TRIAL_EMAIL_WORDS["trialfirst-email-cancel-ios"] === "To avoid the first charge, cancel at least 24 hours before your trial ends. On your iPhone, open Settings, tap your name, then Subscriptions, then flourish, and tap Cancel Subscription.",
+      "5b2 the six lines the reviewers changed (4, 9, 11, 15, 16, 21) are their words exactly");
     const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
     t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
+    const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
+    t.eq(all.status, 0, "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html)");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
-      t.ok(r.status === 1 && /trialfirst-/.test(r.stderr), `5d the build guard refuses ${f} while a line is a placeholder`);
+      t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
     }
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const pkg = require("../package.json");
@@ -310,6 +328,42 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const so = APP.slice(APP.indexOf("const plansSignOut = async ()=>{"), APP.indexOf("const plansSignOut = async ()=>{") + 500);
     t.ok(so.includes('!k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY'), "8g L2 the plans screen's sign-out clears what Settings' does");
     setEnv({});
+  }
+
+  // ── 9. THE REVIEWERS' FLOW CHECKS (2026-11-10) ────────────────────────────────────────────────
+  {
+    const W = await import(path.join(REPO, "src", "lib", "trialWords.js"));
+    const store = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("// THE FALLBACK (audit 2026-10-26, B4)"));
+    const web = APP.slice(APP.indexOf("function UpgradeScreen("), APP.indexOf("// Couple mode (audit round 3 a)"));
+    // 9a the plans screen that cannot be closed: Restore, Terms and Privacy on iPhone and Android, Terms and Privacy on the web.
+    const links = store.slice(store.indexOf("{/* The approved three, in order."), store.indexOf("{!onClose&&onSignOut&&"));
+    t.ok(links.length > 100 && !/onClose/.test(links) && /PAYWALL_COPY\.terms/.test(links) && /onViewLegal\("privacy"\)/.test(links) && /onClick=\{doRestore\}/.test(links),
+      "9a store apps: Terms, Privacy and Restore purchases are always on the plans screen, closable or not (Apple requires Restore)");
+    t.ok(/\{onViewLegal&&<button type="button" data-plans-legal="terms" onClick=\{\(\)=>onViewLegal\("terms"\)\}/.test(web) && /data-plans-legal="privacy" onClick=\{\(\)=>onViewLegal\("privacy"\)\}/.test(web)
+      && APP.includes("onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;"), "9b the website's plans screen that cannot be closed links to the Terms and the Privacy Policy");
+    // 9c before the purchase button, on every platform: price and how often, trial length, the automatic charge, the cancel steps.
+    const NOWD = Date.parse("2026-11-13T17:00:00Z");
+    for (const platform of ["ios", "android", "web"]) {
+      const d = lib.trialDisclosure({ platform, eligible: true, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
+      const txt = d.lines.join(" ");
+      t.ok(/^14 days free /.test(txt) && txt.includes("Then $11.99 a month, renewing until you cancel.") && /First charge: November 2[67], 2026/.test(txt) && /Cancel before November 26, 2026 to avoid the first charge\./.test(txt) && /To cancel: /.test(txt),
+        `9c ${platform}: the trial's length, the price and how often, that it renews (charged automatically), the first charge's date, and how to cancel`);
+    }
+    t.ok(/<TrialTerms disclosure=\{trial\}\/>\s*<button onClick=\{\(\)=>doBuy\(plan,pkg\)\}/.test(store), "9d store apps: those lines sit directly above the plan's own purchase button");
+    t.ok(/\{trialOf\(chosen\) \? <TrialTerms disclosure=\{trialOf\(chosen\)\}\/> : [^\n]*\}\s*<button data-review-confirm=""/.test(web), "9e website: above the confirm button that opens Stripe, for the selected plan");
+    t.ok(W.TRIAL_WORDS["trialfirst-plans-lead"].includes("charged automatically"), "9f the plans screen that comes first says the charge is automatic");
+    // 9g an ineligible person never sees "14 days free" or "Start free trial": plans, button, chip, onboarding.
+    for (const platform of ["ios", "android", "web"]) {
+      const no = lib.trialDisclosure({ platform, eligible: false, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
+      t.ok(!/14 days free|Start free trial|free trial/i.test(no.lines.join(" ")), `9g ${platform}: not eligible, the plan's lines claim no trial`);
+    }
+    t.ok(store.includes('(trial?.claim ? trialWords("trialfirst-button") : copy.button)') && web.includes('(trialOf(chosen)?.claim ? trialWords("trialfirst-button") : UPGRADE_COPY.reviewConfirm)'),
+      "9h \"Start free trial\" is the button only where the plan claims the trial");
+    t.ok(APP.includes("{tpfStatus?.trialing&&chipChargeDate(") && !/free/i.test(W.TRIAL_WORDS["trialfirst-welcome"]), "9i the chip shows only during a real trial; the onboarding line makes no trial claim");
+    // 9j the chip's date is the store's or Stripe's own trial end (on iPhone the day before: Apple may charge 24 hours early).
+    const end = "2026-11-27T15:00:00.000Z";
+    t.eq([lib.chargeDateLabel(lib.chipChargeDate("android", end)), lib.chargeDateLabel(lib.chipChargeDate(undefined, end)), lib.chargeDateLabel(lib.chipChargeDate("ios", end)), lib.chipChargeDate("ios", null)],
+      ["November 27, 2026", "November 27, 2026", "November 26, 2026", null], "9j the chip's date comes from the trial end the server holds (RevenueCat's expiry, Stripe's trial_end), iPhone a day early, never a guess");
   }
 
   process.env = saved;

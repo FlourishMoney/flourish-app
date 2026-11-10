@@ -97,7 +97,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
-import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn } from "./lib/trialPlanFirst.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, chipChargeDate } from "./lib/trialPlanFirst.js";
 import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
@@ -14222,7 +14222,7 @@ function TrialTerms({disclosure}){
   );
 }
 
-function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck}){
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14396,8 +14396,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
         <div style={{color:C.muted,fontSize:13,marginTop:18,lineHeight:1.7}}>
           Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
         </div>
-        {required&&onSignOut&&<div style={{display:"flex",justifyContent:"center",marginTop:SPACE.md}}>
-          <button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>
+        {/* The plans screen that cannot be closed links to the Terms and the Privacy Policy (reviewers' check, 2026-11-10),
+            with the approved labels the store paywall uses; each opens in place, and Back returns here. */}
+        {required&&(onViewLegal||onSignOut)&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.md}}>
+          {onViewLegal&&<button type="button" data-plans-legal="terms" onClick={()=>onViewLegal("terms")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.terms}</button>}
+          {onViewLegal&&<button type="button" data-plans-legal="privacy" onClick={()=>onViewLegal("privacy")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.privacy}</button>}
+          {onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>}
         </div>}
       </div>
     </div>
@@ -19407,7 +19411,7 @@ export default function FlourishApp(){
       </div>
     );
     if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
-      trialFirst={tpfStatus} onSignOut={plansSignOut} onRecheck={recheckBilling}/>;
+      trialFirst={tpfStatus} onSignOut={plansSignOut} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
   }
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
@@ -19896,7 +19900,7 @@ input,button,select,textarea { font-family:inherit; }
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
         {/* TRIAL_PLAN_FIRST: during the store's or Stripe's 14 days, the date of the first charge (apps and website). */}
-        {tpfStatus?.trialing&&tpfStatus.trial_ends&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(new Date(tpfStatus.trial_ends)) })}</div>}
+        {tpfStatus?.trialing&&chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)) })}</div>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

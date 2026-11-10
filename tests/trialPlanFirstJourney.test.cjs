@@ -78,7 +78,7 @@ const newAccount = () => ({ __users: { [U]: { email: "new.household@example.ca",
     t.eq(lib.plansFirstStage({ tpf, paid: st.body.paid === true, profilePlan, canSell: ui.show }), "required", "J4 after the first number: the plans come first, and cannot be closed");
     const plan = vis.offeredPlans({ status: st.body }).find((p) => p.key === "monthly");
     const d = lib.trialDisclosure({ platform: "web", eligible: tpf.web_trial_eligible === true, price: plan.price, planKey: "monthly", now: NOW, words: W.trialWords });
-    t.eq(d.lines.slice(0, 3), ["[WORDS: trialfirst-free-days]", "[WORDS: trialfirst-then] [price $11.99 a month]", "[WORDS: trialfirst-first-charge] [date November 28, 2026]"], "J5 Monthly says, above its button: 14 days free, then $11.99 a month, first charge November 28, 2026");
+    t.eq(d.lines.slice(0, 3), ["14 days free", "Then $11.99 a month, renewing until you cancel.", "First charge: November 28, 2026"], "J5 Monthly says, above its button: 14 days free, then $11.99 a month, first charge November 28, 2026");
     const co = await call(admin, stripe, { action: "create_checkout_session", plan_key: "monthly", trial: d.claim });
     const session = stripe.filter((c) => c[1] === "/checkout/sessions").pop()[2];
     t.eq([co.code, session.subscription_data.trial_period_days, session.payment_method_collection], [200, 14, "always"], "J6 the checkout: 14 days free, card required up front");
@@ -90,7 +90,7 @@ const newAccount = () => ({ __users: { [U]: { email: "new.household@example.ca",
     const after = lib.trialPlanFirstOf(st.body);
     t.eq([st.body.paid, after.trialing, after.trial_ends], [true, true, new Date((T + 14 * 86400) * 1000).toISOString()], "J7 Stripe's trial has started: the household has full access, trialing, with the trial's end");
     t.eq(lib.plansFirstStage({ tpf: after, paid: st.body.paid === true, profilePlan, canSell: true }), null, "J8 …and the app opens");
-    t.eq(W.trialWords("trialfirst-chip", { date: lib.chargeDateLabel(new Date(after.trial_ends)) }), "[WORDS: trialfirst-chip] [date November 28, 2026]", "J9 …with the first charge's date on the chip");
+    t.eq(W.trialWords("trialfirst-chip", { date: lib.chargeDateLabel(lib.chipChargeDate("web", after.trial_ends)) }), "Free trial. First charge November 28, 2026", "J9 …with the first charge's date on the chip, from Stripe's own trial end");
 
     // ── the switch off: the same account, the same calls ────────────────────────────────────────────
     for (const k of ["TRIAL_PLAN_FIRST", "TRIAL_PLAN_FIRST_SINCE"]) delete process.env[k];

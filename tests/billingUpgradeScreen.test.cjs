@@ -280,7 +280,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     const APP_SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     const up = APP_SRC.slice(APP_SRC.indexOf("function UpgradeScreen("), APP_SRC.indexOf("\nfunction ", APP_SRC.indexOf("function UpgradeScreen(") + 10));
     // TRIAL_PLAN_FIRST (2026-11-10) adds props after the old ones, each with a default that is today's screen.
-    t.ok(/function UpgradeScreen\(\{status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck\}\)\{/.test(up), "6m the screen's props are unchanged, so every caller still opens it the same way (the switch's come after, off by default)");
+    t.ok(/function UpgradeScreen\(\{status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal\}\)\{/.test(up), "6m the screen's props are unchanged, so every caller still opens it the same way (the switch's come after, off by default)");
     t.ok(/const choices = upgradeChoices\(plans\);/.test(up) && /const plans = offeredPlans\(\{status\}\);/.test(up), "6n the rows are offeredPlans in upgradeChoices' order");
     t.ok(/<input type="radio" name="upgrade-plan" value=\{plan\.key\} checked=\{on\} onChange=\{\(\)=>setPicked\(plan\.key\)\}/.test(up),
       "6o a row is a radio button: tapping it selects the plan");
