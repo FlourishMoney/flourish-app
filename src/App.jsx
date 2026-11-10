@@ -5142,7 +5142,7 @@ function getNetWorthHistory() {
 function NetWorthLocked({ mode, C, label = null }){
   return (
     <div data-networth-locked={mode}>
-      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{label}</div>}
+      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{label}</div>}
       <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
       {mode!=="unavailable" && mode!=="pending" && <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
     </div>
@@ -6477,7 +6477,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             !nwShow
               ? {label:"Net worth",value:netWorthWords(nwState.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-short"),sub:"",color:C.muted,icon:"chartUp",screen:"goals",tab:"worth"}
               : nwPlus
-              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):"—",sub:"",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"}
+              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):netWorthWords("networth-plus-no-total"),sub:"",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"}
               : {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>s.noDebts?(
             <div key={i} style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",boxSizing:"border-box",

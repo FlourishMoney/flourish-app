@@ -282,7 +282,12 @@ function fakeWindow({ path: p = "/", search = "", hash = "", native = false, rea
     const linksAt = paras.findIndex((x) => x.startsWith("• Our own links can carry a short code"));
     t.eq([paras.filter((x) => x === NOTICE_LINE).length, paras[linksAt + 1]], [1, NOTICE_LINE], "5n the launch notice's Clarity bullet: the approved line, word for word, once, after the bullet about our own counts");
     const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "privacyLaunchWords.js"), path.join(REPO, "netlify", "functions")], { encoding: "utf8" });
-    t.eq(r.status, 0, "5o no Clarity placeholder is left: the production build's words check passes");
+    // netlify/functions now also holds the plan-name placeholders (_lib/planWords.js, 2026-11-10), refused on their own:
+    // what this asks is that none of the check's findings is Clarity's.
+    const found = [...(r.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => [m[1], m[2]]);
+    t.eq(found.filter(([id, f]) => !(id.startsWith("plan-server-") && f.endsWith("planWords.js"))), [], "5o no Clarity placeholder is left: the production build's words check finds none of Clarity's");
+    const rc = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "privacyLaunchWords.js"), path.join(REPO, "netlify", "functions", "_lib", "policyNotice.js")], { encoding: "utf8" });
+    t.eq(rc.status, 0, "5o2 …and the Clarity words and the launch notice pass it outright");
   }
 
   t.summary("clarity.test");
