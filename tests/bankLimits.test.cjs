@@ -189,6 +189,27 @@ function load(db, user) {
       t.eq([...new Set(uses)].sort(), ["bank_limit_status", "create_link_token", "exchange_token", "migrate_items"], "6b asked only where a NEW bank is added (and the status), never in sync, accounts, transactions, investments or liabilities");
       for (const f of ["plaid-webhook.js"]) t.ok(!/bankLimits/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", f), "utf8")), `6c ${f} never reads the limit`);
     }
+    // ── 8. For everyone, no cutoff date (Amanda, 2026-11-10) ────────────────────────────────────────
+    {
+      const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      const limSrc = strip(fs.readFileSync(LIM_PATH, "utf8"));
+      t.ok(!/created_at|signed_up|cutoff|grandfather|Date\.parse|new Date\(/.test(limSrc), "8a the rule reads no date: every household, whenever it joined, has the same limit");
+      // A household already over the limit when the flag goes on: one person with 3, on the basic plan.
+      const over = makeDb({ items: { [A]: ["active", "active", "active"] } });
+      const { plaid } = load(over, A);
+      plaidCalls.length = 0;
+      const add = await call(plaid, { action: "create_link_token", country: "CA" });
+      nextItem = "item-fourth";
+      const ex = await call(load(over, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Fourth", institution_id: "ins_fourth" });
+      const st = await call(load(over, A).plaid, { action: "bank_limit_status" });
+      t.eq([add.status, ex.status, over.state.rows.plaid_items.filter((r) => r.user_id === A).length, over.state.writes.filter(([tb, op]) => tb === "plaid_items" && op === "delete").length],
+        [402, 402, 3, 0], "8b already over the limit (3 on the basic plan): all 3 stay, none is disconnected, and a 4th is refused");
+      t.eq([st.body && st.body.over, st.body && st.body.connected, st.body && st.body.allowed], [true, 3, false], "8c …and Settings is told it is over, with what it keeps");
+      nextItem = "a-item-1";
+      const re = await call(load(over, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank 1", institution_id: "ins_1" });
+      t.ok(re.status !== 402 && re.status !== 503, "8d …and each of the 3 can still be reconnected");
+      nextItem = "item-new";
+    }
     // ── 7. The app's lines ─────────────────────────────────────────────────────────────────────────
     {
       const e = (body) => Object.assign(new Error(body.error), { body });
