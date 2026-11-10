@@ -9,6 +9,7 @@
 //      once, closable, with a trial only where the store says so; nobody who has access loses it early.
 //   5. the words (item 5): every new line is a listed placeholder, the builds refuse while one is left, and "no card"
 //      goes from the two screens before a plan is chosen while the switch is on.
+//   7. the consoles list (item 7): every main-plan product, the trial's length, the immutable fields, the order.
 // Synthetic data only (tests/_trialFakes.cjs).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -270,6 +271,16 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const list = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-NO-CARD.md"), "utf8");
     t.ok(["No credit card", "Every feature free for 14 days", "index.html", "REEL-PAYCHEQUE-APPROVED-2026-11-08.md", "LEGAL-PACKET.md", "App Store and Google Play listings"].every((x) => list.includes(x)),
       "5j the \"no card\" places are listed for the day it goes live");
+  }
+
+  // ── 7. THE CONSOLES LIST ────────────────────────────────────────────────────────────────────────
+  {
+    const doc = fs.readFileSync(path.join(REPO, "docs", "ops", "TRIAL-PLAN-FIRST-CONSOLES.md"), "utf8");
+    t.ok(["app.flourishmoney.plus.monthly", "app.flourishmoney.plus.annual", "app.flourishmoney.founding.annual", "`flourish_plus`", "`monthly`, `annual`, `founding`"].every((x) => doc.includes(x)), "7a every main-plan product, founding included, in both stores");
+    t.ok(/Type: \*\*Free\*\*\. Duration: \*\*2 Weeks\*\*/.test(doc) && /Free trial\*\*, Duration \*\*2 weeks\*\*/.test(doc), "7b 14 days free on both: Apple's Free 2 Weeks, Play's free-trial phase of 2 weeks");
+    t.ok(/customer\.subscription\.created/.test(doc) && /customer\.subscription\.trial_will_end/.test(doc) && /TRIAL_PLAN_FIRST_SINCE/.test(doc), "7c the Stripe events the server now hears, and the two Netlify settings");
+    t.ok((doc.match(/\*\*Cannot be changed later:\*\*/g) || []).length >= 2 && /\*\*Permanent once created\.\*\*/.test(doc), "7d which fields cannot be changed later");
+    t.ok(/Prices stay exactly as they are/.test(doc) && /## Order on the day/.test(doc), "7e prices unchanged, and the order on the day");
   }
 
   process.env = saved;
