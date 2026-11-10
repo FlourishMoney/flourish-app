@@ -7,6 +7,8 @@
 //      eligibility answer, and the app's wiring. The checkout and the founding seats: tests/trialPlanFirstBilling.test.cjs.
 //   3. people already signed up (item 2): mid-trial keeps it to its end, unchanged; an ended trial sees the new plans
 //      once, closable, with a trial only where the store says so; nobody who has access loses it early.
+//   5. the words (item 5): every new line is a listed placeholder, the builds refuse while one is left, and "no card"
+//      goes from the two screens before a plan is chosen while the switch is on.
 // Synthetic data only (tests/_trialFakes.cjs).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -237,6 +239,37 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.eq([lib.plansFirstStage({ tpf: { on: true, account_trial: true }, canSell: true, profilePlan: "premium" }), lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "premium" }),
       lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "beta_founder" }), lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "free", coveredBy: "partner" })],
       [null, null, null, null], "3l complimentary access (old or new), a beta founder and a covered partner see nothing new");
+  }
+
+  // ── 5. THE WORDS ────────────────────────────────────────────────────────────────────────────────
+  {
+    const { spawnSync } = require("child_process");
+    const PW = require("./_pendingWords.cjs");
+    const W = await import(path.join(REPO, "src", "lib", "trialWords.js"));
+    const SW = require("../netlify/functions/_lib/trialWords.js");
+    const ids = [...Object.keys(W.TRIAL_WORDS), ...Object.keys(SW.TRIAL_EMAIL_WORDS)].sort();
+    t.eq(PW.pendingTrialWordIds().slice().sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md with its placeholder");
+    t.ok([...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === `[WORDS: ${id}]`), "5b …and every one is still a placeholder");
+    const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
+    t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
+    for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
+      const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
+      t.ok(r.status === 1 && /trialfirst-/.test(r.stderr), `5d the build guard refuses ${f} while a line is a placeholder`);
+    }
+    const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
+    const pkg = require("../package.json");
+    t.ok(/command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),
+      "5e …and it runs on the production web build (the bundle and the functions) and on every store build");
+    t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-welcome") : "Free to start · Canada & USA · No credit card"}'), "5f onboarding: no \"No credit card\" while the switch is on; today's line while off");
+    t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same");
+    const fake = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+    t.eq([await lib.askTrialPlanFirstOn(fake(200, { on: true })), await lib.askTrialPlanFirstOn(fake(404, {})), await lib.askTrialPlanFirstOn(fake(500, {})),
+      await lib.askTrialPlanFirstOn(async () => { throw new Error("offline"); }), await lib.askTrialPlanFirstOn(fake(200, { on: "yes" }))], [true, false, null, null, null],
+      "5h before sign-in the app asks the server: on, off, or no answer (today's lines)");
+    t.ok(APP.includes("const tpfOn = !!tpfStatus || tpfPublic===true;"), "5i signed in, the status call's answer counts too");
+    const list = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-NO-CARD.md"), "utf8");
+    t.ok(["No credit card", "Every feature free for 14 days", "index.html", "REEL-PAYCHEQUE-APPROVED-2026-11-08.md", "LEGAL-PACKET.md", "App Store and Google Play listings"].every((x) => list.includes(x)),
+      "5j the \"no card\" places are listed for the day it goes live");
   }
 
   process.env = saved;

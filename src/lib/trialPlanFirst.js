@@ -150,3 +150,17 @@ export function androidPurchaseOption(product, claimed) {
   if (claimed || !product || !Array.isArray(product.subscriptionOptions)) return null;
   return product.subscriptionOptions.find((o) => o && o.isBasePlan) || null;
 }
+
+// ── ITEM 5: BEFORE SIGN-IN ────────────────────────────────────────────────────────────────────────
+// The landing and the first onboarding screen must not say "no card" once a card is needed. They ask the server
+// (GET /api/trial-plan-first): true (200), false (404, the switch off), or null when there is no answer, which keeps
+// today's line (the switch off is by far the likely case, and nothing else changes on a failed call).
+export async function askTrialPlanFirstOn(fetchImpl, base = "") {
+  try {
+    const res = await fetchImpl(`${base}/api/trial-plan-first`, { method: "GET" });
+    if (res.status === 404) return false;
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null);
+    return !!body && body.on === true ? true : null;
+  } catch { return null; }
+}

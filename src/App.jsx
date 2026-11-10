@@ -97,7 +97,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
-import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX } from "./lib/trialPlanFirst.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn } from "./lib/trialPlanFirst.js";
 import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
@@ -4224,7 +4224,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
 // score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
 // completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount}){
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false}){
   const [step,setStep]=useState(0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
   const onCountRef=useRef(onCount); onCountRef.current=onCount;
@@ -4550,7 +4550,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
       <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>{tpfOn ? trialWords("trialfirst-welcome") : "Free to start · Canada & USA · No credit card"}</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
         <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
       </div>
@@ -15778,7 +15778,7 @@ function StoreBadges(){
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
+function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpfOn = false }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16366,7 +16366,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
                 {trialFirst && <TrialButton onClick={goSignup}/>}
-                {trialFirst && <p className="fll-trial-line">Every feature free for 14 days. Also on iPhone and Android.</p>}
+                {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
@@ -17653,6 +17653,11 @@ export default function FlourishApp(){
   // says this account has no account trial.
   const [tpfStatus,setTpfStatus]=useState(null);
   const lastProfileRef = useRef(null);
+  // ...and, before sign-in, the public answer (GET /api/trial-plan-first): true, false (off), or null (no answer: today's
+  // lines). Asked once per page load; the landing and the first onboarding screen stop saying "no card" while it is on.
+  const [tpfPublic,setTpfPublic]=useState(null);
+  useEffect(()=>{ let live = true; askTrialPlanFirstOn(fetch, API_BASE).then(v=>{ if(live) setTpfPublic(v); }); return ()=>{ live = false; }; },[]);
+  const tpfOn = !!tpfStatus || tpfPublic===true;
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
@@ -19332,7 +19337,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -19372,7 +19377,7 @@ export default function FlourishApp(){
       });
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}
-    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
+    tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
