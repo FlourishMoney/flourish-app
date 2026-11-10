@@ -168,6 +168,13 @@
   to     = "/.netlify/functions/tester"
   status = 200
 
+# Redirect: the money meeting's memory (netlify/functions/meeting.js): the app reads and records its meetings here
+# (src/lib/meetingMemory.js). Missing from #125: it went live with no route, so the SPA fallback answered (2026-11-10).
+[[redirects]]
+  from   = "/api/meeting"
+  to     = "/.netlify/functions/meeting"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"
