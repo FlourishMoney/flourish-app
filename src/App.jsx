@@ -19311,7 +19311,7 @@ export default function FlourishApp(){
   // The way out of the screen that cannot be closed: sign out (as Settings does, without its question).
   const plansSignOut = async ()=>{
     try { await supabase.auth.signOut(); } catch {}
-    try { Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k)); } catch {}
+    try { Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k)); } catch {}
     window.location.reload();
   };
   const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
@@ -19591,7 +19591,7 @@ export default function FlourishApp(){
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };

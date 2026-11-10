@@ -289,7 +289,7 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     t.ok(/onClick=\{\(\)=>\{setError\(""\);setStep\("review"\);\}\}/.test(up) && /\(step==="review"&&chosen\) \?/.test(up), "6r Continue goes to the review step, not to Stripe");
     t.ok(/onClick=\{\(\)=>\{setStep\("choose"\);setError\(""\);\}\}/.test(up), "6s the review step has a way back to the plans");
     // TRIAL_PLAN_FIRST: with the switch on it also says which terms the screen showed (trial true or false); off, nothing.
-    t.ok(/body: JSON\.stringify\(planKey==="__portal__"\s*\? \{action:"create_portal_session"\}\s*: \{action:"create_checkout_session", plan_key:planKey, \.\.\.\(trialFirst \? \{ trial: trialFirst\.web_trial_eligible===true \} : \{\}\)\}\)/.test(up),
+    t.ok(/body: JSON\.stringify\(planKey==="__portal__"\s*\? \{action:"create_portal_session"\}\s*: \{action:"create_checkout_session", plan_key:planKey, \.\.\.\(trialFirst \? \{ trial: webEligible \} : \{\}\)\}\)/.test(up),
       "6t checkout still posts only the plan key (and, with the switch on, whether the screen showed the trial)");
 
     const { loadApp, textOf, describe } = require("./_renderApp.cjs");

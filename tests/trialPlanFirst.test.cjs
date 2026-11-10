@@ -308,7 +308,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // L1 a remembered payment lets the app open while the status call fails; L2 sign-out clears the same keys.
     t.ok(APP.includes("recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true"), "8f L1 a payment remembered on the device lets the app open while the status call fails");
     const so = APP.slice(APP.indexOf("const plansSignOut = async ()=>{"), APP.indexOf("const plansSignOut = async ()=>{") + 500);
-    t.ok(so.includes('k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY'), "8g L2 the plans screen's sign-out clears what Settings' does");
+    t.ok(so.includes('!k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY'), "8g L2 the plans screen's sign-out clears what Settings' does");
     setEnv({});
   }
 
