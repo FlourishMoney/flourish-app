@@ -28,6 +28,8 @@ const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat, releaseTrialSeat } = require("./_lib/foundingSeats");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
+// The full funnel (migration 0042): the website's payment, cancellation or refund, first time only.
+const { stripeMilestone, recordMilestone } = require("./_lib/funnel");
 const { trialPlanFirstSince } = require("./_lib/planRules");
 const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
 
@@ -277,6 +279,22 @@ exports.handler = async (event) => {
     }).eq("event_id", evt.id);
     return reply(200, { received: true, duplicate: true });
   };
+
+  // THE FULL FUNNEL. Best effort, before the handling below (whose early answers would skip it); first time only, so a
+  // retried event adds nothing. The account is the one the event names, or, for a refund, the one our own row holds
+  // for that Stripe customer.
+  const milestone = stripeMilestone(evt);
+  if (milestone) {
+    try {
+      let accountId = userIdFrom(object);
+      const customerId = typeof object.customer === "string" ? object.customer : object.customer?.id;
+      if (!accountId && customerId) {
+        const { data: owner } = await admin.from("subscriptions").select("user_id").eq("provider_customer_id", customerId).maybeSingle();
+        accountId = owner?.user_id || null;
+      }
+      if (accountId) await recordMilestone(admin, accountId, milestone.milestone, "web", milestone.at);
+    } catch { console.error("[funnel] not recorded", milestone.milestone); }
+  }
 
   let creatorNotes = [];
   try {

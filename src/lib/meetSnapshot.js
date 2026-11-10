@@ -10,7 +10,7 @@ import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { selectHighestRateDebt, savingsBufferAfter, spareUntilDeposit } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
-import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
+import { billPrompts, billChangeQuestion, billChanges, billChangeSignature, applyBillChange, billKey } from "./billsReconcile.js";
 import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
@@ -199,6 +199,40 @@ export function buildReconcilePrompts(data = {}) {
     // A detector failure must not take the meeting down with it: the agenda is still worth having
     // without its questions.
     return [];
+  }
+}
+
+// ── A YES CHANGES THE BILLS (2026-11-08) ───────────────────────────────────────────────────────
+// When a meeting is marked done, each "yes" to a bill question is applied to the household's bills with
+// applyBillChange: a new bill is added, a changed amount is updated, an ended bill is removed.
+//
+// IT CAN ONLY APPLY ONCE. An answer is applied only while the bank still shows the change it was about:
+// the changes are worked out again here, from these bills, by the same detector the question came from,
+// and an answer whose signature matches none of them does nothing. Once applied, the bills match the
+// bank and the change is gone, so marking the meeting done again, a second device, a retry or a replay
+// of the same record finds nothing left to apply. A "no" is never applied (it is remembered instead).
+// Returns { bills, applied } with applied the signatures that changed something. Never throws: on any
+// failure the bills come back as they were.
+export function applyMeetingAnswers(data = {}, answers = []) {
+  const bills = Array.isArray(data.bills) ? data.bills : [];
+  try {
+    const yes = (Array.isArray(answers) ? answers : []).filter(a => a && a.domain === "bills" && a.answer === "accepted" && a.signature);
+    if (!yes.length) return { bills, applied: [] };
+    const detected = detectRecurringBills(data.transactions || [], { overrides: data.userBillOverrides || {}, debts: data.debts || [] });
+    const changes = billChanges(detected, bills);
+    let next = bills;
+    const applied = [];
+    for (const a of yes) {
+      if (applied.includes(a.signature)) continue;
+      const change = changes.find(c => billChangeSignature(c) === a.signature);
+      if (!change) continue;
+      const detectedBill = detected.find(b => billKey(b && b.name) === change.key) || null;
+      const after = applyBillChange(next, change, detectedBill);
+      if (after !== next && JSON.stringify(after) !== JSON.stringify(next)) { next = after; applied.push(a.signature); }
+    }
+    return { bills: applied.length ? next : bills, applied };
+  } catch {
+    return { bills, applied: [] };
   }
 }
 
