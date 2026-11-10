@@ -73,4 +73,14 @@ async function releaseSeat(admin, userId, { reason = "refund", provider = null }
   return data === true;
 }
 
-module.exports = { FOUNDING_SEAT_LIMIT, functionMissing, seatsTaken, spotsLeft, takeSeat, releaseSeat };
+/**
+ * TRIAL_PLAN_FIRST: a founding trial cancelled before its first charge gives its seat back (reason
+ * 'trial_ended_unpaid', migration 0046). Never throws: until 0046 runs, 0032's check refuses that reason, and the seat
+ * simply stays held, as it would today, rather than the webhook failing and retrying for days.
+ */
+async function releaseTrialSeat(admin, userId, provider) {
+  try { return await releaseSeat(admin, userId, { reason: "trial_ended_unpaid", provider }); }
+  catch { console.error("[founding-seat] trial release:", "refused (0046 not applied?)"); return false; }
+}
+
+module.exports = { FOUNDING_SEAT_LIMIT, functionMissing, seatsTaken, spotsLeft, takeSeat, releaseSeat, releaseTrialSeat };

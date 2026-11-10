@@ -25,9 +25,10 @@ const { verifyStripeSignature } = require("./_lib/stripeSignature");
 const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
 const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
-const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
+const { takeSeat, releaseSeat, releaseTrialSeat } = require("./_lib/foundingSeats");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
+const { trialPlanFirstSince } = require("./_lib/planRules");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -96,6 +97,14 @@ function checkoutAmounts(session) {
 function foundingSubscriptionEnded(evtType, sub) {
   if (sub?.metadata?.plan_key !== "founding_annual") return false;
   return evtType === "customer.subscription.deleted" || sub?.status === "canceled";
+}
+
+// TRIAL_PLAN_FIRST: a subscription that ended inside its free trial, never charged (cancelled before day 14). It held
+// the founding price only as a trial: its seat goes back, and the founding price is not marked as ended for it.
+function endedInTrialUnpaid(sub) {
+  const trialEnd = Number(sub && sub.trial_end);
+  const endedAt = Number((sub && (sub.ended_at || sub.canceled_at)) || 0);
+  return Number.isFinite(trialEnd) && trialEnd > 0 && endedAt > 0 && endedAt <= trialEnd;
 }
 
 function userIdFrom(object) {
@@ -173,7 +182,10 @@ exports.handler = async (event) => {
 
   const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();
   const creatorDispute = CREATOR_DISPUTE_EVENTS.includes(evt.type) && creatorsEnabled();
-  if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute) {
+  // TRIAL_PLAN_FIRST: a Stripe trial starts as "trialing" with its end date on customer.subscription.created, which
+  // nothing else reports until the trial ends. Heard only while the switch is on; off, ignored as before.
+  const trialCreated = evt.type === "customer.subscription.created" && trialPlanFirstSince() !== null;
+  if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute && !trialCreated) {
     await admin.from("billing_events")
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
     return reply(200, { received: true, ignored: true });
@@ -332,9 +344,10 @@ exports.handler = async (event) => {
     // THE CREATOR PROGRAM: a chargeback over, or its money back. Changes nothing about the household's plan.
     if (creatorDispute) creatorNotes = await settleStripeDispute(admin, evt.type, object);
 
-    if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
+    if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted" || trialCreated) {
       const user_id = userIdFrom(object);
-      const foundingEnded = foundingSubscriptionEnded(evt.type, object);
+      const trialOnly = foundingSubscriptionEnded(evt.type, object) && endedInTrialUnpaid(object);
+      const foundingEnded = foundingSubscriptionEnded(evt.type, object) && !trialOnly;
       const patch = subscriptionPatch(object,
         evt.type === "customer.subscription.deleted"
           ? { status: "canceled", founding_locked_at: null }     // the lock ends with the subscription
@@ -396,6 +409,12 @@ exports.handler = async (event) => {
       }
       // COUPLE MODE (audit H5): a subscription that became paid in a household the other member pays for.
       if (!subscriptionOver && isLiveStripeStatus(object.status)) await reconcileHouseholdBilling(admin, existing?.user_id || user_id);
+      // A founding trial cancelled before its first charge: the seat it held goes back, and the price is not ended.
+      if (trialOnly && accountId) {
+        const { error: lockErr } = await admin.from("subscriptions").update({ founding_locked_at: null }).eq("user_id", accountId);
+        if (lockErr) throw new Error(lockErr.message);
+        await releaseTrialSeat(admin, accountId, "stripe");
+      }
       if (foundingEnded) {
         // And on the waitlist number, which outlives the account (deleting an account deletes its waitlist
         // row, not the number's ledger entry). A failure here is a 5xx, so Stripe retries the event.

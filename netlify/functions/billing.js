@@ -30,7 +30,8 @@ const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require(".
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
-const { trialPlanFirstState } = require("./_lib/trialPlanFirst");
+const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
+const { trialPlanFirstSince } = require("./_lib/planRules");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
@@ -315,9 +316,11 @@ exports.handler = async (event) => {
       // A web subscription Stripe is still collecting (past_due) counts too: a second checkout would charge twice
       // once the card works. A read that fails is logged and checkout goes on, as it always has (the web hides
       // checkout from a household whose status says it pays; tests/foundingBilling.test.cjs 6f).
+      let guardRow = null, guardRead = false;
       {
         const { data: current, error: curErr } = await admin
-          .from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+          .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id").eq("user_id", user_id).maybeSingle();
+        if (!curErr) { guardRow = current || null; guardRead = true; }
         if (curErr) console.error("[billing] checkout guard read:", curErr.message);
         if (!curErr && isLiveRow(current)) {
           return json(409, CORS, { error: "already_subscribed", provider: current.provider || "stripe" });
@@ -362,6 +365,34 @@ exports.handler = async (event) => {
         return json(503, CORS, { error: "unavailable" });
       }
 
+      // TRIAL_PLAN_FIRST (item 1): 14 days free, a card taken up front, charged on day 14 unless cancelled. Only for an
+      // account that has never had a subscription (our row, and Stripe asked for every subscription this customer ever
+      // had). The screen says which it showed (body.trial); if the server's answer differs, nothing is created (409
+      // trial_changed) and the screen shows what applies: nobody is charged on terms they were not shown. Off: no trial,
+      // exactly as before, and a request that asks for one is refused the same way.
+      let trialDays = 0;
+      {
+        let eligible = false;
+        if (trialPlanFirstSince() !== null) {
+          if (!guardRead) return json(503, CORS, { error: "unavailable" });
+          eligible = webTrialEligibleRow(guardRow);
+          if (eligible) {
+            try {
+              const ever = await stripeGet(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=1`);
+              if (!ever || !Array.isArray(ever.data)) throw new Error("no list");
+              if (ever.data.length) eligible = false;
+            } catch (e) {
+              console.error("[billing] checkout trial check:", e && e.statusCode ? e.statusCode : "no_status");
+              return json(503, CORS, { error: "unavailable" });
+            }
+          }
+          if (body.trial !== eligible) return json(409, CORS, { error: "trial_changed", trial: eligible });
+        } else if (body.trial === true) {
+          return json(409, CORS, { error: "trial_changed", trial: false });
+        }
+        if (eligible) trialDays = TRIAL_PLAN_FIRST_DAYS;
+      }
+
       // COUPLE MODE (audit H5, round 2 a; round 5): one purchase ATTEMPT at a time, for EVERY buyer. The checkout is
       // made first, short-lived (expires_at: it ends before its attempt does), and then it must be recorded as this
       // person's one attempt under its own id, which for a member also holds the household (_lib/household.js
@@ -378,7 +409,13 @@ exports.handler = async (event) => {
         // Both carry user_id: the session for checkout.session.completed, the subscription
         // for every later customer.subscription.* event, which never sees the session.
         metadata: { user_id, plan_key: planKey },
-        subscription_data: { metadata: { user_id, plan_key: planKey } },
+        subscription_data: trialDays
+          ? { metadata: { user_id, plan_key: planKey, trial_plan_first: "1" }, trial_period_days: trialDays,
+              // A card is required up front (below), so this only ever applies if the card is removed during the trial:
+              // then the subscription is cancelled at its end rather than left unpaid.
+              trial_settings: { end_behavior: { missing_payment_method: "cancel" } } }
+          : { metadata: { user_id, plan_key: planKey } },
+        ...(trialDays ? { payment_method_collection: "always" } : {}),
         ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
         expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,   // before its attempt ends (round 5: every checkout)
         allow_promotion_codes: true,

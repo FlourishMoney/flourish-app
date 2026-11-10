@@ -42,7 +42,7 @@
 const { alertSupport } = require("./supportAlert");
 const crypto = require("crypto");
 const { isPaidSubscription, STORE_PROVIDERS } = require("./planRules");
-const { takeSeat, releaseSeat } = require("./foundingSeats");
+const { takeSeat, releaseSeat, releaseTrialSeat } = require("./foundingSeats");
 
 const ENTITLEMENT_ID = "plus";
 
@@ -254,7 +254,10 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   // expiration arrives after the period end, so "paid at the moment of syncing" would never see it.
   const wasFounding = existing && existing.plan_key === "founding_annual" && STORE_PROVIDERS.includes(existingProvider)
     && ["trialing", "active"].includes(existing.status);
-  const foundingEnded = wasFounding && !isPaidSubscription(next, now) && !existing.founding_ended_at;
+  // TRIAL_PLAN_FIRST: a founding store trial that ended without its first charge (cancelled inside the 14 days) held
+  // the price only as a trial. Its seat goes back and the founding price is not marked as ended for it.
+  const trialOnly = wasFounding && existing.status === "trialing" && !isPaidSubscription(next, now);
+  const foundingEnded = wasFounding && !trialOnly && !isPaidSubscription(next, now) && !existing.founding_ended_at;
   if (foundingEnded) next.founding_ended_at = nowIso;
 
   // A FOUNDING PRICE NOBODY OFFERED. On the App Store a subscription group lists all its prices to its members,
@@ -274,6 +277,7 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   // seat, it is honoured and logged (_lib/foundingSeats.js), and support sees founding_not_eligible above.
   // Never a sandbox purchase: the App Review account's are let through for access, not as households.
   if (next.plan_key === "founding_annual" && isPaidSubscription(next, now) && !sandbox) await takeSeat(admin, userId, next.provider, null);
+  if (trialOnly) await releaseTrialSeat(admin, userId, existingProvider);
   if (foundingEnded && user && user.email) {
     const { error: endErr } = await admin.rpc("waitlist_founding_mark_ended", { p_email: user.email });
     if (endErr) throw new Error(`founding end: ${endErr.message}`);

@@ -36,3 +36,116 @@ export function recalledAccountTrial(storage, uid) {
   if (!storage || !uid) return true;
   try { return storage.getItem(KEY(uid)) !== "false"; } catch { return true; }
 }
+
+// ── ITEM 1: THE PLANS SCREEN FIRST ────────────────────────────────────────────────────────────────
+// WHICH ACCOUNTS SEE IT, AND HOW (only while the switch is on; null means today's app, unchanged):
+//   "required"    a new account (no account trial) with no plan, no partner's cover, not a founder and no
+//                 complimentary access: after the first safe-to-spend number, the plans screen comes before the rest
+//                 of the app, and cannot be closed (only "Sign out", and Restore purchases in a store app).
+//   "offer_once"  an account whose own account trial has ended and who has no plan: the new plans screen opens once
+//                 on this device, and can be closed. Nothing they already have is taken away (item 2).
+// canSell: the screen can actually sell here (the website with billing on; a store build that sells). Where it
+// cannot, nobody is held at a screen with nothing to buy.
+export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePlan = null, demo = false, canSell = false } = {}) {
+  if (!tpf || tpf.on !== true || demo || !canSell) return null;
+  if (paid === true || coveredBy) return null;
+  if (profilePlan === "beta_founder" || profilePlan === "premium") return null;
+  if (tpf.account_trial === false) return "required";
+  if (profilePlan === "free") return "offer_once";
+  return null;   // inside the account trial: unchanged, the plans open when asked (item 2)
+}
+
+// "offer_once": shown once per account on this device.
+const OFFER_KEY = (uid) => `flourish_tpf_plans_offered_${uid}`;
+export function plansOfferedBefore(storage, uid) {
+  try { return !!storage && !!uid && storage.getItem(OFFER_KEY(uid)) === "1"; } catch { return true; }
+}
+export function notePlansOffered(storage, uid) {
+  try { if (storage && uid) storage.setItem(OFFER_KEY(uid), "1"); } catch { /* the screen may open once more */ }
+}
+
+// "required" survives a status call that fails: once the server has said this account must choose, the screen stays
+// until an answer says it has a plan (a blip on the network never lets the rest of the app open, and never closes it).
+const REQ_KEY = (uid) => `flourish_tpf_required_${uid}`;
+export function rememberRequired(storage, uid, required) {
+  try { if (!storage || !uid) return; if (required) storage.setItem(REQ_KEY(uid), "1"); else storage.removeItem(REQ_KEY(uid)); } catch { /* fine */ }
+}
+export function recalledRequired(storage, uid) {
+  try { return !!storage && !!uid && storage.getItem(REQ_KEY(uid)) === "1"; } catch { return false; }
+}
+
+// ── THE DISCLOSURE, above each plan's button ──────────────────────────────────────────────────────
+export const TRIAL_DAYS_FIRST = 14;
+/** The first charge: 14 days from now (Stripe trial_period_days 14; Apple's and Google's 2-week free trial). */
+export function firstChargeAt(now = Date.now(), days = TRIAL_DAYS_FIRST) {
+  const t = now instanceof Date ? now.getTime() : now;
+  return new Date(t + days * 86400000);
+}
+/** "November 24, 2026", in the person's own time zone (the day the trial ends where they are). */
+export function chargeDateLabel(date) {
+  return date.toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+}
+export const periodOfPlan = (planKey) => (planKey === "monthly" ? "month" : (planKey === "annual" || planKey === "founding_annual") ? "year" : null);
+
+/**
+ * The lines above one plan's button, in order. platform: "ios" | "android" | "web". eligible: the store (RevenueCat)
+ * or the server (Stripe) says this person gets the 14 days. price: the full price and how often, as the plan card
+ * already shows it ("$11.99 a month": pricing.js on the website, the store's own price string in the apps).
+ * words: the words function (lib/trialWords.js trialWords), passed in so this stays pure.
+ *   eligible:     14 days free; then the price and how often; the first charge's date; cancel before it and nothing
+ *                 is charged; how to cancel on this platform.
+ *   not eligible: the price, charged now, and how to cancel. No trial claim of any kind.
+ */
+export function trialDisclosure({ platform, eligible, price, planKey, now = Date.now(), words }) {
+  if (!periodOfPlan(planKey) || !price || typeof words !== "function") return null;
+  const cancel = words(platform === "ios" ? "trialfirst-cancel-ios" : platform === "android" ? "trialfirst-cancel-android" : "trialfirst-cancel-web");
+  if (!eligible) return { claim: false, lines: [words("trialfirst-no-trial", { price }), cancel] };
+  const date = chargeDateLabel(firstChargeAt(now));
+  return {
+    claim: true,
+    lines: [
+      words("trialfirst-free-days"),
+      words("trialfirst-then", { price }),
+      words("trialfirst-first-charge", { date }),
+      words("trialfirst-cancel-before", { date }),
+      cancel,
+    ],
+  };
+}
+
+// ── THE STORES' OWN ANSWER ON ELIGIBILITY ─────────────────────────────────────────────────────────
+// iPhone: RevenueCat's checkTrialOrIntroductoryPriceEligibility must say ELIGIBLE (2) for the product, and the product
+// must carry a free introductory offer of exactly 2 weeks (14 days). UNKNOWN (0), INELIGIBLE (1) or no intro offer (3):
+// no trial claim (RevenueCat: "The best course of action on unknown status is to display the non-intro pricing").
+// Android: Play's subscription options hold only the offers this person is eligible for, and the purchase applies the
+// default option; so the claim is made only when that default option has a free phase of exactly 14 days.
+export const INTRO_ELIGIBLE = 2;
+const fourteenDays = (unit, n) => {
+  const u = String(unit || "").toUpperCase();
+  return (u === "DAY" && n === 14) || (u === "WEEK" && n === 2);
+};
+const isoFourteenDays = (iso) => iso === "P2W" || iso === "P14D";
+export function storeTrialEligible({ platform, product, eligibility }) {
+  if (!product) return false;
+  if (platform === "ios") {
+    const e = eligibility && eligibility[product.identifier];
+    const intro = product.introPrice;
+    return !!e && e.status === INTRO_ELIGIBLE && !!intro && intro.price === 0
+      && fourteenDays(intro.periodUnit, (intro.periodNumberOfUnits || 0) * (intro.cycles || 1));
+  }
+  if (platform === "android") {
+    const free = product.defaultOption && product.defaultOption.freePhase;
+    return !!free && !!free.billingPeriod && isoFourteenDays(free.billingPeriod.iso8601)
+      && (free.billingCycleCount == null || free.billingCycleCount === 1);
+  }
+  return false;
+}
+
+// ANDROID BUYS THE OPTION THE SCREEN SHOWED. Play applies a product's default option, which is its free trial when one
+// exists and the person is eligible. Where the screen made no trial claim (the switch off, or the claim not made), the
+// base plan is bought by name, so nobody is put on a trial, or a price, they were not shown. With no offer in Play
+// Console (today) the base plan is the default option, so this changes nothing. null: buy the package as it is.
+export function androidPurchaseOption(product, claimed) {
+  if (claimed || !product || !Array.isArray(product.subscriptionOptions)) return null;
+  return product.subscriptionOptions.find((o) => o && o.isBasePlan) || null;
+}
