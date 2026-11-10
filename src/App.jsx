@@ -19,6 +19,7 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
+import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -733,6 +734,7 @@ async function callPlaid(action, params={}, options={}) {
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxAttempts - 1) { lastErr = new Error(data.error || "server busy"); continue; }
       const err = new Error(data.error || "Plaid error");
       err.needs_reconnect = data.needs_reconnect || false;
+      err.body = data;   // the server's answer, for the bank login limit's numbers (lib/bankLimitView.js)
       if (data.needs_reconnect && typeof window.__flourishReconnect === "function") window.__flourishReconnect();
       throw err;
     }
@@ -4295,7 +4297,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     const jwt = await getJwt();
     callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
+      .catch((err)=>{ setBankError(bankLimitMessage(err) || ((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry.")); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===1) fetchLinkToken(); },[step]); // eslint-disable-line
@@ -4379,7 +4381,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       count("bank_link_failed");
       // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
       // Every other failure (an expired session included) is W4: try again or enter the numbers.
-      if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
+      // The bank login limit (behind PLUS_ENABLED): its own line, with the server's numbers. Nothing was disconnected.
+      if (bankLimitMessage(err)) setBankError(bankLimitMessage(err));
+      else if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
       else setBankOutcome("failed");
       setBankStage("select");
     }
@@ -19119,6 +19123,7 @@ export default function FlourishApp(){
         // The free plan's one-bank limit is not a failure to retry. A store app says so in the approved line
         // (lib/freePlan.js FREE_BANK_LINE), never the server's plan code or an upgrade path; the web keeps its line.
         if(isNativeApp() && /plan_limit/.test(String(err?.message||""))){ alertModal({ message: FREE_BANK_LINE }); return; }
+        if(bankLimitMessage(err)){ alertModal({ message: bankLimitMessage(err) }); return; }
         captureError(err, { area: "plaid" });
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });
@@ -19344,7 +19349,7 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
+      .catch((err)=>{ setReconnectLoading(false); if (bankLimitMessage(err)) { alertModal({ message: bankLimitMessage(err) }); return; } noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These
   // handlers only record intent — BankConsentModal's "Connect My Bank" runs the real action.

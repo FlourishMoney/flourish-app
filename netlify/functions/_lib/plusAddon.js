@@ -95,7 +95,7 @@ function isLivePlusRow(row, env = process.env, now = Date.now()) {
  *   enabled false        PLUS_ENABLED is off: nothing is read, nothing is offered, nothing changes.
  *   status_unavailable   a read failed (or 0044 is not applied): plus is false and the caller says so plainly
  *                        (503), never "you don't have Plus" and never a limit worked out from a guess.
- * Either member's live row covers the household (the fair-use limit of 10 bank logins is per household).
+ * Either member's live row covers the household (the fair-use limit of 10 bank connections is per household).
  */
 async function getPlusEntitlement(admin, userId, { env = process.env, now = Date.now() } = {}) {
   if (!plusEnabled(env)) return { enabled: false, plus: false, covered_by: null, status_unavailable: false };

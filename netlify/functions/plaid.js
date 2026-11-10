@@ -28,6 +28,7 @@ const PLAID_BASE = {
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
+const { bankLimitFor, limitBody } = require("./_lib/bankLimits");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
 
@@ -112,6 +113,14 @@ exports.handler = async (event) => {
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
 
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED, _lib/bankLimits.js): asked before Plaid opens, so nobody signs in to a
+      // bank only to be refused after. Only a NEW bank: a reconnect (item_id, Plaid's update mode) is never limited.
+      if (!body.item_id) {
+        const lim = await bankLimitFor(getAdminClient(), user_id);
+        if (lim && lim.unavailable) return statusUnavailable(CORS);
+        if (lim && !lim.allowed) return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(lim)) };
+      }
+
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
       let updateAccessToken = null;
@@ -171,9 +180,15 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): the authority, checked again here whatever the screen was told. A read
+      // that fails refuses this new bank (503), never a count from a guess; nothing already connected is touched.
+      const bankLimit = await bankLimitFor(getAdminClient(), user_id);
+      if (bankLimit && bankLimit.unavailable) return statusUnavailable(CORS);
+      if (bankLimit && !bankLimit.allowed) return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
-      if (ENFORCE_PLAN_LIMITS && !unlimited) {
+      // Plus lifts the free plan's one-bank cap too: Plus is unlimited, within its fair-use limit, on any plan.
+      if (ENFORCE_PLAN_LIMITS && !unlimited && !(bankLimit && bankLimit.plus)) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if ((count || 0) >= 1) {
@@ -502,6 +517,17 @@ exports.handler = async (event) => {
       return { statusCode: 410, headers: CORS, body: JSON.stringify({ error: "store_item is deprecated: exchange_token now persists the item server-side." }) };
     }
 
+    // bank_limit_status (behind PLUS_ENABLED; 404 while off): how many bank connections this household holds against its
+    // plan, for Settings. Numbers only; the app words them (src/lib/netWorthWords.js). A read that fails is a 503.
+    if (action === "bank_limit_status") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const lim = await bankLimitFor(getAdminClient(), user_id);
+      if (!lim) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: "not_found" }) };
+      if (lim.unavailable) return statusUnavailable(CORS);
+      return ok({ plus: lim.plus, scope: lim.scope, used: lim.used, limit: lim.limit, allowed: lim.allowed, connected: lim.connected, over: lim.over });
+    }
+
     // 10. list_items — auth-required: return all items for the authenticated user
     // (does NOT return access_token to client — only metadata)
     if (action === "list_items") {
@@ -623,7 +649,17 @@ exports.handler = async (event) => {
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
-      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): a NEW bank here counts as it would through exchange_token.
+      const bankLimit = await bankLimitFor(admin, user_id);
+      if (bankLimit && bankLimit.unavailable) return statusUnavailable(CORS);
+      let limitUsed = bankLimit ? bankLimit.used : null;
+      let mineIds = null;
+      if (bankLimit) {
+        const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id);
+        if (mineErr) return statusUnavailable(CORS);
+        mineIds = new Set((mine || []).map((r) => r.item_id));
+      }
+      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited && !(bankLimit && bankLimit.plus); // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
         const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
@@ -648,6 +684,11 @@ exports.handler = async (event) => {
           if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
             failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more." });
             continue;
+          }
+          if (bankLimit && !mineIds.has(item_id)) {
+            if (limitUsed >= bankLimit.limit) { failures.push(limitBody({ ...bankLimit, used: limitUsed })); continue; }
+            limitUsed++;
+            mineIds.add(item_id);
           }
           // Upsert (idempotent — re-running migration is safe)
           const { error: upsertErr } = await admin
