@@ -109,7 +109,8 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
   const { billingUiState } = await import("../src/lib/billingVisibility.js");
   t.eq(billingUiState({ status: { enabled: true, plans: [{}] }, native: true, paid: false }).show, false, "3c billing is never shown on a store app, even with billing on");
   t.eq((app.match(/<Paywall /g) || []).length, 1, "3d there is one Paywall render site, the guarded one");
-  t.eq((app.match(/<UpgradeScreen /g) || []).length, 1, "3e …and one upgrade screen render site, the guarded one");
+  // TRIAL_PLAN_FIRST (2026-11-10): a second render site, the plans that come first, behind the same guard.
+  t.eq((app.match(/<UpgradeScreen /g) || []).length, (app.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length, "3e …and every upgrade screen render site is the guarded one");
 
   t.summary("nativeNoPrice.test");
   setImmediate(() => process.exit(process.exitCode || 0));
