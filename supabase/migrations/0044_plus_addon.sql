@@ -41,6 +41,7 @@ create table if not exists public.plus_addon_subscriptions (
 
 alter table public.plus_addon_subscriptions enable row level security;
 -- No policy: the Data API roles can neither read nor write it. Only the service role.
+-- grants: service_role only
 revoke all on table public.plus_addon_subscriptions from anon, authenticated;
 grant all privileges on table public.plus_addon_subscriptions to service_role;
 
