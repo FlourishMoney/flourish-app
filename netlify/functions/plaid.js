@@ -732,6 +732,19 @@ exports.handler = async (event) => {
       // second checkout that completed (two tabs) left a subscription the row never showed, still charging. If Stripe
       // cannot be asked, nothing is deleted.
       const customers = [...new Set(allSubs.filter(r => r && r.provider_customer_id && (r.provider || "stripe") === "stripe").map(r => r.provider_customer_id))];
+      // THE PLUS ADD-ON (migration 0044) has its own Stripe customer: its live subscriptions are cancelled here too. Its
+      // table not being there (0044 not run) holds nothing; any other failed read stops the delete with nothing changed.
+      {
+        const { data: plusRows, error: plusErr } = await admin.from("plus_addon_subscriptions")
+          .select("provider, provider_customer_id").eq("user_id", user_id);
+        if (plusErr && !missingTable(plusErr)) {
+          console.error("[delete_account] plus read:", plusErr.code || "error");
+          return stop("billing_cancel"); // nothing deleted yet
+        }
+        for (const r of (Array.isArray(plusRows) ? plusRows : [])) {
+          if (r && r.provider === "stripe" && r.provider_customer_id && !customers.includes(r.provider_customer_id)) customers.push(r.provider_customer_id);
+        }
+      }
       for (const cus of customers) {
         let listed;
         try { listed = await liveSubscriptionsFor(cus, {}, { includeIncomplete: true }); }

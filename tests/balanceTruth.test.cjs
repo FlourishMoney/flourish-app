@@ -419,9 +419,12 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     t.eq([W("balance-link-bank-down", { bank: "" }), W("balance-signin-title", { bank: "TD" }), W("balance-last-updated", { when: "3:40 p.m." })],
       ["Your bank didn't respond.", "TD needs you to sign in again", "Last updated 3:40 p.m."], "7i {bank} and {when} are filled in; a bank Plaid didn't name is \"Your bank\" (this once called itself forever, found when the words went in)");
     const { execFileSync } = require("child_process");
-    let guard = 0;
-    try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-    t.eq(guard, PW.pendingCreatorWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
+    let guard = 0, guardSaid = "";
+    try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; guardSaid = String(e.stderr || ""); }
+    // 2026-11-10: the Plus, bank-limit and net-worth lines (lib/netWorthWords.js) are placeholders until approved, and hold
+    // the build back too; the guard must still name no balance- line.
+    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingNetWorthWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
+    t.ok(!/\[WORDS: balance-/.test(guardSaid), "7j2 …and whatever it refuses, it names no balance- line");
   }
 
   t.summary("balanceTruth.test");

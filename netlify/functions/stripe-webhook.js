@@ -28,6 +28,8 @@ const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat } = require("./_lib/foundingSeats");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
+const { stripeGet } = require("./_lib/stripeApi");
+const plusAddon = require("./_lib/plusAddon");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -110,6 +112,62 @@ function foundingCheckoutPaid(session) {
     && ["paid", "no_payment_required"].includes(session?.payment_status);
 }
 
+// THE PLUS ADD-ON'S STRIPE EVENTS (migration 0044). Written to public.plus_addon_subscriptions only, ordered by the
+// event's own time as the main plan's are. A checkout is read back from Stripe (its subscription, for the price and
+// the period), never from the session alone. Anything that is not a real Plus price is acknowledged and grants nothing.
+async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
+  const T = plusAddon.TABLE;
+  const settle = (status, error = null) => admin.from("billing_events")
+    .update({ status, processed_at: new Date().toISOString(), error }).eq("event_id", evt.id);
+  const eventAtIso = isoOrNull(evt.created);
+  try {
+    let sub = object;
+    let userId = userIdFrom(object);
+    if (evt.type === "checkout.session.completed") {
+      const subId = typeof object.subscription === "string" ? object.subscription : object.subscription?.id;
+      if (!subId) { await settle("ignored", "plus: a checkout with no subscription"); return reply(200, { received: true, ignored: true }); }
+      sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
+    }
+    const deleted = evt.type === "customer.subscription.deleted";
+    const row = plusAddon.plusRowFromStripe(sub, process.env, deleted ? { status: "canceled" } : {});
+    if (!row) { await settle("ignored", "plus: not a Plus price, nothing granted"); return reply(200, { received: true, ignored: true }); }
+    // The account: our own row for this subscription first, then the metadata the server put on it.
+    const { data: bySub, error: subErr } = await admin.from(T).select("user_id, last_event_at").eq("provider_subscription_id", row.provider_subscription_id).maybeSingle();
+    if (subErr) throw Object.assign(new Error(`plus read: ${subErr.code || "error"}`), { pg: subErr });
+    if (bySub && bySub.user_id) userId = bySub.user_id;
+    if (!userId) userId = sub && sub.metadata && sub.metadata.user_id;
+    if (!userId) throw new Error("plus: no account for the subscription");
+    const { data: cur, error: curErr } = bySub ? { data: bySub, error: null }
+      : await admin.from(T).select("user_id, last_event_at, provider, plan_key, status, product_id, current_period_end").eq("user_id", userId).maybeSingle();
+    if (curErr) throw Object.assign(new Error(`plus read: ${curErr.code || "error"}`), { pg: curErr });
+    const applied = Date.parse((cur && cur.last_event_at) || "");
+    if (Number.isFinite(evt.created) && Number.isFinite(applied) && evt.created * 1000 < applied) {
+      await settle("ignored", "stale: a newer event has already been applied to this Plus subscription");
+      return reply(200, { received: true, stale: true });
+    }
+    // One Plus per buyer: a live store Plus row is never written over by a website one (logged for support).
+    if (!bySub && cur && cur.provider !== "stripe" && plusAddon.isLivePlusRow(cur)) {
+      console.error("[stripe-webhook] plus conflict: a website Plus subscription for a buyer whose Plus is in a store");
+      await settle("ignored", "plus conflict: the buyer already has Plus through a store; refund the website one");
+      return reply(200, { received: true, conflict: true });
+    }
+    if (eventAtIso) row.last_event_at = eventAtIso;
+    const { error } = await admin.from(T).upsert({ user_id: userId, ...row }, { onConflict: "user_id" });
+    if (error) throw Object.assign(new Error(`plus write: ${error.code || "error"}`), { pg: error });
+    await settle("processed");
+    return reply(200, { received: true });
+  } catch (e) {
+    // 0044 not applied while Plus is off: nothing of ours could have sold this; acknowledged, not retried for days.
+    if (e && e.pg && plusAddon.isMissing(e.pg) && !plusAddon.plusEnabled()) {
+      await settle("ignored", "plus: migration 0044 not applied");
+      return reply(200, { received: true, ignored: true });
+    }
+    console.error("[stripe-webhook] plus", evt.type, e.message);
+    await settle("failed", String(e.message).slice(0, 500));
+    return reply(500, { error: "processing_failed" });
+  }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return reply(405, { error: "Method not allowed" });
 
@@ -169,6 +227,16 @@ exports.handler = async (event) => {
     await admin.from("billing_events")
       .update({ status: "received", attempts: (prior.attempts || 1) + 1, error: null })
       .eq("event_id", evt.id);
+  }
+
+  // THE PLUS ADD-ON (migration 0044, _lib/plusAddon.js). Its checkout and its subscription events are handled here and
+  // never reach the main plan's handling below: a Plus subscription written into public.subscriptions would replace the
+  // household's main plan, or be flagged as a second subscription. It is the add-on's when our checkout says so in its
+  // metadata or the subscription carries a Plus price; Plus is granted only for a real Plus price.
+  const PLUS_SUB_EVENTS = ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"];
+  if ((evt.type === "checkout.session.completed" && object?.metadata?.kind === "plus_addon")
+      || (PLUS_SUB_EVENTS.includes(evt.type) && plusAddon.isPlusStripeObject(object))) {
+    return await applyPlusEvent(admin, evt, object, reply, { stripeGet });
   }
 
   const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();

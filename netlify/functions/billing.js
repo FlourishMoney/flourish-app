@@ -30,6 +30,8 @@ const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require(".
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
+const plusAddon = require("./_lib/plusAddon");
+const { fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
@@ -63,6 +65,16 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 //                 (round 4 a3): every hold ends at its fixed time.
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
 const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]);
+// THE PLUS ADD-ON (2026-11-10, _lib/plusAddon.js, migration 0044). Behind PLUS_ENABLED, whatever BILLING_ENABLED
+// and IAP_ENABLED say; while it is off these answer 404 and read nothing. The website's checkout also needs
+// BILLING_ENABLED, and the store sync IAP_ENABLED. None of them reads or writes public.subscriptions.
+//   plus_status      { enabled, plus, covered_by }; a read that fails is 503 status_unavailable, never "no Plus"
+//   plus_checkout    { plan_key: "plus_monthly" | "plus_annual" }, the website only: a Stripe checkout for Plus on the
+//                    buyer's own Plus customer, beside whatever plan the household has. No promotion codes: Plus has no
+//                    discount, the founding households' included (Amanda's decision).
+//   plus_store_sync  "I just bought Plus in the store; look now": from RevenueCat's server, never from the app.
+//   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's.
+const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_portal"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -129,7 +141,12 @@ exports.handler = async (event) => {
   let badJson = false;
   try { body = JSON.parse(event.body || "{}"); } catch { body = {}; badJson = true; }
   const storeAction = STORE_ACTIONS.includes(body && body.action);
-  if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
+  const plusAction = PLUS_ACTIONS.includes(body && body.action);
+  if (plusAction) {
+    if (!plusAddon.plusEnabled()) return json(404, CORS, { error: "not_found" });
+    if ((body.action === "plus_checkout" || body.action === "plus_portal") && !billingEnabled()) return json(404, CORS, { error: "not_found" });
+    if (body.action === "plus_store_sync" && !iapEnabled()) return json(404, CORS, { error: "not_found" });
+  } else if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
 
   // Auth first, every time. Nothing below runs for an anonymous caller.
   const { user_id, error: authError } = await getUserFromRequest(event);
@@ -416,6 +433,73 @@ exports.handler = async (event) => {
       if (!url) { console.error("[billing] founding confirm", "no_secret"); return json(500, CORS, { error: "server_misconfigured" }); }
       const sent = await sendFoundingConfirmEmail(user.email, url, `founding-confirm/${user_id}/${new URL(url).searchParams.get("x")}`);
       return sent ? json(200, CORS, { sent: true }) : json(502, CORS, { error: "send_failed" });
+    }
+
+    // ── THE PLUS ADD-ON ──────────────────────────────────────────────────────────────────────────────
+    if (plusAction) {
+      const answer = (ent) => json(200, CORS, { enabled: true, plus: !!ent.plus, covered_by: ent.covered_by || null });
+      if (action === "plus_store_sync") {
+        const user = await authUser(admin, user_id);
+        try { await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) }); }
+        catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }
+      }
+      const ent = await plusAddon.getPlusEntitlement(admin, user_id);
+      if (ent.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (action === "plus_status" || action === "plus_store_sync") return answer(ent);
+
+      // The Plus customer is the buyer's own, never the main plan's (so a main-plan refund, portal or check never sees it).
+      const { data: plusRow, error: plusErr } = await admin.from(plusAddon.TABLE)
+        .select("provider, provider_customer_id").eq("user_id", user_id).maybeSingle();
+      if (plusErr) { console.error("[billing] plus row read:", plusErr.code || "error"); return json(503, CORS, { error: "status_unavailable" }); }
+      const plusCustomer = plusRow && plusRow.provider === "stripe" ? plusRow.provider_customer_id : null;
+
+      if (action === "plus_portal") {
+        if (!plusCustomer) return json(404, CORS, { error: "no_customer" });
+        const session = await stripePost("/billing_portal/sessions", { customer: plusCustomer, return_url: `${APP_ORIGIN()}/?plus=portal_return` });
+        return json(200, CORS, { url: session.url });
+      }
+
+      // plus_checkout: the website only (a store app sells Plus through its store), once per household.
+      if (isNativeRequest(event)) return json(403, CORS, { error: "store_app" });
+      const planKey = body.plan_key;
+      if (!plusAddon.isPlusPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
+      if (ent.plus) return json(409, CORS, { error: "already_plus", covered_by: ent.covered_by || null });
+      const { priceId, error: priceError } = plusAddon.plusPriceIdFor(planKey);
+      if (priceError) { console.error("[billing] plus price lookup:", priceError, planKey); return json(500, CORS, { error: priceError }); }
+      let customerId = plusCustomer;
+      if (!customerId) {
+        const user = await authUser(admin, user_id);
+        const customer = await stripePost("/customers", { email: user?.email || undefined, metadata: { user_id, kind: "plus_addon" } },
+          { idempotencyKey: `plus-customer:${user_id}` });
+        customerId = customer.id;
+        // Only the customer is recorded, and never over a store's Plus row that is still live (checked above: ent.plus).
+        const { error: cErr } = await admin.from(plusAddon.TABLE).upsert({ user_id, provider: "stripe", status: "incomplete",
+          provider_customer_id: customerId, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (cErr) { console.error("[billing] plus customer write:", cErr.code || "error"); return json(503, CORS, { error: "unavailable" }); }
+      }
+      // Stripe itself is asked, as the main checkout does: a live Plus subscription the row does not show yet is a 409.
+      try {
+        const live = await liveSubscriptionsFor(customerId);
+        if (live.length) return json(409, CORS, { error: "already_plus" });
+        await expireOpenCheckouts(customerId);
+      } catch (e) {
+        console.error("[billing] plus live check:", e && e.statusCode ? e.statusCode : "no_status");
+        return json(503, CORS, { error: "unavailable" });
+      }
+      const session = await stripePost("/checkout/sessions", {
+        mode: "subscription",
+        customer: customerId,
+        client_reference_id: user_id,
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { user_id, plan_key: planKey, kind: "plus_addon" },
+        subscription_data: { metadata: { user_id, plan_key: planKey, kind: "plus_addon" } },
+        ...taxParams(),
+        expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,
+        allow_promotion_codes: false,
+        success_url: `${APP_ORIGIN()}/?plus=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url:  `${APP_ORIGIN()}/?plus=cancelled`,
+      }, { idempotencyKey: `plus-checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` });
+      return json(200, CORS, { url: session.url });
     }
 
     if (action === "create_portal_session") {
