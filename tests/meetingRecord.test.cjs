@@ -139,7 +139,7 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
     t.ok(opening.lines.some(l => /you said yes to Netflix/.test(l.text)), "6d …what was decided");
     // "No" is an answer. Calling it "unanswered" told the household they had not decided
     // something they had just decided.
-    t.ok(opening.lines.some(l => /You said no to Gym, so it is not being raised again/.test(l.text)),
+    t.ok(opening.lines.some(l => /^You said no to Gym, so we won't ask about it again for 12 months\.$/.test(l.text)),
       "6e …and what they said no to, described as the answer it is");
     t.ok(!opening.lines.some(l => /unanswered/.test(l.text)), "6e2 …never as an unanswered question");
     t.ok(opening.lines.some(l => /moved up 5 since then, to 71/.test(l.text)), "6f …and what the engines say has changed since");

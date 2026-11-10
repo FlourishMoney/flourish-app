@@ -131,7 +131,7 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     t.eq(open2.lines.map(l => l.text), [
       "Last meeting: Nov 1.",
       "Since then, you said yes to Goodlife Gym.",
-      "You said no to Netflix, so it is not being raised again.",
+      "You said no to Netflix, so we won't ask about it again for 12 months.",
     ], "3e the next meeting opens with \"Last meeting:\" and what was decided");
 
     const agenda2 = snap.meetAgendaFor({ ...data, meetingRecords: later });
@@ -320,7 +320,9 @@ const X = "00000000-0000-4000-8000-0000000000c3";   // someone in no household w
     t.ok(qCard.length > 100 && !/>[A-Za-z][^<{]*</.test(qCard.replace(/\{[^}]*\}/g, "")), "10a the questions card has no heading and no words of its own: the question and its Yes / No labels come from the agenda");
     const oCard = app.slice(app.indexOf('data-meet="opening"'), app.indexOf('data-tour="meet"'));
     t.ok(oCard.length > 50 && /\{l\.text\}/.test(oCard) && !/>[A-Za-z][^<{]*</.test(oCard.replace(/\{[^}]*\}/g, "")), "10b the opening card prints only meetingRecord.js's lines");
-    t.eq((app.match(/That didn't save\. Please try again in a moment\./g) || []).length, 3, "10c the failed-save line is the one the tester card already used");
+    // Approved 2026-11-10 (ChatGPT 100, Grok 100): the meeting's own line. The tester card keeps its own two, unchanged.
+    t.eq([(app.match(/Your meeting wasn't saved\. Please try again\./g) || []).length, (app.match(/That didn't save\. Please try again in a moment\./g) || []).length], [1, 2],
+      "10c the failed-save line is the approved one, once; the tester card's are unchanged");
   }
 
   t.summary("MEETING MEMORY");

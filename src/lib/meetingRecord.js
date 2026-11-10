@@ -163,7 +163,9 @@ export function meetingOpening({ lastRecord = null, snapshot = {} } = {}) {
   // "No" is an ANSWER. The agenda's second option maps to `dismissed`, so calling these
   // "unanswered" told the household they had not decided something they had just decided.
   for (const a of dismissed) {
-    lines.push({ text: `You said no to ${a.subject || a.kind || "a change"}, so it is not being raised again.`, source: "meetingRecord" });
+    // Approved 2026-11-10 (ChatGPT 100, Grok 100). The twelve months are the server's (meeting.js: every "no" still inside
+    // its twelve months is read back, and its question is not asked while it is).
+    lines.push({ text: `You said no to ${a.subject || a.kind || "a change"}, so we won't ask about it again for 12 months.`, source: "meetingRecord" });
   }
   if (!answers.length) {
     lines.push({ text: "No decisions were recorded at that meeting.", source: "meetingRecord" });

@@ -162,8 +162,8 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
     const mark = page.getByRole("button", { name: "Mark this meeting done", exact: true });
     await mark.scrollIntoViewIfNeeded();
     await mark.click();
-    await page.getByText("That didn't save. Please try again in a moment.", { exact: true }).waitFor();
-    t.ok(true, "3a a failed save says the existing line: That didn't save. Please try again in a moment.");
+    await page.getByText("Your meeting wasn't saved. Please try again.", { exact: true }).waitFor();
+    t.ok(true, "3a a failed save says the approved line: Your meeting wasn't saved. Please try again.");
     await page.waitForTimeout(600);
     let l = await local(page);
     t.eq((l.appData.bills || []).map(b => b.name).sort(), ["Netflix", "Spotify"], "3b …the bills are unchanged (the yes was not applied)");
@@ -224,7 +224,7 @@ const BILLS = [{ id: "b1", name: "Netflix", amount: "18.99", date: "16", origin:
       await toMeet(p2);
       await opening(p2).first().waitFor();
       const lines = (await opening(p2).innerText()).split("\n").map(s => s.trim()).filter(Boolean);
-      t.eq(lines, [`Last meeting: ${label(dayIn(weekAgo))}.`, "Since then, you said yes to Goodlife Gym.", "You said no to Netflix, so it is not being raised again."],
+      t.eq(lines, [`Last meeting: ${label(dayIn(weekAgo))}.`, "Since then, you said yes to Goodlife Gym.", "You said no to Netflix, so we won't ask about it again for 12 months."],
         "5a the next meeting opens with \"Last meeting:\" and what was decided");
       const q2 = await questions(p2).innerText();
       t.ok(!/Netflix/.test(q2), "5b the question they said no to does not come back");

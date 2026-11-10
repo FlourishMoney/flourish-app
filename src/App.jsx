@@ -10700,7 +10700,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
           : <>
               <button onClick={markDone} disabled={saving} aria-busy={saving} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:saving?"default":"pointer",fontFamily:"inherit",marginTop:SPACE.sm,opacity:saving?0.6:1}}>Mark this meeting done</button>
-              {saveFailed && <div role="alert" style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm}}>That didn't save. Please try again in a moment.</div>}
+              {saveFailed && <div role="alert" style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm}}>Your meeting wasn't saved. Please try again.</div>}
             </>;
       })()}
       {explainItem&&<HowWeGotThis title={explainItem.title} value={explainItem.value} meaning={explainItem.meaning}
