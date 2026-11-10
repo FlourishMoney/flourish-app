@@ -82,10 +82,16 @@ export function householdNetWorth(data = {}) {
   for (const a of accounts) {
     if (!a) continue;
     const kind = accountKind(a);
-    if (!kind) continue;
+    if (!kind) {
+      // An account of a type not listed here (Plaid's "other", say) is never dropped quietly: it is a part with no
+      // kind, so no total can be called complete without it (review 2026-11-10).
+      parts.push({ id: a.id ?? null, source: "linked", kind: "other", label: String(a.name || a.type || "Account"), cents: toCents(balanceOf(a)), currency: currencyOf(a.currency), problems: ["kind_not_stated"] });
+      continue;
+    }
     if (kind === "credit" || kind === "loan") creditIds.add(a.id);
     const raw = balanceOf(a);
-    const signed = raw === null ? null : (kind === "credit" || kind === "loan" ? -Math.abs(raw) : raw);
+    // A card or loan balance is what is owed (Plaid's sign), so a credit in the household's favour stays positive.
+    const signed = raw === null ? null : (kind === "credit" || kind === "loan" ? -raw : raw);
     const currency = currencyOf(a.currency || (a.balance && a.balance.currency));
     const problems = [];
     if (signed === null) problems.push("value_missing");

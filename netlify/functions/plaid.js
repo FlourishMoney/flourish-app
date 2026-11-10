@@ -180,11 +180,11 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
-      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): the authority, checked again here whatever the screen was told. A read
-      // that fails refuses this new bank (503), never a count from a guess; nothing already connected is touched.
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): read now, applied after the exchange below, once Plaid has said
+      // which item this is. A reconnect comes back here with the same item (update mode), and a re-link of a bank this
+      // person already holds is collapsed to one row by the dedupe further down: neither adds a bank, so neither is
+      // ever limited, even over the limit or on a read that failed.
       const bankLimit = await bankLimitFor(getAdminClient(), user_id);
-      if (bankLimit && bankLimit.unavailable) return statusUnavailable(CORS);
-      if (bankLimit && !bankLimit.allowed) return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
       // Plus lifts the free plan's one-bank cap too: Plus is unlimited, within its fair-use limit, on any plan.
@@ -201,6 +201,24 @@ exports.handler = async (event) => {
       const item_id = data.item_id;
 
       const admin = getAdminClient();
+      if (bankLimit) {
+        // A NEW bank only: not one of this person's items, and not a bank (by institution) they already hold.
+        let addsABank = true;
+        try {
+          const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id, institution_id, institution_name").eq("user_id", user_id);
+          if (mineErr) throw new Error(mineErr.code || "error");
+          const key = (r) => String((r && r.institution_id) || "").trim().toLowerCase() || String((r && r.institution_name) || "").trim().toLowerCase();
+          const newKey = key({ institution_id, institution_name });
+          addsABank = !(mine || []).some((r) => r.item_id === item_id || (newKey && key(r) === newKey));
+        } catch { addsABank = true; }
+        if (addsABank && (bankLimit.unavailable || !bankLimit.allowed)) {
+          // Refused: the item Plaid just made is removed, so nothing is left connected or billed.
+          try { await plaid("/item/remove", { access_token }); }
+          catch (rmErr) { console.warn("[exchange_token limit /item/remove failed]", rmErr.message); }
+          if (bankLimit.unavailable) return statusUnavailable(CORS);
+          return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
+        }
+      }
       const { error: upsertErr } = await admin
         .from("plaid_items")
         .upsert({
@@ -783,7 +801,8 @@ exports.handler = async (event) => {
           return stop("billing_cancel"); // nothing deleted yet
         }
         for (const r of (Array.isArray(plusRows) ? plusRows : [])) {
-          if (r && r.provider === "stripe" && r.provider_customer_id && !customers.includes(r.provider_customer_id)) customers.push(r.provider_customer_id);
+          // Any row's Stripe customer, a store row's included: a website Plus subscription can outlive a store purchase.
+          if (r && r.provider_customer_id && !customers.includes(r.provider_customer_id)) customers.push(r.provider_customer_id);
         }
       }
       for (const cus of customers) {

@@ -114,6 +114,21 @@ Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the
    - first run 0044.
    - The webhook endpoint needs no new event.
 
+## The review round (2026-11-10)
+**Fixed:**
+- **HIGH: a reconnect was refused at the limit.** Plaid's update mode sends a reconnect back through `exchange_token`. The limit now applies only after the exchange, and only to an item that adds a bank: not this person's own, and not a bank they already hold. A refused new item is removed at Plaid.
+- **The store's Plus row erased the Stripe customer.** That would have let a website Plus charge outlive account deletion. The customer is now kept, and `delete_account` cancels through any row's customer.
+- **A main-plan subscription is never routed to Plus**, even when a Plus price is set to an old main price.
+- **The model no longer drops an account type it doesn't know**, and a card in credit stays positive.
+- **The demo's figures can no longer start a real household's line.** No snapshot is taken in demo, and leaving the demo clears the history.
+
+**Left, and written down:**
+- Give the Plus portal its own Stripe portal configuration, with plan switching off. Check the dashboard: today both portals use the default.
+- Two exchanges at the same moment can both pass the count. The extra bank is kept, nothing breaks.
+- Run 0044 before turning `PLUS_ENABLED` on. Otherwise every RevenueCat delivery fails (500) on the Plus sync.
+- Today's card still totals only the household's own currency and still includes an unanswered pair. Both are unchanged from today.
+- With `CREATORS_ENABLED` on, a Plus invoice would earn a creator commission (`_lib/creators.js` finds the payer by the invoice's metadata). That is Amanda's decision.
+
 ## Not built, on purpose
 - The Plus purchase screens and the Plus net worth screen (item 4).
 - The entry form for a home, a car or a pension.

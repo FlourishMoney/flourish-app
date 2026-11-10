@@ -124,9 +124,13 @@ function stripePricesOf(sub) {
 // Is this webhook object the add-on's? A checkout we made for Plus says so in its metadata (only the server sets
 // Stripe metadata); a subscription says so by its price, or its metadata. Either way it never reaches the main
 // plan's handling, whether or not it turns out to be a real Plus price.
+const MAIN_PLAN_KEYS = Object.freeze(Object.keys(MAIN_PRICE_ENV));
 function isPlusStripeObject(object, env = process.env) {
   if (!object) return false;
   if (object.metadata && object.metadata.kind === "plus_addon") return true;
+  // A main-plan subscription (our checkout tagged it with a main plan key) is never routed to Plus, even if a Plus
+  // price was set to an old main price that still has subscribers (review 2026-11-10).
+  if (object.metadata && MAIN_PLAN_KEYS.includes(object.metadata.plan_key)) return false;
   return stripePricesOf(object).some((p) => plusPriceIds(env).has(p));
 }
 // A Stripe subscription -> the add-on's row, or null when it is not a Plus price (never granted on metadata alone).
@@ -192,8 +196,10 @@ function plusFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = fals
         plan_key: PLUS_PRODUCTS[productKey],
         status: "active",
         product_id: productKey,
+        // The subscription id is cleared, so a website Plus subscription that recovers later is a conflict, never a
+        // write over this row. The Stripe customer is NOT in the row: the upsert keeps any the buyer already has, so
+        // delete_account can still cancel a website Plus charge and the portal can still reach it (review 2026-11-10).
         provider_subscription_id: null,
-        provider_customer_id: null,
         current_period_end: new Date(expires).toISOString(),
         cancel_at_period_end: !!sub.unsubscribe_detected_at,
         updated_at: new Date(t).toISOString(),

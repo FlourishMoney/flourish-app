@@ -28,7 +28,7 @@ const future = new Date(Date.now() + 20 * 86400000).toISOString();
 
 function makeDb({ items = {}, partner = false, plus = null, failPlus = false, failItems = false } = {}) {
   const state = { rows: { plaid_items: [], household_members: [], plus_addon_subscriptions: [], subscriptions: [], profiles: [] }, writes: [] };
-  for (const [user, list] of Object.entries(items)) for (const [i, st] of list.entries()) state.rows.plaid_items.push({ user_id: user, item_id: `${user.slice(0, 1)}-item-${i}`, status: st, access_token: "access-sandbox-x" });
+  for (const [user, list] of Object.entries(items)) for (const [i, st] of list.entries()) state.rows.plaid_items.push({ user_id: user, item_id: `${user.slice(0, 1)}-item-${i}`, status: st, access_token: "access-sandbox-x", institution_id: `ins_${i}`, institution_name: `Bank ${i}` });
   if (partner) state.rows.household_members.push({ user_id: A, household_id: "h1", role: "owner" }, { user_id: B, household_id: "h1", role: "partner" });
   if (plus) state.rows.plus_addon_subscriptions.push({ user_id: plus, provider: "stripe", plan_key: "plus_monthly", status: "active", product_id: "price_pm", current_period_end: future });
   const from = (table) => {
@@ -62,10 +62,11 @@ function load(db, user) {
   const quiet = { e: console.error, w: console.warn }; console.error = () => {}; console.warn = () => {};
   const realFetch = global.fetch;
   const plaidCalls = [];
+  let nextItem = "item-new";
   global.fetch = async (url) => {
     plaidCalls.push(String(url).replace(/^https:\/\/[^/]+/, ""));
     if (/link\/token\/create/.test(url)) return { ok: true, status: 200, json: async () => ({ link_token: "link-sandbox-x" }) };
-    if (/public_token\/exchange/.test(url)) return { ok: true, status: 200, json: async () => ({ access_token: "access-sandbox-new", item_id: "item-new" }) };
+    if (/public_token\/exchange/.test(url)) return { ok: true, status: 200, json: async () => ({ access_token: "access-sandbox-new", item_id: nextItem }) };
     return { ok: true, status: 200, json: async () => ({ accounts: [], item: { item_id: "item-new" } }) };
   };
   for (const k of Object.keys(process.env)) if (/^PLUS_ENABLED$|^HOUSEHOLD_ENABLED$|^ENFORCE_PLAN_LIMITS$|^STRIPE_PRICE_/.test(k)) delete process.env[k];
@@ -135,16 +136,34 @@ function load(db, user) {
       const re = await call(plaid, { action: "create_link_token", country: "CA", item_id: "a-item-0" });
       t.eq([re.status, plaidCalls.some((u) => /link\/token\/create/.test(u))], [200, true], "5b a reconnect of a bank already held is never limited");
       plaidCalls.length = 0;
-      const ex = await call(plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank" });
-      t.eq([ex.status, ex.body && ex.body.error, plaidCalls.length, db.state.writes.filter(([tb]) => tb === "plaid_items").length], [402, "bank_limit", 0, 0], "5c exchange checks again: refused, Plaid not asked, nothing written");
+      const ex = await call(plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "New Bank", institution_id: "ins_new" });
+      t.eq([ex.status, ex.body && ex.body.error, plaidCalls.filter((u) => /item\/remove/.test(u)).length, db.state.writes.filter(([tb]) => tb === "plaid_items").length], [402, "bank_limit", 1, 0],
+        "5c exchange checks again: a new bank past the limit is refused, the item Plaid just made is removed, nothing written");
+      // Review 2026-11-10 (HIGH): a reconnect comes back through exchange_token with the SAME item. Never limited.
+      nextItem = "a-item-0"; plaidCalls.length = 0;
+      const rc = await call(load(db, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank 0", institution_id: "ins_0" });
+      t.eq([rc.status !== 402 && rc.status !== 503, plaidCalls.filter((u) => /item\/remove/.test(u)).length], [true, 0], "5c2 at 2 of 2, reconnecting a bank already held (update mode, same item) goes through and nothing is removed");
+      nextItem = "item-relink"; plaidCalls.length = 0;
+      const rl = await call(load(db, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank 1", institution_id: "ins_1" });
+      t.ok(rl.status !== 402 && rl.status !== 503, "5c3 …and so does re-linking a bank this person already holds (the dedupe keeps one row): it adds no bank");
+      const over = makeDb({ items: { [A]: ["active", "active", "active", "active"] } });
+      nextItem = "a-item-2";
+      const ro = await call(load(over, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank 2", institution_id: "ins_2" });
+      t.ok(ro.status !== 402 && ro.status !== 503, "5c4 a household over its plan (4 held) can still reconnect each of them");
+      nextItem = "item-new";
       const room = makeDb({ items: { [A]: ["active"] } });
       const ok = await call(load(room, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank" });
       t.ok(ok.status !== 402 && room.state.writes.some(([tb]) => tb === "plaid_items"), "5d with room, the bank is exchanged and saved as before");
       const failing = makeDb({ items: { [A]: ["active"] }, failPlus: true });
       plaidCalls.length = 0;
       const f = await call(load(failing, A).plaid, { action: "create_link_token", country: "CA" });
-      const fx = await call(load(failing, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x" });
-      t.eq([f.status, fx.status, plaidCalls.length, failing.state.writes], [503, 503, 0, []], "5e the plan read fails: the new bank waits (503, a plain line), never a guessed count, and nothing is touched");
+      const fx = await call(load(failing, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_id: "ins_new" });
+      t.eq([f.status, fx.status, plaidCalls.filter((u) => /link\/token|item\/get/.test(u)).length, plaidCalls.filter((u) => /item\/remove/.test(u)).length, failing.state.writes], [503, 503, 0, 1, []],
+        "5e the plan read fails: the new bank waits (503, a plain line, its new item removed), never a guessed count, and nothing is written");
+      nextItem = "a-item-0";
+      const fr = await call(load(failing, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_id: "ins_0" });
+      t.ok(fr.status !== 503 && fr.status !== 402, "5e2 …but a reconnect of a bank already held still goes through on a plan read that failed");
+      nextItem = "item-new";
       const itemsFail = makeDb({ failItems: true });
       t.eq((await call(load(itemsFail, A).plaid, { action: "create_link_token", country: "CA" })).status, 503, "5f the bank count read fails: the same");
       delete process.env.PLUS_ENABLED;

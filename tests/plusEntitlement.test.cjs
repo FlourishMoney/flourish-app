@@ -312,6 +312,22 @@ function loadWith(db, sm, user = U) {
       t.eq(db2.state.rows.subscriptions, [], "8e …and the store's Plus never wrote the main plan's row");
       await B.plus.syncPlusFromStore(db2.admin, U, { fetchSubscriber: async () => ({ entitlements: {}, subscriptions: {} }), env: process.env });
       t.eq(db2.state.rows.plus_addon_subscriptions[0].status, "canceled", "8f the store no longer reports it: the store's Plus ends");
+      // Review 2026-11-10: a store purchase over a website Plus row that is not live (a checkout left open, past_due)
+      // keeps the Stripe customer, so a website Plus that recovers can still be cancelled, and is never written over.
+      const db3 = makeDb();
+      db3.state.rows.plus_addon_subscriptions.push({ user_id: U, provider: "stripe", plan_key: "plus_monthly", status: "past_due", product_id: "price_pm", provider_customer_id: "cus_P", provider_subscription_id: "sub_P", current_period_end: future });
+      const C = loadWith(db3, makeStripe());
+      await C.plus.syncPlusFromStore(db3.admin, U, { fetchSubscriber: async () => sub, env: process.env });
+      const r3 = db3.state.rows.plus_addon_subscriptions[0];
+      t.eq([r3.provider, r3.provider_customer_id, r3.provider_subscription_id], ["app_store", "cus_P", null], "8g the store's row keeps the buyer's Stripe customer, and drops the old subscription id");
+      const sm3 = makeStripe(); sm3.stripe.subs.push(plusSub("sub_P"));
+      const D = loadWith(db3, sm3);
+      clock = now + 60;   // a Stripe event after the store sync, so it is not merely stale
+      const back = await send(D.hook, "customer.subscription.updated", plusSub("sub_P"));
+      t.eq([JSON.parse(back.body).conflict, db3.state.rows.plus_addon_subscriptions[0].provider], [true, "app_store"], "8h the website subscription recovering is a conflict for support, never a write over the store's Plus");
+      await D.plaid.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" }, body: JSON.stringify({ action: "delete_account" }) });
+      t.ok(sm3.log.includes("DELETE /subscriptions/sub_P"), "8i …and deleting the account still cancels it, through the customer kept on the store's row");
+      t.eq(require(PLUS_PATH).isPlusStripeObject({ metadata: { plan_key: "monthly", user_id: U }, items: { data: [{ price: { id: "price_pm" } }] } }), false, "8j a main-plan subscription is never routed to Plus, even on a price set as a Plus price");
     }
 
     // ── 9. Deleting the account cancels a live Plus subscription ────────────────────────────────────

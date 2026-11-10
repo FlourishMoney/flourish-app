@@ -5827,7 +5827,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   const [creditDraft, setCreditDraft] = useState("");
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   useEffect(()=>{
-    if(data.bankConnected) {
+    // Never the demo's sample figures: they would become the first point of a real household's line (review 2026-11-10).
+    if(data.bankConnected && !data.demo) {
       const { netWorth: nw } = FinancialCalcEngine.netWorth(data);
       const h = snapshotNetWorth(nw);
       setNwHistory(h);
@@ -19596,7 +19597,7 @@ input,button,select,textarea { font-family:inherit; }
   ) : null;
   // Sprint Z #15: leaving demo mode → clear the local sample data and return to onboarding, where
   // the user can connect a real bank or set up real data. Demo data never synced to the DB.
-  const exitDemo = () => { try { clearState(); } catch {} setAppData(null); setOnboarded(false); };
+  const exitDemo = () => { try { clearState(); } catch {} try { localStorage.removeItem("flourish_nw_history"); } catch {} setAppData(null); setOnboarded(false); };
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (

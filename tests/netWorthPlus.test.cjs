@@ -65,6 +65,10 @@ const REPO = path.join(__dirname, "..");
     t.eq(r.parts.map((p) => [p.kind, p.cents]), [["cash", 100000], ["credit", -30000], ["loan", -25000000], ["debt", -400000]], "4a the linked card and the mortgage as the bank gives them, and a debt the household entered; the card's synced debt row is the card, not a second debt");
     const twice = N.householdNetWorth({ profile: CA, accounts: [card()], debts: [{ id: "d1", name: "Visa 1111", balance: 300 }] });
     t.eq([twice.complete, twice.totals, twice.problems], [false, null, ["may_count_twice"]], "4b a debt that may be the linked card, not yet answered: no total until the household says");
+    const credit = N.householdNetWorth({ profile: CA, accounts: [card({ balance: -25 })] });
+    t.eq(credit.totals[0].netCents, 2500, "4c2 a card in credit (the bank's negative balance) is money the household is owed, not a debt");
+    const other = N.householdNetWorth({ profile: CA, accounts: [chq(), { id: "o", name: "Something", type: "other", balance: 10, currency: "CAD" }] });
+    t.eq([other.complete, other.totals, other.problems], [false, null, ["kind_not_stated"]], "4c3 an account of a type not listed is never dropped quietly: no total without it");
     const noCountry = N.householdNetWorth({ profile: {}, debts: [{ id: "d1", name: "Loan", balance: 10 }] });
     t.eq(noCountry.problems, ["currency_not_stated"], "4c a typed debt takes the household's currency only when the profile states it");
   }
