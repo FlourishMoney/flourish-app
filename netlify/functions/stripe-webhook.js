@@ -29,8 +29,7 @@ const { takeSeat, releaseSeat, releaseTrialSeat } = require("./_lib/foundingSeat
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
 const { trialPlanFirstSince } = require("./_lib/planRules");
-const { sendTrialReminder, moneyLabel } = require("./_lib/trialReminder");
-const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: the trial's subscription, and the first invoice's preview
+const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -187,11 +186,9 @@ exports.handler = async (event) => {
   // TRIAL_PLAN_FIRST: a Stripe trial starts as "trialing" with its end date on customer.subscription.created, which
   // nothing else reports until the trial ends. Heard only while the switch is on; off, ignored as before.
   const trialCreated = evt.type === "customer.subscription.created" && trialPlanFirstSince() !== null;
-  // ...and its reminder (item 3): Stripe sends trial_will_end 3 days before the trial ends (its default). Heard with the
-  // switch on or off (review round, M4): a trial already running when the switch goes off still gets its reminder.
-  // Today no trial exists and the endpoint is not sent this event, so nothing changes.
-  const trialWillEnd = evt.type === "customer.subscription.trial_will_end";
-  if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute && !trialCreated && !trialWillEnd) {
+  // A website trial's reminder is Stripe's own (Amanda, 2026-11-10: the card networks require one before a trial
+  // converts): customer.subscription.trial_will_end is not handled here, and we send none for it.
+  if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute && !trialCreated) {
     await admin.from("billing_events")
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
     return reply(200, { received: true, ignored: true });
@@ -355,29 +352,6 @@ exports.handler = async (event) => {
       }
       // THE CREATOR PROGRAM: a clawback of the commission on that one payment, partial refunds included.
       if (creatorsEnabled()) creatorNotes = await clawbackStripeCharge(admin, object);
-    }
-
-    // TRIAL_PLAN_FIRST, ITEM 3: the website's reminder, once per trial (_lib/trialReminder.js). Not for a trial already
-    // cancelled, or one no longer trialing. The amount is Stripe's own preview of the first invoice (tax included); if
-    // Stripe cannot preview it, the plan's price, "plus tax". A send that failed is a 5xx, so Stripe retries it.
-    if (trialWillEnd) {
-      const sub = object;
-      const user_id = userIdFrom(sub) || (await subscriptionRowFor("provider_subscription_id", sub.id))?.user_id || null;
-      const endMs = Number(sub.trial_end) * 1000;
-      if (user_id && sub.status === "trialing" && !sub.cancel_at_period_end && !sub.cancel_at && Number.isFinite(endMs)) {
-        let amount = null;
-        try {
-          const preview = await stripeApi.stripePost("/invoices/create_preview", { subscription: sub.id });
-          amount = moneyLabel(preview && preview.total, preview && preview.currency);
-        } catch { /* below */ }
-        if (!amount) {
-          const price = sub.items?.data?.[0]?.price;
-          const base = moneyLabel(price && price.unit_amount, price && price.currency);
-          amount = base ? `${base} plus tax` : null;
-        }
-        const r = await sendTrialReminder(admin, { provider: "stripe", ref: sub.id, userId: user_id, trialEndMs: endMs, platform: "web", amount });
-        if (r.reason === "send_failed" || r.reason === "read_failed" || r.reason === "in_progress") throw new Error(`trial reminder: ${r.reason}`);
-      }
     }
 
     // THE CREATOR PROGRAM: a payment, the first or a renewal. Changes nothing about the household's plan.

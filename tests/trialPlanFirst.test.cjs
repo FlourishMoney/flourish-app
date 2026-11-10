@@ -285,7 +285,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const doc = fs.readFileSync(path.join(REPO, "docs", "ops", "TRIAL-PLAN-FIRST-CONSOLES.md"), "utf8");
     t.ok(["app.flourishmoney.plus.monthly", "app.flourishmoney.plus.annual", "app.flourishmoney.founding.annual", "`flourish_plus`", "`monthly`, `annual`, `founding`"].every((x) => doc.includes(x)), "7a every main-plan product, founding included, in both stores");
     t.ok(/Type: \*\*Free\*\*\. Duration: \*\*2 Weeks\*\*/.test(doc) && /Free trial\*\*, Duration \*\*2 weeks\*\*/.test(doc), "7b 14 days free on both: Apple's Free 2 Weeks, Play's free-trial phase of 2 weeks");
-    t.ok(/customer\.subscription\.created/.test(doc) && /customer\.subscription\.trial_will_end/.test(doc) && /TRIAL_PLAN_FIRST_SINCE/.test(doc), "7c the Stripe events the server now hears, and the two Netlify settings");
+    t.ok(/Add one event:\n   - `customer\.subscription\.created`/.test(doc) && /leave Stripe's trial reminder ON/.test(doc) && /TRIAL_PLAN_FIRST_SINCE/.test(doc), "7c the one Stripe event the server now hears, Stripe's own trial reminder left on, and the two Netlify settings");
     t.ok((doc.match(/\*\*Cannot be changed later:\*\*/g) || []).length >= 2 && /\*\*Permanent once created\.\*\*/.test(doc), "7d which fields cannot be changed later");
     t.ok(/Prices stay exactly as they are/.test(doc) && /## Order on the day/.test(doc), "7e prices unchanged, and the order on the day");
   }

@@ -48,7 +48,7 @@ Prices stay exactly as they are. Nothing here has been done; no console was open
 1. **Netlify:** unset `TRIAL_PLAN_FIRST`. New accounts get the no-card account trial again.
 2. **Same day:** end the store offers (App Store Connect: set the introductory offer's end date to today; Play Console: deactivate each `free-14-*` offer).
 3. **What keeps going:**
-   - The reminders for trials already running: the sweep and `trial_will_end` run with the switch off.
+   - The reminders for trials already running: our sweep (Apple and Google trials) runs with the switch off, and Stripe sends its own for website trials.
    - Those trials are charged on their day 14 as agreed.
 
 ## App Store Connect
@@ -103,18 +103,17 @@ Project "Flourish".
 - The webhook "Flourish server" already sends all events. Trials arrive as INITIAL_PURCHASE with period type TRIAL, and the server writes them as `trialing`.
 
 ## Stripe (live mode; the same in test mode for testing)
-1. **Developers > Webhooks > the production endpoint.** Add two events:
-   - `customer.subscription.created` (a trial's start and end date);
-   - `customer.subscription.trial_will_end` (the reminder).
-   
-   Keep every event it has.
-2. **Settings > Billing > Subscriptions and emails > Trial ending events:**
-   - Leave it at **3 days before**, Stripe's default.
-   - The reminder email follows it.
-3. **Settings > Billing > Subscriptions and emails > Manage free trial messaging:**
-   - Stripe can send its own reminder **7 days** before a trial ends.
-   - If it's on, a website household gets two reminders, against "never more than one". Turn Stripe's off.
-   - Stripe's page also says "You must comply with card network requirements when offering trials." Have whoever reviews the words confirm that one email 3 days before meets the card networks' rule for a 14-day trial. If a network requires 7 days, keep Stripe's and say so: the rule then needs changing.
+1. **Developers > Webhooks > the production endpoint.** Add one event:
+   - `customer.subscription.created` (a trial's start and end date).
+
+   Keep every event it has. `customer.subscription.trial_will_end` is **not** needed: the server sends no reminder for a website trial.
+2. **Settings > Billing > Subscriptions and emails > Manage free trial messaging: leave Stripe's trial reminder ON** (Amanda, 2026-11-10).
+   - Stripe sends it 7 days before a trial ends; for a 14-day trial that's day 7.
+   - It's the only reminder a website household gets: our own reminder email goes only to Apple and Google trials, 3 days before the first charge.
+   - Why: the card networks require a reminder before a trial converts. Stripe's page: "You must comply with card network requirements when offering trials."
+   - Check its branding and support address under Settings > Branding and Settings > Public details, since the email carries them.
+   - Stripe sends no reminder in a sandbox, so test mode won't show it.
+3. **Settings > Billing > Subscriptions and emails > Trial ending events:** leave it as it is. Nothing of ours reads it.
 4. **Settings > Billing > Customer portal:** cancelling must stay allowed (it is today). A trial cancelled in the portal is never charged.
 5. **Products and prices: no change.**
    - Checkout sends `trial_period_days: 14` and `payment_method_collection: always` itself, only for an account that never had a subscription.

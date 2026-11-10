@@ -15,7 +15,6 @@ const TRIAL_EMAIL_WORDS = Object.freeze({
   "trialfirst-email-keep": "[WORDS: trialfirst-email-keep]",
   "trialfirst-email-cancel-ios": "[WORDS: trialfirst-email-cancel-ios]",
   "trialfirst-email-cancel-android": "[WORDS: trialfirst-email-cancel-android]",
-  "trialfirst-email-cancel-web": "[WORDS: trialfirst-email-cancel-web]",
   "trialfirst-email-why": "[WORDS: trialfirst-email-why]",
   "trialfirst-email-unsubscribed": "[WORDS: trialfirst-email-unsubscribed]",
   "trialfirst-email-link-bad": "[WORDS: trialfirst-email-link-bad]",

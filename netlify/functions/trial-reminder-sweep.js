@@ -3,7 +3,7 @@
 // TRIAL_PLAN_FIRST, ITEM 3, THE STORES: the reminder 3 days before the first charge for a trial bought on an iPhone or
 // with Google Play. RevenueCat reports the trial's end (our subscriptions row: status "trialing", current_period_end),
 // and this sends each trial's one reminder in its window (_lib/trialReminder.js reminderDue): never for a trial already
-// cancelled (cancel_at_period_end), never twice. The website's comes from Stripe's trial_will_end (stripe-webhook.js).
+// cancelled (cancel_at_period_end), never twice. A website trial gets Stripe's own reminder (7 days before), never ours.
 // Runs with the switch on or off (review round, M4): a store trial already running when the switch goes off still gets
 // its reminder. With no store trial anywhere (today) it reads one empty list and sends nothing.
 // Stops starting sends at 20 seconds (Netlify stops it at 30).

@@ -1,10 +1,11 @@
 // netlify/functions/_lib/trialReminder.js
 // -----------------------------------------------------------------------------
-// TRIAL_PLAN_FIRST, ITEM 3: ONE REMINDER, 3 DAYS BEFORE THE FIRST CHARGE, ON EVERY PLATFORM (Amanda, 2026-11-10).
-//   website   from Stripe's customer.subscription.trial_will_end (3 days before the trial ends, Stripe's default),
-//             stripe-webhook.js; the amount is Stripe's own preview of the first invoice, tax included
+// TRIAL_PLAN_FIRST, ITEM 3: ONE REMINDER, 3 DAYS BEFORE THE FIRST CHARGE, FOR APPLE AND GOOGLE TRIALS (Amanda, 2026-11-10).
 //   stores    from the trial end RevenueCat reports (our subscriptions row, status "trialing"), swept every hour
 //             (trial-reminder-sweep.js); the amount is the plan's price, the same as pricing.js
+//   website   NONE FROM US. Stripe's own trial reminder (sent 7 days before a trial ends) stays on, because the card
+//             networks require a reminder before a trial converts (docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md). A Stripe
+//             trial is never sent ours: this file refuses the provider and the platform.
 // Sender hello@flourishmoney.app, the mailing address in the footer, and a one-click unsubscribe (RFC 8058 headers).
 // It says the date and amount of the first charge and exactly how to cancel on that platform.
 //
@@ -62,12 +63,13 @@ function reminderDates(platform, trialEndMs) {
   return { charge: reminderDateLabel(platform === "ios" ? dayBefore : trialEndMs), cancelBy: reminderDateLabel(dayBefore) };
 }
 
-/** The email, or null when it cannot carry a working unsubscribe link. platform: "ios" | "android" | "web". */
+/** The email, or null when it cannot carry a working unsubscribe link, or for anything but "ios" | "android". */
 function reminderEmail({ to, userId, platform, trialEndMs, amount }) {
+  if (platform !== "ios" && platform !== "android") return null;   // a website trial: Stripe's own reminder
   const unsub = reminderUnsubscribeLink(userId);
   if (!unsub || !to || !amount) return null;
   const { charge: date, cancelBy } = reminderDates(platform, trialEndMs);
-  const cancel = platform === "ios" ? "trialfirst-email-cancel-ios" : platform === "android" ? "trialfirst-email-cancel-android" : "trialfirst-email-cancel-web";
+  const cancel = platform === "ios" ? "trialfirst-email-cancel-ios" : "trialfirst-email-cancel-android";
   const subject = trialEmailWords("trialfirst-email-subject", { date });
   const paragraphs = [
     trialEmailWords("trialfirst-email-lead", { date }),
@@ -112,6 +114,7 @@ async function claimReminder(admin, { provider, ref, userId, trialEndMs, now }) 
  * send_failed leaves the claim unsent, so a retry (Stripe's, or the next sweep) can send it after 15 minutes.
  */
 async function sendTrialReminder(admin, { provider, ref, userId, trialEndMs, platform, amount, now = Date.now(), send = sendEmail }) {
+  if (provider !== "app_store" && provider !== "play_store") return { sent: false, reason: "not_a_store_trial" };   // Stripe sends its own
   if (!UUID.test(String(userId)) || !ref) return { sent: false, reason: "no_account" };
   const { data: out, error: outErr } = await admin.from("trial_reminder_optouts").select("user_id").eq("user_id", userId).maybeSingle();
   if (outErr) return { sent: false, reason: "read_failed" };
@@ -139,11 +142,5 @@ async function sendTrialReminder(admin, { provider, ref, userId, trialEndMs, pla
   return { sent: true, reason: null };
 }
 
-/** "$13.55 CAD" from Stripe's cents and currency, or null. */
-function moneyLabel(cents, currency) {
-  if (!Number.isInteger(cents) || cents <= 0 || !currency) return null;
-  return `$${(cents / 100).toFixed(2)} ${String(currency).toUpperCase()}`;
-}
-
 module.exports = { REMINDER_DAYS_BEFORE, STORE_PRICES, RECLAIM_MS, reminderDue, reminderUnsubscribeLink, checkReminderUnsubscribe, reminderDateLabel, reminderDates,
-  reminderEmail, claimReminder, sendTrialReminder, moneyLabel };
+  reminderEmail, claimReminder, sendTrialReminder };

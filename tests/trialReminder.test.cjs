@@ -1,12 +1,13 @@
 // tests/trialReminder.test.cjs
 // -----------------------------------------------------------------------------
-// TRIAL_PLAN_FIRST, ITEM 3: one reminder, 3 days before the first charge, on every platform.
+// TRIAL_PLAN_FIRST, ITEM 3: one reminder, 3 days before the first charge, for Apple and Google trials. A website trial
+// gets Stripe's own reminder (7 days before, kept on: the card networks require one), never ours (Amanda, 2026-11-10).
 //   4a-4c  the window and the email: sender, mailing address, one-click unsubscribe, the date and the amount, how to
 //          cancel on that platform; nothing sent while a line is a placeholder
 //   4d-4h  never more than one per trial: a second call, two at once, a send that stopped, a send that failed
 //   4i-4k  the unsubscribe link: signed, one click (GET and RFC 8058 POST), and then no reminder
-//   4l-4q  the website, from Stripe's trial_will_end: Stripe's own amount, the trial's end, never for a cancelled trial,
-//          and nothing with the switch off
+//   4l-4q  the website: no reminder from us, ever (trial_will_end ignored, with the switch on or off; a Stripe trial is
+//          refused by the sender itself; no web email can be built)
 //   4r-4w  the stores, from the hourly sweep: in its window only, iPhone and Android lines, the plan's price, once
 // Synthetic data only. The words are swapped for stand-in lines (as approved lines would be) only where a test needs
 // an email that sends; with the real, still-placeholder lines nothing is ever sent (4c).
@@ -40,7 +41,6 @@ const STAND_IN = {
   "trialfirst-email-keep": "Nothing to do to keep your plan.",
   "trialfirst-email-cancel-ios": "To cancel on iPhone before {date}: Settings > your name > Subscriptions > flourish.",
   "trialfirst-email-cancel-android": "To cancel on Android before {date}: Google Play > Payments & subscriptions > Subscriptions > flourish.",
-  "trialfirst-email-cancel-web": "To cancel on the website before {date}: Settings > Manage subscription.",
   "trialfirst-email-why": "You started a free trial. This is the only reminder.",
   "trialfirst-email-unsubscribed": "No more trial reminders.",
   "trialfirst-email-link-bad": "This link doesn't work.",
@@ -94,15 +94,14 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
         "4b4 …it says the date and amount of the first charge (an iPhone: a day early) and the day to cancel by");
       t.ok(e.text.includes("Settings > your name > Subscriptions") && !e.text.includes("Google Play") && !e.text.includes("Manage subscription"), "4b5 …and how to cancel on an iPhone, only");
       const a = L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "android", trialEndMs: END, amount: "$99.99 CAD" });
-      const w = L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "web", trialEndMs: END, amount: "$13.55 CAD" });
-      t.ok(a.text.includes("Google Play > Payments & subscriptions") && w.text.includes("Settings > Manage subscription"), "4b6 …Android's way and the website's way");
+      t.ok(a.text.includes("Google Play > Payments & subscriptions") && !a.text.includes("Settings > your name"), "4b6 …and Android's way, only");
       t.ok(e.html.includes("PO Box 29, Foxboro ON K0K 2B0") && e.html.includes("November 26, 2026"), "4b7 the HTML part says the same");
-      t.ok(w.text.includes("On November 27, 2026 you'll be charged $13.55 CAD.") && w.text.includes("before November 26, 2026"), "4b8 the website: charged on day 14 itself, cancel by the day before");
+      t.ok(a.text.includes("On November 27, 2026 you'll be charged $99.99 CAD.") && a.text.includes("before November 26, 2026"), "4b8 Android: charged on day 14 itself, cancel by the day before");
       t.eq(L.reminderDateLabel(Date.parse("2026-11-27T06:30:00Z")), "November 26, 2026", "4b9 Pacific time: 06:30 UTC on the 27th is still the 26th in British Columbia");
 
       const P = loadLib(false);
       const { sent, send } = outbox(); const S = state();
-      const r = await P.sendTrialReminder(fakeAdmin(S), { provider: "stripe", ref: "sub_1", userId: U1, trialEndMs: END, platform: "web", amount: "$13.55 CAD", now: END - 3 * DAY, send });
+      const r = await P.sendTrialReminder(fakeAdmin(S), { provider: "app_store", ref: "u1:monthly", userId: U1, trialEndMs: END, platform: "ios", amount: "$11.99 CAD", now: END - 3 * DAY, send });
       t.eq([r.reason, sent.length, S.trial_reminders.length], ["words_pending", 0, 0], "4c with the real lines still placeholders: nothing is sent, and nothing is claimed");
     }
 
@@ -110,17 +109,17 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
     {
       const L = loadLib();
       const S = state(); const admin = fakeAdmin(S); const { sent, send } = outbox();
-      const args = { provider: "stripe", ref: "sub_1", userId: U1, trialEndMs: END, platform: "web", amount: "$13.55 CAD", now: END - 3 * DAY, send };
+      const args = { provider: "app_store", ref: "u1:monthly", userId: U1, trialEndMs: END, platform: "ios", amount: "$11.99 CAD", now: END - 3 * DAY, send };
       t.eq((await L.sendTrialReminder(admin, args)).sent, true, "4d the first call sends it");
       t.eq([(await L.sendTrialReminder(admin, args)).reason, (await L.sendTrialReminder(admin, { ...args, now: END - 2 * DAY })).reason, sent.length], ["already_sent", "already_sent", 1], "4e a second call, and a later one, send nothing more");
-      t.eq(sent[0].key, "trial-reminder/stripe/sub_1", "4e2 …and Resend is given one key per trial, so a retry is never a second email");
+      t.eq(sent[0].key, "trial-reminder/app_store/u1:monthly", "4e2 …and Resend is given one key per trial, so a retry is never a second email");
       // two at once
       const S2 = state(); const a2 = fakeAdmin(S2); const o2 = outbox();
       const slow = async (p, k) => { await new Promise((res) => setTimeout(res, 5)); return o2.send(p, k); };
       const both = await Promise.all([L.sendTrialReminder(a2, { ...args, send: slow }), L.sendTrialReminder(a2, { ...args, send: slow })]);
       t.eq([both.filter((x) => x.sent).length, o2.sent.length], [1, 1], "4f two at the same moment: one email");
       // a send that stopped (claimed, never sent): taken over after 15 minutes, never sooner
-      const S3 = state(); S3.trial_reminders.push({ provider: "stripe", subscription_ref: "sub_1", user_id: U1, trial_end: new Date(END).toISOString(), claimed_at: new Date(END - 3 * DAY).toISOString(), sent_at: null });
+      const S3 = state(); S3.trial_reminders.push({ provider: "app_store", subscription_ref: "u1:monthly", user_id: U1, trial_end: new Date(END).toISOString(), claimed_at: new Date(END - 3 * DAY).toISOString(), sent_at: null });
       const a3 = fakeAdmin(S3); const o3 = outbox();
       t.eq((await L.sendTrialReminder(a3, { ...args, now: END - 3 * DAY + 10 * 60000, send: o3.send })).reason, "in_progress", "4g a claim under 15 minutes old is left alone");
       t.eq([(await L.sendTrialReminder(a3, { ...args, now: END - 3 * DAY + 16 * 60000, send: o3.send })).sent, o3.sent.length], [true, 1], "4g2 …and one older than that is taken over, once");
@@ -147,18 +146,18 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       r = await route({ httpMethod: "POST", queryStringParameters: q, body: "List-Unsubscribe=One-Click" }, { admin: () => admin });
       t.eq([r.statusCode, S.trial_reminder_optouts.map((x) => x.user_id)], [200, [U1]], "4j one click (the mail app's POST) unsubscribes that account");
       const { sent, send } = outbox();
-      const res = await L.sendTrialReminder(admin, { provider: "stripe", ref: "sub_9", userId: U1, trialEndMs: END, platform: "web", amount: "$13.55 CAD", now: END - 3 * DAY, send });
+      const res = await L.sendTrialReminder(admin, { provider: "play_store", ref: "u1:annual", userId: U1, trialEndMs: END, platform: "android", amount: "$99.99 CAD", now: END - 3 * DAY, send });
       t.eq([res.reason, sent.length], ["unsubscribed", 0], "4k …and then no reminder is sent to it");
     }
 
-    // ── 4l-4q the website, from Stripe's trial_will_end ────────────────────────────────────────────
+    // ── 4l-4q the website: no reminder from us (Amanda, 2026-11-10: Stripe's own 7-day reminder stays on) ─────────
     {
       const T = Math.floor(END / 1000);
       const sub = (o = {}) => ({ id: "sub_web", customer: "cus_1", status: "trialing", trial_end: T, cancel_at_period_end: false, cancel_at: null,
         metadata: { user_id: U1, plan_key: "monthly" }, items: { data: [{ price: { id: "price_monthly_1199", unit_amount: 1199, currency: "cad" } }] }, ...o });
-      const event = async (S, id, object, { previewFails = false } = {}) => {
+      const event = async (S, id, object) => {
         const calls = [];
-        const stripe = { stripeGet: async () => ({ data: [] }), stripePost: async (p, b) => { calls.push([p, b]); if (previewFails) throw new Error("down"); return { total: 1355, currency: "cad" }; } };
+        const stripe = { stripeGet: async (p) => { calls.push(["GET", p]); return { data: [] }; }, stripePost: async (p, b) => { calls.push(["POST", p, b]); return {}; } };
         const sentBox = [];
         const hook = load(HOOK, fakeAdmin(S), { stripe, send: async (p, k) => { sentBox.push({ p, k }); return true; } });
         const body = JSON.stringify({ id, created: T - 3 * 86400, type: "customer.subscription.trial_will_end", data: { object } });
@@ -168,27 +167,23 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       ON();
       let S = state();
       let r = await event(S, "evt_1", sub());
-      t.eq([r.code, r.sent.length], [200, 1], "4l on: trial_will_end sends the website's reminder");
-      t.ok(r.sent[0].p.text.includes("On November 27, 2026 you'll be charged $13.55 CAD.") && r.sent[0].p.text.includes("Settings > Manage subscription"), "4m …with Stripe's own amount (tax included), the trial's end date, and the website's way to cancel");
-      t.eq(r.calls[0], ["/invoices/create_preview", { subscription: "sub_web" }], "4m2 …the amount is Stripe's preview of that first invoice");
-      r = await event(S, "evt_2", sub());
-      t.eq(r.sent.length, 0, "4n the same trial again (a second event): nothing more");
-      S = state();
-      r = await event(S, "evt_3", sub({ cancel_at_period_end: true }));
-      t.eq([r.code, r.sent.length], [200, 0], "4o a trial already cancelled: no reminder");
-      S = state();
-      r = await event(S, "evt_4", sub(), { previewFails: true });
-      t.ok(r.sent.length === 1 && r.sent[0].p.text.includes("$11.99 CAD plus tax"), "4p Stripe cannot preview it: the plan's price, plus tax");
-      // Review round (M4): a trial already running when the switch goes off still gets its reminder.
+      t.eq([r.code, r.sent.length, S.trial_reminders.length, r.calls.length], [200, 0, 0, 0], "4l a website trial: trial_will_end sends nothing from us, claims nothing, asks Stripe nothing");
       OFF();
       S = state();
-      r = await event(S, "evt_5", sub());
-      t.eq([r.code, r.sent.length], [200, 1], "4q off: a website trial already running still gets its reminder");
-      ON();
-      // Review round (M1): another send under way is a 5xx, so Stripe asks again later and the reminder is not lost.
-      S = state(); S.trial_reminders.push({ provider: "stripe", subscription_ref: "sub_web", user_id: U1, trial_end: new Date(END).toISOString(), claimed_at: new Date(Date.now() - 60000).toISOString(), sent_at: null });
-      r = await event(S, "evt_6", sub());
-      t.eq([r.code, r.sent.length], [500, 0], "4q2 a send already under way: 5xx, so Stripe retries rather than the reminder being dropped");
+      r = await event(S, "evt_2", sub());
+      t.eq([r.code, r.sent.length, S.trial_reminders.length], [200, 0, 0], "4m …with the switch off too");
+      const L = loadLib();
+      const { sent, send } = outbox(); const S2 = state();
+      const direct = await L.sendTrialReminder(fakeAdmin(S2), { provider: "stripe", ref: "sub_web", userId: U1, trialEndMs: END, platform: "web", amount: "$11.99 CAD", now: END - 3 * DAY, send });
+      t.eq([direct.reason, sent.length, S2.trial_reminders.length], ["not_a_store_trial", 0, 0], "4n the sender itself refuses a Stripe trial, before anything is read or claimed");
+      t.eq([L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "web", trialEndMs: END, amount: "$11.99 CAD" }),
+        L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "stripe", trialEndMs: END, amount: "$11.99 CAD" })], [null, null], "4o …and no website reminder email can be built");
+      const W = require("../netlify/functions/_lib/trialWords.js");
+      t.eq(Object.keys(W.TRIAL_EMAIL_WORDS).filter((id) => /web/.test(id)), [], "4p …so there is no website line among the email's words");
+      const hookSrc = fs.readFileSync(path.join(REPO, "netlify", "functions", "stripe-webhook.js"), "utf8").replace(/\/\/[^\n]*/g, "");
+      t.ok(!/trial_will_end|sendTrialReminder|trialReminder/.test(hookSrc), "4q the Stripe webhook has no reminder path at all");
+      const doc = fs.readFileSync(path.join(REPO, "docs", "ops", "TRIAL-PLAN-FIRST-CONSOLES.md"), "utf8");
+      t.ok(/leave Stripe's trial reminder ON/.test(doc) && /`customer\.subscription\.trial_will_end` is \*\*not\*\* needed/.test(doc), "4q2 the console doc says to leave Stripe's own reminder on");
     }
 
     // ── 4r-4w the stores, from the hourly sweep ────────────────────────────────────────────────────
@@ -207,6 +202,7 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       r = await run(S, END - 3 * DAY + 60000);
       t.ok(r.sent.length === 1 && r.sent[0].payload.text.includes("Google Play > Payments") && r.sent[0].payload.text.includes("$79.99 CAD"), "4u Android, founding: Android's way, the founding price");
       S = state(); S.subscriptions.push(row({ cancel_at_period_end: true }), row({ user_id: U2, provider: "stripe" }), row({ user_id: U2, status: "active" }));
+      // (a website row is never swept: Stripe sends that trial's reminder itself)
       r = await run(S, END - 3 * DAY + 60000);
       t.eq(r.sent.length, 0, "4v a cancelled store trial, a website row (Stripe sends that one) and a paid row: none");
       // Review round (M4): with the switch off the sweep still serves store trials already running; with none, it sends nothing.
