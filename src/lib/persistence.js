@@ -102,12 +102,25 @@ export function clearAllUserLocal() {
   } catch {}
 }
 
+// Keys the screens are handed beside appData that must never be saved. The money meeting's records are read
+// from meeting_records each session (lib/meetingMemory.js) and written only by netlify/functions/meeting.js: a copy
+// in user_data, the household blob or this device would be a second, editable source for what a meeting decided.
+// They are never put in appData; this drops them anyway if a future change ever does.
+export const RENDER_ONLY_KEYS = ["meetingRecords"];
+export function withoutRenderOnly(appData) {
+  if (!appData || typeof appData !== "object") return appData;
+  if (!RENDER_ONLY_KEYS.some(k => k in appData)) return appData;
+  const out = { ...appData };
+  for (const k of RENDER_ONLY_KEYS) delete out[k];
+  return out;
+}
+
 // Build the canonical DB blob from React state + localStorage side keys.
 // `nowIso` is injected (callers pass new Date().toISOString()) to keep this function pure.
 export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
   const { onboarded = false, appData = null, household = null, isPremium = false, checkInBonus = 0 } = state || {};
   const slimAppData = appData
-    ? { ...appData, transactions: manualTransactions(appData.transactions, appData.accounts) }
+    ? withoutRenderOnly({ ...appData, transactions: manualTransactions(appData.transactions, appData.accounts) })
     : appData;
   return {
     schemaVersion: PERSIST_SCHEMA_VERSION,

@@ -49,7 +49,8 @@ import { clarityPage, setClarityPage, setClarityAuthForm } from "./lib/webClarit
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
-import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
+import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty, meetOpeningFor, applyMeetingAnswers } from "./lib/meetSnapshot.js";
+import { loadMeetingRecords, saveMeetingRecord, answersFor, withRecord, localDay } from "./lib/meetingMemory.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
@@ -112,7 +113,7 @@ import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportC
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
+import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
 import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
 import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
@@ -10411,7 +10412,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
-function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false }){
+function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false, meetingMemory = null }){
   // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
   // Once per account; never in the demo.
   // Opened by the household, not by the tour's Meet step (2026-10-23): a tour stop is not a meeting opened.
@@ -10423,6 +10424,9 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
   const agenda = useMemo(() => {
     try {
       const full = meetAgendaFor(data);
+      // Meeting memory: when the household's meetings could not be read, their "no" answers are unknown, so no
+      // question is asked (on screen or by the coach) rather than one they already declined being asked again.
+      if (!data.demo && !Array.isArray(data.meetingRecords)) full.questions = [];
       return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : withWeekAhead(full, data);
     } catch {
       // A malformed stored shape must cost the household its agenda, not its app: unguarded, a
@@ -10443,6 +10447,34 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
   // A refused or failed meeting message rules out a store review ask for a while (reviewRules.js).
   useEffect(() => { if (meetError) noteReviewTrouble(); }, [meetError]);
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
+  // Meeting memory (2026-11-08): the meetings are read again each time Meet opens, so one a partner just held shows.
+  // fresh: what was held is dropped first, so until this read answers there is no opening at all (never one from before
+  // a leave or a join, or from the other household).
+  // readThisVisit: Meet's first draw happens before that effect runs, with whatever this phone already held, so the
+  // opening and the questions wait for THIS visit's read to answer as well. Until then: nothing.
+  const [readThisVisit, setReadThisVisit] = useState(false);
+  useEffect(() => {
+    if (data?.demo || !meetingMemory) return;
+    let live = true;
+    Promise.resolve(meetingMemory.reload({ fresh: true })).catch(() => null).then(() => { if (live) setReadThisVisit(true); });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // How this meeting opens: what the last one decided (meetingRecord.js meetingOpening). Only when the meetings were
+  // actually read: a failed read shows nothing, never the first-meeting line.
+  const opening = useMemo(() => {
+    if (data.demo || !readThisVisit || !Array.isArray(data.meetingRecords)) return null;
+    try { return meetOpeningFor(data); } catch { return null; }
+  }, [data, readThisVisit]);
+  const recordsKnown = !data.demo && readThisVisit && Array.isArray(data.meetingRecords) && !!meetingMemory;
+  // The household's Yes or No to each question, by its id (the change's signature). Tapping the chosen one again
+  // clears it: no answer is a real choice too, and it is not recorded.
+  const [choices, setChoices] = useState({});
+  const choose = (id, answer) => setChoices(c => { const n = { ...c }; if (n[id] === answer) delete n[id]; else n[id] = answer; return n; });
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const lastHeld = data.profile?.meetingSchedule?.lastMeetingAt;
+  const heldToday = !!lastHeld && new Date(lastHeld).toDateString() === new Date().toDateString();
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
@@ -10533,6 +10565,12 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
       <NotAdviceLine style={{textAlign:"left",marginBottom:SPACE.sm}}/>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
+      {opening && opening.lines.length > 0 && (
+        <div style={card} data-meet="opening">
+          {opening.lines.map((l, i) => <div key={i} style={{color:i===0?C.cream:C.mutedHi,fontSize:13,lineHeight:1.6,fontWeight:i===0?600:400}}>{l.text}</div>)}
+        </div>
+      )}
+
       <div style={card} data-tour="meet">
         <div style={sTitle}>This week</div>
         {items.length>0
@@ -10562,6 +10600,29 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
           <CalcByFlourish style={{marginTop:GAP.textToControl}}/>
         </div>
       ))}
+
+      {/* The questions from the bank's view of the bills, each with Yes or No. Recorded when the meeting is marked done:
+          a yes changes the bills then (applyMeetingAnswers), a no is remembered and the question is not asked again.
+          Only when the meetings were read (recordsKnown), so a declined question is never asked again by mistake. */}
+      {recordsKnown && setAppData && !heldToday && agenda.questions && agenda.questions.length > 0 && (
+        <div style={card} data-meet="questions">
+          <div style={{display:"flex",flexDirection:"column",gap:SPACE.lg}}>
+            {agenda.questions.map(q => (
+              <div key={q.id}>
+                <div style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl}}>{q.text}</div>
+                <div style={{display:"flex",gap:8}}>
+                  {q.options.map(o => {
+                    const on = choices[q.id] === o.answer;
+                    return <button key={o.answer} type="button" aria-pressed={on} onClick={()=>choose(q.id, o.answer)} disabled={saving}
+                      style={{flex:1,minHeight:LAYOUT.minTap,background:on?C.purple:"none",border:`1px solid ${on?C.purple:C.border}`,borderRadius:10,padding:"8px 12px",
+                        color:on?textOn(C.purple):C.cream,fontWeight:700,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit"}}>{o.label}</button>;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {data.demo ? (
         /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
@@ -10614,11 +10675,27 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
           (which also moves the next scheduled meeting on), and it is what "First money meeting held" on
           Today's setup checklist reads. Never in demo mode: the sample household holds no meetings. */}
       {!data.demo && setAppData && (()=>{
-        const last = data.profile?.meetingSchedule?.lastMeetingAt;
-        const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
-        const markDone = () => {
-          setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
-          signalCheckIn("meeting", data.demo);
+        // Meeting memory (2026-11-08): the meeting's answers are saved FIRST (/api/meeting, lib/meetingMemory.js). Only
+        // once the server has stored them is the meeting marked done and each yes applied to the bills. A failed save
+        // changes nothing: no bill, no date, no answer, and the choices stay on screen to try again. savingRef stops a
+        // second tap while the first is in flight, and applyMeetingAnswers can only apply a yes while the bank still
+        // shows that change, so marking done again (or on another device) never applies it twice.
+        const markDone = async () => {
+          if (savingRef.current) return;
+          savingRef.current = true; setSaving(true); setSaveFailed(false);
+          let res = { ok: false };
+          try { res = meetingMemory ? await meetingMemory.record(answersFor(agenda.questions, choices)) : { ok: false }; }
+          catch { res = { ok: false }; }
+          if (!res || !res.ok) { setSaveFailed(true); savingRef.current = false; setSaving(false); return; }
+          const stored = res.record.answers;
+          setAppData(prev => {
+            if (!prev) return prev;   // signed out (or reset) while it saved: there is nothing to change
+            const { bills } = applyMeetingAnswers(prev, stored);
+            return { ...prev, bills, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } };
+          });
+          signalCheckIn("meeting", data.demo);   // the full funnel (#127): counted once the meeting is saved and marked held
+          setChoices({});
+          savingRef.current = false; setSaving(false);
           // The store's own review sheet after a completed meeting (reviewRules.js decides: once per meeting,
           // at most three times in 365 days, never on the web or in demo mode, never within 24 hours of
           // trouble, and nothing in front of it).
@@ -10626,7 +10703,10 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
         };
         return heldToday
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
-          : <button onClick={markDone} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:SPACE.sm}}>Mark this meeting done</button>;
+          : <>
+              <button onClick={markDone} disabled={saving} aria-busy={saving} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:saving?"default":"pointer",fontFamily:"inherit",marginTop:SPACE.sm,opacity:saving?0.6:1}}>Mark this meeting done</button>
+              {saveFailed && <div role="alert" style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm}}>Your meeting wasn't saved. Please try again.</div>}
+            </>;
       })()}
       {explainItem&&<HowWeGotThis title={explainItem.title} value={explainItem.value} meaning={explainItem.meaning}
         inputs={explainItem.rows||[]} source={explainItem.source} onClose={()=>setExplainItem(null)}/>}
@@ -10642,7 +10722,7 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
-function Family({data,setAppData,setScreen,tourActive=false}){
+function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null}){
   const [tab,setTab]=useState("meeting");
   const [started,setStarted]=useState(false);
   const [checks,setChecks]=useState({});
@@ -10895,7 +10975,7 @@ function Family({data,setAppData,setScreen,tourActive=false}){
     })()}
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive}/>}
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive} meetingMemory={meetingMemory}/>}
     {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
     {false&&<>
       {!started&&!done2&&<>
@@ -14963,7 +15043,8 @@ function loadState() {
 function saveState(patch) {
   try {
     const cur = loadState() || {};
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({...cur, ...patch}));
+    const p = patch && patch.appData ? { ...patch, appData: withoutRenderOnly(patch.appData) } : patch;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({...cur, ...p}));
   } catch {}
 }
 export function clearState() {
@@ -18015,6 +18096,56 @@ export default function FlourishApp(){
   const householdRef = useRef(null);   // couple mode: { id, role, version, base } while this account shares a household
   const latestStateRef = useRef(null); // couple mode: the latest { onboarded, appData, checkInBonus }, for a merge on return
   const accessTokenRef = useRef(null); // Sprint Z2 #12: latest JWT, cached for the synchronous pagehide keepalive beacon
+  // ── The money meeting's memory (2026-11-08, lib/meetingMemory.js) ──
+  // The household's meetings, read through /api/meeting as the signed-in person (RLS decides: their own and their
+  // partner's since joining). Held HERE, beside appData and never inside it, so no save path can write them to
+  // user_data, the household blob or this device. null = not read (or the read failed): Meet then shows no opening
+  // and asks no questions. recordsGenRef drops an answer that arrives after a newer read or a save.
+  const [meetingRecords, setMeetingRecords] = useState(null);
+  const meetingRecordsRef = useRef(null);
+  const recordsGenRef = useRef(0);
+  const meetingUserRef = useRef(null);   // whose meetings these are; a save that finishes for someone else is dropped
+  const setRecords = (v) => { meetingRecordsRef.current = v; setMeetingRecords(v); };
+  // fresh: forget what is held first, so nothing is shown until this read answers (Meet opening, a household change).
+  const reloadMeetingRecords = async ({ fresh = false } = {}) => {
+    const gen = ++recordsGenRef.current;
+    if (fresh) setRecords(null);
+    const recs = await loadMeetingRecords({ apiBase: API_BASE, getJwt });
+    if (gen !== recordsGenRef.current) return meetingRecordsRef.current;
+    setRecords(recs);
+    return recs;
+  };
+  // Save a finished meeting. Returns { ok, record }. Nothing changes here unless the server stored it.
+  const recordMeeting = async (answers) => {
+    const who = meetingUserRef.current;
+    const known = meetingRecordsRef.current || await reloadMeetingRecords();
+    if (!Array.isArray(known)) return { ok: false };
+    // Only this save's answers: the server merges them into anything already recorded today (meeting.js mergeDay),
+    // so a device whose list is out of date cannot send an old answer back over a newer one.
+    const res = await saveMeetingRecord({ apiBase: API_BASE, getJwt, metOn: localDay(), answers });
+    if (!res.ok) return res;
+    // Signed out or another account signed in while it saved: nothing of it reaches the screen now showing.
+    if (!who || meetingUserRef.current !== who) return { ok: false };
+    recordsGenRef.current++;   // a read still in flight may predate this save: its answer is dropped
+    setRecords(withRecord(meetingRecordsRef.current, res.record));
+    return res;
+  };
+  // Joined or left a household on this device: the meetings held are the old household's. Forget them at once (Meet
+  // shows no opening) and read again. Only on a real change, not on the first render.
+  const meetingRoleRef = useRef(householdRole);
+  useEffect(() => {
+    if (meetingRoleRef.current === householdRole) return;
+    meetingRoleRef.current = householdRole;
+    if (!user) return;
+    reloadMeetingRecords({ fresh: true });
+  }, [householdRole]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    recordsGenRef.current++;
+    meetingUserRef.current = user?.id || null;
+    setRecords(null);
+    if (!user) return;
+    reloadMeetingRecords();
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [syncError, setSyncError] = useState(false);
   // (5) one-time "backed up" banner after a local→DB migration upload.
   const [showMigratedBanner, setShowMigratedBanner] = useState(()=>{ try { return localStorage.getItem("flourish_db_migrated")==="1"; } catch { return false; } });
@@ -18081,7 +18212,7 @@ export default function FlourishApp(){
   const writeHouseholdStamp = (v) => { try { if (v) localStorage.setItem(HOUSEHOLD_STAMP_KEY, JSON.stringify(v)); else localStorage.removeItem(HOUSEHOLD_STAMP_KEY); } catch {} };
   const householdPayload = ({ onboarded: ob, appData: ad, checkInBonus: cb }, userId) => {
     const hh = householdRef.current;
-    const slimAppData = ad ? { ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) } : ad;
+    const slimAppData = ad ? withoutRenderOnly({ ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) }) : ad;
     const sideKeys = readSideKeys();
     return { userId, householdId: hh.id, personal: personalKeysOf(sideKeys), blob: buildHouseholdBlob({ onboarded: ob, slimAppData, checkInBonus: cb },
       { householdId: hh.id, nowIso: new Date().toISOString(), sideKeys }) };
@@ -19299,7 +19430,8 @@ export default function FlourishApp(){
   // fresh sign-in, which new banks' histories are on the way, and how fresh the bank balances are.
   const _bankNow = Date.now();
   const bankStatus = { signIn: bankSignIn, history: historyCards(historyPending, _bankNow), fresh: bankFreshness({ accounts: appData?.accounts, nowMs: _bankNow, signIn: bankSignIn }) };
-  const dataWithHousehold={...appData,isPremium,householdRole,bankStatus};
+  // meetingRecords: render-only, like bankStatus (never saved; see the meeting memory state above).
+  const dataWithHousehold={...appData,isPremium,householdRole,bankStatus,meetingRecords};
 
   // ── Pass isOnline down to AICoach + reset helper ──────────────
   const handleReset = () => { clearState(); window.location.reload(); };
@@ -19540,7 +19672,7 @@ export default function FlourishApp(){
       // included, so say what actually happened and when it lifts, not that the feature is missing.
       return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} tourActive={tourShown}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} tourActive={tourShown} meetingMemory={{ reload: reloadMeetingRecords, record: recordMeeting }}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above

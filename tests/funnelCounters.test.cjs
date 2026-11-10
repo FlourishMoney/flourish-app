@@ -152,7 +152,9 @@ async function call({ body, user, now, upsertError = null }) {
   const app = read("src/App.jsx");
   t.eq((app.match(/signalCheckIn\("meeting"/g) || []).length, 2, "6f both places a meeting is marked done send a check-in");
   t.eq((app.match(/signalCheckIn\("weekly"/g) || []).length, 1, "6g so does the weekly check-in's Done");
-  t.ok(/lastMeetingAt: new Date\(\)\.toISOString\(\) \} \} \}\)\);\n\s+signalCheckIn\("meeting", data\.demo\);/.test(app), "6h …right after the meeting is recorded as held");
+  // Meeting memory (#125, 2026-11-10): the meeting is recorded as held only once its answers are saved, in a block that
+  // also applies the yes answers; the check-in comes right after that block, as it came right after the one line before.
+  t.ok(/lastMeetingAt: new Date\(\)\.toISOString\(\) \} \} \};\n\s+\}\);\n\s+signalCheckIn\("meeting", data\.demo\);/.test(app), "6h …right after the meeting is recorded as held");
   const pkg = read("package.json");
   t.ok(pkg.includes("node tests/funnelCounters.test.cjs") && pkg.includes("node tests/funnelCounters.sql.test.cjs"), "6i both funnel suites are in test:math");
   const doc = read("docs/ops/MEASUREMENT.md");

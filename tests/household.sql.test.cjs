@@ -519,6 +519,13 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       sql(`update public.household_members set joined_at = now() - interval '10 days' where user_id = '${a.p}'`);
       sql(`insert into public.meeting_records (user_id, met_on) values ('${a.p}', current_date - 20), ('${a.p}', current_date - 5), ('${a.p}', current_date - 2), ('${a.o}', current_date - 2)`);
       t.eq(count(a.o, `select * from public.meeting_records where user_id = '${a.p}'`), "2", "11a the owner reads the partner's meeting records since they joined, never those from before");
+      // Meeting memory (2026-11-08): the money meeting opens with the household's last meeting, read as each person
+      // (netlify/functions/meeting.js "list", a user-token read). Since both were in the household (the owner made it
+      // 15 days ago, the partner joined 10 days ago), the two of them read exactly the same meetings.
+      sql(`update public.household_members set joined_at = now() - interval '15 days' where user_id = '${a.o}'`);
+      const hist = (uid) => as(uid, `select string_agg((current_date - met_on)::text || ':' || (user_id = '${a.o}')::text, ',' order by met_on, user_id = '${a.o}') from public.meeting_records where met_on >= current_date - 10`);
+      t.eq(hist(a.p), "5:false,2:false,2:true", "11a2 couple mode: the partner reads both people's meetings since joining (theirs and the owner's)");
+      t.eq(hist(a.o), hist(a.p), "11a3 …and the owner reads exactly the same history: both open the next meeting the same way");
 
       t.eq(svc(`household_remove_partner('${a.o}')`).result, "removed", "11b the owner removes the partner");
       const after = JSON.parse(sql(`select data->'core'->'appData' from public.household_data where household_id = '${a.h}'`));
