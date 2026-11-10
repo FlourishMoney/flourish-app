@@ -493,7 +493,8 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(await page.locator('input[type="password"]').first().isVisible(), "11q the main button opens website sign-up");
     await page.waitForTimeout(300);
     t.eq(seen.counts.map(c => [c.event, c.src]), [["landing_view", "ig"], ["main_tap", "ig"]], "11r one landing view and the tap, each counted with the visit's src and nothing else");
-    t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,event,src"), "11s …the counts carry no email and no other field");
+    t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,attribution,event,src"), "11s …the counts carry no email and no other field");
+    t.eq(seen.counts.map(c => c.attribution), [{ src: "ig", cr: null }, { src: "ig", cr: null }], "11s2 …the visit's own src and cr (0043), and nothing else in it");
     await ctx.close();
   }
   {
