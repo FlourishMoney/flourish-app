@@ -97,7 +97,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
-import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel } from "./lib/trialPlanFirst.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX } from "./lib/trialPlanFirst.js";
 import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
@@ -19567,12 +19567,13 @@ export default function FlourishApp(){
   // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
   // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
   // It also keeps FOUNDING_PLANS_SHOWN_KEY (1.1.3, lib/foundingPlans.js): the founding plans screen opens by itself once
-  // per account, and signing out and back in is the same account.
+  // per account, and signing out and back in is the same account. And, for the same reason, TRIAL_PLAN_FIRST's marker
+  // that the new plans were offered once to an account whose trial had ended (lib/trialPlanFirst.js plansOfferedBefore).
   const signOut = async ()=>{
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };

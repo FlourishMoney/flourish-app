@@ -5,6 +5,8 @@
 //      trial; the store builds learn it from the server.
 //   2. the plans screen first (item 1): who sees it and how, the lines above each plan's button, the stores' own
 //      eligibility answer, and the app's wiring. The checkout and the founding seats: tests/trialPlanFirstBilling.test.cjs.
+//   3. people already signed up (item 2): mid-trial keeps it to its end, unchanged; an ended trial sees the new plans
+//      once, closable, with a trial only where the store says so; nobody who has access loses it early.
 // Synthetic data only (tests/_trialFakes.cjs).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -188,6 +190,53 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const req = gate.slice(gate.indexOf("if(plansRequired"));
     const reqStore = req.slice(req.indexOf("<StorePaywall"), req.indexOf("/>}", req.indexOf("<StorePaywall")));
     t.ok(reqStore.includes("trialFirst={tpfStatus} onSignOut={plansSignOut}") && !reqStore.includes("onClose="), "2z store: the first plans screen has no close, only sign out (and Restore)");
+  }
+
+  // ── 3. PEOPLE ALREADY SIGNED UP ─────────────────────────────────────────────────────────────────
+  {
+    const since = Date.parse(SINCE);
+    // 3a nobody from before the switch loses anything, at any moment: every row from before, with and without a
+    // subscription of each kind, gets the same entitlement with the switch on as with it off.
+    const subs = [null, { status: "active", current_period_end: iso(since + 30 * day) }, { status: "trialing", current_period_end: iso(since + 5 * day) },
+      { status: "canceled", current_period_end: iso(since - day) }, { status: "past_due", current_period_end: iso(since + 3 * day) }];
+    const olds = [];
+    for (const plan of ["trial", "free", "plus", "pro"]) for (const founder_flag of [false, true]) for (const started of [-40, -13, -1, -0.01])
+      olds.push({ plan, founder_flag, trial_started_at: iso(since + started * day), trial_ends_at: iso(since + (started + 14) * day) });
+    const times = [since - day, since, since + day, since + 7 * day, since + 13 * day, since + 20 * day];
+    setEnv({});
+    const offAns = []; for (const r of olds) for (const s of subs) for (const n of times) offAns.push(JSON.stringify(rules.deriveEntitlement(r, s, n)));
+    setEnv({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
+    const onAns = []; for (const r of olds) for (const s of subs) for (const n of times) onAns.push(JSON.stringify(rules.deriveEntitlement(r, s, n)));
+    t.eq(onAns, offAns, `3a every account from before the switch (${olds.length} rows x ${subs.length} subscriptions x ${times.length} moments) has exactly what it had`);
+
+    // 3b someone mid-trial: the server says so, the app keeps the account trial, and nothing is forced.
+    const mid = { plan: "trial", founder_flag: false, trial_started_at: iso(since - 2 * day), trial_ends_at: iso(since + 12 * day) };
+    const midState = { profiles: [{ user_id: "u1", ...mid }], subscriptions: [] };
+    process.env.BILLING_ENABLED = "true";
+    const res = await loadWith(BILLING, { admin: fakeAdmin(midState) }).handler(post({ action: "status" }));
+    const tpf = JSON.parse(res.body).trial_plan_first;
+    t.eq([tpf.account_trial, lib.accountTrialFrom({ trial_plan_first: tpf })], [true, true], "3b mid-trial: the server and the app keep the account trial");
+    t.eq(lib.plansFirstStage({ tpf, canSell: true, profilePlan: "trial" }), null, "3c …nothing is forced: the plans open when asked, as today");
+    t.eq([rules.derivePlan(mid, Date.parse(mid.trial_ends_at) - 1), rules.derivePlan(mid, Date.parse(mid.trial_ends_at))], ["trial", "free"], "3d …and it ends on its own end date, unchanged");
+    t.eq(tpf.web_trial_eligible, true, "3e …and if they choose a plan on the website, Stripe's 14 days still apply (never had a subscription)");
+
+    // 3f an ended trial: the new plans once, closable; the free plan stays.
+    t.eq(lib.plansFirstStage({ tpf: { on: true, account_trial: true }, canSell: true, profilePlan: "free" }), "offer_once", "3f an ended account trial: the new plans, once");
+    const mem = new Map(); const st = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    t.eq(lib.plansOfferedBefore(st, "u9"), false, "3g …not yet offered on this device");
+    lib.notePlansOffered(st, "u9");
+    t.eq([lib.plansOfferedBefore(st, "u9"), lib.plansOfferedBefore(st, "u8")], [true, false], "3h …then never again for that account, and only that account");
+    t.ok(APP.includes("!k.startsWith(PLANS_OFFERED_PREFIX)") && APP.includes("if(plansOfferedBefore(deviceStorage(), user.id)) return;\n    notePlansOffered(deviceStorage(), user.id);\n    openUpgrade();"),
+      "3i the app opens it once (kept through sign-out: the same account), through the usual plans screen, which can be closed");
+    t.ok(/if\(!user\?\.id \|\| plansStageNow!=="offer_once" \|\| !onboarded \|\| !firstVisitDone\) return;/.test(APP), "3j …only after onboarding and the first number");
+    const hadSub = { profiles: [{ user_id: "u1", plan: "trial", trial_started_at: iso(since - 60 * day) }], subscriptions: [{ user_id: "u1", provider: "stripe", status: "canceled", provider_subscription_id: "sub_old", current_period_end: iso(since - 5 * day) }] };
+    const r2 = await loadWith(BILLING, { admin: fakeAdmin(hadSub) }).handler(post({ action: "status" }));
+    t.eq(JSON.parse(r2.body).trial_plan_first.web_trial_eligible, false, "3k an account that had a subscription before is offered no web trial");
+
+    // 3l complimentary access, a founder and a covered partner: nothing changes.
+    t.eq([lib.plansFirstStage({ tpf: { on: true, account_trial: true }, canSell: true, profilePlan: "premium" }), lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "premium" }),
+      lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "beta_founder" }), lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "free", coveredBy: "partner" })],
+      [null, null, null, null], "3l complimentary access (old or new), a beta founder and a covered partner see nothing new");
   }
 
   process.env = saved;

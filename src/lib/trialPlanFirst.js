@@ -55,8 +55,9 @@ export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePl
   return null;   // inside the account trial: unchanged, the plans open when asked (item 2)
 }
 
-// "offer_once": shown once per account on this device.
-const OFFER_KEY = (uid) => `flourish_tpf_plans_offered_${uid}`;
+// "offer_once": shown once per account on this device. Signing out keeps it (App.jsx signOut): the same account.
+export const PLANS_OFFERED_PREFIX = "flourish_tpf_plans_offered_";
+const OFFER_KEY = (uid) => `${PLANS_OFFERED_PREFIX}${uid}`;
 export function plansOfferedBefore(storage, uid) {
   try { return !!storage && !!uid && storage.getItem(OFFER_KEY(uid)) === "1"; } catch { return true; }
 }
