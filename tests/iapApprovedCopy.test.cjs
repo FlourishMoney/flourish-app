@@ -30,13 +30,11 @@ const APPROVED = {
   // "The founding price is for the first 50 founding members and stays the same while that subscription stays active."
   founding: "For the first 50 households who subscribe. Stays the same while you stay subscribed.",
   terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
-  // 1.1.3 (approved 2026-10-29: ~/Documents/Flourish/06 Builds/WHATS-NEW-1.1.3.txt), one text for the App Store and
-  // Google Play, word for word: the intro, a note, the line "Also in this update:", two notes.
-  whatsNew113: "New: share your household with your partner.\n" +
-    "- Invite your partner from Settings > Household. You'll each have your own sign-in, and you'll both see and edit the same money: Today, bills, paydays, debts, linked bank accounts, goals and the money meeting.\n" +
-    "Also in this update:\n" +
-    "- Layout fixes for smaller screens and larger text.\n" +
-    "- Fixes for the coach and for purchases.\n",
+  // 1.1.6 (approved 2026-11-10, ChatGPT 100 and Grok 100), one text for the App Store, Google Play and the app, word for
+  // word: three notes.
+  whatsNew116: "- Your weekly money meeting now opens with a recap of what you decided last time, and can ask about bill changes it finds in your accounts.\n" +
+    "- Sign up in Settings for a short weekly email of Canadian money dates.\n" +
+    "- Small fixes and improvements.\n",
 };
 const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
 
@@ -75,11 +73,9 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   // ── 5. What's new ─────────────────────────────────────────────────────────────────────────────
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
   // The app's text, line by line as the store shows it, is the approved file: the same for iPhone and Android.
-  const asText = [W.intro, ...(W.notes || []).map((x) => "- " + x), W.alsoTitle, ...(W.alsoNotes || []).map((x) => "- " + x)].join("\n") + "\n";
-  // 1.1.6 (2026-11-10): the version moves on; the notes stay 1.1.3's approved text, word for word, until 1.1.6's
-  // What's New is approved (Amanda: What's New is not touched in the 1.1.6 build).
-  t.eq([W.version, asText, W.notesAndroid], ["1.1.6", APPROVED.whatsNew113, undefined],
-    "5a What's new in 1.1.6 is still 1.1.3's approved text, word for word and in order (the intro, a note, \"Also in this update:\", two notes), one text for iPhone and Android");
+  const asText = [...(W.notes || []).map((x) => "- " + x)].join("\n") + "\n";
+  t.eq([W.version, asText, W.notesAndroid, W.intro, W.alsoTitle, W.alsoNotes], ["1.1.6", APPROVED.whatsNew116, undefined, undefined, undefined, undefined],
+    "5a What's new for 1.1.6 is the approved text, word for word and in order (three notes), one text for iPhone and Android");
   t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
