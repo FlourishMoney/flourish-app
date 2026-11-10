@@ -46,8 +46,10 @@ export function recalledAccountTrial(storage, uid) {
 //                 on this device, and can be closed. Nothing they already have is taken away (item 2).
 // canSell: the screen can actually sell here (the website with billing on; a store build that sells). Where it
 // cannot, nobody is held at a screen with nothing to buy.
-export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePlan = null, demo = false, canSell = false } = {}) {
+export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePlan = null, demo = false, canSell = false, pendingInvite = false } = {}) {
   if (!tpf || tpf.on !== true || demo || !canSell) return null;
+  // A partner's invite waiting to be accepted (couple mode): never held at the plans; once joined, the partner's plan covers.
+  if (pendingInvite) return null;
   if (paid === true || coveredBy) return null;
   if (profilePlan === "beta_founder" || profilePlan === "premium") return null;
   if (tpf.account_trial === false) return "required";
@@ -86,6 +88,15 @@ export function firstChargeAt(now = Date.now(), days = TRIAL_DAYS_FIRST) {
 export function chargeDateLabel(date) {
   return date.toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 }
+// THE DATES THE SCREEN STATES, never later than the store can act (review round, 2026-11-10). Apple may charge up to
+// 24 hours before a period ends, and a cancellation in those 24 hours still renews: on an iPhone the first charge is
+// stated as the day 24 hours before the trial ends. Everywhere, "cancel before" is that same day: cancelling before it
+// is always in time (Stripe and Google Play charge at the end itself, so this is a day of margin there).
+export function trialDates(platform, now = Date.now()) {
+  const end = firstChargeAt(now);
+  const dayBefore = new Date(end.getTime() - 86400000);
+  return { charge: platform === "ios" ? dayBefore : end, cancelBy: dayBefore };
+}
 export const periodOfPlan = (planKey) => (planKey === "monthly" ? "month" : (planKey === "annual" || planKey === "founding_annual") ? "year" : null);
 
 /**
@@ -101,14 +112,14 @@ export function trialDisclosure({ platform, eligible, price, planKey, now = Date
   if (!periodOfPlan(planKey) || !price || typeof words !== "function") return null;
   const cancel = words(platform === "ios" ? "trialfirst-cancel-ios" : platform === "android" ? "trialfirst-cancel-android" : "trialfirst-cancel-web");
   if (!eligible) return { claim: false, lines: [words("trialfirst-no-trial", { price }), cancel] };
-  const date = chargeDateLabel(firstChargeAt(now));
+  const { charge, cancelBy } = trialDates(platform, now);
   return {
     claim: true,
     lines: [
       words("trialfirst-free-days"),
       words("trialfirst-then", { price }),
-      words("trialfirst-first-charge", { date }),
-      words("trialfirst-cancel-before", { date }),
+      words("trialfirst-first-charge", { date: chargeDateLabel(charge) }),
+      words("trialfirst-cancel-before", { date: chargeDateLabel(cancelBy) }),
       cancel,
     ],
   };

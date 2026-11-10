@@ -33,10 +33,23 @@ Prices stay exactly as they are. Nothing here has been done; no console was open
 5. **App Store Connect and Play Console:** the offers below, each starting today.
 6. **Netlify (Amanda), Production only:**
    - `TRIAL_PLAN_FIRST=true`
-   - `TRIAL_PLAN_FIRST_SINCE` = the time it goes on, ISO 8601 (for example `2026-11-20T15:00:00Z`).
+   - `TRIAL_PLAN_FIRST_SINCE` = the moment you switch it on, as a full time with its zone (for example `2026-11-20T15:00:00Z`). A date alone, or a time without a zone, leaves the switch off. Never a time in the past: anyone whose trial started after it would lose the rest of their account trial.
    
    Accounts whose own trial started before that time keep the no-card account trial to its end. Without a valid time, nothing changes. The store builds read the switch from the server: no upload.
 7. **Website, social and store listings:** the list in `docs/product/TRIAL-PLAN-FIRST-NO-CARD.md`.
+
+## Older installed apps (1.1.5 and before)
+- **On an iPhone:** they keep working once the switch is on. A new account in one of them is held to the free plan's limits by the server; the app itself still shows the old trial chip.
+- **Their plans screen states no trial.** Apple applies the 14 days and states it in its own purchase sheet.
+- **Older Android apps** buy the default option, which is the trial.
+- **No minimum-version gate exists.** Turning the switch on is safest once 1.1.6 has been the store version for a few days.
+
+## Switching it off again
+1. **Netlify:** unset `TRIAL_PLAN_FIRST`. New accounts get the no-card account trial again.
+2. **Same day:** end the store offers (App Store Connect: set the introductory offer's end date to today; Play Console: deactivate each `free-14-*` offer).
+3. **What keeps going:**
+   - The reminders for trials already running: the sweep and `trial_will_end` run with the switch off.
+   - Those trials are charged on their day 14 as agreed.
 
 ## App Store Connect
 Apps > Flourish: Money, Handled > Monetization > Subscriptions.

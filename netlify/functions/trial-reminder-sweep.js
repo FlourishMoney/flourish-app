@@ -4,12 +4,13 @@
 // with Google Play. RevenueCat reports the trial's end (our subscriptions row: status "trialing", current_period_end),
 // and this sends each trial's one reminder in its window (_lib/trialReminder.js reminderDue): never for a trial already
 // cancelled (cancel_at_period_end), never twice. The website's comes from Stripe's trial_will_end (stripe-webhook.js).
-// Does nothing while TRIAL_PLAN_FIRST is off. Stops starting sends at 20 seconds (Netlify stops it at 30).
+// Runs with the switch on or off (review round, M4): a store trial already running when the switch goes off still gets
+// its reminder. With no store trial anywhere (today) it reads one empty list and sends nothing.
+// Stops starting sends at 20 seconds (Netlify stops it at 30).
 // -----------------------------------------------------------------------------
 "use strict";
 
 const { getAdminClient } = require("./_lib/auth");
-const { trialPlanFirstOn } = require("./_lib/trialPlanFirst");
 const { reminderDue, sendTrialReminder, STORE_PRICES } = require("./_lib/trialReminder");
 
 const BUDGET_MS = 20000;
@@ -34,7 +35,6 @@ async function sweep({ admin, now = Date.now(), clock = Date.now, send } = {}) {
 }
 
 exports.handler = async () => {
-  if (!trialPlanFirstOn()) return { statusCode: 200, body: JSON.stringify({ off: true }) };
   let admin;
   try { admin = getAdminClient(); } catch { console.error("[trial-reminder-sweep] admin client"); return { statusCode: 500, body: "{}" }; }
   const out = await sweep({ admin });

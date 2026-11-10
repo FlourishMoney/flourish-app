@@ -256,7 +256,10 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
     && ["trialing", "active"].includes(existing.status);
   // TRIAL_PLAN_FIRST: a founding store trial that ended without its first charge (cancelled inside the 14 days) held
   // the price only as a trial. Its seat goes back and the founding price is not marked as ended for it.
-  const trialOnly = wasFounding && existing.status === "trialing" && !isPaidSubscription(next, now);
+  // Only if the store's end never moved past the trial's (a trial that converted carries a later expiry, even when no
+  // sync saw it convert): a paid founding subscription is never taken for an unpaid trial (review round, L4).
+  const trialOnly = wasFounding && existing.status === "trialing" && !isPaidSubscription(next, now)
+    && Date.parse(next.current_period_end || "") <= Date.parse(existing.current_period_end || "") + 86400000;
   const foundingEnded = wasFounding && !trialOnly && !isPaidSubscription(next, now) && !existing.founding_ended_at;
   if (foundingEnded) next.founding_ended_at = nowIso;
 

@@ -30,6 +30,7 @@ const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
 const { trialPlanFirstSince } = require("./_lib/planRules");
 const { sendTrialReminder, moneyLabel } = require("./_lib/trialReminder");
+const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: the trial's subscription, and the first invoice's preview
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -186,8 +187,10 @@ exports.handler = async (event) => {
   // TRIAL_PLAN_FIRST: a Stripe trial starts as "trialing" with its end date on customer.subscription.created, which
   // nothing else reports until the trial ends. Heard only while the switch is on; off, ignored as before.
   const trialCreated = evt.type === "customer.subscription.created" && trialPlanFirstSince() !== null;
-  // ...and its reminder (item 3): Stripe sends trial_will_end 3 days before the trial ends (its default).
-  const trialWillEnd = evt.type === "customer.subscription.trial_will_end" && trialPlanFirstSince() !== null;
+  // ...and its reminder (item 3): Stripe sends trial_will_end 3 days before the trial ends (its default). Heard with the
+  // switch on or off (review round, M4): a trial already running when the switch goes off still gets its reminder.
+  // Today no trial exists and the endpoint is not sent this event, so nothing changes.
+  const trialWillEnd = evt.type === "customer.subscription.trial_will_end";
   if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute && !trialCreated && !trialWillEnd) {
     await admin.from("billing_events")
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
@@ -313,6 +316,18 @@ exports.handler = async (event) => {
         ...amounts,
         updated_at: new Date().toISOString(),
       };
+      // TRIAL_PLAN_FIRST (review round, M3): a checkout that charged nothing may be a 14-day trial. Stripe is asked for
+      // the subscription, so the row says trialing with the trial's end from the start (the chip, the status). If Stripe
+      // cannot be asked, the row is "active" as before and the next subscription event corrects it.
+      if (trialPlanFirstSince() !== null && object.payment_status === "no_payment_required" && sessionSubId) {
+        try {
+          const live = await stripeApi.stripeGet(`/subscriptions/${encodeURIComponent(sessionSubId)}`);
+          if (live && live.status === "trialing" && Number.isFinite(Number(live.trial_end))) {
+            patch.status = "trialing";
+            patch.current_period_end = new Date(Number(live.trial_end) * 1000).toISOString();
+          }
+        } catch { console.error("[stripe-webhook] trial read:", "no_status"); }
+      }
       // DECISIONS.md item 1: the founding price is locked WHILE CONTINUOUSLY SUBSCRIBED. The
       // clock starts here and is cleared on deletion, so "continuously" stays checkable.
       if (patch.plan_key === "founding_annual") patch.founding_locked_at = new Date().toISOString();
@@ -350,10 +365,9 @@ exports.handler = async (event) => {
       const user_id = userIdFrom(sub) || (await subscriptionRowFor("provider_subscription_id", sub.id))?.user_id || null;
       const endMs = Number(sub.trial_end) * 1000;
       if (user_id && sub.status === "trialing" && !sub.cancel_at_period_end && !sub.cancel_at && Number.isFinite(endMs)) {
-        const { stripePost } = require("./_lib/stripeApi");
         let amount = null;
         try {
-          const preview = await stripePost("/invoices/create_preview", { subscription: sub.id });
+          const preview = await stripeApi.stripePost("/invoices/create_preview", { subscription: sub.id });
           amount = moneyLabel(preview && preview.total, preview && preview.currency);
         } catch { /* below */ }
         if (!amount) {
@@ -362,7 +376,7 @@ exports.handler = async (event) => {
           amount = base ? `${base} plus tax` : null;
         }
         const r = await sendTrialReminder(admin, { provider: "stripe", ref: sub.id, userId: user_id, trialEndMs: endMs, platform: "web", amount });
-        if (r.reason === "send_failed" || r.reason === "read_failed") throw new Error(`trial reminder: ${r.reason}`);
+        if (r.reason === "send_failed" || r.reason === "read_failed" || r.reason === "in_progress") throw new Error(`trial reminder: ${r.reason}`);
       }
     }
 

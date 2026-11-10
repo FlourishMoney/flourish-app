@@ -37,7 +37,7 @@ function webTrialEligibleRow(row) {
 async function trialPlanFirstState(admin, user_id, { row = null, web = false, now = Date.now() } = {}) {
   const since = trialPlanFirstSince();
   if (since === null) return null;
-  const { data: prof, error } = await admin.from("profiles").select("trial_started_at").eq("user_id", user_id).maybeSingle();
+  const { data: prof, error } = await admin.from("profiles").select("trial_started_at, trial_ends_at").eq("user_id", user_id).maybeSingle();
   if (error) return { unavailable: true };
   const trialing = !!row && row.status === "trialing" && isPaidSubscription(row, now);
   const out = {

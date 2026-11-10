@@ -14239,7 +14239,10 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
   const trialLine = upgradeTrialLine(trialEndLabel(trialEndsAtMs(), { trialActive: isTrialActive() }));
   // TRIAL_PLAN_FIRST: with the switch on, each plan says above its button whether it starts with 14 days free (only
   // when the server says this account is eligible) and what is charged, when, and how to cancel. Off: null, as before.
-  const trialOf = (plan) => trialFirst ? trialDisclosure({ platform:"web", eligible: trialFirst.web_trial_eligible===true, price: plan.price, planKey: plan.key, words: trialWords }) : null;
+  // L3 (review round): once checkout has said the trial does not apply (Stripe's history), the screen shows that, for this visit.
+  const [trialSaid,setTrialSaid]=useState(null);
+  const webEligible = trialSaid!==null ? trialSaid : trialFirst?.web_trial_eligible===true;
+  const trialOf = (plan) => trialFirst ? trialDisclosure({ platform:"web", eligible: webEligible, price: plan.price, planKey: plan.key, words: trialWords }) : null;
 
   const sendConfirm = async () => {
     setConfirmState("sending");
@@ -14265,13 +14268,14 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
         headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
         body: JSON.stringify(planKey==="__portal__"
           ? {action:"create_portal_session"}
-          : {action:"create_checkout_session", plan_key:planKey, ...(trialFirst ? { trial: trialFirst.web_trial_eligible===true } : {})}),
+          : {action:"create_checkout_session", plan_key:planKey, ...(trialFirst ? { trial: webEligible } : {})}),
       });
       const body = await res.json().catch(()=>({}));
       // TRIAL_PLAN_FIRST: the server's answer on the trial differs from what this screen showed. Nothing was created;
       // the status is asked again, so the plans show what applies, and the person chooses again.
       if(res.status===409 && body.error==="trial_changed"){
         setError(trialWords("trialfirst-changed")); setStep("choose"); setBusy(null);
+        if(typeof body.trial==="boolean") setTrialSaid(body.trial);
         if(onRecheck) await onRecheck();
         return;
       }
@@ -19287,10 +19291,15 @@ export default function FlourishApp(){
   // switch off: null, and none of this exists.
   const tpfAnswered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
   const tpfPaySource = storeBilling ? storeStatus : billingStatus;
+  // H1 (review round): someone who came from a partner's invite (householdLinkToken) is never held at the plans: they
+  // join in Settings, and the partner's plan then covers them.
   const plansStageNow = plansFirstStage({ tpf: tpfStatus, paid: tpfPaySource?.paid===true, coveredBy: tpfPaySource?.covered_by||null,
-    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show });
-  // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open).
-  const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required" : recalledRequired(deviceStorage(), user.id));
+    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken });
+  // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open),
+  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1).
+  const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required"
+    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken
+       && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));
   useEffect(()=>{ if(user?.id && tpfAnswered) rememberRequired(deviceStorage(), user.id, plansStageNow==="required"); },[user?.id, tpfAnswered, plansStageNow]);
   useEffect(()=>{
     if(!user?.id || plansStageNow!=="offer_once" || !onboarded || !firstVisitDone) return;
@@ -19300,7 +19309,11 @@ export default function FlourishApp(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[user?.id, plansStageNow, onboarded, firstVisitDone]);
   // The way out of the screen that cannot be closed: sign out (as Settings does, without its question).
-  const plansSignOut = async ()=>{ try { await supabase.auth.signOut(); } catch {} window.location.reload(); };
+  const plansSignOut = async ()=>{
+    try { await supabase.auth.signOut(); } catch {}
+    try { Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k)); } catch {}
+    window.location.reload();
+  };
   const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
     <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>

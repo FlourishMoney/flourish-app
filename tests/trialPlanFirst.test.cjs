@@ -64,7 +64,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // 1e on: an account made at or after the time has no account trial; one made before keeps it to its end.
     setEnv({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
     const newRow = { plan: "trial", founder_flag: false, trial_started_at: iso(Date.parse(SINCE) + 3 * day), trial_ends_at: iso(Date.parse(SINCE) + 17 * day) };
-    const atRow = { ...newRow, trial_started_at: SINCE };
+    const atRow = { ...newRow, trial_started_at: SINCE, trial_ends_at: iso(Date.parse(SINCE) + 14 * day) };
     const midRow = { plan: "trial", founder_flag: false, trial_started_at: iso(Date.parse(SINCE) - 2 * day), trial_ends_at: iso(Date.parse(SINCE) + 12 * day) };
     const endedRow = { plan: "trial", founder_flag: false, trial_started_at: iso(Date.parse(SINCE) - 40 * day), trial_ends_at: iso(Date.parse(SINCE) - 26 * day) };
     t.eq(rules.derivePlan(newRow, NOW), "free", "1e on: a new account has no account trial");
@@ -155,9 +155,14 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const NOWD = Date.parse("2026-11-13T17:00:00Z");
     const d = lib.trialDisclosure({ platform: "ios", eligible: true, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
     t.eq(d.claim, true, "2e eligible: the plan claims the 14 days");
-    t.eq(d.lines, ["[WORDS: trialfirst-free-days]", "[WORDS: trialfirst-then] [price $11.99 a month]", "[WORDS: trialfirst-first-charge] [date November 27, 2026]",
-      "[WORDS: trialfirst-cancel-before] [date November 27, 2026]", "[WORDS: trialfirst-cancel-ios]"],
-      "2f …14 days free, the price after and how often, the first charge's date, cancel before it and nothing is charged, how to cancel on an iPhone");
+    // Review round (H2): Apple may charge up to 24 hours before the trial ends, and a cancellation in those 24 hours still
+    // renews. So on an iPhone the first charge is stated a day early, and "cancel before" is the day before, everywhere.
+    t.eq(d.lines, ["[WORDS: trialfirst-free-days]", "[WORDS: trialfirst-then] [price $11.99 a month]", "[WORDS: trialfirst-first-charge] [date November 26, 2026]",
+      "[WORDS: trialfirst-cancel-before] [date November 26, 2026]", "[WORDS: trialfirst-cancel-ios]"],
+      "2f …14 days free, the price after and how often, the first charge's date (iPhone: a day early), cancel before it and nothing is charged, how to cancel on an iPhone");
+    const dw = lib.trialDisclosure({ platform: "web", eligible: true, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
+    t.eq([dw.lines[2], dw.lines[3]], ["[WORDS: trialfirst-first-charge] [date November 27, 2026]", "[WORDS: trialfirst-cancel-before] [date November 26, 2026]"],
+      "2f2 the website: charged on day 14 itself, and still told to cancel the day before (a day of margin)");
     t.eq(lib.trialDisclosure({ platform: "android", eligible: true, price: "$99.99 a year", planKey: "annual", now: NOWD, words: W.trialWords }).lines[4], "[WORDS: trialfirst-cancel-android]", "2g …on Android, Android's way to cancel");
     t.eq(lib.trialDisclosure({ platform: "web", eligible: true, price: "$79.99 a year", planKey: "founding_annual", now: NOWD, words: W.trialWords }).lines[4], "[WORDS: trialfirst-cancel-web]", "2h …on the website, the website's (founding included)");
     const no = lib.trialDisclosure({ platform: "ios", eligible: false, price: "$11.99 a month", planKey: "monthly", now: NOWD, words: W.trialWords });
@@ -186,7 +191,9 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.ok(/checkTrialOrIntroductoryPriceEligibility\(\{ productIdentifiers: ids \}\)/.test(store) && /catch\{ elig = \{\}; \}/.test(store), "2t store: the iPhone asks RevenueCat, and a failed answer claims nothing");
     t.ok(/purchases\.purchaseSubscriptionOption\(\{ subscriptionOption: base \}\)/.test(store), "2u store: Android buys the base plan unless the card claimed the trial");
     t.ok(/\{trialOf\(plan\)&&<TrialLines disclosure=\{trialOf\(plan\)\}\/>\}/.test(web) && /\{trialOf\(chosen\) \? <TrialLines disclosure=\{trialOf\(chosen\)\}\/>/.test(web), "2v web: each plan's lines, and again above the confirm button");
-    t.ok(web.includes("plan_key:planKey, ...(trialFirst ? { trial: trialFirst.web_trial_eligible===true } : {})"), "2w web: the checkout says which terms the screen showed");
+    t.ok(web.includes("plan_key:planKey, ...(trialFirst ? { trial: webEligible } : {})") && web.includes("const webEligible = trialSaid!==null ? trialSaid : trialFirst?.web_trial_eligible===true;"),
+      "2w web: the checkout says which terms the screen showed");
+    t.ok(web.includes('if(typeof body.trial==="boolean") setTrialSaid(body.trial);'), "2w2 …and after a trial_changed answer the screen shows what the server said, so it cannot loop (review L3)");
     t.ok(/\{!required&&<button onClick=\{onClose\}/.test(web), "2x web: the first plans screen has no Close");
     const gate = APP.slice(APP.indexOf("if(!firstVisitDone&&appData&&!appData.demo)return"), APP.indexOf("if(showUpgrade && billingUi.show)return"));
     t.ok(/if\(plansRequired && firstVisitDone\)\{/.test(gate), "2y the gate comes after the first safe-to-spend number (the activation moment is kept)");
@@ -281,6 +288,28 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.ok(/customer\.subscription\.created/.test(doc) && /customer\.subscription\.trial_will_end/.test(doc) && /TRIAL_PLAN_FIRST_SINCE/.test(doc), "7c the Stripe events the server now hears, and the two Netlify settings");
     t.ok((doc.match(/\*\*Cannot be changed later:\*\*/g) || []).length >= 2 && /\*\*Permanent once created\.\*\*/.test(doc), "7d which fields cannot be changed later");
     t.ok(/Prices stay exactly as they are/.test(doc) && /## Order on the day/.test(doc), "7e prices unchanged, and the order on the day");
+  }
+
+  // ── 8. THE REVIEW ROUND ─────────────────────────────────────────────────────────────────────────
+  {
+    // H1 a partner's invite waiting: never held at the plans.
+    t.eq(lib.plansFirstStage({ tpf: { on: true, account_trial: false }, canSell: true, profilePlan: "free", pendingInvite: true }), null, "8a H1 someone who came from a partner's invite is never held at the plans");
+    t.ok(APP.includes("pendingInvite: !!householdLinkToken") && APP.includes("recalledRequired(deviceStorage(), user.id) && !householdLinkToken"), "8b H1 …the app passes the invite, and a remembered screen gives way to it too");
+    // H3 the tester free month (0039 moves trial_ends_at past 14 days) is kept.
+    setEnv({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
+    const tester = { plan: "trial", founder_flag: false, trial_started_at: iso(Date.parse(SINCE) + day), trial_ends_at: iso(Date.parse(SINCE) + 31 * day) };
+    t.eq([rules.accountTrialApplies(tester, Date.parse(SINCE)), rules.derivePlan(tester, NOW)], [true, "trial"], "8c H3 a new account given the tester free month keeps it");
+    const plain = { ...tester, trial_ends_at: iso(Date.parse(SINCE) + 15 * day) };
+    t.eq(rules.derivePlan(plain, NOW), "free", "8d H3 …while the default 14 days (the trigger's) is not an account trial for a new account");
+    // M6 the time must be a full one.
+    t.eq([rules.trialPlanFirstSince({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20" }), rules.trialPlanFirstSince({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20 15:00" }),
+      rules.trialPlanFirstSince({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20T15:00:00-05:00" })], [null, null, Date.parse("2026-11-20T20:00:00Z")],
+      "8e M6 a date alone, or a time with no zone, is off; a full time with its zone is on");
+    // L1 a remembered payment lets the app open while the status call fails; L2 sign-out clears the same keys.
+    t.ok(APP.includes("recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true"), "8f L1 a payment remembered on the device lets the app open while the status call fails");
+    const so = APP.slice(APP.indexOf("const plansSignOut = async ()=>{"), APP.indexOf("const plansSignOut = async ()=>{") + 500);
+    t.ok(so.includes('k.startsWith("flourish_") && k !== STORAGE_KEY && !k.startsWith(PLANS_OFFERED_PREFIX) && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY'), "8g L2 the plans screen's sign-out clears what Settings' does");
+    setEnv({});
   }
 
   process.env = saved;

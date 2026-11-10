@@ -50,22 +50,29 @@ function checkReminderUnsubscribe(userId, token, secret = unsubscribeSecret()) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-/** "November 27, 2026", in Eastern time (the business's own; the stores and Stripe bill on that day for Canada). */
+/** "November 27, 2026", in Pacific time: the earliest calendar day anywhere in Canada for that moment, so a date in the
+ * email is never later than the person's own (review round: Toronto's could be a day late in British Columbia). */
 function reminderDateLabel(ms) {
-  return new Date(ms).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Toronto" });
+  return new Date(ms).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Vancouver" });
+}
+// As the plans screen states them (src/lib/trialPlanFirst.js trialDates): on an iPhone the first charge may come 24 hours
+// early, and "cancel before" is the day before the trial ends, everywhere.
+function reminderDates(platform, trialEndMs) {
+  const dayBefore = trialEndMs - 86400000;
+  return { charge: reminderDateLabel(platform === "ios" ? dayBefore : trialEndMs), cancelBy: reminderDateLabel(dayBefore) };
 }
 
 /** The email, or null when it cannot carry a working unsubscribe link. platform: "ios" | "android" | "web". */
 function reminderEmail({ to, userId, platform, trialEndMs, amount }) {
   const unsub = reminderUnsubscribeLink(userId);
   if (!unsub || !to || !amount) return null;
-  const date = reminderDateLabel(trialEndMs);
+  const { charge: date, cancelBy } = reminderDates(platform, trialEndMs);
   const cancel = platform === "ios" ? "trialfirst-email-cancel-ios" : platform === "android" ? "trialfirst-email-cancel-android" : "trialfirst-email-cancel-web";
   const subject = trialEmailWords("trialfirst-email-subject", { date });
   const paragraphs = [
     trialEmailWords("trialfirst-email-lead", { date }),
     trialEmailWords("trialfirst-email-charge", { amount, date }),
-    trialEmailWords(cancel, { date }),
+    trialEmailWords(cancel, { date: cancelBy }),
     trialEmailWords("trialfirst-email-keep"),
     trialEmailWords("trialfirst-email-why"),
   ];
@@ -121,7 +128,12 @@ async function sendTrialReminder(admin, { provider, ref, userId, trialEndMs, pla
   if (claim === "busy") return { sent: false, reason: "in_progress" };
   if (claim === "error") return { sent: false, reason: "read_failed" };
   const ok = await send(payload, `trial-reminder/${provider}/${ref}`);
-  if (!ok) return { sent: false, reason: "send_failed" };
+  if (!ok) {
+    // The claim is let go at once (review round, M1), so Stripe's retry, or the next sweep, can send it.
+    const { error: relErr } = await admin.from("trial_reminders").update({ claimed_at: new Date(0).toISOString() }).eq("provider", provider).eq("subscription_ref", ref);
+    if (relErr) console.error("[trial-reminder] claim not released");
+    return { sent: false, reason: "send_failed" };
+  }
   const { error: doneErr } = await admin.from("trial_reminders").update({ sent_at: new Date(now).toISOString() }).eq("provider", provider).eq("subscription_ref", ref);
   if (doneErr) console.error("[trial-reminder] sent, but not recorded"); // the idempotency key keeps Resend from sending it twice
   return { sent: true, reason: null };
@@ -133,5 +145,5 @@ function moneyLabel(cents, currency) {
   return `$${(cents / 100).toFixed(2)} ${String(currency).toUpperCase()}`;
 }
 
-module.exports = { REMINDER_DAYS_BEFORE, STORE_PRICES, RECLAIM_MS, reminderDue, reminderUnsubscribeLink, checkReminderUnsubscribe, reminderDateLabel,
+module.exports = { REMINDER_DAYS_BEFORE, STORE_PRICES, RECLAIM_MS, reminderDue, reminderUnsubscribeLink, checkReminderUnsubscribe, reminderDateLabel, reminderDates,
   reminderEmail, claimReminder, sendTrialReminder, moneyLabel };

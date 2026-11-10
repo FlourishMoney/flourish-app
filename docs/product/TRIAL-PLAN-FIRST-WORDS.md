@@ -10,8 +10,8 @@ Rules the lines are built to (cited in `docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md`):
 |---|---|---|---|---|
 | `trialfirst-free-days` | Plans screen, each plan, above its button, only when the store (or Stripe) says the person is eligible | the trial is 14 days and free | [WORDS: trialfirst-free-days] | 30 |
 | `trialfirst-then` | Same, next line | {price}: the full price after the trial and how often ("$11.99 a month", the store's own price on iPhone and Android), and that it renews automatically until cancelled | [WORDS: trialfirst-then] | 90 |
-| `trialfirst-first-charge` | Same | {date}: the date of the first charge | [WORDS: trialfirst-first-charge] | 60 |
-| `trialfirst-cancel-before` | Same | {date}: "Cancel any time before {date} and you won't be charged" | [WORDS: trialfirst-cancel-before] | 90 |
+| `trialfirst-first-charge` | Same | {date}: the date of the first charge (on an iPhone the day before the trial ends: Apple may charge up to 24 hours early) | [WORDS: trialfirst-first-charge] | 60 |
+| `trialfirst-cancel-before` | Same | {date}: "Cancel any time before {date} and you won't be charged"; {date} is the day before the trial ends, on every platform (always in time) | [WORDS: trialfirst-cancel-before] | 90 |
 | `trialfirst-cancel-ios` | Same, iPhone | How to cancel: Settings > your name > Subscriptions | [WORDS: trialfirst-cancel-ios] | 110 |
 | `trialfirst-cancel-android` | Same, Android | How to cancel: Google Play > Payments & subscriptions > Subscriptions | [WORDS: trialfirst-cancel-android] | 110 |
 | `trialfirst-cancel-web` | Same, website | How to cancel: Settings > Manage subscription (Stripe's billing portal) | [WORDS: trialfirst-cancel-web] | 110 |
@@ -26,7 +26,7 @@ Rules the lines are built to (cited in `docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md`):
 | `trialfirst-landing` | Website landing, instead of "Every feature free for 14 days. Also on iPhone and Android." | 14 days free with a plan; no "no card" claim | [WORDS: trialfirst-landing] | 90 |
 | `trialfirst-email-subject` | The reminder email (3 days before the first charge), subject | {date}: the first charge's date | [WORDS: trialfirst-email-subject] | 70 |
 | `trialfirst-email-lead` | Same, first line | The 14-day free trial ends on {date} | [WORDS: trialfirst-email-lead] | 120 |
-| `trialfirst-email-charge` | Same | {amount} and {date}: what is charged and when (the website: Stripe's own figure with tax; the stores: the plan's price, plus tax where the store adds it) | [WORDS: trialfirst-email-charge] | 160 |
+| `trialfirst-email-charge` | Same | {amount} and {date}: what is charged and when (the website: Stripe's own figure with tax; the stores: the plan's price, plus tax where the store adds it). Dates in Pacific time, the earliest in Canada; on an iPhone the day before the trial ends | [WORDS: trialfirst-email-charge] | 160 |
 | `trialfirst-email-keep` | Same | Nothing to do to keep the plan | [WORDS: trialfirst-email-keep] | 100 |
 | `trialfirst-email-cancel-ios` | Same, iPhone purchase | Exactly how to cancel: Settings > your name > Subscriptions > flourish, before {date} | [WORDS: trialfirst-email-cancel-ios] | 200 |
 | `trialfirst-email-cancel-android` | Same, Google Play purchase | Exactly how to cancel: Google Play > Payments & subscriptions > Subscriptions > flourish, before {date} | [WORDS: trialfirst-email-cancel-android] | 200 |

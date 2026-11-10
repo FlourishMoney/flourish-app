@@ -83,6 +83,7 @@ function loadWith(modPath, D, as, { everSubs = [], listFails = false } = {}) {
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true, exports: {
     stripeGet: async (p) => {
       D.db.stripe.push(["GET", p]);
+      if (/^\/subscriptions\/sub_/.test(p)) return D.db.subs && D.db.subs[p.split("/").pop()] ? D.db.subs[p.split("/").pop()] : { status: "active" };
       if (/^\/subscriptions\?customer=/.test(p) && /limit=1$/.test(p)) { if (listFails) { const e = new Error("down"); e.statusCode = 500; throw e; } return { data: everSubs }; }
       return { data: [] };
     },
@@ -163,11 +164,15 @@ const ON = { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE };
     {
       env(ON);
       const D = makeDb(); const U = addUser(D, 2);
+      D.db.subs = { sub_f: { id: "sub_f", status: "trialing", trial_end: T + 14 * DAY } };
       const trialSub = (o = {}) => ({ id: "sub_f", customer: `cus_${U.slice(-4)}`, status: "trialing", metadata: { user_id: U, plan_key: "founding_annual", trial_plan_first: "1" },
         trial_start: T, trial_end: T + 14 * DAY, items: { data: [{ price: { id: "price_founding_7999" }, current_period_end: T + 14 * DAY }] }, ...o });
       t.eq(await stripeEvent(D, "evt_c1", "checkout.session.completed", { customer: `cus_${U.slice(-4)}`, subscription: "sub_f", mode: "subscription", payment_status: "no_payment_required",
         metadata: { user_id: U, plan_key: "founding_annual" } }), 200, "2i a founding trial's checkout is processed");
       t.eq(D.db.seats.map((s) => [s.user_id, !!s.released_at]), [[U, false]], "2j …and holds a seat from day one");
+      // Review round (M3): the checkout itself asks Stripe for the subscription, so the row says trialing from the start.
+      t.eq([D.db.rows.subscriptions.find((r) => r.user_id === U).status, D.db.rows.subscriptions.find((r) => r.user_id === U).current_period_end], ["trialing", new Date((T + 14 * DAY) * 1000).toISOString()],
+        "2j2 the checkout's row says trialing, with the trial's end, from the start");
       t.eq(await stripeEvent(D, "evt_c2", "customer.subscription.created", trialSub(), T + 1), 200, "2k on: the trial's start is heard");
       t.eq(D.db.rows.subscriptions.find((r) => r.user_id === U).status, "trialing", "2l …and the row says trialing, with the trial's end");
       t.eq(await stripeEvent(D, "evt_c3", "customer.subscription.deleted", trialSub({ status: "canceled", canceled_at: T + 3 * DAY, ended_at: T + 3 * DAY }), T + 3 * DAY), 200, "2m cancelled on day 3");
@@ -207,6 +212,11 @@ const ON = { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE };
       await S.syncStoreSubscription(E.admin, V, { fetchSubscriber: async () => rec("normal", new Date(NOW + 300 * DAY * 1000).toISOString()), now: NOW, user: E.db.users[V] });
       await S.syncStoreSubscription(E.admin, V, { fetchSubscriber: async () => rec("normal", new Date(NOW + 1 * DAY * 1000).toISOString()), now: NOW + 2 * DAY * 1000, user: E.db.users[V] });
       t.eq([E.db.seats[0].released_at, !!E.db.rows.subscriptions[0].founding_ended_at], [null, true], "2n7 a paid store founding subscription that ends: unchanged");
+      // Review round (L4): a trial that converted with no sync in between (the row still says trialing) is never taken for unpaid.
+      const F2 = makeDb(); const X = addUser(F2, 9);
+      await S.syncStoreSubscription(F2.admin, X, { fetchSubscriber: async () => rec("trial", new Date(NOW + 14 * DAY * 1000).toISOString()), now: NOW, user: F2.db.users[X] });
+      await S.syncStoreSubscription(F2.admin, X, { fetchSubscriber: async () => rec("normal", new Date(NOW + 379 * DAY * 1000).toISOString()), now: NOW + 400 * DAY * 1000, user: F2.db.users[X] });
+      t.eq(F2.db.seats[0].released_at, null, "2n8 a founding store trial that was charged (its end moved a year on), seen only after it ended: the seat stays");
     }
 
     // ── 2o the start of a Stripe trial is heard only while the switch is on ────────────────────────

@@ -88,12 +88,17 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       t.ok(e.text.includes("PO Box 29, Foxboro ON K0K 2B0"), "4b2 …with the mailing address");
       t.ok(/^<https:\/\/flourishmoney\.app\/api\/trial-reminder\?do=unsubscribe&u=[^&]+&t=[^>]+>, <mailto:hello@flourishmoney\.app\?subject=unsubscribe>$/.test(e.headers["List-Unsubscribe"])
         && e.headers["List-Unsubscribe-Post"] === "List-Unsubscribe=One-Click" && e.text.includes("Unsubscribe in one click: https://flourishmoney.app/api/trial-reminder?"), "4b3 …and a one-click unsubscribe (RFC 8058 headers and a link)");
-      t.ok(e.subject === "Your free trial ends November 27, 2026" && e.text.includes("On November 27, 2026 you'll be charged $11.99 CAD."), "4b4 …it says the date and amount of the first charge");
+      // Review round (H2, M2): dates in Pacific time (never later than the person's own), on an iPhone a day early (Apple may
+      // charge up to 24 hours before), and "cancel before" the day before, everywhere.
+      t.ok(e.subject === "Your free trial ends November 26, 2026" && e.text.includes("On November 26, 2026 you'll be charged $11.99 CAD.") && e.text.includes("To cancel on iPhone before November 26, 2026"),
+        "4b4 …it says the date and amount of the first charge (an iPhone: a day early) and the day to cancel by");
       t.ok(e.text.includes("Settings > your name > Subscriptions") && !e.text.includes("Google Play") && !e.text.includes("Manage subscription"), "4b5 …and how to cancel on an iPhone, only");
       const a = L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "android", trialEndMs: END, amount: "$99.99 CAD" });
       const w = L.reminderEmail({ to: "x@example.ca", userId: U1, platform: "web", trialEndMs: END, amount: "$13.55 CAD" });
       t.ok(a.text.includes("Google Play > Payments & subscriptions") && w.text.includes("Settings > Manage subscription"), "4b6 …Android's way and the website's way");
-      t.ok(e.html.includes("PO Box 29, Foxboro ON K0K 2B0") && e.html.includes("November 27, 2026"), "4b7 the HTML part says the same");
+      t.ok(e.html.includes("PO Box 29, Foxboro ON K0K 2B0") && e.html.includes("November 26, 2026"), "4b7 the HTML part says the same");
+      t.ok(w.text.includes("On November 27, 2026 you'll be charged $13.55 CAD.") && w.text.includes("before November 26, 2026"), "4b8 the website: charged on day 14 itself, cancel by the day before");
+      t.eq(L.reminderDateLabel(Date.parse("2026-11-27T06:30:00Z")), "November 26, 2026", "4b9 Pacific time: 06:30 UTC on the 27th is still the 26th in British Columbia");
 
       const P = loadLib(false);
       const { sent, send } = outbox(); const S = state();
@@ -124,7 +129,8 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       t.eq((await L.sendTrialReminder(a4, { ...args, send: async () => false })).reason, "send_failed", "4h a send that failed says so");
       t.eq(S4.trial_reminders[0].sent_at, null, "4h2 …and is not recorded as sent");
       const o4 = outbox();
-      t.eq([(await L.sendTrialReminder(a4, { ...args, now: args.now + 16 * 60000, send: o4.send })).sent, o4.sent.length], [true, 1], "4h3 …so the retry sends it, once");
+      // Review round (M1): the claim is let go at once, so even a retry a minute later sends it.
+      t.eq([(await L.sendTrialReminder(a4, { ...args, now: args.now + 60000, send: o4.send })).sent, o4.sent.length], [true, 1], "4h3 …so the retry sends it, at once, once");
     }
 
     // ── 4i-4k the unsubscribe link ─────────────────────────────────────────────────────────────────
@@ -173,10 +179,16 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       S = state();
       r = await event(S, "evt_4", sub(), { previewFails: true });
       t.ok(r.sent.length === 1 && r.sent[0].p.text.includes("$11.99 CAD plus tax"), "4p Stripe cannot preview it: the plan's price, plus tax");
+      // Review round (M4): a trial already running when the switch goes off still gets its reminder.
       OFF();
       S = state();
       r = await event(S, "evt_5", sub());
-      t.eq([r.code, r.sent.length], [200, 0], "4q off: trial_will_end is ignored, as before");
+      t.eq([r.code, r.sent.length], [200, 1], "4q off: a website trial already running still gets its reminder");
+      ON();
+      // Review round (M1): another send under way is a 5xx, so Stripe asks again later and the reminder is not lost.
+      S = state(); S.trial_reminders.push({ provider: "stripe", subscription_ref: "sub_web", user_id: U1, trial_end: new Date(END).toISOString(), claimed_at: new Date(Date.now() - 60000).toISOString(), sent_at: null });
+      r = await event(S, "evt_6", sub());
+      t.eq([r.code, r.sent.length], [500, 0], "4q2 a send already under way: 5xx, so Stripe retries rather than the reminder being dropped");
     }
 
     // ── 4r-4w the stores, from the hourly sweep ────────────────────────────────────────────────────
@@ -197,9 +209,13 @@ const outbox = () => { const sent = []; const send = async (payload, key) => { s
       S = state(); S.subscriptions.push(row({ cancel_at_period_end: true }), row({ user_id: U2, provider: "stripe" }), row({ user_id: U2, status: "active" }));
       r = await run(S, END - 3 * DAY + 60000);
       t.eq(r.sent.length, 0, "4v a cancelled store trial, a website row (Stripe sends that one) and a paid row: none");
+      // Review round (M4): with the switch off the sweep still serves store trials already running; with none, it sends nothing.
       OFF();
+      S = state(); S.subscriptions.push(row({}));
+      r = await run(S, END - 3 * DAY + 60000);
+      t.eq(r.sent.length, 1, "4w off: a store trial already running still gets its reminder");
       const h = await load(SWEEP, fakeAdmin(state())).handler();
-      t.eq(JSON.parse(h.body), { off: true }, "4w off: the sweep does nothing");
+      t.eq(JSON.parse(h.body), { read: true, sent: 0, skipped: 0 }, "4w1 …and with no store trial anywhere (today), it reads one empty list and sends nothing");
       const pricing = fs.readFileSync(path.join(REPO, "src", "lib", "pricing.js"), "utf8");
       const L = loadLib();
       t.ok(/monthly:\s*11\.99/.test(pricing) && /annual:\s*99\.99/.test(pricing) && /foundingAnnual:\s*79\.99/.test(pricing)
