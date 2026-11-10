@@ -166,6 +166,13 @@ Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the
    - first run 0044.
    - The webhook endpoint needs no new event.
 
+## Before PLUS_ENABLED goes on (Amanda)
+1. Run 0044, then 0045. Each has a read-only check at its end.
+2. Create the products (above), then set the Plus price variables.
+3. **Every store app in use must be the build with this code (1.1.6 or later).** An older app doesn't know `plus_mode`. It would write a Plus member's own holdings into the shared household blob, where the partner can read them. The website updates when it deploys.
+4. Approve the words. Until then the production and store builds refuse to build.
+5. Give the Plus portal its own Stripe portal configuration, with plan switching off.
+
 ## The review round (2026-11-10)
 **Fixed:**
 - **HIGH: a reconnect was refused at the limit.** Plaid's update mode sends a reconnect back through `exchange_token`. The limit now applies only after the exchange, and only to an item that adds a bank: not this person's own, and not a bank they already hold. A refused new item is removed at Plaid.
