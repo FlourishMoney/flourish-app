@@ -43,6 +43,7 @@ const MIGRATIONS = path.join(__dirname, "..", "supabase", "migrations");
 const M30 = fs.readFileSync(path.join(MIGRATIONS, "0030_couple_household.sql"), "utf8");
 const M31 = fs.readFileSync(path.join(MIGRATIONS, "0031_couple_household_private.sql"), "utf8");
 const M33 = fs.readFileSync(path.join(MIGRATIONS, "0033_meeting_records_grants.sql"), "utf8");
+const M41 = fs.readFileSync(path.join(MIGRATIONS, "0041_leave_keeps_meetings.sql"), "utf8");
 const STUB = `
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -121,7 +122,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     for (const f of files) { try { file(path.join(MIGRATIONS, f)); } catch (e) { failed.push(`${f}: ${String(e.stderr || e.message).split("\n").find((l) => /ERROR/.test(l)) || ""}`); } }
     t.eq(failed, [], "0a every migration applies in order, 0030 and 0031 included");
     t.ok(files.indexOf("0030_couple_household.sql") < files.indexOf("0031_couple_household_private.sql"), "0b 0030 runs before 0031");
-    for (const f of ["0030_couple_household.sql", "0031_couple_household_private.sql"]) {
+    for (const f of ["0030_couple_household.sql", "0031_couple_household_private.sql", "0041_leave_keeps_meetings.sql"]) {
       const again = err(() => file(path.join(MIGRATIONS, f)));
       t.eq(again, "", `0c ${f} runs a second time without error`);
     }
@@ -133,6 +134,9 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.ok(/Expected after: false, true, true, false, false, true, false, false\./.test(M30), "1b …which is what 0030's footer says to expect");
     t.eq(file(path.join(dir, "c31.sql")), "f|f|f|t|f|f|f", "1c 0031: nobody signed in reaches the invites, the cursors, the holds or the purchase attempts, or calls the join; the service role does, but never the inner leave");
     t.ok(/Expected after: false, false, false, true, false, false, false\./.test(M31), "1d …which is what 0031's footer says to expect");
+    fs.writeFileSync(path.join(dir, "c41.sql"), footerCheck(M41));
+    t.eq(file(path.join(dir, "c41.sql")), "t|f|f", "1d2 0041: a leave no longer touches meeting_records, and nobody (not even the service role) calls the inner leave directly");
+    t.ok(/Expected after: true, false, false\./.test(M41), "1d3 …which is what 0041's footer says to expect");
     const fnRoles = sql(`select string_agg(p.proname || ':' || has_function_privilege('authenticated', p.oid, 'execute')::text, ',' order by p.proname)
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'household\\_%'`);
     t.ok(fnRoles.split(",").every((x) => x.endsWith(":false")), `1e no household_* function is callable by a signed-in user (${fnRoles})`);
@@ -527,10 +531,13 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       t.eq(after.debtLinkDismissed, ["debt-hand2|a-o"], "11h …the \"these are different\" answers that named them");
       t.eq(after.bills, [{ id: "b1" }, { id: "b2", debtId: "debt-own" }, { id: "b3" }], "11i …a bill's link to their debt (the bill itself stays: it is the household's)");
       t.eq(["incomeSuggestion" in after, after.bankConnected, after.goals], [false, true, [{ id: "g1" }]], "11j the cached pay suggestion goes (worked out again); still a bank; goals untouched");
-      t.eq([count(a.p, "select * from public.meeting_records"), sql(`select count(*) from public.meeting_records where user_id = '${a.p}'`)], ["0", "0"],
-        "11k the removed partner reads no meeting record, and none is left in their name: they start fresh");
-      t.eq(sql(`select string_agg((current_date - met_on)::text, ',' order by met_on) from public.meeting_records where user_id = '${a.o}'`), "5,2",
-        "11l the household keeps its meeting since they joined (moved to the owner); a day the owner already had is not doubled");
+      // 0041 (2026-11-08): the leaver's meetings leave with them; the one who stays keeps only the meetings they held.
+      t.eq([as(a.p, "select string_agg((current_date - met_on)::text, ',' order by met_on) from public.meeting_records"),
+        sql(`select count(*) from public.meeting_records where user_id = '${a.p}'`)], ["20,5,2", "3"],
+        "11k the removed partner keeps every meeting they recorded, in their own name, and reads exactly those");
+      t.eq([sql(`select string_agg((current_date - met_on)::text, ',' order by met_on) from public.meeting_records where user_id = '${a.o}'`),
+        count(a.o, `select * from public.meeting_records where user_id = '${a.p}'`)], ["2", "0"],
+        "11l the owner keeps only the meeting they held: nothing of the partner's is moved to them, and they read none of the partner's");
       t.eq([count(a.p, "select * from public.household_data"), count(a.p, "select * from public.household_member_private"), count(S, "select * from public.meeting_records")], ["0", "0", "0"],
         "11m after removal the partner reads no blob and no private row, and a stranger reads no meeting record");
       t.eq(sql(`select count(*) from public.plaid_items where user_id = '${a.p}'`), "2", "11n their bank links stay theirs");
@@ -539,6 +546,33 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
       const Hm = await import("../src/lib/household.js");
       t.eq(canon(Hm.stripAccounts(appData, ["a-p", "a-p-old"])), canon(after), "11o the app's stripAccounts gives exactly what the database left");
       t.eq(sql("select array_to_string(public.household_personal_keys(), ',')"), Hm.PERSONAL_SIDE_KEYS.join(","), "11p the database's personal keys are the app's, in the same order");
+    }
+
+    // 11p LEAVING TAKES ONE'S MEETINGS (0041, 2026-11-08) -----------------------------------------------------------
+    // The partner who stays can't see the leaver's meetings after the leave, whichever of the two leaves; the leaver
+    // keeps every meeting they recorded; nobody's meetings move to anyone else.
+    for (const [tag, leaver] of [["lm1", "p"], ["lm2", "o"]]) {
+      const a = pair(tag);
+      const stayer = leaver === "p" ? "o" : "p";
+      // Both have been in the household 10 days. The owner has one meeting from before it; each has one since, on
+      // days the other has none (so 0031's old leave would have MOVED the leaver's to the one who stays).
+      sql(`update public.household_members set joined_at = now() - interval '10 days' where household_id = '${a.h}'`);
+      sql(`insert into public.meeting_records (user_id, met_on, answers) values
+        ('${a.o}', current_date - 30, '[{"signature":"solo","domain":"bills","answer":"dismissed"}]'::jsonb),
+        ('${a.o}', current_date - 3, '[{"signature":"o-home","domain":"bills","answer":"accepted"}]'::jsonb),
+        ('${a.p}', current_date - 2, '[{"signature":"p-home","domain":"bills","answer":"dismissed"}]'::jsonb)`);
+      const sigs = { o: "'solo','o-home'", p: "'p-home'" };
+      const mine = (u) => sql(`select count(*) from public.meeting_records where user_id = '${u}'`);
+      const before = { o: mine(a.o), p: mine(a.p) };
+      t.eq([count(a[stayer], `select * from public.meeting_records where user_id = '${a[leaver]}'`), count(a[leaver], `select * from public.meeting_records where user_id = '${a[stayer]}'`)],
+        ["1", "1"], `11p ${leaver === "p" ? "partner" : "owner"} leaves: before, each reads the other's meeting from the household (so the checks below are not empty by accident)`);
+      t.eq(svc(`household_leave('${a[leaver]}')`).result, "left", `11q …the ${leaver === "p" ? "partner" : "owner"} leaves`);
+      t.eq(count(a[stayer], `select * from public.meeting_records where user_id = '${a[leaver]}' or answers->0->>'signature' in (${sigs[leaver]})`), "0",
+        `11r …and the one who stays can't see any of the leaver's meetings, under the leaver's name or moved into their own`);
+      t.eq(count(a[leaver], `select * from public.meeting_records where user_id = '${a[stayer]}'`), "0", "11s …nor the leaver the stayer's");
+      t.eq([mine(a.o), mine(a.p)], [before.o, before.p], "11t …each person's meetings are still in their own name, none moved and none deleted");
+      t.eq(as(a[leaver], "select string_agg(answers->0->>'signature', ',' order by met_on) from public.meeting_records"), leaver === "o" ? "solo,o-home" : "p-home",
+        "11u …and the leaver reads exactly the meetings they recorded, with their answers");
     }
 
     // 12 DISCONNECTING A BANK, THEN LEAVING (audit round 2 c) -------------------------------------------------------
