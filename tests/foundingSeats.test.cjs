@@ -236,7 +236,7 @@ async function rcEvent(D, id, type, user, subscriber) {
       const NEW = addUser(D, 1, "brand.new@example.ca");
       const s = await storeStatus(D, NEW);
       t.eq([s.founding.available, s.founding.spots_left], [true, 50], "4a a new account, never on the waitlist, confirmed: offered the founding price, 50 spots left");
-      t.eq(F.foundingPlansAutoOpen({ storeBilling: true, userId: NEW, askedFor: NEW, status: s, planKnown: true, inApp: true, shown: false }), true, "4b …so the plans screen opens by itself for it (1.1.3)");
+      t.eq(F.foundingPlansAutoOpen({ storeBilling: true, userId: NEW, askedFor: NEW, status: s, planKnown: true, inApp: true, tourDone: true, shown: false }), true, "4b …so the plans screen opens by itself for it (1.1.3; after the intro tips, 2026-11-05)");
       t.eq(D.db.rpcCalls.filter((n) => /waitlist/.test(n)).length, 0, "4c no waitlist lookup is made to decide it");
       const unconfirmed = addUser(D, 2, "not.yet@example.ca", { confirmed: false });
       t.eq((await storeStatus(D, unconfirmed)).founding.available, false, "4d an account whose address is not confirmed yet is not");

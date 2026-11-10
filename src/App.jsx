@@ -13237,7 +13237,7 @@ function renderCoachMarkdown(src) {
 // Step 4 (COPY-CHANGES §2/§9): the two labels for surfaces that mix engine output and coach prose,
 // and the footer under every coach reply. Small, reusable.
 function CalcByFlourish({ style = {} }) {
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by flourish</span>;
 }
 function YourCoachTag({ style = {} }) {
   return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
@@ -17701,10 +17701,15 @@ export default function FlourishApp(){
       const sc=scrollerOf(els[0]);
       // Below the app header, and below the top of an inner scroller (the coach scrolls under its own bar).
       const topSafe=Math.round(Math.max((bell?bell.getBoundingClientRect().bottom:0), sc?sc.getBoundingClientRect().top:0)+12);
-      const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
+      // ONE PLACE FOR THE BUTTONS (2026-11-05): Skip and Next sit in their own bar, always just above the tab bar, so they
+      // never move from one step to the next. Only the words move: under the bar's top when the target fits above them,
+      // otherwise at the top of the screen with the target between the words and the bar.
+      const actions=document.getElementById("tour-actions");
+      const bar=(actions?actions.offsetHeight:0)+8;
+      const vh=window.innerHeight, sh=sheet.offsetHeight+bar, gap=12, tabBar=100;
       const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
       const sheetTop = fitsAbove ? null : topSafe;
-      const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
+      const want = fitsAbove ? topSafe : topSafe + sheet.offsetHeight + gap; // where the target's top should sit
       const dy=Math.round(top-want);
       if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
       setTourSheetTop(sheetTop);
@@ -18101,19 +18106,20 @@ export default function FlourishApp(){
   // A confirmed subscription closes it.
   useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
   // THE ONE EXCEPTION (1.1.3, Amanda 2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is asked
-  // straight away. The plans screen opens by itself once per account, as soon as the account is in the app, with
-  // Founding annual first; it can be closed, and See plans opens it any time after. Declared after the effect above
-  // so that, when both run, this one has the last word. Every other household: nothing opens on its own.
+  // straight away. The plans screen opens by itself once per account, with Founding annual first; it can be closed, and
+  // See plans opens it any time after. FLOURISH FIRST (Amanda, 2026-11-05): never over onboarding, and not while the intro
+  // tips are on screen: it opens as soon as they are done or skipped, in the same visit. Declared after the effect above so
+  // that, when both run, this one has the last word. Every other household: nothing opens on its own.
   const foundingOpenedRef = useRef(new Set());
   useEffect(()=>{
     const store = deviceStorage();
     const shown = !!user?.id && (foundingOpenedRef.current.has(user.id) || foundingPlansShown(store, user.id));
     if(!foundingPlansAutoOpen({ storeBilling, userId: user?.id, askedFor: storeAskedFor, status: storeStatus,
-      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown })) return;
+      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown })) return;
     foundingOpenedRef.current.add(user.id);
     rememberFoundingPlansShown(store, user.id);
     setPaywallUp(true);
-  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen]);
+  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
@@ -20078,20 +20084,19 @@ input,button,select,textarea { font-family:inherit; }
           const step=TOUR[tourStep];
           const isLast=tourStep===TOUR.length-1;
           return(
-            <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
+            <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),...centredInSafeArea(20, 390),
-                background:C.surface,borderRadius:20,padding:"20px 20px 16px",
-                border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
-                pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
+              {/* The words: right above the buttons, or at the top of the screen when what they describe needs the room. */}
+              <div id="tour-sheet" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:"calc(100px + var(--tour-actions-h, 76px) + 8px)"}),...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"20px 20px 16px",animation:"slideUp .3s ease"}}>
                 <div style={{display:"flex",gap:5,marginBottom:14,justifyContent:"center"}}>
                   {TOUR.map((_,i)=>(
                     <div key={i} style={{width:i===tourStep?20:6,height:6,borderRadius:99,transition:"width .3s",
                       background:i<=tourStep?C.green:C.border}}/>
                   ))}
                 </div>
-                <div style={{marginBottom:SPACE.md}}>
+                <div>
                   <div style={{color:C.muted,fontSize:13,fontWeight:600,marginBottom:SPACE.xs}}>Step {tourStep+1} of {TOUR.length}</div>
                   <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
                     {step.title}
@@ -20099,6 +20104,10 @@ input,button,select,textarea { font-family:inherit; }
                   {/* The Today step names only the parts in this household's number (lib/tour.js stepBody). */}
                   <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{stepBody(step, step.target==="today"&&dataWithHousehold ? SafeSpendEngine.calculate(dataWithHousehold) : null)}</div>
                 </div>
+              </div>
+              {/* The buttons: one place on every step, just above the tab bar (2026-11-05). */}
+              <div id="tour-actions" ref={el=>{ if(el) document.documentElement.style.setProperty("--tour-actions-h", el.offsetHeight+"px"); }} style={{position:"absolute",bottom:100,...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"12px 16px"}}>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",

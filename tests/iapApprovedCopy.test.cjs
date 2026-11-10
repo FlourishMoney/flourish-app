@@ -97,8 +97,9 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   {
     const P = O.PAYWALL_COPY;
     t.eq([P.title, P.lead, P.dataSafe, P.close, P.checking, P.checkAgain, P.storeUnavailable], [
-      "Flourish Plus",
-      "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+      // Approved 2026-11-05 (ChatGPT and Grok AGREE 100), replacing the 2026-10-20 title and lead.
+      "Subscribe to flourish",
+      "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If.",
       "Your accounts, bills and history stay as they are.",
       "Close",
       "Confirming with the store…",

@@ -68,7 +68,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
   const saved = { ...process.env };
   process.env.IAP_ENABLED = "true";
   const status = async (admin) => JSON.parse((await loadBilling(admin).handler(post({ action: "store_status" }))).body);
-  const ready = (st, extra = {}) => ({ storeBilling: true, userId: U1, askedFor: U1, status: st, planKnown: true, inApp: true, shown: false, ...extra });
+  const ready = (st, extra = {}) => ({ storeBilling: true, userId: U1, askedFor: U1, status: st, planKnown: true, inApp: true, tourDone: true, shown: false, ...extra });
 
   const holder = await status(fakeAdmin({ email: HOLDER, position: 36 }));
   const offerPkgs = { monthly: { id: "m" }, annual: null, founding: { id: "f" } };
@@ -86,7 +86,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.eq(JSON.parse(s.getItem(F.FOUNDING_PLANS_SHOWN_KEY)), [U1], "1e remembered once per account (no duplicates)");
     t.eq(F.foundingPlansShown(s, U2), false, "1f another account on the same phone is its own account");
     t.eq(F.paywallPlanOrder(offerPkgs).map(([p]) => p), ["founding_annual", "monthly"], "1g Founding annual is the first plan, then Monthly");
-    for (const [k, v] of [["askedFor", null], ["askedFor", U2], ["planKnown", false], ["inApp", false], ["storeBilling", false], ["userId", null], ["status", null]])
+    for (const [k, v] of [["askedFor", null], ["askedFor", U2], ["planKnown", false], ["inApp", false], ["tourDone", false], ["storeBilling", false], ["userId", null], ["status", null]])
       t.eq(F.foundingPlansAutoOpen(ready(holder, { [k]: v })), false, `1h not before every part is in: ${k}=${JSON.stringify(v)}`);
   }
 
@@ -137,11 +137,11 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     const auto = APP.indexOf("  const foundingOpenedRef = useRef(new Set());");
     t.ok(close > 0 && auto > close && auto - close < 1200, "5a the founding opening is declared straight after the entitlement close, so it has the last word when both run");
     const fx = APP.slice(auto, auto + 900);
-    t.ok(/planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown \}\)\) return;/.test(fx)
-      && /\},\[storeBilling, user\?\.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen\]\);/.test(fx),
-      "5b it waits for this account's answer, its plan, its data and Apple's AI disclosure (5.1.2), and nothing else");
+    t.ok(/planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown \}\)\) return;/.test(fx)
+      && /\},\[storeBilling, user\?\.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep\]\);/.test(fx),
+      "5b it waits for this account's answer, its plan, its data, Apple's AI disclosure (5.1.2), the end of onboarding and the intro tips (Flourish first, 2026-11-05)");
     t.ok(/if\(!onboarded\)return <><Onboarding\n/.test(APP) && /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\/>\{storePaywallOverlay\}<\/>;/.test(APP),
-      "5c it shows over onboarding too: a new founding account is asked straight away");
+      "5c the overlay is still drawn over onboarding, but it never opens there by itself: inApp needs onboarding finished (5b)");
     t.ok(/return <><FirstVisitScreen /.test(APP) && /signalOnboarding\("first_number_shown",[^\n]*\}\}\/>\{storePaywallOverlay\}<\/>;/.test(APP), "5d …and over the first-number screen");
     t.ok(APP.indexOf("const storePaywallOverlay =") < APP.indexOf("if(!user && !appData?.demo)return <AuthScreen"), "5e the overlay is built before the early returns that use it");
     const sp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
