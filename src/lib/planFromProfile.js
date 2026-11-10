@@ -52,12 +52,15 @@ export function trialEndsAtMs(profile) {
  * @param {object|null} profile row with plan, trial_started_at, trial_ends_at, founder_flag
  * @param {number|Date} [now]
  */
-export function derivePlan(profile, now = Date.now()) {
+// TRIAL_PLAN_FIRST (2026-11-10): the server says, in its billing status, whether this account keeps the 14-day
+// account trial (trial_plan_first.account_trial, netlify/functions/_lib/planRules.js accountTrialApplies). Only a
+// false from the server takes the account trial away; no answer is today's rule.
+export function derivePlan(profile, now = Date.now(), { accountTrial = true } = {}) {
   if (!profile) return "free";
   if (profile.founder_flag) return "beta_founder";
   const plan = profile.plan;
   if (plan === "plus" || plan === "pro") return "premium";
-  if (plan === "trial") {
+  if (plan === "trial" && accountTrial !== false) {
     const ends = trialEndsAtMs(profile);
     const t = now instanceof Date ? now.getTime() : now;
     if (ends !== null && t < ends) return "trial";

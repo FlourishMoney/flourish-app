@@ -73,6 +73,9 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     }
     const fnText = APP.slice(bodyStart, end);
     const { derivePlan } = require("../netlify/functions/_lib/planRules.js"); // the server's own rule
+    // TRIAL_PLAN_FIRST (2026-11-10): the function now also remembers the row it read and asks the device whether the
+    // server said this account has no account trial; the real helper, over this run's own storage.
+    const { recalledAccountTrial } = await import("../src/lib/trialPlanFirst.js");
 
     const runOn = async (win, profile) => {
       const store = new Map();
@@ -80,6 +83,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
       const supabase = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile }) }) }) }) };
       const fn = new Function(
         "supabase", "derivePlan", "setPlan", "setIsPremium", "setProfilePlan", "isCapacitorIOS", "isNativeApp", "localStorage", "console",
+        "lastProfileRef", "recalledAccountTrial", "deviceStorage",
         `return (${fnText});`,
       )(
         // setProfilePlan only records the profile's plan for the web paid-subscription effect, which a store
@@ -88,6 +92,8 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
         () => win.Capacitor?.getPlatform?.() === "ios", () => vis.isNativeApp(win),
         { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
         { error() {} },
+        { current: null }, recalledAccountTrial,
+        () => ({ getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) }),
       );
       return { plan: await fn("user-1"), premium };
     };

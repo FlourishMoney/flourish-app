@@ -167,7 +167,9 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
     };
     for (const [name, mount] of Object.entries(MOUNTED_ONLY_OFF_NATIVE)) {
       t.ok(mount.test(src), `${name} is mounted only when native is off`);
-      t.eq((src.match(new RegExp(`<${name}\\b`, "g")) || []).length, 1, `…and nowhere else`);
+      // TRIAL_PLAN_FIRST (2026-11-10): UpgradeScreen has a second mount, the plans-first screen, behind the same guard.
+      const guarded = name === "UpgradeScreen" ? (src.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length : 1;
+      t.eq((src.match(new RegExp(`<${name}\\b`, "g")) || []).length, guarded, `…and nowhere else`);
     }
     const { billingUiState } = await import("../src/lib/billingVisibility.js");
     t.eq(billingUiState({ status: { enabled: true, plans: [{}] }, native: true, paid: false }).show, false, "billingUi.show is false on native, even with billing on");

@@ -30,6 +30,8 @@ const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require(".
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
+const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
+const { trialPlanFirstSince } = require("./_lib/planRules");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
@@ -150,23 +152,28 @@ exports.handler = async (event) => {
       // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
       // shown the plans because the database blinked. Retried first, as getUserPlan does.
       const { data: row, error: rowErr } = await readWithRetry(() => admin
-        .from("subscriptions").select("provider, status, provider_customer_id, current_period_end").eq("user_id", user_id).maybeSingle());
+        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // TRIAL_PLAN_FIRST (_lib/trialPlanFirst.js): only while it is on is there a trial_plan_first key; off, every
+      // answer below is as it was. A profile read that fails is a 503, never a guess about a trial.
+      const tpfState = await trialPlanFirstState(admin, user_id, { row, web: !isNativeRequest(event) });
+      if (tpfState && tpfState.unavailable) return json(503, CORS, { error: "status_unavailable" });
+      const tpf = tpfState ? { trial_plan_first: tpfState } : {};
       // COUPLE MODE: the other member's subscription covers this person too (_lib/household.js). Covered, they are
       // paid, offered nothing, and have nothing of their own to manage. A household read that fails is a 503.
       const cover = isPaidSubscription(row) ? { covered: false } : await householdCover(admin, user_id);
       if (cover.unavailable) return json(503, CORS, { error: "status_unavailable" });
       if (cover.covered) {
-        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner" });
+        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", ...tpf });
         return json(200, CORS, { enabled: true, provider: cover.provider, paid: true, covered_by: "partner", period_end: cover.period_end,
-          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false } });
+          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false }, ...tpf });
       }
 
       // A STORE APP IS TOLD ONE THING: whether this household pays on the web, so the iOS and Android apps
       // give a paying household full access (_lib/planRules.js deriveEntitlement). Nothing else: no
       // founding offer, no confirmation link and no portal, because a store app shows no price, no upgrade
       // button and no link to pay (Apple 3.1.1, Google Play's payments policy).
-      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row) });
+      if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: isPaidSubscription(row), ...tpf });
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
@@ -193,6 +200,7 @@ exports.handler = async (event) => {
         // Not "incomplete": a first payment that failed is retried through checkout, which allows it.
         web_attention: !isPaidSubscription(row) && holdsHousehold(row, isPaidSubscription) && !!row.provider_customer_id,
         founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail },
+        ...tpf,
       });
     }
 
@@ -204,6 +212,10 @@ exports.handler = async (event) => {
       const { data: row, error: rowErr } = await admin
         .from("subscriptions").select("provider, status, current_period_end, plan_key, cancel_at_period_end").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store status read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
+      // TRIAL_PLAN_FIRST: as the web's status above; a store app learns trial eligibility from its own store.
+      const tpfState = await trialPlanFirstState(admin, user_id, { row });
+      if (tpfState && tpfState.unavailable) return json(503, CORS, { error: "unavailable" });
+      const tpf = tpfState ? { trial_plan_first: tpfState } : {};
       let state;
       if (action === "store_sync") {
         state = await syncStoreSubscription(admin, user_id, { user, mayBuyFounding: mayBuyFoundingPrice });
@@ -219,7 +231,7 @@ exports.handler = async (event) => {
         if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
         if (cover.covered) {
           return json(200, CORS, { enabled: true, paid: true, covered_by: "partner", provider: cover.provider, plan_key: null, conflict: !!state.conflict,
-            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null } });
+            conflict_kind: state.conflictKind || null, web_attention: false, period_end: cover.period_end, founding: { available: false, held_on_regular_plan: null }, ...tpf });
         }
       }
       // A web subscription Stripe is still collecting (a renewal that failed): not paid, so no access, but still
@@ -255,6 +267,7 @@ exports.handler = async (event) => {
         // spots_left (2026-10-29): founding spots left, the same public figure the landing shows (/api/founding),
         // for the plans screen's words while the founding price is offered; null otherwise.
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
+        ...tpf,
       });
     }
 
@@ -303,9 +316,11 @@ exports.handler = async (event) => {
       // A web subscription Stripe is still collecting (past_due) counts too: a second checkout would charge twice
       // once the card works. A read that fails is logged and checkout goes on, as it always has (the web hides
       // checkout from a household whose status says it pays; tests/foundingBilling.test.cjs 6f).
+      let guardRow = null, guardRead = false;
       {
         const { data: current, error: curErr } = await admin
-          .from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+          .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id").eq("user_id", user_id).maybeSingle();
+        if (!curErr) { guardRow = current || null; guardRead = true; }
         if (curErr) console.error("[billing] checkout guard read:", curErr.message);
         if (!curErr && isLiveRow(current)) {
           return json(409, CORS, { error: "already_subscribed", provider: current.provider || "stripe" });
@@ -350,6 +365,34 @@ exports.handler = async (event) => {
         return json(503, CORS, { error: "unavailable" });
       }
 
+      // TRIAL_PLAN_FIRST (item 1): 14 days free, a card taken up front, charged on day 14 unless cancelled. Only for an
+      // account that has never had a subscription (our row, and Stripe asked for every subscription this customer ever
+      // had). The screen says which it showed (body.trial); if the server's answer differs, nothing is created (409
+      // trial_changed) and the screen shows what applies: nobody is charged on terms they were not shown. Off: no trial,
+      // exactly as before, and a request that asks for one is refused the same way.
+      let trialDays = 0;
+      {
+        let eligible = false;
+        if (trialPlanFirstSince() !== null) {
+          if (!guardRead) return json(503, CORS, { error: "unavailable" });
+          eligible = webTrialEligibleRow(guardRow);
+          if (eligible) {
+            try {
+              const ever = await stripeGet(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=1`);
+              if (!ever || !Array.isArray(ever.data)) throw new Error("no list");
+              if (ever.data.length) eligible = false;
+            } catch (e) {
+              console.error("[billing] checkout trial check:", e && e.statusCode ? e.statusCode : "no_status");
+              return json(503, CORS, { error: "unavailable" });
+            }
+          }
+          if (body.trial !== eligible) return json(409, CORS, { error: "trial_changed", trial: eligible });
+        } else if (body.trial === true) {
+          return json(409, CORS, { error: "trial_changed", trial: false });
+        }
+        if (eligible) trialDays = TRIAL_PLAN_FIRST_DAYS;
+      }
+
       // COUPLE MODE (audit H5, round 2 a; round 5): one purchase ATTEMPT at a time, for EVERY buyer. The checkout is
       // made first, short-lived (expires_at: it ends before its attempt does), and then it must be recorded as this
       // person's one attempt under its own id, which for a member also holds the household (_lib/household.js
@@ -366,7 +409,13 @@ exports.handler = async (event) => {
         // Both carry user_id: the session for checkout.session.completed, the subscription
         // for every later customer.subscription.* event, which never sees the session.
         metadata: { user_id, plan_key: planKey },
-        subscription_data: { metadata: { user_id, plan_key: planKey } },
+        subscription_data: trialDays
+          ? { metadata: { user_id, plan_key: planKey, trial_plan_first: "1" }, trial_period_days: trialDays,
+              // A card is required up front (below), so this only ever applies if the card is removed during the trial:
+              // then the subscription is cancelled at its end rather than left unpaid.
+              trial_settings: { end_behavior: { missing_payment_method: "cancel" } } }
+          : { metadata: { user_id, plan_key: planKey } },
+        ...(trialDays ? { payment_method_collection: "always" } : {}),
         ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
         expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,   // before its attempt ends (round 5: every checkout)
         allow_promotion_codes: true,

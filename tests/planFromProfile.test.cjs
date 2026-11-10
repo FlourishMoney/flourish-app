@@ -97,7 +97,8 @@ const ahead = (days) => new Date(NOW + days * DAY).toISOString();
     const fs = require("fs");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8").replace(/\/\/[^\n]*/g, "");
     t.ok(/refreshPlanFromProfile/.test(app), "5a App.jsx reads the plan through refreshPlanFromProfile");
-    t.ok(/derivePlan\(prof\)/.test(app), "5b …which derives it with the shared rule, not its own inline copy");
+    // TRIAL_PLAN_FIRST (2026-11-10): with the server's answer on the account trial, remembered on the device.
+    t.ok(/derivePlan\(prof, Date\.now\(\), \{ accountTrial: recalledAccountTrial\(deviceStorage\(\), userId\) \}\)/.test(app), "5b …which derives it with the shared rule, not its own inline copy");
     t.ok(!/const TRIAL_MS = 14 \* 86400000/.test(app), "5c the old inline 14-day arithmetic is gone from App.jsx");
     t.ok(/select\("plan,trial_started_at,trial_ends_at,founder_flag"\)/.test(app), "5d …and it asks for trial_ends_at, which the rule needs");
     const auth = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "auth.js"), "utf8");

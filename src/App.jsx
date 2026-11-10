@@ -98,6 +98,8 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, chipChargeDate } from "./lib/trialPlanFirst.js";
+import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -4227,7 +4229,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
 // score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
 // completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount}){
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false}){
   const [step,setStep]=useState(0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
   const onCountRef=useRef(onCount); onCountRef.current=onCount;
@@ -4553,7 +4555,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
       <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>{tpfOn ? trialWords("trialfirst-welcome") : "Free to start · Canada & USA · No credit card"}</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
         <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
       </div>
@@ -14294,7 +14296,18 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
 // WHICH PLANS are offered is the server's answer, not this screen's opinion — the founding price
 // appears only because the status call said there is room for it, and its price id never reaches
 // the browser at all: the client posts a plan KEY.
-function UpgradeScreen({status, mode, notice, onClose, onManage}){
+// TRIAL_PLAN_FIRST (item 1): the lines above a plan's button, from lib/trialPlanFirst.js trialDisclosure. The first
+// line (the trial, or the price charged today) is the most prominent; how to cancel is last.
+function TrialTerms({disclosure}){
+  if(!disclosure) return null;
+  return (
+    <div data-trial-lines={disclosure.claim?"trial":"no-trial"} style={{marginTop:SPACE.sm,display:"flex",flexDirection:"column",gap:2}}>
+      {disclosure.lines.map((l,i)=><div key={i} data-trial-line={i} style={{color:i===0?C.cream:C.mutedHi,fontSize:i===0?14:13,fontWeight:i===0?800:500,lineHeight:1.5,overflowWrap:"anywhere"}}>{l}</div>)}
+    </div>
+  );
+}
+
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14309,6 +14322,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   const chosenKey = selectedChoice(choices, picked);
   const chosen = choices.find(p=>p.key===chosenKey) || null;
   const trialLine = upgradeTrialLine(trialEndLabel(trialEndsAtMs(), { trialActive: isTrialActive() }));
+  // TRIAL_PLAN_FIRST: with the switch on, each plan says above its button whether it starts with 14 days free (only
+  // when the server says this account is eligible) and what is charged, when, and how to cancel. Off: null, as before.
+  // L3 (review round): once checkout has said the trial does not apply (Stripe's history), the screen shows that, for this visit.
+  const [trialSaid,setTrialSaid]=useState(null);
+  const webEligible = trialSaid!==null ? trialSaid : trialFirst?.web_trial_eligible===true;
+  const trialOf = (plan) => trialFirst ? trialDisclosure({ platform:"web", eligible: webEligible, price: plan.price, planKey: plan.key, words: trialWords }) : null;
 
   const sendConfirm = async () => {
     setConfirmState("sending");
@@ -14334,9 +14353,17 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
         body: JSON.stringify(planKey==="__portal__"
           ? {action:"create_portal_session"}
-          : {action:"create_checkout_session", plan_key:planKey}),
+          : {action:"create_checkout_session", plan_key:planKey, ...(trialFirst ? { trial: webEligible } : {})}),
       });
       const body = await res.json().catch(()=>({}));
+      // TRIAL_PLAN_FIRST: the server's answer on the trial differs from what this screen showed. Nothing was created;
+      // the status is asked again, so the plans show what applies, and the person chooses again.
+      if(res.status===409 && body.error==="trial_changed"){
+        setError(trialWords("trialfirst-changed")); setStep("choose"); setBusy(null);
+        if(typeof body.trial==="boolean") setTrialSaid(body.trial);
+        if(onRecheck) await onRecheck();
+        return;
+      }
       // The server refused the founding price for this account (billing.js 403). Retrying never helps,
       // so it is said plainly, not as a connection error (src/lib/billingVisibility.js checkoutErrorText).
       if(res.status===403){
@@ -14357,7 +14384,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
-          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+          {!required&&<button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>}
         </div>
 
         {notice&&(
@@ -14366,6 +14393,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           </div>
         )}
 
+        {required&&mode!=="manage"&&(
+          <div data-plans-first="" style={{marginBottom:SPACE.md}}>
+            <h1 style={{...TYPE.title2,color:C.cream,margin:`0 0 ${SPACE.xs}px`}}>{trialWords("trialfirst-plans-title")}</h1>
+            <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{trialWords("trialfirst-plans-lead")}</div>
+          </div>
+        )}
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             {/* H4: a renewal that failed (past_due) is not on Plus until the card is fixed: the portal line only. */}
@@ -14385,9 +14418,9 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
               </div>
               {chosen.note&&<div style={{color:chosen.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{chosen.note}</div>}
             </div>
-            <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>
+            {trialOf(chosen) ? <TrialTerms disclosure={trialOf(chosen)}/> : <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>}
             <button data-review-confirm="" onClick={()=>go(chosen.key)} disabled={!!busy} style={{width:"100%",minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy?0.7:1}}>
-              {busy===chosen.key?"Opening checkout…":UPGRADE_COPY.reviewConfirm}
+              {busy===chosen.key?"Opening checkout…":(trialOf(chosen)?.claim ? trialWords("trialfirst-button") : UPGRADE_COPY.reviewConfirm)}
             </button>
             <button onClick={()=>{setStep("choose");setError("");}} disabled={!!busy} style={{alignSelf:"center",background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>
               ← Back
@@ -14431,6 +14464,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
                         </span>
                         {plan.sub&&<span style={{display:"block",color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</span>}
                         {plan.note&&<span style={{display:"block",color:founding?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</span>}
+                        {trialOf(plan)&&<TrialTerms disclosure={trialOf(plan)}/>}
                       </span>
                     </label>
                   );
@@ -14447,6 +14481,13 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         <div style={{color:C.muted,fontSize:13,marginTop:18,lineHeight:1.7}}>
           Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
         </div>
+        {/* The plans screen that cannot be closed links to the Terms and the Privacy Policy (reviewers' check, 2026-11-10),
+            with the approved labels the store paywall uses; each opens in place, and Back returns here. */}
+        {required&&(onViewLegal||onSignOut)&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.md}}>
+          {onViewLegal&&<button type="button" data-plans-legal="terms" onClick={()=>onViewLegal("terms")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.terms}</button>}
+          {onViewLegal&&<button type="button" data-plans-legal="privacy" onClick={()=>onViewLegal("privacy")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.privacy}</button>}
+          {onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>}
+        </div>}
       </div>
     </div>
   );
@@ -14463,8 +14504,11 @@ const STORE_ATTEMPT = { current: null };
 // approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
 // purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
 // whose one ModalHost sits above it.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false}){
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
+  // TRIAL_PLAN_FIRST: the iPhone's eligibility answer from RevenueCat, per product id ({} until asked, and when asking
+  // fails: then no plan claims a trial). Android's comes with each product (lib/trialPlanFirst.js storeTrialEligible).
+  const [introElig,setIntroElig]=useState({});
   const [keepTrial,setKeepTrial]=useState(false); // the "keep the trial" confirm (2026-10-29) is open
   const keepStayRef=useRef(null);
   const [loadFailed,setLoadFailed]=useState(false);
@@ -14486,18 +14530,29 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         const off = await purchases.getOfferings();
         const chosen = choosePackages(off, { foundingAvailable });
         if(!chosen.monthly && !chosen.annual && !chosen.founding) throw new Error("no_products");
+        if(trialFirst && platform==="ios" && typeof purchases.checkTrialOrIntroductoryPriceEligibility==="function"){
+          const ids = [chosen.monthly, chosen.annual, chosen.founding].filter(Boolean).map(p=>p.product?.identifier).filter(Boolean);
+          let elig = {};
+          try{ elig = (await purchases.checkTrialOrIntroductoryPriceEligibility({ productIdentifiers: ids })) || {}; }catch{ elig = {}; }
+          if(!cancelled) setIntroElig(elig);
+        }
         if(!cancelled) setPkgs(chosen);
       }catch{ if(!cancelled) setLoadFailed(true); }
     })();
     return ()=>{ cancelled=true; };
-  },[purchases, platform, foundingAvailable, !!held]);
+  },[purchases, platform, foundingAvailable, !!held, !!trialFirst]);
 
   const deps = {
     serverStatus: ()=>askStore("store_status"),
     serverHold: (attempt_id, state)=>askStore("store_hold", { platform, attempt_id, ...(state ? { state } : {}) }),
     attempt: STORE_ATTEMPT,   // couple mode: one purchase attempt across taps (lib/storeBilling.js attemptFor)
     serverSync: ()=>askStore("store_sync"),
-    purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
+    // Android buys the option the screen showed (lib/trialPlanFirst.js androidPurchaseOption): the base plan unless this
+    // plan's card claimed the 14 days.
+    purchasePackage: (p)=>{
+      const base = platform==="android" ? androidPurchaseOption(p.product, !!(trialFirst && storeTrialEligible({ platform, product: p.product, eligibility: introElig }))) : null;
+      return base ? purchases.purchaseSubscriptionOption({ subscriptionOption: base }) : purchases.purchasePackage({ aPackage: p });
+    },
     restorePurchases: ()=>purchases.restorePurchases(),
   };
   const finish = async (r)=>{
@@ -14521,9 +14576,12 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
 
   // Founding annual first, and marked as the chosen plan, when it is offered (1.1.3, lib/foundingPlans.js); otherwise
   // Monthly then Annual, as before. Each plan's own button opens the store's sheet in one tap.
-  const cards = pkgs ? paywallPlanOrder(pkgs).map(([plan,p])=>({
-    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, platform }),
-  })).filter(c=>!!c.copy) : [];
+  const cards = pkgs ? paywallPlanOrder(pkgs).map(([plan,p])=>{
+    const copy = offerCopy({ plan, priceString: p.product.priceString, platform });
+    // TRIAL_PLAN_FIRST: above this plan's button, "14 days free" only when the store says this person is eligible.
+    const trial = (trialFirst && copy) ? trialDisclosure({ platform, eligible: storeTrialEligible({ platform, product: p.product, eligibility: introElig }), price: copy.price, planKey: plan, words: trialWords }) : null;
+    return { plan, pkg:p, copy, trial };
+  }).filter(c=>!!c.copy) : [];
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
   // KEEP THE TRIAL (2026-10-29, lib/storeOffer.js TRIAL_KEEP_COPY): small print under the founding plans, for a
@@ -14547,7 +14605,8 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         {onClose&&<div style={{display:"flex",justifyContent:"flex-end"}}><button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.mutedHi,fontSize:20,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap}}>✕</button></div>}
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
-        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{(trialFirst&&!onClose) ? trialWords("trialfirst-plans-title") : PAYWALL_COPY.title}</h1>
+        {trialFirst&&!onClose&&<div data-plans-first="" style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{trialWords("trialfirst-plans-lead")}</div>}
         <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
         {held && (
@@ -14561,15 +14620,16 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         {!held && !pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
         {!held && loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
-          {!held && cards.map(({plan,pkg,copy})=>(
+          {!held && cards.map(({plan,pkg,copy,trial})=>(
             <div key={plan} data-plan={plan} data-selected={plan==="founding_annual"?"":undefined} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold:C.border}`,borderRadius:16,padding:"16px 18px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
               </div>
               {copy.note&&<div style={{color:C.gold,fontSize:13,marginTop:SPACE.xs,lineHeight:1.5}}>{copy.note}</div>}
+              <TrialTerms disclosure={trial}/>
               <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
-                {busy===plan?PAYWALL_COPY.checking:copy.button}
+                {busy===plan?PAYWALL_COPY.checking:(trial?.claim ? trialWords("trialfirst-button") : copy.button)}
               </button>
             </div>
           ))}
@@ -14601,6 +14661,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
             : <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>}
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
+          {!onClose&&onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={link}>{trialWords("trialfirst-sign-out")}</button>}
         </div>
       </div>
     </div>
@@ -15811,7 +15872,7 @@ function StoreBadges(){
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
+function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpfOn = false }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16399,7 +16460,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
                 {trialFirst && <TrialButton onClick={goSignup}/>}
-                {trialFirst && <p className="fll-trial-line">Every feature free for 14 days. Also on iPhone and Android.</p>}
+                {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
@@ -17681,6 +17742,16 @@ export default function FlourishApp(){
   // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
   const [profilePlan,setProfilePlan]=useState(null);
   const webPaidRef = useRef(false);
+  // TRIAL_PLAN_FIRST (lib/trialPlanFirst.js): the server's trial_plan_first answer from the last status call (web or
+  // store), or null while the switch is off; and the last profiles row read, so the plan is worked out again when it
+  // says this account has no account trial.
+  const [tpfStatus,setTpfStatus]=useState(null);
+  const lastProfileRef = useRef(null);
+  // ...and, before sign-in, the public answer (GET /api/trial-plan-first): true, false (off), or null (no answer: today's
+  // lines). Asked once per page load; the landing and the first onboarding screen stop saying "no card" while it is on.
+  const [tpfPublic,setTpfPublic]=useState(null);
+  useEffect(()=>{ let live = true; askTrialPlanFirstOn(fetch, API_BASE).then(v=>{ if(live) setTpfPublic(v); }); return ()=>{ live = false; }; },[]);
+  const tpfOn = !!tpfStatus || tpfPublic===true;
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
@@ -17738,7 +17809,9 @@ export default function FlourishApp(){
   // trialExpired:  true ONLY for users whose trial ENDED (not for users who never had one)
   const trialDaysLeft = getTrialDaysLeft();
   const trialActive = isTrialActive();
-  const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
+  // TRIAL_PLAN_FIRST: an account made after the switch never had the account trial, so it is never told one ended.
+  const accountTrialKept = tpfStatus ? tpfStatus.account_trial !== false : recalledAccountTrial(deviceStorage(), user?.id);
+  const trialExpired = accountTrialKept && !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
   // H13 (audit 2026-10-26): the website's trial countdown, from the trial itself, not from isPremium (which the trial
   // sets, so the old banner never showed). Not for a household the server says pays, and not in a store app, which
   // has NativeTrialChip. lib/upgradeFlow.js trialCountdown.
@@ -17826,7 +17899,8 @@ export default function FlourishApp(){
         .eq("user_id", userId)
         .maybeSingle();
       if (!prof) return null;
-      const cp = derivePlan(prof);
+      lastProfileRef.current = { userId, prof };
+      const cp = derivePlan(prof, Date.now(), { accountTrial: recalledAccountTrial(deviceStorage(), userId) });
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
@@ -17884,6 +17958,20 @@ export default function FlourishApp(){
     window.addEventListener("online", onOnline);
     return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
   },[storeBilling, user?.id, askStore]);
+  // TRIAL_PLAN_FIRST: a store app takes the switch from store_status (the web, from its status call: takeBilling).
+  useEffect(()=>{ if(storeBilling && storeStatus) setTpfStatus(trialPlanFirstOf(storeStatus)); },[storeBilling, storeStatus]);
+  // ...and, once the server has answered, this account's plan is worked out again with its answer about the account
+  // trial (kept on the device for the next sign-in). The switch off: no key, the cache is cleared, and the plan is
+  // the one already worked out. Only a definite answer for this account counts.
+  useEffect(()=>{
+    const answered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
+    if(!user?.id || !answered) return;
+    rememberAccountTrial(deviceStorage(), user.id, { trial_plan_first: tpfStatus });
+    const last = lastProfileRef.current;
+    if(!last || last.userId!==user.id) return;
+    const cp = derivePlan(last.prof, Date.now(), { accountTrial: accountTrialFrom({ trial_plan_first: tpfStatus }) });
+    setProfilePlan(prev => prev===cp ? prev : cp);
+  },[tpfStatus, user?.id, storeBilling, storeAskedFor, storeStatus, billingAskedFor, billingStatus]);
   useEffect(()=>{
     let cancelled = false;
     // A new account, or none: nothing can be bought until RevenueCat is this account. Without this a second
@@ -17922,6 +18010,7 @@ export default function FlourishApp(){
     if(!user?.id) return;
     if(body){
       setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+      if(!storeBilling) setTpfStatus(trialPlanFirstOf(body));
       // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
       if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
     }
@@ -19336,13 +19425,42 @@ export default function FlourishApp(){
   // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
   // Terms and Privacy open inside the overlay, so nothing behind it unmounts. Defined before the early returns because
   // the founding plans screen (1.1.3) can open by itself over onboarding and the first-number screen as well.
+  // TRIAL_PLAN_FIRST (item 1, lib/trialPlanFirst.js plansFirstStage). Only with the switch on: a new account sees the plans
+  // screen after the first safe-to-spend number and before the rest of the app ("required", cannot be closed); an account
+  // whose own account trial has ended sees the new plans screen once ("offer_once", closable, nothing taken away). The
+  // switch off: null, and none of this exists.
+  const tpfAnswered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
+  const tpfPaySource = storeBilling ? storeStatus : billingStatus;
+  // H1 (review round): someone who came from a partner's invite (householdLinkToken) is never held at the plans: they
+  // join in Settings, and the partner's plan then covers them.
+  const plansStageNow = plansFirstStage({ tpf: tpfStatus, paid: tpfPaySource?.paid===true, coveredBy: tpfPaySource?.covered_by||null,
+    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken });
+  // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open),
+  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1).
+  const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required"
+    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken
+       && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));
+  useEffect(()=>{ if(user?.id && tpfAnswered) rememberRequired(deviceStorage(), user.id, plansStageNow==="required"); },[user?.id, tpfAnswered, plansStageNow]);
+  useEffect(()=>{
+    if(!user?.id || plansStageNow!=="offer_once" || !onboarded || !firstVisitDone) return;
+    if(plansOfferedBefore(deviceStorage(), user.id)) return;
+    notePlansOffered(deviceStorage(), user.id);
+    openUpgrade();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id, plansStageNow, onboarded, firstVisitDone]);
+  // The way out of the screen that cannot be closed: sign out (as Settings does, without its question).
+  const plansSignOut = async ()=>{
+    try { await supabase.auth.signOut(); } catch {}
+    try { Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k)); } catch {}
+    window.location.reload();
+  };
   const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
     <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
             onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
-            inTrial={trialActive} onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
+            inTrial={trialActive} onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }} trialFirst={tpfStatus}/>}
     </div>
   ) : null;
   // ── Legal screens — always accessible, even before auth/onboarding ──
@@ -19372,7 +19490,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -19412,12 +19530,26 @@ export default function FlourishApp(){
       });
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}
-    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
+    tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
-  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
+  // TRIAL_PLAN_FIRST: the activation moment (the first safe-to-spend number, above) is kept; then the plans, first.
+  if(plansRequired && firstVisitDone){
+    if(storeBilling) return (
+      <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
+          : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
+          : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+              onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} inTrial={false}
+              onManage={manageStoreSubscription} trialFirst={tpfStatus} onSignOut={plansSignOut}/>}
+      </div>
+    );
+    if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
+      trialFirst={tpfStatus} onSignOut={plansSignOut} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
+  }
+  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
@@ -19594,12 +19726,13 @@ export default function FlourishApp(){
   // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
   // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
   // It also keeps FOUNDING_PLANS_SHOWN_KEY (1.1.3, lib/foundingPlans.js): the founding plans screen opens by itself once
-  // per account, and signing out and back in is the same account.
+  // per account, and signing out and back in is the same account. And, for the same reason, TRIAL_PLAN_FIRST's marker
+  // that the new plans were offered once to an account whose trial had ended (lib/trialPlanFirst.js plansOfferedBefore).
   const signOut = async ()=>{
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
@@ -19903,6 +20036,8 @@ input,button,select,textarea { font-family:inherit; }
         {countdown&&<TrialCountdown countdown={countdown} onUpgrade={openUpgrade}/>}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
+        {/* TRIAL_PLAN_FIRST: during the store's or Stripe's 14 days, the date of the first charge (apps and website). */}
+        {tpfStatus?.trialing&&chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)) })}</div>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab

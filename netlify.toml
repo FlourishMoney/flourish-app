@@ -44,6 +44,11 @@
 [functions."policy-notice-sweep"]
   schedule = "*/15 * * * *"
 
+# Scheduled: the reminder 3 days before a store trial's first charge (netlify/functions/trial-reminder-sweep.js).
+# Does nothing unless TRIAL_PLAN_FIRST is on.
+[functions."trial-reminder-sweep"]
+  schedule = "@hourly"
+
 # Microsoft Clarity (src/lib/webClarity.js): the tag and its script come from www.clarity.ms and scripts.clarity.ms, and its
 # recordings go to *.clarity.ms. img-src is left alone on purpose: the tag's Microsoft cookie sync (c.clarity.ms/c.gif) is
 # refused, as well as switched off in Clarity.
@@ -143,6 +148,18 @@
 [[redirects]]
   from   = "/api/newsletter"
   to     = "/.netlify/functions/newsletter"
+  status = 200
+
+# Redirect: the trial reminder's one-click unsubscribe (netlify/functions/trial-reminder.js).
+[[redirects]]
+  from   = "/api/trial-reminder"
+  to     = "/.netlify/functions/trial-reminder"
+  status = 200
+
+# Redirect: is TRIAL_PLAN_FIRST on (netlify/functions/trial-plan-first.js)? 404 while it is off.
+[[redirects]]
+  from   = "/api/trial-plan-first"
+  to     = "/.netlify/functions/trial-plan-first"
   status = 200
 
 # Redirect: tester codes and the day 30 questions → Netlify function (netlify/functions/tester.js, migration 0038).

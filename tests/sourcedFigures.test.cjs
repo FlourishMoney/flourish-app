@@ -388,6 +388,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const ALLOW = new Set([
       // The founding plans screen's trial confirm (approved 2026-10-29): the household keeps its free trial, not money.
       "Keep your trial for now?", "Keep my trial",
+      // Trial plan first (approved 2026-11-10, ChatGPT 100, Grok 100): flourish's own subscription, its trial button and
+      // the store-rule line on how to avoid its first charge. About the app's plan, never advice on the household's money.
+      "Start free trial", "Cancel before {date} to avoid the first charge.",
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",

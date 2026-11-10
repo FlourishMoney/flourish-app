@@ -115,7 +115,9 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
 
   // ── 6. The screen ────────────────────────────────────────────────────────────────────────────
   {
-    t.eq((APP.match(/<StorePaywall /g) || []).length, 1, "6a one render site for the store paywall (item 3 places it)");
+    // TRIAL_PLAN_FIRST (2026-11-10): a second, only for a new account with the switch on: the plans that come first.
+    t.eq((APP.match(/<StorePaywall /g) || []).length, 2, "6a two render sites for the store paywall: item 3's, and the plans-first screen");
+    t.ok(/if\(plansRequired && firstVisitDone\)\{\s*if\(storeBilling\) return \(/.test(APP), "6a2 …the second only for an account the switch holds at the plans");
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
     for (const [what, rx] of [["restore", /onClick=\{doRestore\}/], ["terms", /onViewLegal\("terms"\)/], ["privacy", /onViewLegal\("privacy"\)/], ["a close button", /onClose&&<div[^\n]*aria-label="Close" onClick=\{onClose\}/]]) {
       t.ok(rx.test(comp), `6b the paywall always offers ${what}`);
@@ -123,7 +125,9 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
     t.ok(/\{platform==="ios"\s*\? <a href=\{APPLE_EULA_URL\} target="_blank" rel="noopener noreferrer"[^>]*>\{PAYWALL_COPY\.terms\}<\/a>\s*: <button onClick=\{\(\)=>onViewLegal\("terms"\)\} style=\{link\}>\{PAYWALL_COPY\.terms\}<\/button>\}/.test(comp)
       && /\{!held && cards\.length>0 && <div[^>]*>\{storeDisclosure\(platform\)\}<\/div>\}/.test(comp),
       "6c on iOS \"Terms of Use\" opens Apple's standard EULA, on Android the app's Terms; the disclosure sits under the plans once");
-    t.ok(!/onSignOut|onDeleteAccount|<ModalHost\/>/.test(comp), "6d no sign out or delete of its own (it can always be closed; Settings has both) and no ModalHost of its own");
+    // TRIAL_PLAN_FIRST: the one screen that cannot be closed (no onClose) has a way out, sign out; every other has none.
+    t.ok(!/onDeleteAccount|<ModalHost\/>/.test(comp) && (comp.match(/onSignOut/g) || []).length === 3 && /\{!onClose&&onSignOut&&<button/.test(comp),
+      "6d no sign out or delete of its own (it can always be closed; Settings has both), except sign out where it cannot be closed, and no ModalHost of its own");
     t.ok(/offerCopy\(\{ plan, priceString: p\.product\.priceString, platform \}\)/.test(comp), "6e every card's words come from the store's price");
     t.ok(/storeBuy\(deps, pkg\)/.test(comp) && /serverStatus: \(\)=>askStore\("store_status"\)/.test(comp) && /serverSync: \(\)=>askStore\("store_sync"\)/.test(comp), "6f a purchase goes through lib/storeBilling.js buy: the server is asked first and last");
     let A = null;
