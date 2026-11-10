@@ -30,6 +30,7 @@ const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { bankLimitFor, limitBody } = require("./_lib/bankLimits");
 const { planWords } = require("./_lib/planWords");
+const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
 
@@ -158,7 +159,14 @@ exports.handler = async (event) => {
             // account type supports them. Listing them under required `products` made Plaid reject
             // any user whose accounts didn't support EVERY product ("Connectivity not supported").
             products:          ["transactions"],
-            optional_products: ["investments", "liabilities"],
+            // PLUS (2026-11-10): Investments is a subscription Plaid bills every month for an Item once it is on it, "even
+            // if no API calls are made" (plaid.com/docs/account/billing). Behind PLUS_ENABLED it is asked for as an
+            // ADDITIONAL CONSENTED product instead, which Plaid bills only from the first /investments/holdings/get call
+            // (plaid.com/docs/link/initializing-products), and that call is made only for a household with Plus
+            // (get_investments below). Everyone consents once, so buying Plus later needs no new sign-in.
+            ...(plusAddon.plusEnabled()
+              ? { optional_products: ["liabilities"], additional_consented_products: ["investments"] }
+              : { optional_products: ["investments", "liabilities"] }),
             country_codes:     [country],
             language:          "en",
             transactions:      { days_requested: 90 },
@@ -365,9 +373,23 @@ exports.handler = async (event) => {
 
     // 5. get_investments
     if (action === "get_investments") {
-      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
+      const { access_token, user_id, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
+        // PLUS (behind PLUS_ENABLED): holdings are a Plus feature. Without Plus (or on a plan read that failed) nothing is
+        // asked of Plaid at all, so nobody is billed for data nobody can see. With Plus, a partner's bank gives only the
+        // holdings of the accounts its owner shared (migration 0045): private by default.
+        let sharedOnly = null;
+        if (plusAddon.plusEnabled()) {
+          const ent = await plusAddon.getPlusEntitlement(getAdminClient(), user_id);
+          if (!ent.plus) return ok({ holdings: [], locked: true, plus_mode: true });
+          if (owner_id && owner_id !== user_id) {
+            const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
+            if (sErr) return ok({ holdings: [], locked: true, plus_mode: true });
+            sharedOnly = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
+            if (!sharedOnly.size) return ok({ holdings: [], plus_mode: true });
+          }
+        }
         const data = await plaid("/investments/holdings/get", { access_token });
         const securities = data.securities || [];
         const secMap = {};
@@ -378,7 +400,7 @@ exports.handler = async (event) => {
         const acctMap = {};
         (data.accounts || []).forEach(a => { acctMap[a.account_id] = a; });
 
-        const holdings = (data.holdings || []).map(h => {
+        const holdings = (data.holdings || []).filter((h) => !sharedOnly || sharedOnly.has(h.account_id)).map(h => {
           const s = secMap[h.security_id] || {};
           return {
             account_id:      h.account_id,
@@ -400,10 +422,12 @@ exports.handler = async (event) => {
         // is returned, as get_accounts does. A record that cannot be written answers 503 and no holdings.
         await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id,
           [...(data.accounts || []).map((a) => a && a.account_id), ...holdings.map((h) => h.account_id)]);
-        return ok({ holdings });
+        // plus_mode: the app keeps these on this device only (never in the shared household blob), so a partner never
+        // reads this person's private holdings from it.
+        return ok({ holdings, ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
-        return ok({ holdings: [] });
+        return ok({ holdings: [], ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
       }
     }
 

@@ -9,6 +9,43 @@ Branch `net-worth-plus` from main 69480cd. **Nothing here is switched on, merged
 - The 50 founding households get no Plus discount, and keep $79.99 a year on the main plan.
 - Nothing a household can use today moves behind Plus.
 
+## Amanda's answers, 2026-11-10 (these replace the open questions below)
+There are no paying households yet, so nothing is grandfathered.
+1. **Names.** To households the main paid plan is "flourish" (monthly, annual, founding), and "flourish Plus" is only the add-on. Every product id and entitlement id stays; only display names change. Every place is listed in `docs/product/PLAN-NAMES.md`; the new words are placeholders until reviewed.
+2. **Net worth and investments move behind Plus**: the net worth figure, Goals' Net Worth tab, Today's net worth card, Wrapped's net worth part and investment holdings. Every household still sees each bank, card and loan balance where it sees it now. Without Plus there is a plain locked state, never a blank or a broken screen. The screens that change are listed below.
+3. **Plaid Investments: holdings only for Plus.** How Plaid bills is set out below, with the source.
+4. **Bank limits apply to everyone, with no cutoff date.** Never disconnect a bank. A household already over the limit keeps what it has and can't add another.
+5. **Partner privacy: private by default**, with "share with my partner" per item. An RDSP is never shared by default. The household total shows only when every part is shared and real. A leaver's entries go with them. This is written below as "Private by default", and the screen is built to it.
+
+### The screens that change (behind PLUS_ENABLED; with it off, every one is exactly as today)
+- **Today's net worth card.**
+  - Without Plus: the locked state, with no figure and no line.
+  - With Plus: this person's net worth, per currency, labelled household or "your own".
+- **Today's small "Net worth" tile.** Without Plus: a short locked line. With Plus: the totals per currency, or "—" when there is no total.
+- **Today's Investment Portfolio card.**
+  - Without Plus: the locked state, shown when the household has an investment account.
+  - With Plus: not shown. That card added holdings across currencies; the holdings are on the Net Worth tab instead, each in its own currency.
+- **Goals' Net Worth tab.**
+  - Without Plus: the locked state where the figure was. Every bank, card and loan row is still listed with its balance, and the possible-double-count prompt stays. Hidden: the total, "How we got this", the investment rows, and Invested and Total Gain.
+  - With Plus: the Plus net worth screen (`src/NetWorthPlusScreen.jsx`).
+- **Wrapped's net worth slide.** Without Plus: the locked state, and no "Invested" figure; the Health Score stays. With Plus: this person's totals.
+- **Not changed, for Amanda to decide:**
+  - The Health Score keeps its Investments line ("$X invested", from investment account balances).
+  - What-If's investing scenarios read holdings, which are empty without Plus.
+- **The demo** (sample data, no account) shows everything as today.
+
+### Plaid Investments
+- **What runs today.** Every sync asks for holdings on every bank, for every household. Link has asked for Investments as an optional product since Phase B3.
+- **Billing.** Investments is a monthly subscription per Item. Plaid charges "even if no API calls are made for the Item" once Investments is on it, and "Once a subscription fee product has been added to an Item, it is not possible to end the subscription and leave the Item in place" (https://plaid.com/docs/account/billing/). Only `/item/remove` ends it (https://plaid.com/docs/api/items/). A product passed as `additional_consented_products` is not billed until its endpoint is first called (https://plaid.com/docs/link/initializing-products/).
+- **So, behind PLUS_ENABLED:**
+  - Link asks for Investments as an additional consented product, for everyone, so buying Plus later needs no new sign-in.
+  - `get_investments` makes no Plaid call at all without Plus.
+  - A bank linked from then on is not billed for Investments until a Plus household first asks.
+  - A bank already linked with Investments on it stays billed until it is removed: stopping the calls does not change that.
+- **The live items' products** could not be read from this Mac. `/item/get` needs the production Plaid keys, and there are none here.
+  - Plaid's read-only connector reports totals only: 5 active Transactions items on 2026-10-31, and one Investments Holdings removal counted from 2026-11-06.
+  - Amanda's own item was recorded as billed for Investments and Liabilities on 2026-11-06.
+
 ## What the repo held before this branch (and where it disagrees with the brief)
 1. **"Plus" is already the main plan.** On the website the paid plan is called "Flourish Plus" ("You're on Flourish Plus", Terms section 7, the upgrade screen). In the code it is `profiles.plan = "plus"`, RevenueCat's entitlement `plus`, the App Store products `app.flourishmoney.plus.monthly` and `.annual`, the Play subscription `flourish_plus`, and the Stripe product "Flourish Plus". The add-on therefore has ids of its own everywhere (`plus_addon`, below). **Amanda decides the names households see**; the add-on and the main plan cannot both be called "Flourish Plus".
 2. **Net worth is free today and used.** Today's net worth card, the Goals > Net Worth tab with its breakdown, the Investment Portfolio card and Money Wrapped all show net worth or investments to every household. Under "nothing moves behind Plus" they stay free and unchanged. What Plus adds is below.
@@ -42,6 +79,7 @@ Branch `net-worth-plus` from main 69480cd. **Nothing here is switched on, merged
   - A household over its plan keeps every bank.
 - **A read that fails** refuses the new bank with 503 and a plain line, never a guessed count.
 - **Plus also lifts the free plan's one-bank cap.**
+- **For everyone, with no cutoff date** (Amanda, 2026-11-10: no paying households yet, so nothing is grandfathered). A household already over the limit keeps every bank and can't add another until it is under; a reconnect is always allowed.
 - `bank_limit_status` gives Settings the numbers (404 while off).
 
 ## Net worth with Plus (item 3)
@@ -68,19 +106,33 @@ Branch `net-worth-plus` from main 69480cd. **Nothing here is switched on, merged
   - Otherwise: the household's own figure. A line is drawn only once there are two months of its own snapshots (the existing `NetWorthSparkline`); before that, one line says so (`networth-trend-not-yet`).
 - **Plaid Investments while it is "off".** This branch makes no new call. What runs today keeps running (item 3 of the section above).
 
-## Partner visibility (item 4): STOPPED before the screen
-In couple mode both people read and write one shared blob, and "both see every account" (COUPLE-MODE-SPEC). Net worth with Plus would put these in front of the other partner. A household might not expect them, and in each case one partner could reasonably want them private:
-1. **Holdings line by line** of an account only one partner linked (an RRSP from before they met, a stock plan): every holding, ticker, quantity and value. Today the blob already carries them and the Investment Portfolio card shows their total to both; the screen would list them.
-2. **What a registered account's type reveals.** An RDSP is only open to a person eligible for the disability tax credit, so its name discloses a health fact. An RESP names a beneficiary plan.
-3. **A pension one partner enters**: its value, which is often individual (a workplace pension, one from a past marriage).
-4. **Free-text labels** on an entry ("Mum's share of the house").
-5. **After a partner leaves.** The leave cleanup removes the leaver's bank accounts, holdings and bank-made debts, but nothing records who typed an entry. A leaver's home, car or pension figures would stay with the other person.
-6. **Debts on one partner's own card or loan.** These are already shared today; the screen would put them beside the household total.
+## Private by default between partners (Amanda, 2026-11-10)
+The six cases found earlier now have these rules, and the Plus net worth screen is built to them:
+1. holdings line by line;
+2. what an account's type reveals;
+3. a pension one partner enters;
+4. free-text labels;
+5. a leaver's entries;
+6. one partner's own debts.
 
-So the Plus net worth screen is not built. What would let it be built is Amanda's decision:
-- whose entries and accounts each partner sees;
-- an `enteredBy` on every entry, removed when that person leaves;
-- whether account types are named.
+- **Each person's own.** Holdings, the accounts they linked, and their entries for a home, a car or a pension are visible only to them, unless they turn on "share with my partner" for that one item.
+  - Every switch starts off. Nothing is shared as part of anything else.
+  - An entry and its label are in the person's own row (`net_worth_entries`, migration 0045), never in the shared household blob.
+  - The share choice for an account is in `net_worth_shares`.
+- **An RDSP, an HSA,** or any account whose type could reveal a health or disability fact, is never shared by default. Its switch carries a warning, and the screen keeps marking it as sensitive once it is shared.
+- **What a partner gets.** The server (`netlify/functions/networth.js`) gives a partner only:
+  - the entries that were shared;
+  - the ids of the accounts that were shared;
+  - a yes or no to "is everything shared?". There is never a count, a label or a figure for what is private.
+- **Holdings.** `get_investments` gives a partner's bank's holdings only for the accounts its owner shared. With Plus on, the app keeps holdings on the device and never writes them into the shared blob, and it clears any copy already there.
+- **The total.**
+  - A partner sees a household total only when the other person has shared everything and every part is real. Otherwise each sees only their own total.
+  - What both already see as the household's is listed but not in "your own": debts typed in the app, and accounts no bank linked.
+  - An account from a bank this device can't place is never shown, and no household total is shown while one is there.
+- **Leaving.** Rows stay in their owner's name, and a partner's view is worked out from the current membership each time. When someone leaves, their entries and choices go with them, and the one who stays sees none of it. This matches 0041 for meetings; no SQL change to the leave is needed.
+- **Choices made here.**
+  - **The Net Worth tab with Plus.** In couple mode the partner's private accounts are not listed there, though their balances are still shown on every other screen, as couple mode always shows them. Rule 5 is about that screen, and it wins there.
+  - **Older accounts.** One saved before banks were stamped on accounts (no `_item`) counts as the household's, as on every other screen.
 
 ## Products to create (item 5)
 Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the repo and the docs name no add-on product, no RevenueCat `plus_addon` entitlement and no Stripe Plus price. The consoles were not opened.
@@ -105,7 +157,7 @@ Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the
 2. Products `app.flourishmoney.plusaddon.monthly`, `.annual` and `flourish_plus_addon:monthly`, `:annual`.
 
 **Stripe** (live mode, then the same in test mode):
-1. Product: name is a placeholder; not "Flourish Plus", which is the main plan's.
+1. Product: name "flourish Plus" (Amanda, 2026-11-10). Rename the main plan's product (today "Flourish Plus") to "flourish" first, so two products never share that name (`PLAN-NAMES.md`).
 2. Price: recurring monthly, CAD, Tax behaviour **Exclusive**, amount ____.
 3. Price: recurring yearly, CAD, Tax behaviour **Exclusive**, amount ____.
 4. Cannot change later: a price's amount, currency and interval (create a new price instead), and tax behaviour once it is set.
@@ -129,8 +181,8 @@ Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the
 - Today's card still totals only the household's own currency and still includes an unanswered pair. Both are unchanged from today.
 - With `CREATORS_ENABLED` on, a Plus invoice would earn a creator commission (`_lib/creators.js` finds the payer by the invoice's metadata). That is Amanda's decision.
 
-## Not built, on purpose
-- The Plus purchase screens and the Plus net worth screen (item 4).
-- The entry form for a home, a car or a pension.
-- The Settings line for banks over the limit: the line and the server's numbers exist, but the screen doesn't.
-- The terms' fair-use sentence (new wording).
+## Not built, on purpose (updated 2026-11-10)
+- **The Plus purchase screens**, on the website and in the apps: the store products don't exist yet.
+- **The Settings line for banks over the limit.** The server's numbers and the words exist; the screen doesn't.
+- **The terms' fair-use sentence** (new wording).
+- **Now built:** the Plus net worth screen (Goals' Net Worth tab with Plus), with its entry form for a home, a car or a pension.

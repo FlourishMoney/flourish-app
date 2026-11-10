@@ -130,6 +130,11 @@ export function householdNetWorth(data = {}) {
     parts.push({ id: e.id ?? null, source: "entered", kind: ENTRY_KINDS.includes(e.kind) ? e.kind : "other", label: String(e.label || ""), cents: v === null || v < 0 ? null : toCents(v), currency, enteredAt: e.enteredAt || null, problems });
   }
 
+  return { parts, ...totalsOf(parts) };
+}
+
+/** The sums of some parts: per currency, never added together, and only when every one of them is real. */
+export function totalsOf(parts) {
   const problems = [...new Set(parts.flatMap((p) => p.problems))];
   const complete = parts.length > 0 && problems.length === 0;
   const currencies = [...new Set(parts.map((p) => p.currency).filter(Boolean))].sort();
@@ -141,5 +146,64 @@ export function householdNetWorth(data = {}) {
         return { currency, assetsCents, debtsCents, netCents: assetsCents + debtsCents };
       })
     : null;
-  return { parts, currencies, complete, totals, problems };
+  return { currencies, complete, totals, problems };
+}
+
+// ── PRIVATE BY DEFAULT BETWEEN PARTNERS (Amanda, 2026-11-10) ─────────────────────────────────────
+// What could reveal a health or disability fact is marked, so the screen warns before it is shared and never shares
+// it as part of anything else. An RDSP is open only to a person eligible for the disability tax credit.
+export const SENSITIVE_SUBTYPES = Object.freeze(["rdsp", "hsa", "health reimbursement arrangement"]);
+export const isSensitiveAccount = (a) => SENSITIVE_SUBTYPES.includes(lower(a && a.subtype));
+
+/**
+ * Net worth with Plus as ONE person sees it.
+ *   data          the household's data (accounts, debts, profile) as the app holds it
+ *   holdings      the holdings the server gave this person: their own, and their partner's shared accounts' only
+ *   list          /api/networth list: { mine: { entries, shared_accounts }, partner: null | { entries, shared_accounts,
+ *                 all_shared } }
+ *   ownerOf(a)    "me" | "partner" | null for an account (null: no bank linked it, e.g. typed or from a statement)
+ * Returns { mine, partner, household, showing, totals, complete, problems }:
+ *   mine          this person's own parts (their accounts, their entries), each with shared true or false
+ *   partner       only what the partner shared
+ *   household     what both already see as the household's (debts typed in the app, accounts no bank linked)
+ *   showing       "household" when there is no partner, or the partner shared everything (all_shared) and every
+ *                 visible part is real; otherwise "mine". totals are for what is showing, and null unless all of it is
+ *                 real (totalsOf). A partner's private things are never in any number here.
+ */
+export function viewerNetWorth({ data = {}, holdings = [], list = null, ownerOf = () => null } = {}) {
+  // FAILS CLOSED: until this person's list has come from the server, nothing is known about who shares what, so
+  // nothing is shown and nothing is totalled.
+  if (!list || !list.mine) return { mine: [], partner: [], household: [], showing: "mine", currencies: [], complete: false, totals: null, problems: ["not_loaded"] };
+  const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+  const mineList = (list && list.mine) || { entries: [], shared_accounts: [] };
+  const partnerList = (list && list.partner) || null;
+  const myShared = new Set(mineList.shared_accounts || []);
+  const theirShared = new Set((partnerList && partnerList.shared_accounts) || []);
+  // An account a bank linked (it carries _item) whose owner this device does not know is never shown: it may be the
+  // partner's. Its absence blocks the household total (unknown_owner). One no bank linked is the household's.
+  const owner = new Map(accounts.map((a) => [a.id, ownerOf(a) || (a && a._item ? "unknown" : null)]));
+  const unknownOwner = accounts.some((a) => owner.get(a.id) === "unknown");
+  const visibleAccounts = accounts.filter((a) => owner.get(a.id) !== "unknown" && (owner.get(a.id) !== "partner" || theirShared.has(a.id)));
+  const toEntry = (who) => (e) => ({ id: e.id, kind: e.kind, label: e.label, value: Number(e.value_cents) / 100, currency: e.currency, enteredAt: e.entered_at, _who: who, _shared: e.shared === true });
+  const entries = [...(mineList.entries || []).map(toEntry("me")), ...((partnerList && partnerList.entries) || []).map(toEntry("partner"))];
+  const model = householdNetWorth({ ...data, accounts: visibleAccounts, investments: holdings, netWorthEntries: entries });
+  const entryWho = new Map(entries.map((e) => [e.id, e]));
+  const groupOf = (p) => {
+    if (p.source === "entered" && entryWho.has(p.id)) return entryWho.get(p.id)._who === "me" ? "mine" : "partner";
+    if (p.source === "linked") { const o = owner.get(p.id); return o === "me" ? "mine" : o === "partner" ? "partner" : "household"; }
+    return "household";
+  };
+  const tag = (p) => {
+    const a = p.source === "linked" ? accounts.find((x) => x.id === p.id) : null;
+    const shared = p.source === "linked" ? myShared.has(p.id) : !!(entryWho.get(p.id) && entryWho.get(p.id)._shared);
+    return { ...p, shared, sensitive: !!(a && isSensitiveAccount(a)) };
+  };
+  const groups = { mine: [], partner: [], household: [] };
+  for (const p of model.parts) groups[groupOf(p)].push(tag(p));
+  const all = [...groups.mine, ...groups.partner, ...groups.household];
+  const partnerAll = (!partnerList || partnerList.all_shared === true) && !unknownOwner;
+  const whole = totalsOf(all);
+  const showing = partnerAll && whole.complete ? "household" : "mine";
+  const shown = showing === "household" ? whole : totalsOf(groups.mine);
+  return { mine: groups.mine, partner: groups.partner, household: groups.household, showing, ...shown };
 }

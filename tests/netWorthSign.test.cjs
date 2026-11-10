@@ -37,7 +37,8 @@ const NEGATIVE = new Set(["red", "redBright"]);
   // ── 1. The Today bento tile ──────────────────────────────────────────────────────────────────
   {
     // Sentence case since the readability pass: "Net worth", not "Net Worth".
-    const line = lineWith('{label:"Net worth",value:');
+    // 2026-11-10: net worth is behind Plus; the tile has a locked and a Plus form too. This is the one with the figure (Plus off).
+    const line = lineWith('{label:"Net worth",value:`');
     t.ok(line.length > 0, "1a the Net worth tile is in App.jsx");
     const colour = colourOf(line, "netWorth");
     const vm = /value:`([^`]+)`/.exec(line);

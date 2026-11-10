@@ -93,7 +93,7 @@ const REPO = path.join(__dirname, "..");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(!/\[-4200,-3800,-3100,-2600,-1900/.test(app) && !/const spark\s*=/.test(app), "7a the fixed line [-4200 … net worth] is gone");
     const card7 = app.slice(app.indexOf("{/* ── NET WORTH SPARKLINE"), app.indexOf("{/* ── INVESTMENT PORTFOLIO"));
-    t.ok(/\{!nwHasData \? <div>/.test(card7) && /netWorthWords\("networth-empty-title"\)/.test(card7) && /netWorthWords\("networth-empty-body"\)/.test(card7), "7b nothing entered or linked: the empty state, with no figure");
+    t.ok(/: !nwHasData \? <div>/.test(card7) && /netWorthWords\("networth-empty-title"\)/.test(card7) && /netWorthWords\("networth-empty-body"\)/.test(card7), "7b nothing entered or linked: the empty state, with no figure");
     t.ok(/const nwHasData = netWorthRows\(data\)\.rows\.length > 0;/.test(app), "7c …decided by the same rows the figure is the sum of");
     t.ok(/nwHistory\.length > 1\s*\? <NetWorthSparkline history=\{nwHistory\}/.test(card7) && /netWorthWords\("networth-trend-not-yet"\)/.test(card7), "7d a line only from two months of the household's own figures; before that, the words say so");
     t.ok(!/month:"·"/.test(card7) && !/<polyline/.test(card7), "7e no placeholder months and no line drawn from anything else");

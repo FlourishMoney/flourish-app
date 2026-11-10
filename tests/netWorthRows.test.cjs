@@ -71,7 +71,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const worth = APP.slice(APP.indexOf('{tab==="worth"&&(()=>{'), APP.indexOf('{tab==="tax"&&(()=>{'));
   t.ok(/const nwRows = netWorthRows\(data\);/.test(worth) && /const allItems = nwRows\.rows\.map\(/.test(worth), "3a the list is netWorthRows");
   t.ok(/const realNetWorth = nwRows\.total;/.test(worth) && /<CountUp to=\{Math\.abs\(realNetWorth\)\} decimals=\{2\}/.test(worth), "3b the headline is the rows' total, in cents");
-  t.ok(/aria-label="Net worth: how Flourish got it"/.test(worth) && /\{explainNetWorth&&<HowWeGotThis title="Net worth"/.test(worth)
+  t.ok(/aria-label="Net worth: how Flourish got it"/.test(worth) && /\{explainNetWorth&&!nwLocked&&<HowWeGotThis title="Net worth"/.test(worth)
     && /inputs=\{\[\.\.\.nwRows\.rows\.map\(/.test(worth) && /label:"= Net worth"/.test(worth), "3c tapping it opens How we got this, with each row and the sum");
   let A = {};
   try { A = loadApp(["Goals"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }

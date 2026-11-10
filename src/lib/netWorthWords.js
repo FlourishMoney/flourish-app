@@ -28,6 +28,34 @@ export const NET_WORTH_WORDS = Object.freeze({
   // Today's net worth card, before there are two months of the household's own figures to draw a line between.
   "networth-trend-not-yet": "[WORDS: networth-trend-not-yet]",
 
+  // NET WORTH BEHIND PLUS (Amanda, 2026-11-10): the locked state, and the Plus net worth screen (private by default).
+  "networth-locked-title": "[WORDS: networth-locked-title]",
+  "networth-locked-body": "[WORDS: networth-locked-body]",
+  "networth-locked-short": "[WORDS: networth-locked-short]",
+  "networth-locked-unavailable": "[WORDS: networth-locked-unavailable]",
+  "networth-plus-title": "[WORDS: networth-plus-title]",
+  "networth-plus-household-total": "[WORDS: networth-plus-household-total]",
+  "networth-plus-your-total": "[WORDS: networth-plus-your-total]",
+  "networth-plus-no-total": "[WORDS: networth-plus-no-total]",
+  "networth-plus-part-missing": "[WORDS: networth-plus-part-missing]",
+  "networth-plus-yours": "[WORDS: networth-plus-yours]",
+  "networth-plus-partner": "[WORDS: networth-plus-partner]",
+  "networth-plus-household": "[WORDS: networth-plus-household]",
+  "networth-plus-share": "[WORDS: networth-plus-share]",
+  "networth-plus-share-sensitive": "[WORDS: networth-plus-share-sensitive]",
+  "networth-plus-registered": "[WORDS: networth-plus-registered]",
+  "networth-plus-non-registered": "[WORDS: networth-plus-non-registered]",
+  "networth-plus-add": "[WORDS: networth-plus-add]",
+  "networth-plus-kind-home": "[WORDS: networth-plus-kind-home]",
+  "networth-plus-kind-car": "[WORDS: networth-plus-kind-car]",
+  "networth-plus-kind-pension": "[WORDS: networth-plus-kind-pension]",
+  "networth-plus-entry-label": "[WORDS: networth-plus-entry-label]",
+  "networth-plus-entry-value": "[WORDS: networth-plus-entry-value]",
+  "networth-plus-entry-currency": "[WORDS: networth-plus-entry-currency]",
+  "networth-plus-save": "[WORDS: networth-plus-save]",
+  "networth-plus-delete": "[WORDS: networth-plus-delete]",
+  "networth-plus-error": "[WORDS: networth-plus-error]",
+
   // THE MAIN PLAN'S NAME (Amanda, 2026-11-10): to households the main paid plan is "flourish" (monthly, annual,
   // founding); "flourish Plus" is only the add-on. Every place a household saw "Flourish Plus" or "Plus" for the main
   // plan takes one of these. Product and entitlement ids never change. docs/product/PLAN-NAMES.md lists each place.

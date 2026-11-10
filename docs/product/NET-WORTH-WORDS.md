@@ -14,6 +14,37 @@ Numbers in a line ({used}, {limit}, {count}) are whole numbers of bank logins, f
 | `networth-empty-body` | Today, under that title | Net worth appears once an account, a debt or a balance is added or a bank is connected. No figure, no example, no estimate | [WORDS: networth-empty-body] | 120 |
 | `networth-trend-not-yet` | Today, the net worth card, in place of the line, until there are two months of the household's own figures | The line starts once there are two months of this household's own figures; nothing is drawn before then | [WORDS: networth-trend-not-yet] | 90 |
 
+## Net worth behind Plus (2026-11-10)
+
+| Id | Where it shows | The facts it must say | Line | Limit |
+|---|---|---|---|---|
+| `networth-locked-title` | Today's net worth card, Goals' Net Worth tab, the investments card and Wrapped's net worth slide, for a household without Plus | Net worth and investments come with flourish Plus. No figure is shown | [WORDS: networth-locked-title] | 60 |
+| `networth-locked-body` | Under that title | Net worth and investment holdings are part of the Plus add-on; every bank, card and loan balance stays where it is shown today; no price | [WORDS: networth-locked-body] | 140 |
+| `networth-locked-short` | Today's row of small figures, in the net worth tile's place, without Plus | Net worth comes with Plus. No figure | [WORDS: networth-locked-short] | 24 |
+| `networth-locked-unavailable` | The same places, when the plan could not be checked | We couldn't check your plan just now, so net worth isn't shown; nothing has changed; try again. No figure | [WORDS: networth-locked-unavailable] | 120 |
+| `networth-plus-title` | The Plus net worth screen's heading | Net worth | [WORDS: networth-plus-title] | 30 |
+| `networth-plus-household-total` | Above the total, when it is the whole household's (no partner, or the partner shared everything and every part is real) | This is the household's net worth, per currency, never combined | [WORDS: networth-plus-household-total] | 60 |
+| `networth-plus-your-total` | Above the total, when only this person's own parts are counted | This is your own net worth; your partner's private things are not in it | [WORDS: networth-plus-your-total] | 80 |
+| `networth-plus-no-total` | In place of the total, when a part is missing, not in a stated currency, or may be counted twice | No total until every part is complete; the parts below say what is missing | [WORDS: networth-plus-no-total] | 120 |
+| `networth-plus-part-missing` | Under a part that is not complete | What is missing for this part: a balance, a currency, a kind, or an answer about a card that may be counted twice | [WORDS: networth-plus-part-missing] | 90 |
+| `networth-plus-yours` | Section heading: this person's own accounts and entries | Yours | [WORDS: networth-plus-yours] | 30 |
+| `networth-plus-partner` | Section heading: what the partner shared | Shared by your partner | [WORDS: networth-plus-partner] | 40 |
+| `networth-plus-household` | Section heading: what both already see as the household's (debts typed in the app, accounts no bank linked) | The household's | [WORDS: networth-plus-household] | 40 |
+| `networth-plus-share` | The switch on each of this person's accounts and entries, when they have a partner | Share this with my partner. Off by default | [WORDS: networth-plus-share] | 40 |
+| `networth-plus-share-sensitive` | Under the switch, on an account that could reveal a health or disability fact (an RDSP, an HSA) | This account's type can say something about health or disability to whoever sees it; it is never shared unless you turn this on | [WORDS: networth-plus-share-sensitive] | 140 |
+| `networth-plus-registered` | Beside an investment account the bank calls registered | Registered | [WORDS: networth-plus-registered] | 20 |
+| `networth-plus-non-registered` | Beside an investment account the bank calls a brokerage account | Non-registered | [WORDS: networth-plus-non-registered] | 20 |
+| `networth-plus-add` | The button that adds an entry | Add a home, car or pension | [WORDS: networth-plus-add] | 40 |
+| `networth-plus-kind-home` | The entry kinds | Home | [WORDS: networth-plus-kind-home] | 20 |
+| `networth-plus-kind-car` | The entry kinds | Car | [WORDS: networth-plus-kind-car] | 20 |
+| `networth-plus-kind-pension` | The entry kinds | Pension | [WORDS: networth-plus-kind-pension] | 20 |
+| `networth-plus-entry-label` | The entry form: the name field | A short name, private unless shared | [WORDS: networth-plus-entry-label] | 40 |
+| `networth-plus-entry-value` | The entry form: the figure field | Your own figure; flourish estimates nothing | [WORDS: networth-plus-entry-value] | 40 |
+| `networth-plus-entry-currency` | The entry form: the currency | CAD or USD | [WORDS: networth-plus-entry-currency] | 20 |
+| `networth-plus-save` | The entry form's save button | Save | [WORDS: networth-plus-save] | 20 |
+| `networth-plus-delete` | On each entry | Delete | [WORDS: networth-plus-delete] | 20 |
+| `networth-plus-error` | After a save, delete or share that failed | It didn't save; nothing changed; try again | [WORDS: networth-plus-error] | 80 |
+
 ## The main plan's name (2026-11-10)
 To households the main paid plan is "flourish" (monthly, annual, founding). "flourish Plus" is only the add-on. Each line below named the main plan "Flourish Plus" or "Plus", and goes back to review. Product and entitlement ids never change. `docs/product/PLAN-NAMES.md` lists every place, in the repo and outside it.
 

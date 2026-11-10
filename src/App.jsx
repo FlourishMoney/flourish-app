@@ -21,6 +21,9 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
+import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, callNetWorth, getNetWorthState } from "./lib/netWorthAccess.js";
+import { viewerNetWorth } from "./lib/netWorthPlus.js";
+import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -3112,6 +3115,11 @@ function MoneyWrapped({data, onClose}) {
   // Sprint C Fix 2: no trustworthy annual baseline exists (see moneyWrapped.js), so present net worth
   // as CURRENT STATE — a signed figure with no leading "+", never "changed by … this year".
   const nwHeadline = formatWrappedNetWorth(_wrappedNW);
+  // Behind Plus (lib/netWorthAccess.js): without it the slide shows the locked state and no "Invested"; with it, this
+  // person's net worth with Plus (private by default between partners), per currency.
+  const nwStateW = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwShowW = showsNetWorth(nwStateW.mode);
+  const nwPlusW = nwStateW.mode === "plus" ? viewerNetWorth({ data, holdings: nwStateW.holdings, list: nwStateW.list, ownerOf: ownerOfFrom(nwStateW.owners) }) : null;
   const {score,basisLabel:healthBasis} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
@@ -3133,12 +3141,20 @@ function MoneyWrapped({data, onClose}) {
       bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
+          {!nwShowW ? <div data-wrapped-networth-locked style={{marginBottom:24,color:"#fff"}}>
+            <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:18,fontWeight:700,marginBottom:6,overflowWrap:"anywhere"}}>{netWorthWords(nwStateW.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
+            {nwStateW.mode!=="unavailable"&&<div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
+          </div> : nwPlusW ? <div style={{marginBottom:24}}>
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{netWorthWords(nwPlusW.totals?(nwPlusW.showing==="household"?"networth-plus-household-total":"networth-plus-your-total"):"networth-plus-no-total")}</div>
+            {(nwPlusW.totals||[]).map(t=><div key={t.currency} style={{fontFamily:"'Playfair Display',serif",fontSize:36,fontWeight:900,color:t.netCents>=0?"#6EF0A0":"#FF7070",lineHeight:1.1,overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
+          </div> : <>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          </>}
+          <div style={{display:"grid",gridTemplateColumns:nwStateW.mode==="today"?"1fr 1fr":"1fr",gap:12}}>
             {[
-              {label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"},
+              ...(nwStateW.mode==="today"?[{label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"}]:[]),
               {label:"Health Score", val:`${score}/100`,               icon:"💚"},
             ].map((s,i)=>(
               <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
@@ -5121,6 +5137,18 @@ function getNetWorthHistory() {
   try { return safeLoadLS("flourish_nw_history", []); } catch { return []; }
 }
 
+// NET WORTH BEHIND PLUS (Amanda, 2026-11-10): where net worth was, a household without Plus sees this, never a blank or a
+// broken card, and never a figure. "unavailable" (the plan could not be read) says so plainly instead.
+function NetWorthLocked({ mode, C, label = null }){
+  return (
+    <div data-networth-locked={mode}>
+      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{label}</div>}
+      <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
+      {mode!=="unavailable" && mode!=="pending" && <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
+    </div>
+  );
+}
+
 function NetWorthSparkline({history, color}){
   if(!history || history.length < 2) return null;
   const vals = history.map(h=>h.v);
@@ -5906,6 +5934,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // nothing entered or linked shows the empty state; otherwise the household's own figure, and a line only once there
   // are two months of its own snapshots (NetWorthSparkline). Nothing is drawn from anything else.
   const nwHasData = netWorthRows(data).rows.length > 0;
+  // Behind Plus (lib/netWorthAccess.js): "today" (PLUS_ENABLED off) shows everything as before; "plus" shows this person's
+  // net worth with Plus (private by default between partners); anything else shows the locked card, never a figure.
+  const nwState = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwShow = showsNetWorth(nwState.mode);
+  const nwPlus = nwState.mode === "plus" ? viewerNetWorth({ data, holdings: nwState.holdings, list: nwState.list, ownerOf: ownerOfFrom(nwState.owners) }) : null;
   // 7-day forecast — must be declared before heroColor which reads sevenDayOverdraft
   const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
   const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
@@ -6441,7 +6474,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               : {label:totalDebt>0?"Total debt":"All entered debts are at $0.",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
-            {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            !nwShow
+              ? {label:"Net worth",value:netWorthWords(nwState.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-short"),sub:"",color:C.muted,icon:"chartUp",screen:"goals",tab:"worth"}
+              : nwPlus
+              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):"—",sub:"",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"}
+              : {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>s.noDebts?(
             <div key={i} style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",boxSizing:"border-box",
               ...row({justifyContent:"space-between",gap:SPACE.md})}}>
@@ -6612,7 +6649,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div onClick={()=>{setScreen("goals");if(setGoalsTab)setGoalsTab("worth");}} style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px",cursor:"pointer"}}>
-          {!nwHasData ? <div>
+          {!nwShow ? <NetWorthLocked mode={nwState.mode} C={C} label="Net Worth Trend"/> : nwPlus ? <div data-networth-plus-card>
+            <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
+            {nwPlus.totals ? <>
+              <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords(nwPlus.showing==="household"?"networth-plus-household-total":"networth-plus-your-total")}</div>
+              {nwPlus.totals.map(t=><div key={t.currency} style={{color:t.netCents<0?C.redBright:C.tealBright,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',Georgia,serif",overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
+            </> : <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-plus-no-total")}</div>}
+          </div> : !nwHasData ? <div>
             <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
             <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords("networth-empty-title")}</div>
             <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-empty-body")}</div>
@@ -6643,7 +6686,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         </div>}
 
         {/* ── INVESTMENT PORTFOLIO ─── (Phase B5-B) */}
-        {isVisible('investments') && (data.investments?.length > 0) && (() => {
+        {/* Behind Plus: without it, a locked card where the investments card was (when the household has an investment
+            account); with Plus, holdings are on Goals' Net Worth tab, each in its own currency, so this card (which adds
+            holdings across currencies) is not shown. */}
+        {isVisible('investments') && !nwShow && (data.accounts||[]).some(a=>isInvestmentAccount(a)) && (
+          <div style={{...anim(195), ...tileStyle('investments'), ...glass(C.teal), borderRadius:22, padding:"18px 20px 16px", cursor:"pointer"}} onClick={() => { setScreen("goals"); if(setGoalsTab) setGoalsTab("worth"); }}>
+            <NetWorthLocked mode={nwState.mode} C={C} label="Investment Portfolio"/>
+          </div>
+        )}
+        {isVisible('investments') && nwState.mode === "today" && (data.investments?.length > 0) && (() => {
           const country = data.profile?.country || "CA";
           const totalInvested = data.investments.reduce((s,h) => s + (h.value||0), 0);
           const holdingsCount = data.investments.length;
@@ -9542,6 +9593,16 @@ function SpendScreen({data, setAppData, setScreen}){
 function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
   const [explainNetWorth,setExplainNetWorth]=useState(false);
+  // Behind Plus (lib/netWorthAccess.js): the Net Worth tab is net worth with Plus, the locked state, or (PLUS_ENABLED off) as before.
+  const nwState = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwCall = async (action, params) => {
+    const jwt = await getJwt();
+    const r = await callNetWorth(action, params, { apiBase: API_BASE, jwt });
+    if (!(r && r.status === 200)) return false;
+    if (action !== "list") { const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt }); if (l && l.status === 200) setNetWorthList(l.body); }
+    else setNetWorthList(r.body);
+    return true;
+  };
   // manual-balances: the account whose entered balance is being updated from net worth's How we got this.
   const [balanceEdit,setBalanceEdit]=useState(null);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
@@ -9903,7 +9964,17 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       const ROW_STYLE = { cash:{type:"asset",color:C.green,icon:"🏦"}, investment:{type:"investment",color:C.purple,icon:"📈"}, credit:{type:"debt",color:C.red,icon:"💳"}, debt:{type:"debt",color:C.red,icon:"💳"} };
       const allItems = nwRows.rows.map(r => { const a = r.kind === "investment" ? acctById.get(r.id) : null;
         return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain, mayCountTwice:!!r.mayCountTwice }; });
+      // With Plus: this person's net worth, private by default between partners (NetWorthPlusScreen).
+      if (nwState.mode === "plus") return <>
+        {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
+        <NetWorthPlusScreen data={data} holdings={nwState.holdings} list={nwState.list} ownerOf={ownerOfFrom(nwState.owners)} C={C}
+          onSaveEntry={(e)=>nwCall("save_entry", e)} onDeleteEntry={(id)=>nwCall("delete_entry", { id })} onShareAccount={(account_id, shared)=>nwCall("set_share", { account_id, shared })}/>
+      </>;
+      // Without Plus: the locked state where the figure was, and every bank, card and loan balance listed as before.
+      // No total, no investments, nothing to add up.
+      const nwLocked = !showsNetWorth(nwState.mode);
       return <>
+      {nwLocked ? <div data-networth-locked-tab style={{background:C.card,borderRadius:20,padding:"22px",border:`1px solid ${C.border}`}}><NetWorthLocked mode={nwState.mode} C={C}/></div> :
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
         <button onClick={()=>setExplainNetWorth(true)} aria-label="Net worth: how Flourish got it" style={{background:"none",border:"none",padding:0,margin:0,cursor:"pointer",textAlign:"left",font:"inherit",display:"block",minHeight:LAYOUT.minTap}}>
@@ -9927,9 +9998,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+{formatMoney(totalGain)}</div>
           </div>
         </div>}
-      </div>
+      </div>}
       {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
-      {allItems.map((item,i)=>(
+      {(nwLocked ? allItems.filter(item=>item.type!=="investment") : allItems).map((item,i)=>(
         <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${item.type==="investment"?C.purple+"33":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{fontSize:20,width:32,textAlign:"center"}}>{item.icon}</div>
@@ -9946,7 +10017,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           </div>
         </div>
       ))}
-      {explainNetWorth&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
+      {explainNetWorth&&!nwLocked&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
         meaning={`Every account and debt listed on this screen, added up: what you have, less what you owe. A debt linked to its bank card is counted once. Accounts in another currency are left out.${nwRows.matches.length?" Two rows marked below may be the same card counted twice: answer the question on this screen to link them.":""}`}
         inputs={[...nwRows.rows.map(r=>({label:r.mayCountTwice?`${r.label}, may be counted twice`:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
           {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
@@ -17768,6 +17839,29 @@ export default function FlourishApp(){
   // Version 1.1: ask the server what this account may do in a store app that sells, and configure RevenueCat
   // for this account (its app user id is the Supabase user id, so a store purchase belongs to the household,
   // not to the phone). Nothing here runs in any other build.
+  // NET WORTH BEHIND PLUS (lib/netWorthAccess.js): ask the server once per signed-in account what this household may see.
+  // 404 (PLUS_ENABLED off): everything as before. With Plus: this person's entries and share choices (/api/networth), and
+  // which bank each person linked (list_items), for net worth that is private by default between partners. No answer at
+  // all is asked again after 5, 20 and 60 seconds; until then nothing about net worth shows a figure.
+  useEffect(()=>{
+    let cancelled = false, timer = null;
+    if(!user?.id) return;
+    const ask = async (attempt)=>{
+      const jwt = await getJwt();
+      const res = await askPlusStatus({ apiBase: API_BASE, jwt });
+      if(cancelled) return;
+      const mode = setPlusAnswer(res);
+      if(mode === "plus"){
+        const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt });
+        if(!cancelled && l && l.status === 200) setNetWorthList(l.body);
+        const items = await getUserItems();
+        if(!cancelled) setItemOwners(items);
+      }
+      if(res === null){ const wait = [5000, 20000, 60000][attempt]; if(wait) timer = setTimeout(()=>ask(attempt + 1), wait); }
+    };
+    ask(0);
+    return ()=>{ cancelled = true; if(timer) clearTimeout(timer); };
+  },[user?.id]);
   const askStore = useCallback(async (action = "store_status", extra = {})=>{
     const jwt = await getJwt();
     if(!jwt) return null;
@@ -18720,12 +18814,19 @@ export default function FlourishApp(){
             items.map(it => callPlaid("get_investments",{item_id:it.item_id}, {jwt}))
           );
           const allHoldings = [];
+          let plusMode = false;
           invResults.forEach(r => {
             if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings)) {
               allHoldings.push(...r.value.holdings);
+              if (r.value.plus_mode) plusMode = true;
             }
           });
-          if (allHoldings.length > 0) {
+          if (plusMode) {
+            // PLUS (the server says so): holdings are this person's own and their partner's shared ones, so they stay on
+            // this device (lib/netWorthAccess.js) and never go in the shared household blob; an old copy there is cleared.
+            setPlusHoldings(allHoldings);
+            setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
+          } else if (allHoldings.length > 0) {
             setAppData(prev => ({ ...prev, investments: allHoldings }));
           }
         } catch(e) { /* silent — institution may not support investments */ }

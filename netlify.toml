@@ -132,6 +132,13 @@
   to     = "/.netlify/functions/creator"
   status = 200
 
+# Redirect: net worth with Plus (each person's own entries and share choices) → Netlify function. POST only, signed in.
+# Answers 404 to everything until PLUS_ENABLED is "true" (netlify/functions/networth.js, migration 0045).
+[[redirects]]
+  from   = "/api/networth"
+  to     = "/.netlify/functions/networth"
+  status = 200
+
 # Redirect: the /get page's and the Android app's counts (src, cr) → Netlify function. POST only; adds 1 to a daily
 # count and keeps nothing else (netlify/functions/attribution.js, migration 0036).
 [[redirects]]
