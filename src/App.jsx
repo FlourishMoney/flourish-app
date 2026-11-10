@@ -20,6 +20,7 @@ import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
+import { netWorthWords } from "./lib/netWorthWords.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -5899,9 +5900,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
     } catch { return 0; }
   };
   const unread = getUnreadCount();
-  const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
-  const sMin=Math.min(...spark),sMax=Math.max(...spark);
-  const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
+  // THE NET WORTH CARD (2026-11-10). It once drew a fixed line of five made-up points ending at the figure, so every
+  // household, one with nothing entered included, saw its net worth "rising" from -$4,200 (audit 2026-10-26, H8). Now:
+  // nothing entered or linked shows the empty state; otherwise the household's own figure, and a line only once there
+  // are two months of its own snapshots (NetWorthSparkline). Nothing is drawn from anything else.
+  const nwHasData = netWorthRows(data).rows.length > 0;
   // 7-day forecast — must be declared before heroColor which reads sevenDayOverdraft
   const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
   const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
@@ -6608,6 +6611,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div onClick={()=>{setScreen("goals");if(setGoalsTab)setGoalsTab("worth");}} style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px",cursor:"pointer"}}>
+          {!nwHasData ? <div>
+            <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
+            <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords("networth-empty-title")}</div>
+            <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-empty-body")}</div>
+          </div> : <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -6620,27 +6628,17 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
                 : "Track your net worth over time"}
             </div>
           </div>
-          <svg width="100%" height="52" viewBox={`0 0 ${spark.length*50} 100`} preserveAspectRatio="none" style={{display:"block",overflow:"visible"}}>
-            <defs>
-              <linearGradient id="sgv5" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={C.teal} stopOpacity="0.4"/>
-                <stop offset="100%" stopColor={C.teal} stopOpacity="0"/>
-              </linearGradient>
-              <filter id="gfv5"><feGaussianBlur stdDeviation="1.5"/></filter>
-            </defs>
-            <polyline points={sN.map((y,i)=>`${i*50},${y}`).join(" ")} fill="none" stroke={C.teal+"40"} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" filter="url(#gfv5)"/>
-            <polyline points={sN.map((y,i)=>`${i*50},${y}`).join(" ")} fill="none" stroke={C.teal} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <polygon points={`0,100 ${sN.map((y,i)=>`${i*50},${y}`).join(" ")} ${(spark.length-1)*50},100`} fill="url(#sgv5)"/>
-            {sN.map((y,i)=><circle key={i} cx={i*50} cy={y} r={i===sN.length-1?5:2.5} fill={i===sN.length-1?C.tealBright:C.teal} style={i===sN.length-1?{filter:`drop-shadow(0 0 5px ${C.teal})`}:{}}/>)}
-          </svg>
-          {nwHistory.length > 1 && <NetWorthSparkline history={nwHistory} color={C.teal}/>}
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-            {(nwHistory.length>1 ? nwHistory : [{month:"·"},{month:"·"},{month:"·"},{month:"Now"}]).map((h,i,arr)=>(
+          {nwHistory.length > 1
+            ? <NetWorthSparkline history={nwHistory} color={C.teal}/>
+            : <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-trend-not-yet")}</div>}
+          {nwHistory.length > 1 && <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+            {nwHistory.map((h,i,arr)=>(
               <span key={i} style={{color:i===arr.length-1?C.tealBright:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===arr.length-1?700:400}}>
-                {h.month?.slice(5)||h.month||"·"}
+                {h.month?.slice(5)||h.month}
               </span>
             ))}
-          </div>
+          </div>}
+          </>}
         </div>}
 
         {/* ── INVESTMENT PORTFOLIO ─── (Phase B5-B) */}

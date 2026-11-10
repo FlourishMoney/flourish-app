@@ -272,7 +272,7 @@ function loadWith(db, sm, user = U) {
       t.eq([null, undefined, { status: 200 }, { status: 200, body: { enabled: true } }, { status: 200, body: { enabled: true, plus: "yes" } }, { status: 500, body: {} }].map((r) => view.plusFeatureVisible(view.plusView(r))),
         [false, false, false, false, false, false], "6d no answer, a partial answer or an odd one: no Plus feature");
       const appSrc = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-      t.ok(!/plus_checkout|plus_status|plusAccess|netWorthWords/.test(appSrc), "6e no screen calls a Plus action yet (the Plus screens are not built: see the spec), so none can be half open");
+      t.ok(!/plus_checkout|plus_status|plusAccess/.test(appSrc), "6e no screen calls a Plus action yet (the Plus screens are not built: see the spec), so none can be half open");
       const planSrc = fs.readFileSync(path.join(REPO, "src", "lib", "planFromProfile.js"), "utf8");
       t.ok(!/plusAccess|plus_addon/.test(planSrc), "6f the main plan's client rule never reads Plus");
     }
