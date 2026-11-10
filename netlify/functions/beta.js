@@ -699,12 +699,13 @@ async function handle(event) {
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
         // founder_flag false, and nothing anywhere reads these fields.
-        // `signup_src` (2026-10-22): the campaign the visit came from (?src=, lib/waitlistSrc.js), a known one or
-        // "direct", carried from the landing's main button through to the account. Counted, never acted on.
+        // No campaign code goes in this metadata (2026-11-10). The approved privacy words (2026-11-05) say only an
+        // Android account carries one, from Google Play's Install Referrer, and that one is recorded in
+        // account_attribution below. A website or iPhone account carries none. (#92 wrote `signup_src` here.)
         // `signup_platform` (2026-10-23): "app" for a signup made in a store app, "web" otherwise. The confirmation
         // link opens in a browser either way; the website's /confirmed page reads this to sign a web signup straight
         // into onboarding and to send an app signup back to the app (src/App.jsx confirmedFromApp).
-        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_src: waitlistSourceFor(body.src), signup_platform: isNativeRequest(event) ? "app" : "web", signed_up: new Date().toISOString() },
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_platform: isNativeRequest(event) ? "app" : "web", signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");

@@ -63,7 +63,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.ok(/if \(foundingForm\) await bumpLandingCount\(\{ supabaseUrl, secretKey, event, name: "founding_join", src \}\);/.test(beta)
     && beta.indexOf('name: "founding_join"') > beta.indexOf("if (foundingForm && insertedRow && !isFoundingPosition("),
     "2c founding_join, counted for a new founding list row (after the spots-just-filled answer, so a row with no number is not counted)");
-  t.ok(/signup_src: waitlistSourceFor\(body\.src\)/.test(beta), "2d the account carries the visit's src (a known one or \"direct\")");
+  t.ok(!/signup_src\s*:/.test(beta) && /user_metadata: \{ beta: gate\.usedCode, signup_source: gate\.source, signup_platform: /.test(beta),
+    "2d no campaign code in the account's metadata (approved privacy words, 2026-11-05: only Android's, in account_attribution)");
   t.eq(C.waitlistSourceFor("Press"), "press", "2e …through the same src rule the waitlist uses");
 
   // ── 3. the page ──────────────────────────────────────────────────────────────────────────────
