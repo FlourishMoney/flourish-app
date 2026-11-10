@@ -76,8 +76,10 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
   // The app's text, line by line as the store shows it, is the approved file: the same for iPhone and Android.
   const asText = [W.intro, ...(W.notes || []).map((x) => "- " + x), W.alsoTitle, ...(W.alsoNotes || []).map((x) => "- " + x)].join("\n") + "\n";
-  t.eq([W.version, asText, W.notesAndroid], ["1.1.3", APPROVED.whatsNew113, undefined],
-    "5a What's new for 1.1.3 is the approved text, word for word and in order (the intro, a note, \"Also in this update:\", two notes), one text for iPhone and Android");
+  // 1.1.6 (2026-11-10): the version moves on; the notes stay 1.1.3's approved text, word for word, until 1.1.6's
+  // What's New is approved (Amanda: What's New is not touched in the 1.1.6 build).
+  t.eq([W.version, asText, W.notesAndroid], ["1.1.6", APPROVED.whatsNew113, undefined],
+    "5a What's new in 1.1.6 is still 1.1.3's approved text, word for word and in order (the intro, a note, \"Also in this update:\", two notes), one text for iPhone and Android");
   t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 

@@ -268,8 +268,8 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
     const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
     const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
-    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.3", "1.1.3", ["1.1.3"], "1.1.3"], "7a one version, 1.1.3, in whatsNew.json, package.json, Xcode and Gradle");
-    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526907, [526907], 22, 22], "7b the builds in whatsNew.json are the ones the projects build: iOS 526907, Android 22");
+    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.1.6", "1.1.6", ["1.1.6"], "1.1.6"], "7a one version, 1.1.6, in whatsNew.json, package.json, Xcode and Gradle");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526910, [526910], 26, 26], "7b the builds in whatsNew.json are the ones the projects build: iOS 526910, Android 26");
     const allNotes = [...W.notes, ...(W.notesAndroid || []), ...(W.alsoNotes || [])];
     t.ok(Array.isArray(W.notes) && W.notes.length >= 1 && allNotes.length >= 3, "7c release notes are in the same file");
     noBanned("7d release notes", [W.intro, ...allNotes, W.alsoTitle || ""].join(" "));
@@ -277,7 +277,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     // check reads as an instruction; it is not money advice, and the notes themselves are scanned in full.
     noAdvice("7e release notes", allNotes);
     const st = settingsText();
-    t.ok(st.includes("What's new") && st.includes("Version 1.1.3") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
+    t.ok(st.includes("What's new") && st.includes("Version 1.1.6") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
       "7f Settings shows What's new and the version, and opens the notes from it");
     t.ok(/\{whatsNewNotes\(\)\.map\(\(n,i\)=><li key=\{i\}/.test(APP) && /\{WHATS_NEW\.intro&&<p /.test(APP), "7f2 …the intro and the notes from whatsNew.json");
     t.ok(/\{WHATS_NEW\.alsoTitle&&<p [^>]*>\{WHATS_NEW\.alsoTitle\}<\/p>\}/.test(APP) && /\{WHATS_NEW\.alsoNotes\.map\(\(n,i\)=><li key=\{i\}/.test(APP)
