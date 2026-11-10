@@ -54,11 +54,17 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     t.eq([P.storePlan("trial", { paid: false }), P.storePlan("free", { paid: false }), P.storePlan("free", { paid: true })], ["trial", "free", "premium"],
       "2a the 14-day account trial counts in a selling build; after it the free plan, until the household subscribes");
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
+    // TRIAL_PLAN_FIRST (Amanda, 2026-11-10) adds trialFirst and onSignOut, both absent (null) unless the switch is on.
+    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
       "2b one paywall: nothing on it depends on when the household installed or what it did before (inTrial is today's trial, 2026-10-29)");
-    t.ok(!/checkTrialOrIntroductoryPriceEligibility|introEligible|trialLine|free month/i.test(comp) && !("introEligible" in O)
+    // TRIAL_PLAN_FIRST (Amanda, 2026-11-10): the store's 14-day trial, behind the switch only. The paywall asks the store
+    // for eligibility only on the one line that requires trialFirst (the switch on), and its own words still promise nothing.
+    const askLines = comp.split("\n").filter((l) => /checkTrialOrIntroductoryPriceEligibility/.test(l));
+    t.ok(askLines.length === 2 && /if\(trialFirst && platform==="ios" && typeof purchases\.checkTrialOrIntroductoryPriceEligibility==="function"\)\{/.test(askLines[0]),
+      "2c0 the paywall asks the store about a trial only with the switch on");
+    t.ok(!/introEligible|trialLine|free month/i.test(comp) && !("introEligible" in O)
       && ["monthly", "annual", "founding_annual"].every((plan) => { const c = O.offerCopy({ plan, priceString: "$X", platform: "ios" }); return c && !/free|trial|intro/i.test(JSON.stringify(c)); }),
-      "2c no store trial and no introductory offer: the paywall never asks the store for one, and no plan's words promise one");
+      "2c no store trial and no introductory offer while the switch is off: no plan's own words promise one");
     t.eq([P.storePlan("beta_founder", { paid: false }), P.storePlan("premium", { paid: false })], ["beta_founder", "premium"],
       "2d no grandfathering by install date or history; the only standing access is the repo's own founder flag and a granted paid plan");
   }
@@ -84,7 +90,9 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
   {
     t.eq((APP.match(/<ModalHost\/>\{storePaywallOverlay\}/g) || []).length, 2, "4a the overlay is drawn inside both shells (phone and desktop), next to the one ModalHost");
     t.ok(!/return\s*\(?\s*<StorePaywall/.test(APP) && !/return <><StorePaywall/.test(APP), "4b it never replaces the app: no early return renders it");
-    t.eq((APP.match(/<StorePaywall /g) || []).length, 1, "4c one render site");
+    // TRIAL_PLAN_FIRST: a second render site, the plans that come first for a new account, only with the switch on.
+    t.eq((APP.match(/<StorePaywall /g) || []).length, 2, "4c two render sites: the overlay, and the plans-first screen");
+    t.ok(/if\(plansRequired && firstVisitDone\)\{\s*if\(storeBilling\) return \(/.test(APP), "4c2 …the second only for an account the switch holds at the plans");
     const ov = APP.slice(APP.indexOf("const storePaywallOverlay ="), APP.indexOf("const storePaywallOverlay =") + 1400);
     t.ok(/position:"fixed",inset:0,zIndex:9998/.test(ov) && /role="dialog" aria-modal="true"/.test(ov), "4d a full-screen dialog at zIndex 9998, over every screen and the tab bar");
     const z = [...APP.matchAll(/zIndex:(\d+)/g)].map((m) => Number(m[1]));

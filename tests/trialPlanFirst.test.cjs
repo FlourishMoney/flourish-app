@@ -187,10 +187,10 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // the app
     const store = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("// THE FALLBACK (audit 2026-10-26, B4)"));
     const web = APP.slice(APP.indexOf("function UpgradeScreen("), APP.indexOf("// Couple mode (audit round 3 a)"));
-    t.ok(/<TrialLines disclosure=\{trial\}\/>\s*<button onClick=\{\(\)=>doBuy\(plan,pkg\)\}/.test(store), "2s store: each plan's lines sit directly above its button");
+    t.ok(/<TrialTerms disclosure=\{trial\}\/>\s*<button onClick=\{\(\)=>doBuy\(plan,pkg\)\}/.test(store), "2s store: each plan's lines sit directly above its button");
     t.ok(/checkTrialOrIntroductoryPriceEligibility\(\{ productIdentifiers: ids \}\)/.test(store) && /catch\{ elig = \{\}; \}/.test(store), "2t store: the iPhone asks RevenueCat, and a failed answer claims nothing");
     t.ok(/purchases\.purchaseSubscriptionOption\(\{ subscriptionOption: base \}\)/.test(store), "2u store: Android buys the base plan unless the card claimed the trial");
-    t.ok(/\{trialOf\(plan\)&&<TrialLines disclosure=\{trialOf\(plan\)\}\/>\}/.test(web) && /\{trialOf\(chosen\) \? <TrialLines disclosure=\{trialOf\(chosen\)\}\/>/.test(web), "2v web: each plan's lines, and again above the confirm button");
+    t.ok(/\{trialOf\(plan\)&&<TrialTerms disclosure=\{trialOf\(plan\)\}\/>\}/.test(web) && /\{trialOf\(chosen\) \? <TrialTerms disclosure=\{trialOf\(chosen\)\}\/>/.test(web), "2v web: each plan's lines, and again above the confirm button");
     t.ok(web.includes("plan_key:planKey, ...(trialFirst ? { trial: webEligible } : {})") && web.includes("const webEligible = trialSaid!==null ? trialSaid : trialFirst?.web_trial_eligible===true;"),
       "2w web: the checkout says which terms the screen showed");
     t.ok(web.includes('if(typeof body.trial==="boolean") setTrialSaid(body.trial);'), "2w2 …and after a trial_changed answer the screen shows what the server said, so it cannot loop (review L3)");

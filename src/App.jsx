@@ -14213,7 +14213,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
 // the browser at all: the client posts a plan KEY.
 // TRIAL_PLAN_FIRST (item 1): the lines above a plan's button, from lib/trialPlanFirst.js trialDisclosure. The first
 // line (the trial, or the price charged today) is the most prominent; how to cancel is last.
-function TrialLines({disclosure}){
+function TrialTerms({disclosure}){
   if(!disclosure) return null;
   return (
     <div data-trial-lines={disclosure.claim?"trial":"no-trial"} style={{marginTop:SPACE.sm,display:"flex",flexDirection:"column",gap:2}}>
@@ -14333,7 +14333,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
               </div>
               {chosen.note&&<div style={{color:chosen.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{chosen.note}</div>}
             </div>
-            {trialOf(chosen) ? <TrialLines disclosure={trialOf(chosen)}/> : <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>}
+            {trialOf(chosen) ? <TrialTerms disclosure={trialOf(chosen)}/> : <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>}
             <button data-review-confirm="" onClick={()=>go(chosen.key)} disabled={!!busy} style={{width:"100%",minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy?0.7:1}}>
               {busy===chosen.key?"Opening checkout…":(trialOf(chosen)?.claim ? trialWords("trialfirst-button") : UPGRADE_COPY.reviewConfirm)}
             </button>
@@ -14379,7 +14379,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
                         </span>
                         {plan.sub&&<span style={{display:"block",color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</span>}
                         {plan.note&&<span style={{display:"block",color:founding?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</span>}
-                        {trialOf(plan)&&<TrialLines disclosure={trialOf(plan)}/>}
+                        {trialOf(plan)&&<TrialTerms disclosure={trialOf(plan)}/>}
                       </span>
                     </label>
                   );
@@ -14538,7 +14538,7 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
               </div>
               {copy.note&&<div style={{color:C.gold,fontSize:13,marginTop:SPACE.xs,lineHeight:1.5}}>{copy.note}</div>}
-              <TrialLines disclosure={trial}/>
+              <TrialTerms disclosure={trial}/>
               <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
                 {busy===plan?PAYWALL_COPY.checking:(trial?.claim ? trialWords("trialfirst-button") : copy.button)}
               </button>
