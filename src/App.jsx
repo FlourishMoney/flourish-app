@@ -13237,7 +13237,7 @@ function renderCoachMarkdown(src) {
 // Step 4 (COPY-CHANGES §2/§9): the two labels for surfaces that mix engine output and coach prose,
 // and the footer under every coach reply. Small, reusable.
 function CalcByFlourish({ style = {} }) {
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by flourish</span>;
 }
 function YourCoachTag({ style = {} }) {
   return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
