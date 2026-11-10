@@ -135,7 +135,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
       `6g native limit message ${i + 1} sells nothing — no upgrade, no Plus, no website, no price`);
   }
   // The web keeps its upsell, so the split above is a real platform branch and not copy we deleted.
-  t.ok(/: `You've used all \$\{FREE_TIER_LIMITS\.simulationsPerDay\} simulations for today\. Upgrade to Flourish Plus/.test(APP),
+  t.ok(/: netWorthWords\("plan-sim-limit"\)/.test(APP),   // the web upsell, its words back to review (2026-11-10)
     "6h (control) the WEB branch still upsells, so native is quiet by choice, not by deletion");
   t.ok(/verdict: isNativeApp\(\) \? "Daily limit reached"/.test(APP),
     "6i the simulation verdict on native is a fact, not 'Upgrade to continue'");
@@ -163,7 +163,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     t.ok(/\{nativeNote \|\| LOCKED_LINE\}/.test(native), "8d it says the founder's locked-screen line (LOCKED_LINE)");
     t.ok(!/tier|trial|14 days|Flourish Plus|\bPlus\b(?! Jakarta)|premium/i.test(native.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")), "8d2 …and names no trial and no paid tier");
     const web = gate.slice(gate.indexOf(") : ("));
-    t.ok(/Flourish Plus includes:/.test(web) && /onClick=\{onUpgrade\}/.test(web),
+    t.ok(/netWorthWords\("plan-includes-title"\)/.test(web) && /onClick=\{onUpgrade\}/.test(web),
       "8e (control) the web branch keeps the pitch, so native is quiet by platform and not by deletion");
   }
   // A 429 from the coach carries the SERVER's copy, which sells Plus. The client's own gate cannot

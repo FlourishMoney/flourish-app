@@ -119,7 +119,8 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
   t.ok(E.launchParagraphs().includes(C) && !E.launchParagraphs().includes("flourish is now available in Canada at flourishmoney.app."), "C the launch email's sentence, word for word");
 
   // ── D. The website Settings card ──────────────────────────────────────────────────────────────
-  t.ok(APP.includes(`: "${D}"}`) && !APP.includes("Unlimited coaching and the full picture from your linked accounts."), "D the website Settings card's Flourish Plus line, word for word");
+  // 2026-11-10: the line named the main plan "Flourish Plus" and goes back to review; it is now the plan-adds-lead placeholder.
+  t.ok(APP.includes(`: netWorthWords("plan-adds-lead")}`) && !APP.includes(D) && !APP.includes("Unlimited coaching and the full picture from your linked accounts."), "D the website Settings card's Flourish Plus line, word for word");
   t.ok(/\{billingUi\?\.show&&onOpenUpgrade&&\(/.test(APP), "D …on the card that shows only when the server says billing is on and this is not a store app");
   t.summary("privacyAndWords.test");
 })();

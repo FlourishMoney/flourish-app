@@ -18,6 +18,7 @@
 // that clean. The lines describe the trial and the free plan only.
 // -----------------------------------------------------------------------------
 import { FREE_TIER_LIMITS } from "./usageLimits.js";
+import { netWorthWords } from "./netWorthWords.js";
 import { pendingWords } from "./pendingWords.js";
 
 // The free plan's bank limit. netlify/functions/plaid.js enforces it (exchange_token and migrate_items);
@@ -65,7 +66,7 @@ export const STORE_TERMS_SECTION_7_IAP =
   "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: " +
   `${n(FREE_TIER_LIMITS.coachMessagesPerWeek, "coach message", "coach messages")} a week, ` +
   `${n(FREE_TIER_LIMITS.simulationsPerDay, "What-If", "What-Ifs")} a day and ${n(FREE_BANKS, "connected bank", "connected banks")}, ` +
-  "and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. " +
+  "and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. " + netWorthWords("plan-terms-lifts-limits") + " " +
   "In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. " +
   "Payment is charged to your Apple or Google account when you confirm. " +
   "The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). " +

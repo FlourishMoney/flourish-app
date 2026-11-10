@@ -29,7 +29,7 @@ const APPROVED = {
   // "For the first 50 founding members. Your price stays the same while you stay subscribed." and
   // "The founding price is for the first 50 founding members and stays the same while that subscription stays active."
   founding: "For the first 50 households who subscribe. Stays the same while you stay subscribed.",
-  terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
+  terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. [WORDS: plan-terms-lifts-limits] In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
   // 1.1.3 (approved 2026-10-29: ~/Documents/Flourish/06 Builds/WHATS-NEW-1.1.3.txt), one text for the App Store and
   // Google Play, word for word: the intro, a note, the line "Also in this update:", two notes.
   whatsNew113: "New: share your household with your partner.\n" +
@@ -38,7 +38,8 @@ const APPROVED = {
     "- Layout fixes for smaller screens and larger text.\n" +
     "- Fixes for the coach and for purchases.\n",
 };
-const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
+// 2026-11-10: both named the main plan "Plus"; back to review, as placeholders (netlify/functions/_lib/planWords.js).
+const UPGRADE_TEXTS = ["[WORDS: plan-server-one-bank]", "[WORDS: plan-server-one-bank-migrate]"];
 
 (async () => {
   const t = create();
@@ -82,11 +83,12 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
-  t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x)) && /error: "plan_limit", message: "Connecting more than one bank/.test(PLAID) && /error: "plan_limit", message: "Free plan supports one bank/.test(PLAID),
+  const PW_SRV = require("../netlify/functions/_lib/planWords.js");
+  t.ok(UPGRADE_TEXTS.every((x, i) => PW_SRV.planWords(["plan-server-one-bank", "plan-server-one-bank-migrate"][i]) === x) && /error: "plan_limit", message: planWords\("plan-server-one-bank"\)/.test(PLAID) && /error: "plan_limit", message: planWords\("plan-server-one-bank-migrate"\)/.test(PLAID),
     "6a (the server's two texts are the message beside the code plan_limit)");
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);
   t.ok(/const err = new Error\(data\.error \|\| "Plaid error"\);/.test(call) && !/data\.message/.test(call), "6b the app builds a Plaid error from the code only, never the server's message");
-  t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || APP.includes(x.split(". ")[1])), [], "6c neither upgrade text is anywhere in the app");
+  t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || (x.split(". ")[1] !== undefined && APP.includes(x.split(". ")[1])) || APP.includes(x.replace(/^\[WORDS: |\]$/g, ""))), [], "6c neither upgrade text is anywhere in the app");
   // Onboarding (2026-10-23): any other failure there is W4, so the plan_limit case sets the line on its own.
   t.ok(/if \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\) setBankError\(FREE_BANK_LINE\);/.test(APP), "6d onboarding's connect: a store app shows FREE_BANK_LINE");
   t.ok(/if\(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\?\.message\|\|""\)\)\)\{ alertModal\(\{ message: FREE_BANK_LINE \}\); return; \}/.test(APP), "6e Settings' add-bank: a store app shows FREE_BANK_LINE (it used to say \"Please try again\")");
@@ -95,8 +97,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   {
     const P = O.PAYWALL_COPY;
     t.eq([P.title, P.lead, P.dataSafe, P.close, P.checking, P.checkAgain, P.storeUnavailable], [
-      "Flourish Plus",
-      "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+      "[WORDS: plan-name]",           // 2026-11-10: the main plan is "flourish"; title and lead back to review
+      "[WORDS: plan-adds-lead]",
       "Your accounts, bills and history stay as they are.",
       "Close",
       "Confirming with the store…",

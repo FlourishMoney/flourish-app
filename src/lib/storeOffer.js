@@ -17,6 +17,7 @@
 // pins each. Do not reword them here. FOUNDING_SWITCH_COPY below is still unwritten, and TRIAL_KEEP_COPY is to come.
 // -----------------------------------------------------------------------------
 
+import { netWorthWords } from "./netWorthWords.js";
 import { pendingWords } from "./pendingWords.js";
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
@@ -111,8 +112,9 @@ export function foundingSpotLine(status) {
 }
 
 export const PAYWALL_COPY = Object.freeze({
-  title: "Flourish Plus",
-  lead: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If.",
+  // The main plan's name (2026-11-10): "flourish" to households; "flourish Plus" is only the add-on. Placeholders until approved.
+  title: netWorthWords("plan-name"),
+  lead: netWorthWords("plan-adds-lead"),
   dataSafe: "Your accounts, bills and history stay as they are.",
   terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
   privacy: "Privacy Policy",      // approved 2026-10-20

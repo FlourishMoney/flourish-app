@@ -28,6 +28,9 @@ const PLAID_BASE = {
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
+const { bankLimitFor, limitBody } = require("./_lib/bankLimits");
+const { planWords } = require("./_lib/planWords");
+const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
 
@@ -112,6 +115,14 @@ exports.handler = async (event) => {
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
 
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED, _lib/bankLimits.js): asked before Plaid opens, so nobody signs in to a
+      // bank only to be refused after. Only a NEW bank: a reconnect (item_id, Plaid's update mode) is never limited.
+      if (!body.item_id) {
+        const lim = await bankLimitFor(getAdminClient(), user_id);
+        if (lim && lim.unavailable) return statusUnavailable(CORS);
+        if (lim && !lim.allowed) return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(lim)) };
+      }
+
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
       let updateAccessToken = null;
@@ -148,7 +159,14 @@ exports.handler = async (event) => {
             // account type supports them. Listing them under required `products` made Plaid reject
             // any user whose accounts didn't support EVERY product ("Connectivity not supported").
             products:          ["transactions"],
-            optional_products: ["investments", "liabilities"],
+            // PLUS (2026-11-10): Investments is a subscription Plaid bills every month for an Item once it is on it, "even
+            // if no API calls are made" (plaid.com/docs/account/billing). Behind PLUS_ENABLED it is asked for as an
+            // ADDITIONAL CONSENTED product instead, which Plaid bills only from the first /investments/holdings/get call
+            // (plaid.com/docs/link/initializing-products), and that call is made only for a household with Plus
+            // (get_investments below). Everyone consents once, so buying Plus later needs no new sign-in.
+            ...(plusAddon.plusEnabled()
+              ? { optional_products: ["liabilities"], additional_consented_products: ["investments"] }
+              : { optional_products: ["investments", "liabilities"] }),
             country_codes:     [country],
             language:          "en",
             transactions:      { days_requested: 90 },
@@ -171,13 +189,19 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): read now, applied after the exchange below, once Plaid has said
+      // which item this is. A reconnect comes back here with the same item (update mode), and a re-link of a bank this
+      // person already holds is collapsed to one row by the dedupe further down: neither adds a bank, so neither is
+      // ever limited, even over the limit or on a read that failed.
+      const bankLimit = await bankLimitFor(getAdminClient(), user_id);
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
-      if (ENFORCE_PLAN_LIMITS && !unlimited) {
+      // Plus lifts the free plan's one-bank cap too: Plus is unlimited, within its fair-use limit, on any plan.
+      if (ENFORCE_PLAN_LIMITS && !unlimited && !(bankLimit && bankLimit.plus)) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if ((count || 0) >= 1) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: planWords("plan-server-one-bank") }) };
         }
       }
 
@@ -186,6 +210,24 @@ exports.handler = async (event) => {
       const item_id = data.item_id;
 
       const admin = getAdminClient();
+      if (bankLimit) {
+        // A NEW bank only: not one of this person's items, and not a bank (by institution) they already hold.
+        let addsABank = true;
+        try {
+          const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id, institution_id, institution_name").eq("user_id", user_id);
+          if (mineErr) throw new Error(mineErr.code || "error");
+          const key = (r) => String((r && r.institution_id) || "").trim().toLowerCase() || String((r && r.institution_name) || "").trim().toLowerCase();
+          const newKey = key({ institution_id, institution_name });
+          addsABank = !(mine || []).some((r) => r.item_id === item_id || (newKey && key(r) === newKey));
+        } catch { addsABank = true; }
+        if (addsABank && (bankLimit.unavailable || !bankLimit.allowed)) {
+          // Refused: the item Plaid just made is removed, so nothing is left connected or billed.
+          try { await plaid("/item/remove", { access_token }); }
+          catch (rmErr) { console.warn("[exchange_token limit /item/remove failed]", rmErr.message); }
+          if (bankLimit.unavailable) return statusUnavailable(CORS);
+          return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
+        }
+      }
       const { error: upsertErr } = await admin
         .from("plaid_items")
         .upsert({
@@ -331,9 +373,23 @@ exports.handler = async (event) => {
 
     // 5. get_investments
     if (action === "get_investments") {
-      const { access_token, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
+      const { access_token, user_id, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
+        // PLUS (behind PLUS_ENABLED): holdings are a Plus feature. Without Plus (or on a plan read that failed) nothing is
+        // asked of Plaid at all, so nobody is billed for data nobody can see. With Plus, a partner's bank gives only the
+        // holdings of the accounts its owner shared (migration 0045): private by default.
+        let sharedOnly = null;
+        if (plusAddon.plusEnabled()) {
+          const ent = await plusAddon.getPlusEntitlement(getAdminClient(), user_id);
+          if (!ent.plus) return ok({ holdings: [], locked: true, plus_mode: true });
+          if (owner_id && owner_id !== user_id) {
+            const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
+            if (sErr) return ok({ holdings: [], locked: true, plus_mode: true });
+            sharedOnly = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
+            if (!sharedOnly.size) return ok({ holdings: [], plus_mode: true });
+          }
+        }
         const data = await plaid("/investments/holdings/get", { access_token });
         const securities = data.securities || [];
         const secMap = {};
@@ -344,7 +400,7 @@ exports.handler = async (event) => {
         const acctMap = {};
         (data.accounts || []).forEach(a => { acctMap[a.account_id] = a; });
 
-        const holdings = (data.holdings || []).map(h => {
+        const holdings = (data.holdings || []).filter((h) => !sharedOnly || sharedOnly.has(h.account_id)).map(h => {
           const s = secMap[h.security_id] || {};
           return {
             account_id:      h.account_id,
@@ -366,10 +422,12 @@ exports.handler = async (event) => {
         // is returned, as get_accounts does. A record that cannot be written answers 503 and no holdings.
         await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id,
           [...(data.accounts || []).map((a) => a && a.account_id), ...holdings.map((h) => h.account_id)]);
-        return ok({ holdings });
+        // plus_mode: the app keeps these on this device only (never in the shared household blob), so a partner never
+        // reads this person's private holdings from it.
+        return ok({ holdings, ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
-        return ok({ holdings: [] });
+        return ok({ holdings: [], ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
       }
     }
 
@@ -502,6 +560,17 @@ exports.handler = async (event) => {
       return { statusCode: 410, headers: CORS, body: JSON.stringify({ error: "store_item is deprecated: exchange_token now persists the item server-side." }) };
     }
 
+    // bank_limit_status (behind PLUS_ENABLED; 404 while off): how many bank connections this household holds against its
+    // plan, for Settings. Numbers only; the app words them (src/lib/netWorthWords.js). A read that fails is a 503.
+    if (action === "bank_limit_status") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const lim = await bankLimitFor(getAdminClient(), user_id);
+      if (!lim) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: "not_found" }) };
+      if (lim.unavailable) return statusUnavailable(CORS);
+      return ok({ plus: lim.plus, scope: lim.scope, used: lim.used, limit: lim.limit, allowed: lim.allowed, connected: lim.connected, over: lim.over });
+    }
+
     // 10. list_items — auth-required: return all items for the authenticated user
     // (does NOT return access_token to client — only metadata)
     if (action === "list_items") {
@@ -623,7 +692,17 @@ exports.handler = async (event) => {
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
-      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
+      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): a NEW bank here counts as it would through exchange_token.
+      const bankLimit = await bankLimitFor(admin, user_id);
+      if (bankLimit && bankLimit.unavailable) return statusUnavailable(CORS);
+      let limitUsed = bankLimit ? bankLimit.used : null;
+      let mineIds = null;
+      if (bankLimit) {
+        const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id);
+        if (mineErr) return statusUnavailable(CORS);
+        mineIds = new Set((mine || []).map((r) => r.item_id));
+      }
+      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited && !(bankLimit && bankLimit.plus); // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
         const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
@@ -646,8 +725,13 @@ exports.handler = async (event) => {
           }
           // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
           if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more." });
+            failures.push({ error: "plan_limit", message: planWords("plan-server-one-bank-migrate") });
             continue;
+          }
+          if (bankLimit && !mineIds.has(item_id)) {
+            if (limitUsed >= bankLimit.limit) { failures.push(limitBody({ ...bankLimit, used: limitUsed })); continue; }
+            limitUsed++;
+            mineIds.add(item_id);
           }
           // Upsert (idempotent — re-running migration is safe)
           const { error: upsertErr } = await admin
@@ -732,6 +816,20 @@ exports.handler = async (event) => {
       // second checkout that completed (two tabs) left a subscription the row never showed, still charging. If Stripe
       // cannot be asked, nothing is deleted.
       const customers = [...new Set(allSubs.filter(r => r && r.provider_customer_id && (r.provider || "stripe") === "stripe").map(r => r.provider_customer_id))];
+      // THE PLUS ADD-ON (migration 0044) has its own Stripe customer: its live subscriptions are cancelled here too. Its
+      // table not being there (0044 not run) holds nothing; any other failed read stops the delete with nothing changed.
+      {
+        const { data: plusRows, error: plusErr } = await admin.from("plus_addon_subscriptions")
+          .select("provider, provider_customer_id").eq("user_id", user_id);
+        if (plusErr && !missingTable(plusErr)) {
+          console.error("[delete_account] plus read:", plusErr.code || "error");
+          return stop("billing_cancel"); // nothing deleted yet
+        }
+        for (const r of (Array.isArray(plusRows) ? plusRows : [])) {
+          // Any row's Stripe customer, a store row's included: a website Plus subscription can outlive a store purchase.
+          if (r && r.provider_customer_id && !customers.includes(r.provider_customer_id)) customers.push(r.provider_customer_id);
+        }
+      }
       for (const cus of customers) {
         let listed;
         try { listed = await liveSubscriptionsFor(cus, {}, { includeIncomplete: true }); }

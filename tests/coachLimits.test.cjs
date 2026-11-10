@@ -34,9 +34,13 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
     const third = call({ usedWeek: 3 });
     t.eq(third.allowed, false, "2c the THIRD is rejected");
     t.eq(third.reason, "free_weekly", "2d …as a free-limit rejection, not an abuse one");
-    t.ok(/this week/.test(third.message), "2e …and the message says this week, not today");
+    // 2026-11-10: the line named the main plan "Plus"; it goes back to review (placeholder, with the weekly count). The facts it
+    // must say (this week, not today; resets Monday) are pinned in the words doc's row.
+    const WD = require("fs").readFileSync(require("path").join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
+    const row = (WD.match(/^\| `plan-server-coach-limit` \|[^\n]*$/m) || [""])[0];
+    t.ok(/^\[WORDS: plan-server-coach-limit\] \[n \d+\]$/.test(third.message) && /this week/.test(row) && !/today/.test(row), "2e …and the message says this week, not today");
     t.ok(!/tomorrow/.test(third.message), "2f …and never says tomorrow, which was the old daily wording");
-    t.ok(/Monday/.test(third.message), "2g …and says when it resets");
+    t.ok(/Monday/.test(row), "2g …and says when it resets");
     t.ok(/\b2\b/.test(third.message), "2h …and names the limit");
     // The next week starts the count again: the counter is week-keyed, so message one of the new
     // week arrives as usedWeek 1, whatever last week's total was.

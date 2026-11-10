@@ -87,6 +87,8 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
     [/\btry (?:it )?free\b/i, "Try Free"],
     [/\bfree trial\b|\btrial (?:has )?ended\b|\btrial ends\b|\bdays? left\b.*\btrial\b|\bstart \d+ days free\b|\b\d+ days free\b/i, "a trial surface"],
     [/\bget flourish plus\b|\bflourish plus\b/i, "the paid plan"],
+    // 2026-11-10: the main plan's words are placeholders until approved, by id in the code and as [WORDS: …] on screen.
+    [/^plan-(name|get-cta|upgrade-cta|on|includes-title|adds-title|adds-lead|sim-limit|sim-cta)$|\[WORDS: plan-(name|get-cta|upgrade-cta|on|includes-title|adds-title|adds-lead|sim-limit|sim-cta)\]/, "the paid plan (its words to come)"],
     [PRICE, "a plan price"],
   ];
   const offences = (text) => FORBIDDEN.filter(([rx]) => rx.test(text)).map(([rx, what]) => `${what} ("${(text.match(rx) || [""])[0]}")`);

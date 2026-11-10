@@ -20,7 +20,8 @@
 "use strict";
 const crypto = require("crypto");
 const { getAdminClient } = require("./_lib/auth");
-const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
+const { syncStoreSubscription, isUuid, fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
+const plusAddon = require("./_lib/plusAddon");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { creatorsEnabled, creditStoreEvent } = require("./_lib/creators");
@@ -106,6 +107,12 @@ async function handle(event, deps = {}) {
       }
       // COUPLE MODE (audit H5): a store purchase in a household the other member already pays for: one is the extra.
       if (r.paid) await reconcileHouseholdBilling(admin, userId);
+      // THE PLUS ADD-ON (behind PLUS_ENABLED): its own row (migration 0044), from the same subscriber record, after the
+      // main plan's. It never changes the main plan's row, and the main plan's sync never changes it.
+      if (plusAddon.plusEnabled()) {
+        const p = await plusAddon.syncPlusFromStore(admin, userId, { fetchSubscriber: deps.fetchSubscriber || fetchSubscriber, acceptSandbox: acceptSandboxFor(user), now: deps.now });
+        if (p.conflict) notes.push("plus conflict: Plus bought in a store by a buyer who has it on the website; refund one");
+      }
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
       if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }

@@ -23,6 +23,7 @@
 // -----------------------------------------------------------------------------
 
 "use strict";
+const { planWords } = require("./planWords");
 
 // DECISIONS.md item 2: free coaching after the trial is 2 messages a week.
 const FREE_CHAT_WEEKLY = 2;
@@ -30,7 +31,8 @@ const FREE_CHAT_WEEKLY = 2;
 // One wording for the free limit, whether we counted to it or could not count at all. A free user
 // should not be able to tell the difference, and support should not have two messages to explain.
 function freeLimitMessage(freeWeekly) {
-  return `You've used your ${freeWeekly} free Coach messages this week. Upgrade to Plus for unlimited, or come back on Monday when this week's messages reset.`;
+  // It named the main plan "Plus" (2026-11-10: the main plan is "flourish"): back to review. {n} is the weekly limit.
+  return `${planWords("plan-server-coach-limit")} [n ${freeWeekly}]`;
 }
 
 /**

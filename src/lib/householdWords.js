@@ -7,6 +7,8 @@
 // ones the doc lists as still to come (one, since audit round 5).
 // -----------------------------------------------------------------------------
 
+import { netWorthWords } from "./netWorthWords.js";
+
 export const HOUSEHOLD_WORDS = Object.freeze({
   rowLabel: "Household",
   rowSubNone: "Invite your partner to share it",
@@ -53,7 +55,8 @@ export const HOUSEHOLD_WORDS = Object.freeze({
   removeConfirm: "Remove",
 
   coveredByPartner: "Your partner's subscription includes you. There's nothing for you to buy or manage.",
-  extraStripe: "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > Flourish Plus > Manage subscription.",
+  // Named the main plan "Flourish Plus" (2026-11-10: the main plan is "flourish"; the line goes back to review).
+  extraStripe: netWorthWords("plan-household-extra-stripe"),
   extraAppStore: "Your partner's subscription already includes you. To cancel yours, open Settings on your iPhone, tap your name, then Subscriptions. Refund requests are handled by Apple.",
   extraPlayStore: "Your partner's subscription already includes you. To cancel yours, open Google Play, then Payments & subscriptions > Subscriptions.",
 

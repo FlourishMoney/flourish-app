@@ -116,7 +116,7 @@ const STATUS = { enabled: true, paid: false, provider: null, period_end: null, m
       const { ctx, page, calls } = await open(1);
       await settle(page);
       const before = calls.length;
-      await page.getByText("Get Flourish Plus", { exact: false }).first().click();
+      await page.getByText(/\[WORDS: plan-(get|upgrade)-cta\]/).first().click();   // the main plan's CTA, its words to come (2026-11-10)
       await page.getByText("$11.99 a month", { exact: false }).first().waitFor({ timeout: 10000 }).catch(() => {});
       const body = await page.locator("body").innerText();
       t.ok(calls.length > before && /\$11\.99 a month/.test(body) && !/Try again\b/.test(body), "2a the first status call failed; Upgrade asked again and opened the real checkout, not the old Paywall");
@@ -128,7 +128,7 @@ const STATUS = { enabled: true, paid: false, provider: null, period_end: null, m
       country = c;
       const { ctx, page, calls } = await open(Infinity);
       await settle(page);
-      await page.getByText("Get Flourish Plus", { exact: false }).first().click();
+      await page.getByText(/\[WORDS: plan-(get|upgrade)-cta\]/).first().click();   // the main plan's CTA, its words to come (2026-11-10)
       await page.getByRole("button", { name: "Try again" }).waitFor({ timeout: 10000 });
       const body = await page.locator("body").innerText();
       t.ok(!/days free|free trial|Free for 14 days/i.test(body) && !/aren't open/i.test(body), `3a ${c} profile: the old Paywall offers no free trial and never says plans aren't open`);
@@ -144,7 +144,7 @@ const STATUS = { enabled: true, paid: false, provider: null, period_end: null, m
     // ── 4. The promo code has a real label ─────────────────────────────────────────────────────────
     const toPromo = async (page) => {
       await settle(page);
-      await page.getByText("Get Flourish Plus", { exact: false }).first().click();
+      await page.getByText(/\[WORDS: plan-(get|upgrade)-cta\]/).first().click();   // the main plan's CTA, its words to come (2026-11-10)
       const PROMO = page.getByLabel("Promo code", { exact: true });
       await PROMO.waitFor({ timeout: 10000 });
       return PROMO;

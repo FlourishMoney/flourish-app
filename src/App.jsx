@@ -19,6 +19,11 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
+import { bankLimitMessage } from "./lib/bankLimitView.js";
+import { netWorthWords } from "./lib/netWorthWords.js";
+import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, callNetWorth, getNetWorthState } from "./lib/netWorthAccess.js";
+import { viewerNetWorth } from "./lib/netWorthPlus.js";
+import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -733,6 +738,7 @@ async function callPlaid(action, params={}, options={}) {
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxAttempts - 1) { lastErr = new Error(data.error || "server busy"); continue; }
       const err = new Error(data.error || "Plaid error");
       err.needs_reconnect = data.needs_reconnect || false;
+      err.body = data;   // the server's answer, for the bank login limit's numbers (lib/bankLimitView.js)
       if (data.needs_reconnect && typeof window.__flourishReconnect === "function") window.__flourishReconnect();
       throw err;
     }
@@ -2243,7 +2249,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         // Apple's and Google's rules. State the limit and when it lifts, and stop there (founder's wording).
         cashDetail: isNativeApp()
           ? WHAT_IF_LIMIT_LINE
-          : `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
+          : netWorthWords("plan-sim-limit"),
         debtImpact: "none",
         debtDetail: "",
         savingsDelay: "none",
@@ -2550,7 +2556,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
               {_verdictMeta(result.verdict).emoji&&<div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>}
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{cardTitle}</div>
               <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{cardText}</div>
-              {result.verdict === "Upgrade to continue" && onUpgrade && (
+              {result.verdict === "Upgrade to continue" && !isNativeApp() && onUpgrade && (   /* a store app's verdict is "Daily limit reached": never this button there */
                 <button onClick={onUpgrade} style={{
                   marginTop:14,
                   background: verdictColor,
@@ -2563,7 +2569,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
                   fontFamily: "'Plus Jakarta Sans',sans-serif",
                   cursor: "pointer",
                   transition: "all .15s",
-                }}>Unlimited simulations with Plus →</button>
+                }}>{netWorthWords("plan-sim-cta")}</button>
               )}
             </div>
 
@@ -3109,6 +3115,11 @@ function MoneyWrapped({data, onClose}) {
   // Sprint C Fix 2: no trustworthy annual baseline exists (see moneyWrapped.js), so present net worth
   // as CURRENT STATE — a signed figure with no leading "+", never "changed by … this year".
   const nwHeadline = formatWrappedNetWorth(_wrappedNW);
+  // Behind Plus (lib/netWorthAccess.js): without it the slide shows the locked state and no "Invested"; with it, this
+  // person's net worth with Plus (private by default between partners), per currency.
+  const nwStateW = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwShowW = showsNetWorth(nwStateW.mode);
+  const nwPlusW = nwStateW.mode === "plus" ? viewerNetWorth({ data, holdings: nwStateW.holdings, list: nwStateW.list, ownerOf: ownerOfFrom(nwStateW.owners) }) : null;
   const {score,basisLabel:healthBasis} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
@@ -3130,12 +3141,20 @@ function MoneyWrapped({data, onClose}) {
       bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
+          {!nwShowW ? <div data-wrapped-networth-locked style={{marginBottom:24,color:"#fff"}}>
+            <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:18,fontWeight:700,marginBottom:6,overflowWrap:"anywhere"}}>{netWorthWords(nwStateW.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
+            {nwStateW.mode!=="unavailable"&&<div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
+          </div> : nwPlusW ? <div style={{marginBottom:24}}>
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{netWorthWords(nwPlusW.totals?(nwPlusW.showing==="household"?"networth-plus-household-total":"networth-plus-your-total"):"networth-plus-no-total")}</div>
+            {(nwPlusW.totals||[]).map(t=><div key={t.currency} style={{fontFamily:"'Playfair Display',serif",fontSize:36,fontWeight:900,color:t.netCents>=0?"#6EF0A0":"#FF7070",lineHeight:1.1,overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
+          </div> : <>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          </>}
+          <div style={{display:"grid",gridTemplateColumns:nwStateW.mode==="today"?"1fr 1fr":"1fr",gap:12}}>
             {[
-              {label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"},
+              ...(nwStateW.mode==="today"?[{label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"}]:[]),
               {label:"Health Score", val:`${score}/100`,               icon:"💚"},
             ].map((s,i)=>(
               <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
@@ -4295,7 +4314,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     const jwt = await getJwt();
     callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
+      .catch((err)=>{ setBankError(bankLimitMessage(err) || ((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry.")); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===1) fetchLinkToken(); },[step]); // eslint-disable-line
@@ -4379,7 +4398,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       count("bank_link_failed");
       // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
       // Every other failure (an expired session included) is W4: try again or enter the numbers.
-      if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
+      // The bank login limit (behind PLUS_ENABLED): its own line, with the server's numbers. Nothing was disconnected.
+      if (bankLimitMessage(err)) setBankError(bankLimitMessage(err));
+      else if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
       else setBankOutcome("failed");
       setBankStage("select");
     }
@@ -5116,6 +5137,18 @@ function getNetWorthHistory() {
   try { return safeLoadLS("flourish_nw_history", []); } catch { return []; }
 }
 
+// NET WORTH BEHIND PLUS (Amanda, 2026-11-10): where net worth was, a household without Plus sees this, never a blank or a
+// broken card, and never a figure. "unavailable" (the plan could not be read) says so plainly instead.
+function NetWorthLocked({ mode, C, label = null }){
+  return (
+    <div data-networth-locked={mode}>
+      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{label}</div>}
+      <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
+      {mode!=="unavailable" && mode!=="pending" && <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
+    </div>
+  );
+}
+
 function NetWorthSparkline({history, color}){
   if(!history || history.length < 2) return null;
   const vals = history.map(h=>h.v);
@@ -5822,7 +5855,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   const [creditDraft, setCreditDraft] = useState("");
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   useEffect(()=>{
-    if(data.bankConnected) {
+    // Never the demo's sample figures: they would become the first point of a real household's line (review 2026-11-10).
+    if(data.bankConnected && !data.demo) {
       const { netWorth: nw } = FinancialCalcEngine.netWorth(data);
       const h = snapshotNetWorth(nw);
       setNwHistory(h);
@@ -5895,9 +5929,16 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
     } catch { return 0; }
   };
   const unread = getUnreadCount();
-  const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
-  const sMin=Math.min(...spark),sMax=Math.max(...spark);
-  const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
+  // THE NET WORTH CARD (2026-11-10). It once drew a fixed line of five made-up points ending at the figure, so every
+  // household, one with nothing entered included, saw its net worth "rising" from -$4,200 (audit 2026-10-26, H8). Now:
+  // nothing entered or linked shows the empty state; otherwise the household's own figure, and a line only once there
+  // are two months of its own snapshots (NetWorthSparkline). Nothing is drawn from anything else.
+  const nwHasData = netWorthRows(data).rows.length > 0;
+  // Behind Plus (lib/netWorthAccess.js): "today" (PLUS_ENABLED off) shows everything as before; "plus" shows this person's
+  // net worth with Plus (private by default between partners); anything else shows the locked card, never a figure.
+  const nwState = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwShow = showsNetWorth(nwState.mode);
+  const nwPlus = nwState.mode === "plus" ? viewerNetWorth({ data, holdings: nwState.holdings, list: nwState.list, ownerOf: ownerOfFrom(nwState.owners) }) : null;
   // 7-day forecast — must be declared before heroColor which reads sevenDayOverdraft
   const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
   const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
@@ -6433,7 +6474,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               : {label:totalDebt>0?"Total debt":"All entered debts are at $0.",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
-            {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            !nwShow
+              ? {label:"Net worth",value:netWorthWords(nwState.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-short"),sub:"",color:C.muted,icon:"chartUp",screen:"goals",tab:"worth"}
+              : nwPlus
+              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):netWorthWords("networth-plus-no-total"),sub:"",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"}
+              : {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>s.noDebts?(
             <div key={i} style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",boxSizing:"border-box",
               ...row({justifyContent:"space-between",gap:SPACE.md})}}>
@@ -6604,6 +6649,17 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div onClick={()=>{setScreen("goals");if(setGoalsTab)setGoalsTab("worth");}} style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px",cursor:"pointer"}}>
+          {!nwShow ? <NetWorthLocked mode={nwState.mode} C={C} label="Net Worth Trend"/> : nwPlus ? <div data-networth-plus-card>
+            <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
+            {nwPlus.totals ? <>
+              <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords(nwPlus.showing==="household"?"networth-plus-household-total":"networth-plus-your-total")}</div>
+              {nwPlus.totals.map(t=><div key={t.currency} style={{color:t.netCents<0?C.redBright:C.tealBright,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',Georgia,serif",overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
+            </> : <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-plus-no-total")}</div>}
+          </div> : !nwHasData ? <div>
+            <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
+            <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords("networth-empty-title")}</div>
+            <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-empty-body")}</div>
+          </div> : <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -6616,31 +6672,29 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
                 : "Track your net worth over time"}
             </div>
           </div>
-          <svg width="100%" height="52" viewBox={`0 0 ${spark.length*50} 100`} preserveAspectRatio="none" style={{display:"block",overflow:"visible"}}>
-            <defs>
-              <linearGradient id="sgv5" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={C.teal} stopOpacity="0.4"/>
-                <stop offset="100%" stopColor={C.teal} stopOpacity="0"/>
-              </linearGradient>
-              <filter id="gfv5"><feGaussianBlur stdDeviation="1.5"/></filter>
-            </defs>
-            <polyline points={sN.map((y,i)=>`${i*50},${y}`).join(" ")} fill="none" stroke={C.teal+"40"} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" filter="url(#gfv5)"/>
-            <polyline points={sN.map((y,i)=>`${i*50},${y}`).join(" ")} fill="none" stroke={C.teal} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <polygon points={`0,100 ${sN.map((y,i)=>`${i*50},${y}`).join(" ")} ${(spark.length-1)*50},100`} fill="url(#sgv5)"/>
-            {sN.map((y,i)=><circle key={i} cx={i*50} cy={y} r={i===sN.length-1?5:2.5} fill={i===sN.length-1?C.tealBright:C.teal} style={i===sN.length-1?{filter:`drop-shadow(0 0 5px ${C.teal})`}:{}}/>)}
-          </svg>
-          {nwHistory.length > 1 && <NetWorthSparkline history={nwHistory} color={C.teal}/>}
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-            {(nwHistory.length>1 ? nwHistory : [{month:"·"},{month:"·"},{month:"·"},{month:"Now"}]).map((h,i,arr)=>(
+          {nwHistory.length > 1
+            ? <NetWorthSparkline history={nwHistory} color={C.teal}/>
+            : <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-trend-not-yet")}</div>}
+          {nwHistory.length > 1 && <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+            {nwHistory.map((h,i,arr)=>(
               <span key={i} style={{color:i===arr.length-1?C.tealBright:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===arr.length-1?700:400}}>
-                {h.month?.slice(5)||h.month||"·"}
+                {h.month?.slice(5)||h.month}
               </span>
             ))}
-          </div>
+          </div>}
+          </>}
         </div>}
 
         {/* ── INVESTMENT PORTFOLIO ─── (Phase B5-B) */}
-        {isVisible('investments') && (data.investments?.length > 0) && (() => {
+        {/* Behind Plus: without it, a locked card where the investments card was (when the household has an investment
+            account); with Plus, holdings are on Goals' Net Worth tab, each in its own currency, so this card (which adds
+            holdings across currencies) is not shown. */}
+        {isVisible('investments') && !nwShow && (data.accounts||[]).some(a=>isInvestmentAccount(a)) && (
+          <div style={{...anim(195), ...tileStyle('investments'), ...glass(C.teal), borderRadius:22, padding:"18px 20px 16px", cursor:"pointer"}} onClick={() => { setScreen("goals"); if(setGoalsTab) setGoalsTab("worth"); }}>
+            <NetWorthLocked mode={nwState.mode} C={C} label="Investment Portfolio"/>
+          </div>
+        )}
+        {isVisible('investments') && nwState.mode === "today" && (data.investments?.length > 0) && (() => {
           const country = data.profile?.country || "CA";
           const totalInvested = data.investments.reduce((s,h) => s + (h.value||0), 0);
           const holdingsCount = data.investments.length;
@@ -6861,7 +6915,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{fontSize:24}}>✨</div>
               <div>
-                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Get Flourish Plus</div>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-get-cta")}</div>
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
@@ -9539,6 +9593,16 @@ function SpendScreen({data, setAppData, setScreen}){
 function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
   const [explainNetWorth,setExplainNetWorth]=useState(false);
+  // Behind Plus (lib/netWorthAccess.js): the Net Worth tab is net worth with Plus, the locked state, or (PLUS_ENABLED off) as before.
+  const nwState = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
+  const nwCall = async (action, params) => {
+    const jwt = await getJwt();
+    const r = await callNetWorth(action, params, { apiBase: API_BASE, jwt });
+    if (!(r && r.status === 200)) return false;
+    if (action !== "list") { const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt }); if (l && l.status === 200) setNetWorthList(l.body); }
+    else setNetWorthList(r.body);
+    return true;
+  };
   // manual-balances: the account whose entered balance is being updated from net worth's How we got this.
   const [balanceEdit,setBalanceEdit]=useState(null);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
@@ -9900,7 +9964,17 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       const ROW_STYLE = { cash:{type:"asset",color:C.green,icon:"🏦"}, investment:{type:"investment",color:C.purple,icon:"📈"}, credit:{type:"debt",color:C.red,icon:"💳"}, debt:{type:"debt",color:C.red,icon:"💳"} };
       const allItems = nwRows.rows.map(r => { const a = r.kind === "investment" ? acctById.get(r.id) : null;
         return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain, mayCountTwice:!!r.mayCountTwice }; });
+      // With Plus: this person's net worth, private by default between partners (NetWorthPlusScreen).
+      if (nwState.mode === "plus") return <>
+        {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
+        <NetWorthPlusScreen data={data} holdings={nwState.holdings} list={nwState.list} ownerOf={ownerOfFrom(nwState.owners)} C={C}
+          onSaveEntry={(e)=>nwCall("save_entry", e)} onDeleteEntry={(id)=>nwCall("delete_entry", { id })} onShareAccount={(account_id, shared)=>nwCall("set_share", { account_id, shared })}/>
+      </>;
+      // Without Plus: the locked state where the figure was, and every bank, card and loan balance listed as before.
+      // No total, no investments, nothing to add up.
+      const nwLocked = !showsNetWorth(nwState.mode);
       return <>
+      {nwLocked ? <div data-networth-locked-tab style={{background:C.card,borderRadius:20,padding:"22px",border:`1px solid ${C.border}`}}><NetWorthLocked mode={nwState.mode} C={C}/></div> :
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
         <button onClick={()=>setExplainNetWorth(true)} aria-label="Net worth: how Flourish got it" style={{background:"none",border:"none",padding:0,margin:0,cursor:"pointer",textAlign:"left",font:"inherit",display:"block",minHeight:LAYOUT.minTap}}>
@@ -9924,9 +9998,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+{formatMoney(totalGain)}</div>
           </div>
         </div>}
-      </div>
+      </div>}
       {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
-      {allItems.map((item,i)=>(
+      {(nwLocked ? allItems.filter(item=>item.type!=="investment") : allItems).map((item,i)=>(
         <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${item.type==="investment"?C.purple+"33":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{fontSize:20,width:32,textAlign:"center"}}>{item.icon}</div>
@@ -9943,7 +10017,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           </div>
         </div>
       ))}
-      {explainNetWorth&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
+      {explainNetWorth&&!nwLocked&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
         meaning={`Every account and debt listed on this screen, added up: what you have, less what you owe. A debt linked to its bank card is counted once. Accounts in another currency are left out.${nwRows.matches.length?" Two rows marked below may be the same card counted twice: answer the question on this screen to link them.":""}`}
         inputs={[...nwRows.rows.map(r=>({label:r.mayCountTwice?`${r.label}, may be counted twice`:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
           {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
@@ -12874,12 +12948,12 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         entirely unless the server says billing is on and this is not a native shell. */}
     {billingUi?.show&&onOpenUpgrade&&(
       <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
-        <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>{netWorthWords("plan-name")}</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {coveredByPartner ? HOUSEHOLD_WORDS.coveredByPartner
             : billingUi.mode==="manage"
             ? "Change your card or cancel."
-            : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
+            : netWorthWords("plan-adds-lead")}
         </div>
         {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
         {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
@@ -14076,7 +14150,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>{netWorthWords("plan-terms-web-label")}</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -14174,7 +14248,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
       ) : (
         <>
         <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
-          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
+          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-includes-title")}</div>
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
             {PLUS_INCLUDES.map((f,i)=>(
               <div key={i} style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
@@ -14183,7 +14257,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
         </div>
         <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
           {/* Billing on: the button opens the real checkout, which starts no free trial. Off: today's words. */}
-          {billingOn ? "See plans →" : getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+          {billingOn ? "See plans →" : getTrialStartedAt() ? netWorthWords("plan-upgrade-cta") : "Start 14 days free →"}
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
@@ -14271,7 +14345,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",paddingTop:INSET.top,...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
+          <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>{netWorthWords("plan-name")}</div>
           <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
         </div>
 
@@ -14284,7 +14358,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             {/* H4: a renewal that failed (past_due) is not on Plus until the card is fixed: the portal line only. */}
-            {status?.paid!==false&&<div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>}
+            {status?.paid!==false&&<div style={{color:C.cream,fontWeight:700,marginBottom:6}}>{netWorthWords("plan-on")}</div>}
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card or cancel in Stripe's billing portal.</div>
             <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {busy==="__portal__"?"Opening…":"Manage subscription"}
@@ -14556,14 +14630,14 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
       <div style={{width:"100%",minWidth:0,maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
-          <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
+          <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0,flexWrap:"wrap"}}><FlourishMark size={21}/><span style={{minWidth:0,overflowWrap:"anywhere"}}>{netWorthWords("plan-name")}</span></div>
           <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Keep the free plan</button>
         </div>
 
         {/* Hero */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={40} color={C.purpleBright} strokeWidth={1.3}/></div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>What Plus adds</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>{netWorthWords("plan-adds-title")}</div>
           <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.</div>
         </div>
 
@@ -17765,6 +17839,29 @@ export default function FlourishApp(){
   // Version 1.1: ask the server what this account may do in a store app that sells, and configure RevenueCat
   // for this account (its app user id is the Supabase user id, so a store purchase belongs to the household,
   // not to the phone). Nothing here runs in any other build.
+  // NET WORTH BEHIND PLUS (lib/netWorthAccess.js): ask the server once per signed-in account what this household may see.
+  // 404 (PLUS_ENABLED off): everything as before. With Plus: this person's entries and share choices (/api/networth), and
+  // which bank each person linked (list_items), for net worth that is private by default between partners. No answer at
+  // all is asked again after 5, 20 and 60 seconds; until then nothing about net worth shows a figure.
+  useEffect(()=>{
+    let cancelled = false, timer = null;
+    if(!user?.id) return;
+    const ask = async (attempt)=>{
+      const jwt = await getJwt();
+      const res = await askPlusStatus({ apiBase: API_BASE, jwt });
+      if(cancelled) return;
+      const mode = setPlusAnswer(res);
+      if(mode === "plus"){
+        const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt });
+        if(!cancelled && l && l.status === 200) setNetWorthList(l.body);
+        const items = await getUserItems();
+        if(!cancelled) setItemOwners(items);
+      }
+      if(res === null){ const wait = [5000, 20000, 60000][attempt]; if(wait) timer = setTimeout(()=>ask(attempt + 1), wait); }
+    };
+    ask(0);
+    return ()=>{ cancelled = true; if(timer) clearTimeout(timer); };
+  },[user?.id]);
   const askStore = useCallback(async (action = "store_status", extra = {})=>{
     const jwt = await getJwt();
     if(!jwt) return null;
@@ -18717,12 +18814,19 @@ export default function FlourishApp(){
             items.map(it => callPlaid("get_investments",{item_id:it.item_id}, {jwt}))
           );
           const allHoldings = [];
+          let plusMode = false;
           invResults.forEach(r => {
             if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings)) {
               allHoldings.push(...r.value.holdings);
+              if (r.value.plus_mode) plusMode = true;
             }
           });
-          if (allHoldings.length > 0) {
+          if (plusMode) {
+            // PLUS (the server says so): holdings are this person's own and their partner's shared ones, so they stay on
+            // this device (lib/netWorthAccess.js) and never go in the shared household blob; an old copy there is cleared.
+            setPlusHoldings(allHoldings);
+            setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
+          } else if (allHoldings.length > 0) {
             setAppData(prev => ({ ...prev, investments: allHoldings }));
           }
         } catch(e) { /* silent — institution may not support investments */ }
@@ -19119,6 +19223,7 @@ export default function FlourishApp(){
         // The free plan's one-bank limit is not a failure to retry. A store app says so in the approved line
         // (lib/freePlan.js FREE_BANK_LINE), never the server's plan code or an upgrade path; the web keeps its line.
         if(isNativeApp() && /plan_limit/.test(String(err?.message||""))){ alertModal({ message: FREE_BANK_LINE }); return; }
+        if(bankLimitMessage(err)){ alertModal({ message: bankLimitMessage(err) }); return; }
         captureError(err, { area: "plaid" });
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });
@@ -19344,7 +19449,7 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
+      .catch((err)=>{ setReconnectLoading(false); if (bankLimitMessage(err)) { alertModal({ message: bankLimitMessage(err) }); return; } noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These
   // handlers only record intent — BankConsentModal's "Connect My Bank" runs the real action.
@@ -19593,7 +19698,7 @@ input,button,select,textarea { font-family:inherit; }
   ) : null;
   // Sprint Z #15: leaving demo mode → clear the local sample data and return to onboarding, where
   // the user can connect a real bank or set up real data. Demo data never synced to the DB.
-  const exitDemo = () => { try { clearState(); } catch {} setAppData(null); setOnboarded(false); };
+  const exitDemo = () => { try { clearState(); } catch {} try { localStorage.removeItem("flourish_nw_history"); } catch {} setAppData(null); setOnboarded(false); };
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
@@ -19663,7 +19768,7 @@ input,button,select,textarea { font-family:inherit; }
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
               </div>
-              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Upgrade to Flourish Plus →</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("plan-upgrade-cta")}</div>
               {!trialExpired&&<div style={{height:3,background:C.border,borderRadius:99,marginTop:6,overflow:"hidden"}}>
                 <div style={{width:`${Math.max(4,(trialDaysLeft/14)*100)}%`,height:"100%",background:trialDaysLeft<=2?C.orange:C.purple,borderRadius:99}}/>
               </div>}
@@ -19677,7 +19782,7 @@ input,button,select,textarea { font-family:inherit; }
                 {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
                     "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
                 {/* H13: a household on the trial is not called Plus; the countdown above names the trial. */}
-                {isPremium&&!isNativeApp()&&!trialActive&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {isPremium&&!isNativeApp()&&!trialActive&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ {netWorthWords("plan-name")}</div>}
               </div>
             </div>
           </div>}
