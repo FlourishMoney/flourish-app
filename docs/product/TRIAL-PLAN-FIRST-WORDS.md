@@ -24,3 +24,14 @@ Rules the lines are built to (cited in `docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md`):
 | `trialfirst-chip` | During the store or Stripe trial: the chip (apps) and banner (website) | {date}: the date of the first charge | [WORDS: trialfirst-chip] | 50 |
 | `trialfirst-welcome` | App, first onboarding screen, instead of "Free to start · Canada & USA · No credit card" | No "no card" claim | [WORDS: trialfirst-welcome] | 60 |
 | `trialfirst-landing` | Website landing, instead of "Every feature free for 14 days. Also on iPhone and Android." | 14 days free with a plan; no "no card" claim | [WORDS: trialfirst-landing] | 90 |
+| `trialfirst-email-subject` | The reminder email (3 days before the first charge), subject | {date}: the first charge's date | [WORDS: trialfirst-email-subject] | 70 |
+| `trialfirst-email-lead` | Same, first line | The 14-day free trial ends on {date} | [WORDS: trialfirst-email-lead] | 120 |
+| `trialfirst-email-charge` | Same | {amount} and {date}: what is charged and when (the website: Stripe's own figure with tax; the stores: the plan's price, plus tax where the store adds it) | [WORDS: trialfirst-email-charge] | 160 |
+| `trialfirst-email-keep` | Same | Nothing to do to keep the plan | [WORDS: trialfirst-email-keep] | 100 |
+| `trialfirst-email-cancel-ios` | Same, iPhone purchase | Exactly how to cancel: Settings > your name > Subscriptions > flourish, before {date} | [WORDS: trialfirst-email-cancel-ios] | 200 |
+| `trialfirst-email-cancel-android` | Same, Google Play purchase | Exactly how to cancel: Google Play > Payments & subscriptions > Subscriptions > flourish, before {date} | [WORDS: trialfirst-email-cancel-android] | 200 |
+| `trialfirst-email-cancel-web` | Same, website purchase | Exactly how to cancel: flourish on the website > Settings > Manage subscription, before {date} | [WORDS: trialfirst-email-cancel-web] | 200 |
+| `trialfirst-email-why` | Same, last line above the footer | Why they got it (they started a free trial); one reminder per trial | [WORDS: trialfirst-email-why] | 140 |
+| `trialfirst-email-unsubscribed` | The page the unsubscribe link opens | No more trial reminders; the subscription itself is unchanged | [WORDS: trialfirst-email-unsubscribed] | 120 |
+| `trialfirst-email-link-bad` | The unsubscribe page, for a link that is wrong or altered | The link doesn't work; nothing changed | [WORDS: trialfirst-email-link-bad] | 80 |
+| `trialfirst-email-unsub-failed` | The unsubscribe page, when it could not be saved | Nothing saved; try the link again | [WORDS: trialfirst-email-unsub-failed] | 80 |
