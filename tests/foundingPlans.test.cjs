@@ -146,7 +146,9 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.ok(APP.indexOf("const storePaywallOverlay =") < APP.indexOf("if(!user && !appData?.demo)return <AuthScreen"), "5e the overlay is built before the early returns that use it");
     const sp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
     t.ok(/const cards = pkgs \? paywallPlanOrder\(pkgs\)\.map\(/.test(sp) && /data-selected=\{plan==="founding_annual"\?"":undefined\}/.test(sp), "5f the paywall lists the plans in that order and marks Founding annual as the chosen plan");
-    t.ok(/<button onClick=\{\(\)=>doBuy\(plan,pkg\)\}/.test(sp) && /purchasePackage: \(p\)=>purchases\.purchasePackage\(\{ aPackage: p \}\)/.test(sp), "5g one tap on its button opens the store's own sheet");
+    // TRIAL_PLAN_FIRST (2026-11-10): on Android the base plan is bought by name unless the card claimed the trial; still
+    // the store's own sheet, from the same one tap.
+    t.ok(/<button onClick=\{\(\)=>doBuy\(plan,pkg\)\}/.test(sp) && /return base \? purchases\.purchaseSubscriptionOption\(\{ subscriptionOption: base \}\) : purchases\.purchasePackage\(\{ aPackage: p \}\);/.test(sp), "5g one tap on its button opens the store's own sheet");
     t.ok(/if\(r\.outcome==="paid" && onClose\) onClose\(\);/.test(sp), "5h a confirmed purchase closes it (in the trial the entitlement close never fired)");
     t.ok(/\{onClose&&<div style=\{\{display:"flex",justifyContent:"flex-end"\}\}><button aria-label="Close" onClick=\{onClose\}/.test(sp) && /minWidth:LAYOUT\.minTap,minHeight:LAYOUT\.minTap/.test(sp),
       "5i the close button is always there, at full tap size (Apple: a visible way out)");
