@@ -391,6 +391,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // Trial plan first (approved 2026-11-10, ChatGPT 100, Grok 100): flourish's own subscription, its trial button and
       // the store-rule line on how to avoid its first charge. About the app's plan, never advice on the household's money.
       "Start free trial", "Cancel before {date} to avoid the first charge.",
+      // Its go-live words (approved 2026-11-11, ChatGPT 100, Grok 100): the landing's main button, and Terms section 7's
+      // line on avoiding flourish's own first charge (legal text about the app's plan, not the household's money).
+      "Get started", "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
