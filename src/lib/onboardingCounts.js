@@ -12,6 +12,8 @@
 //                              since signup it reads itself, into under 60 s, 60 to 120, 120 to 180, over 180.
 //                              Once per account on this device
 //   bank_link_started / bank_link_completed / bank_link_failed / bank_link_cancelled   every attempt
+//   bank_link_failed           detail (2026-11-11): "<platform>:<code>", ios / android / web and Plaid's error code from
+//                              LINK_FAIL_CODES (linkFailDetail); never Plaid's message, never an id
 //
 // Never in the demo, never without a session; a failure is silent and nothing the household sees depends on it.
 // Until 0028 runs the server answers 503 and nothing is counted: the app works exactly the same.
@@ -21,6 +23,28 @@ export const ONBOARDING_STEPS = Object.freeze(["welcome", "bank", "balance", "in
 export const BANK_LINK_EVENTS = Object.freeze(["bank_link_started", "bank_link_completed", "bank_link_failed", "bank_link_cancelled"]);
 export const ONBOARDING_EVENTS = Object.freeze(["onboarding_step_completed", "first_number_shown", ...BANK_LINK_EVENTS]);
 export const FIRST_NUMBER_MODES = Object.freeze(["manual", "linked"]);
+// The same lists as netlify/functions/_lib/onboardingCounts.js (tests/plaidLinkToken.test.cjs holds them together).
+export const LINK_PLATFORMS = Object.freeze(["ios", "android", "web"]);
+export const LINK_FAIL_CODES = Object.freeze([
+  "INVALID_CREDENTIALS", "INVALID_MFA", "INVALID_SEND_METHOD", "INVALID_UPDATED_USERNAME", "INSUFFICIENT_CREDENTIALS",
+  "ITEM_LOCKED", "ITEM_LOGIN_REQUIRED", "ITEM_NOT_SUPPORTED", "ITEM_NO_ERROR", "MFA_NOT_SUPPORTED", "NO_ACCOUNTS", "NO_AUTH_ACCOUNTS",
+  "PASSWORD_RESET_REQUIRED", "USER_SETUP_REQUIRED", "USER_INPUT_TIMEOUT", "ACCESS_NOT_GRANTED", "PRODUCTS_NOT_SUPPORTED", "PRODUCT_NOT_READY",
+  "INSTITUTION_DOWN", "INSTITUTION_NOT_RESPONDING", "INSTITUTION_NOT_AVAILABLE", "INSTITUTION_NO_LONGER_SUPPORTED",
+  "INSTITUTION_NOT_ENABLED_IN_ENVIRONMENT", "INSTITUTION_REGISTRATION_REQUIRED", "INSTITUTION_NOT_FOUND",
+  "INVALID_LINK_TOKEN", "INVALID_FIELD", "MISSING_FIELDS", "OAUTH_STATE_ID_NOT_FOUND", "RATE_LIMIT_EXCEEDED", "INTERNAL_SERVER_ERROR",
+  "PLANNED_MAINTENANCE",
+  // Ours: the bank linked but our server's exchange failed, or the free plan's one-bank limit refused it.
+  "EXCHANGE_FAILED", "PLAN_LIMIT",
+  // Anything else Plaid sends (never its text).
+  "OTHER",
+]);
+/** The failed link's detail: the platform and Plaid's error code, each from the fixed lists (unknown -> web / OTHER). */
+export function linkFailDetail(platform, code) {
+  const p = LINK_PLATFORMS.includes(platform) ? platform : "web";
+  const c = typeof code === "string" && LINK_FAIL_CODES.includes(code.toUpperCase()) ? code.toUpperCase() : "OTHER";
+  return `${p}:${c}`;
+}
+const isLinkFailDetail = (d) => { const m = typeof d === "string" ? d.match(/^([a-z]+):([A-Z_]+)$/) : null; return !!m && LINK_PLATFORMS.includes(m[1]) && LINK_FAIL_CODES.includes(m[2]); };
 
 const KEY_PREFIX = "flourish_onboarding";
 const FIRST_SIGNIN_PREFIX = "flourish_first_signin_at";
@@ -71,6 +95,7 @@ export async function sendOnboardingCount(event, { detail, mode, demo = false, u
     if (key) { _inflight.add(key); store.setItem(key, "1"); }   // claimed before the request: a second call cannot send it too
     const body = { metric: event };
     if (event === "onboarding_step_completed") body.detail = detail;
+    if (event === "bank_link_failed" && isLinkFailDetail(detail)) body.detail = detail;
     if (event === "first_number_shown") {
       body.mode = mode;
       const ms = msSinceFirstSignin(session.userId, { storage: store, now });
