@@ -167,12 +167,20 @@ export function androidPurchaseOption(product, claimed) {
 // (GET /api/trial-plan-first): true (200), false (404, the switch off), or null when there is no answer, which keeps
 // today's line (the switch off is by far the likely case, and nothing else changes on a failed call).
 export async function askTrialPlanFirstOn(fetchImpl, base = "") {
+  const a = await askTrialPlanFirst(fetchImpl, base);
+  return a === false ? false : a ? true : null;
+}
+// The same answer with the switch's time: { on: true, since } (since: a full ISO time, or null if the server sent none),
+// false (off), or null (no answer). The Terms' section 7 (lib/freePlan.js trialFirstTermsSection7) names its date.
+export async function askTrialPlanFirst(fetchImpl, base = "") {
   try {
     const res = await fetchImpl(`${base}/api/trial-plan-first`, { method: "GET" });
     if (res.status === 404) return false;
     if (!res.ok) return null;
     const body = await res.json().catch(() => null);
-    return !!body && body.on === true ? true : null;
+    if (!body || body.on !== true) return null;
+    const since = typeof body.since === "string" && Number.isFinite(Date.parse(body.since)) ? body.since : null;
+    return { on: true, since };
   } catch { return null; }
 }
 

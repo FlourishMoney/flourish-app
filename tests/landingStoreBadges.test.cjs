@@ -78,7 +78,7 @@ const OFFICIAL = {
   // The trial-first landing (approved Oct 22): the main button, its line "Every feature free for 14 days. Also on iPhone
   // and Android.", then the badges, then the read-only line, all before the price box.
   // TRIAL_PLAN_FIRST (2026-11-10): the line under the button is a placeholder while the switch is on; off, word for word.
-  t.ok(/<TrialButton onClick=\{goSignup\}\/>\}\s*\{trialFirst && <p className="fll-trial-line">\{tpfOn \? trialWords\("trialfirst-landing"\) : "Every feature free for 14 days\. Also on iPhone and Android\."\}<\/p>\}\s*\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}[\s\S]{0,900}?Create your account<\/button>[\s\S]{0,400}?<\/div>\s*\)\}\s*<StoreBadges\/>\s*<div className="fll-trust-row">/.test(auth)
+  t.ok(/<TrialButton onClick=\{goSignup\} tpfOn=\{tpfOn\}\/>\}\s*\{trialFirst && <p className="fll-trial-line">\{tpfOn \? trialWords\("trialfirst-landing"\) : "Every feature free for 14 days\. Also on iPhone and Android\."\}<\/p>\}\s*\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}[\s\S]{0,900}?Create your account<\/button>[\s\S]{0,400}?<\/div>\s*\)\}\s*<StoreBadges\/>\s*<div className="fll-trust-row">/.test(auth)
     && auth.indexOf("<StoreBadges/>") > auth.indexOf('<div className="fll-hero-form">') && auth.indexOf("<StoreBadges/>") < auth.indexOf("<FoundingOffer"),
     "4c the one placement: in the hero, right after the main button and its line, before the price box");
   const foot = auth.slice(auth.indexOf('<div className="fll-foot">'));

@@ -19,6 +19,7 @@
 // -----------------------------------------------------------------------------
 import { FREE_TIER_LIMITS } from "./usageLimits.js";
 import { pendingWords } from "./pendingWords.js";
+import { chargeDateLabel } from "./trialPlanFirst.js";
 
 // The free plan's bank limit. netlify/functions/plaid.js enforces it (exchange_token and migrate_items);
 // tests/nativeFreePlanLine.test.cjs reads the cap there so the two cannot drift.
@@ -73,3 +74,35 @@ export const STORE_TERMS_SECTION_7_IAP =
   "Refunds for purchases made in the apps are handled by Apple or Google under their own policies. " +
   // (2026-10-29: the first 50 who subscribe; the words that assumed a waitlist number are to come, lib/pendingWords.js)
   pendingWords("terms-7-founding");
+
+// ── Approved 2026-11-11 (ChatGPT 100, Grok 100): TRIAL_PLAN_FIRST on ───────────────────────────────────────────
+// Terms of Service, section 7, while TRIAL_PLAN_FIRST is on: ONE text for the website and for a store app that sells
+// (a store build that sells nothing keeps STORE_TERMS_SECTION_7). The founding sentence is terms-7-founding; {date} is
+// TRIAL_PLAN_FIRST_SINCE as a date (GET /api/trial-plan-first). The free plan's figures are FREE_TIER_LIMITS and
+// FREE_BANKS, as in the lines above. Its paragraphs, in order; the heading is TRIAL_FIRST_TERMS_7_HEADING.
+// tests/trialGoLiveWords.test.cjs pins the whole text word for word.
+export const TRIAL_FIRST_TERMS_7_HEADING = "7. Plans and billing";
+export function trialFirstTermsSection7(since) {
+  const t = Date.parse(since || "");
+  if (!Number.isFinite(t)) return null;
+  const date = chargeDateLabel(new Date(t));
+  return [
+    "flourish is sold as a subscription: flourish monthly, flourish annual and, while offered, flourish founding annual. " +
+      pendingWords("terms-7-founding") + " " +
+      "A new account chooses a plan to keep using flourish. A partner who joins a household can use the same subscription. " +
+      "Prices are in Canadian dollars, plus sales tax on the website.",
+    "Eligible new subscribers get 14 days free. Apple, Google or Stripe decides who is eligible, and the website needs a card to start. " +
+      "The plans screen shows whether the 14 days apply and the first-charge date. " +
+      "Unless you cancel before the first charge, you will be charged automatically. Apple may charge up to 24 hours before the trial ends. " +
+      "Your plan then renews automatically each billing period until you cancel.",
+    "To cancel on iPhone: Settings, your name, then Subscriptions, at least 24 hours before the trial or period ends. " +
+      "On Android: Google Play, your profile, Payments & subscriptions, then Subscriptions. On the website: Settings, then Manage subscription. " +
+      "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
+    `An account opened before ${date} keeps its 14-day account trial to its end, then moves to the free plan: ` +
+      `${n(FREE_TIER_LIMITS.coachMessagesPerWeek, "coach message", "coach messages")} a week, ` +
+      `${n(FREE_TIER_LIMITS.simulationsPerDay, "What-If", "What-Ifs")} a day, ${n(FREE_BANKS, "connected bank", "connected banks")}, ` +
+      "and no Credit or coach-run meeting.",
+    "Apple or Google handle refunds for in-app purchases under their own policies. " +
+      "On the website, partial periods are not refunded unless the law requires it.",
+  ];
+}
