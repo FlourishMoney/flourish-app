@@ -1,8 +1,8 @@
 {
   "version": "1.1.6",
   "builds": {
-    "ios": 526911,
-    "android": 27
+    "ios": 526912,
+    "android": 28
   },
   "notes": [
     "Your weekly money meeting now opens with a recap of what you decided last time, and can ask about bill changes it finds in your accounts.",
