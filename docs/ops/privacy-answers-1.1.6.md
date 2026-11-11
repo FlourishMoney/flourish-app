@@ -54,13 +54,13 @@ In the form's order. No type is shared. "Ephemeral" stays as it is now on every 
 | # | Section > Data type | Collected | Shared | Required or optional | Purposes | Mark |
 |---|---|---|---|---|---|---|
 | 1 | Personal info > Name | Yes | No | Optional | App functionality, Personalization | same as now (now also covers your partner's and children's names) |
-| 2 | Personal info > Email address | Yes | No | Required | App functionality, Account management, **Advertising or marketing**, **Developer communications** | **change** (add Advertising or marketing for the newsletter, and Developer communications for the trial and account emails; also covers the partner invite email) |
+| 2 | Personal info > Email address | Yes | No | Required | App functionality, Account management, **Advertising or marketing**, **Developer communications**, **Fraud prevention, security, and compliance** | **change** (add Fraud prevention, security, and compliance, because sign-ups and newsletter sign-ups are rate-limited by the email, kept hashed; add Advertising or marketing for the newsletter, and Developer communications for the trial and account emails; also covers the partner invite email) |
 | 3 | Personal info > User IDs | Yes | No | Required | App functionality, Account management, **Analytics** | **change** (add Analytics) |
 | 4 | Personal info > Other info | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; birth year, life stages, tester code) |
 | 5 | Financial info > Purchase history | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics) |
 | 6 | Financial info > Credit score | Yes | No | Optional | App functionality | **add** |
 | 7 | Financial info > Other financial info | Yes | No | Required | App functionality | same as now |
-| 8 | Messages > Other in-app messages | Yes | No | Optional | App functionality | same as now (coach messages) |
+| 8 | Messages > Other in-app messages | Yes | No | Optional | App functionality | **change**: **Processed ephemerally: No**, the same as Files and docs. Coach messages go through our server to Anthropic, which keeps API data for a limited time. The published listing doesn't show the current answer; if the Console already says No, this row is the same as now. |
 | 9 | Files and docs > Files and docs | Yes | No | Optional | App functionality | **add**. The statement text (at most 7,000 characters, emails, household names and full account numbers removed) is sent through our server to Anthropic for parsing. The file never leaves the phone, and neither we nor our server keep the text. **Processed ephemerally: No**, because Anthropic, as our service provider, keeps API data for a limited time; Play's "ephemeral" means held only in memory for the request. |
 | 10 | App activity > App interactions | Yes | No | Required | Analytics, **App functionality** | **change** (add App functionality: the coach and AI limits use the counts) |
 | 11 | App activity > Other user-generated content | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; feedback, tester answers, meeting decisions) |
@@ -82,7 +82,7 @@ Not collected on Android (leave unticked):
 - calendar, contacts; in-app search history, installed apps; web browsing;
 - other app performance data; device or other IDs.
 
-Summary for Play: **3 add, 6 change, 5 same as now.**
+Summary for Play: **3 add, 7 change, 4 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 6 change and 5 same.
 
 ## The Nov 8 list, checked
 
@@ -117,7 +117,7 @@ Summary for Play: **3 add, 6 change, 5 same as now.**
 
 ## Still open
 
-- **Ephemeral on Files and docs.** If Anthropic keeps no API data for our account (zero data retention), this can be "Yes". I have not seen that confirmed.
+- **Ephemeral on Files and docs and Other in-app messages.** If Anthropic keeps no API data for our account (zero data retention), this can be "Yes". I have not seen that confirmed.
 - **Apple's subscription display names were not read.** I couldn't open the groups ("Flourish" with 2 subscriptions, "Flourish Founding" with 1). Apple shows those names on the purchase sheet, so check that none says "Flourish Plus" before submitting.
 - **Some text the reviewer can read still says "Flourish Plus" or "free plan".** The in-app Terms (section 7) in 526911, and the store listing's FLOURISH PLUS section, are items 1–4 in docs/ops/PLUS-AND-FREE-PLAN-CLEANUP.md. The review notes below no longer say it.
 
@@ -152,7 +152,7 @@ A subscription bought on our website also counts in the app (Guideline 3.1.3(b))
 ```
 Review flourish 1.1.6 store privacy answers (iOS 526911, Android 27; Canadian budgeting app). Reply AGREE, or give exact fixes, with a score out of 100.
 
-What it collects (kept on our servers and linked to the account unless noted):
+What it collects (linked to the account):
 - names: yours, a partner's, and children's names and age ranges
 - emails: sign-in, partner invite, optional newsletter
 - financial: credit score you enter; bank data via Plaid; statements, balances, bills and goals
@@ -164,7 +164,7 @@ What it collects (kept on our servers and linked to the account unless noted):
 - Sentry crash and diagnostic data; error breadcrumbs can carry the account id
 - Android only: the Play Install Referrer campaign code, kept on the account
 
-There are no ad SDKs, no advertising ID and no location, and nothing is sold or shared for ads.
+No ad SDKs, advertising ID or location; nothing sold or shared for ads.
 
 Apple (all linked, tracking No):
 - Name: App Functionality
@@ -174,10 +174,10 @@ Apple (all linked, tracking No):
 
 Play (nothing shared; encrypted in transit; deletion available):
 - Name (optional): App functionality; Personalization
-- Email address: App functionality; Account management; Advertising or marketing; Developer communications
+- Email address: App functionality; Account management; Advertising or marketing; Developer communications; Fraud prevention, security, and compliance
 - User IDs: App functionality; Account management; Analytics
 - Other info, Purchase history, Other user-generated content (all optional): App functionality; Analytics
-- Credit score, Other in-app messages (optional), and Files and docs (optional, not ephemeral): App functionality
+- Credit score (optional), Other in-app messages (optional, not ephemeral), Files and docs (optional, not ephemeral): App functionality
 - Other financial info: App functionality
 - App interactions, Crash logs, Diagnostics: App functionality; Analytics
 - Other actions: Analytics; Advertising or marketing
