@@ -1,6 +1,19 @@
 # Store privacy answers for 1.1.6 (APPROVED 2026-11-11)
 
-**Approved by Amanda on 2026-11-11, after ChatGPT and Grok both scored it 100.** The final change was to remove Play's Other actions. The Install Referrer campaign code is a campaign label, not an in-app action, and it stays disclosed in the privacy policy.
+**Approved by Amanda on 2026-11-11, after ChatGPT and Grok both scored it 100.**
+
+**Entered on 2026-11-11:**
+- **App Store Connect > App Privacy:** published. There are 13 types and 19 type/purpose pairs; every pair is linked and none is used for tracking. Coarse Location is in and Device ID is out.
+  - When a purpose was added to an existing type, App Store Connect saved that purpose as "not linked". The linked answer was re-saved on Email Address, Customer Support, Other User Content and User ID.
+  - After a reload, App Store Connect's data usage records show every pair as linked.
+- **Play Console > Data safety:** saved and sent for review as the only change ("Changes in review"; no release included). Managed publishing is on, so it goes live only when Amanda clicks Publish.
+  - After a reload, the preview matches this doc.
+  - Data shared: Approximate location and Device or other IDs, for fraud prevention. Other actions is not declared.
+- **App Review notes on version 1.1.6:** the draft below was saved, and after a reload its SHA-256 equals the draft's. 1.1.6 is still "Prepare for Submission", and "Add for Review" was not clicked.
+- **Subscription display names, read-only:** none says "Flourish Plus".
+  - Group "Flourish" (en-CA name "Flourish"): "Flourish annual" (app.flourishmoney.plus.annual) and "Flourish monthly" (app.flourishmoney.plus.monthly).
+  - Group "Flourish Founding" (en-CA name "Flourish Founding"): "Flourish founding annual" (app.flourishmoney.founding.annual).
+  - All three are Approved. Only the product IDs contain "plus", and Apple doesn't show those to buyers. The final change was to remove Play's Other actions. The Install Referrer campaign code is a campaign label, not an in-app action, and it stays disclosed in the privacy policy.
 
 For iOS 1.1.6 (526911) and Android 1.1.6 (versionCode 27), built from release-1.1.6 517a2d4. That build's code is main 00ed1f0, which is 126fd82 plus the version bump and the approved What's New (no data change).
 
@@ -72,7 +85,7 @@ In the form's order. "Ephemeral" stays as it is now on every type already declar
 | 6 | Financial info > Purchase history | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics) |
 | 7 | Financial info > Credit score | Yes | No | Optional | App functionality | **add** |
 | 8 | Financial info > Other financial info | Yes | No | Required | App functionality | same as now |
-| 9 | Messages > Other in-app messages | Yes | No | Optional | App functionality | **change**: Processed ephemerally: **No**. Coach messages go to Anthropic, which deletes API inputs and outputs within 30 days. If the Console already says No, this row is the same as now. |
+| 9 | Messages > Other in-app messages | Yes | No | Optional | App functionality | same as now (Processed ephemerally: No was already the published answer, checked in the Console on 2026-11-11) |
 | 10 | Files and docs > Files and docs | Yes | No | Optional | App functionality | **add**. The statement's text content is sent for parsing (Evidence 3). Processed ephemerally: **No**, for the same 30-day reason. |
 | 11 | App activity > App interactions | Yes | No | Required | Analytics, **App functionality** | **change** (add App functionality: the coach and AI limits use the counts) |
 | 12 | App activity > Other user-generated content | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; feedback, tester answers, meeting decisions) |
@@ -92,7 +105,7 @@ Not collected on Android (leave unticked):
 - calendar, contacts; in-app search history, installed apps; web browsing;
 - other app performance data.
 
-Summary for Play: **4 add, 6 change, 5 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 5 change and 6 same.
+Summary for Play: **4 add, 5 change, 6 same as now.**
 
 ## Evidence (for the 2026-11-10 review)
 
@@ -185,7 +198,6 @@ The file itself never leaves the phone, but its content does. Play's "Files and 
 
 - **Apple Coarse Location was added for consistency.** Play declares the location Plaid infers from the IP address, and the same collection applies on iPhone. Remove it if you decide otherwise.
 - **Plaid deprecates Link in a web view.** If Link moves to Hosted Link (PR #76) or to the native SDK, check these rows again.
-- **Apple's subscription display names were not read.** Check that none says "Flourish Plus" before submitting.
 - **Some text the reviewer can read still says "Flourish Plus" or "free plan".** That means the in-app Terms (section 7) in 526911 and the Play listing's FLOURISH PLUS section (docs/ops/PLUS-AND-FREE-PLAN-CLEANUP.md, items 1–4).
 
 ## Apple review notes for 1.1.6 (draft, not entered in App Store Connect)
