@@ -33,6 +33,9 @@ export const TRIAL_WORDS = Object.freeze({
   // What replaces "No credit card" and "Every feature free for 14 days" before sign-in, while the switch is on.
   "trialfirst-welcome": "Made for Canadian households",
   "trialfirst-landing": "Choose a plan to get started. Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled. Also on iPhone and Android.",
+  // The website landing's main button, top and bottom, instead of "Try flourish free for 14 days" (approved 2026-11-11,
+  // ChatGPT 100, Grok 100): trialfirst-landing sits under it.
+  "trialfirst-get-started": "Get started",
 });
 
 const isPlaceholder = (w) => /^\[WORDS: [a-z0-9-]+\]$/.test(w);
