@@ -4,45 +4,17 @@ For iOS 1.1.6 (526911) and Android 1.1.6 (versionCode 27), built from release-1.
 
 Nothing in either store has been changed. "Now" is what was read on 2026-11-10:
 - App Store Connect > App Privacy (published Oct 16);
-- the Data safety section of Play's public listing, which shows the published Play Console answers.
+- the Data safety section of Play's public listing, which shows the published Play Console answers. Play Console has no unpublished draft.
 
-**Tracking stays No on both stores.** The 526911 bundle has no ad or analytics SDK, the website's Plausible, Clarity and Meta tags are compiled out, there is no tracking-permission string, and the vc27 manifest has no AD_ID permission. No data goes to another company for ads.
+**Tracking stays No on both stores.**
+- The 526911 bundle has no ad or analytics SDK.
+- The website's Plausible, Clarity and Meta tags are compiled out of it.
+- There is no tracking-permission string, and the vc27 manifest has no AD_ID permission.
+- Plaid uses device data for fraud prevention and its own services, with no advertising use stated. Fraud prevention is not tracking under Apple's definition.
 
-**Sharing (Play) stays No.** Plaid, Anthropic, Sentry, RevenueCat, Resend, Supabase and Netlify process data for us as service providers. The bank connection is started by the user.
-
-**Plaid Link (checked 2026-11-10).**
-
-How it runs:
-- Neither build has Plaid's native SDK. There is no LinkKit framework in 526911 and nothing from Plaid in the vc27 AAB.
-- Link is Plaid's web script, `https://cdn.plaid.com/link/v2/stable/link-initialize.js` (src/App.jsx:1019), loaded into the app's own web view and opened with `Plaid.create`.
-- So no Plaid privacy manifest ships in 526911. The app's only privacy manifests are RevenueCat's (Purchase History) and Capacitor's (none).
-
-What Plaid's docs say:
-- The Link pages (web, webview, iOS, Android) give no guidance on Apple's privacy labels, privacy manifests or Play's Data safety form.
-- The webview page says presenting Link in a web view is deprecated.
-
-What Plaid's End User Privacy Policy (effective Dec 8, 2025) says it collects from the device:
-- IP address;
-- timezone setting and location, and device location;
-- hardware model and operating system;
-- browser data, network data and other technical data;
-- the features used.
-
-What Plaid uses that data for:
-- providing the service, including recognising the device on return visits;
-- fraud prevention and identity checks;
-- developing its own services.
-
-It doesn't say the data is used for advertising.
-
-Rows added because of this:
-- Apple: Device ID (linked, App Functionality).
-- Play: Device or other IDs, and the fraud purpose on Diagnostics.
-
-Not added:
-- **Tracking** stays No. Plaid states no advertising use, and it is not a data broker.
-- **Device location:** the app has no location permission on either platform, so the web view can't read it.
-- **Location inferred from the IP address** is under Still open.
+**Sharing on Play.** Anthropic, Sentry and RevenueCat each call themselves our processor in their own terms (see Evidence 1). Supabase, Netlify and Resend are our hosting and email providers. None of these counts as sharing.
+- **Plaid's device data is shared.** Plaid's policy makes Plaid the controller of the device data it collects and uses it for its own purposes. So Device or other IDs and Approximate location are marked Shared: Yes on Play.
+- **Bank data stays not shared.** The person starts the bank connection after our consent screen names Plaid ("Flourish connects through Plaid", src/App.jsx:15038), and Play's user-initiated exception covers it.
 
 ## App Store Connect: App Privacy
 
@@ -50,122 +22,175 @@ In the form's order. Every type is collected, and "linked" means linked to the u
 
 | # | Data type | Linked | Purposes | Mark | What it covers in 1.1.6 |
 |---|---|---|---|---|---|
-| 1 | Contact Info > Name | Yes | App Functionality | same as now | Your name, your partner's name, and your children's names and age ranges (Kids zone). All are synced to your account. |
+| 1 | Contact Info > Name | Yes | App Functionality | same as now | Your name, your partner's name, and your children's names and age ranges (Kids zone). All optional and synced to your account. |
 | 2 | Contact Info > Email Address | Yes | App Functionality, **Developer's Advertising or Marketing** | **change** (add Developer's Advertising or Marketing) | Your sign-in email, the partner invite email, and the weekly newsletter email (Settings). |
 | 3 | Financial Info > Credit Info | Yes | App Functionality | **add** | The credit score you can enter in your profile (optional). |
 | 4 | Financial Info > Other Financial Info | Yes | App Functionality | same as now | Bank balances and transactions through Plaid, statement imports, balances you enter, bills, goals and the registered-account room you enter. |
-| 5 | User Content > Customer Support | Yes | App Functionality, **Analytics** | **change** (add Analytics) | "Send feedback" and the day-7 check-in question. Both are used to improve the app. |
-| 6 | User Content > Other User Content | Yes | App Functionality, **Analytics** | **change** (add Analytics) | <ul><li>Coach messages, and the statement and document text sent for parsing. Both go to Anthropic through our server, with names turned into roles, and are not stored by us. The transactions parsed from a statement are under Other Financial Info.</li><li>What the money meeting decided (meeting_records).</li><li>Tester answers.</li></ul> |
-| 7 | Identifiers > User ID | Yes | App Functionality, **Analytics** | **change** (add Analytics) | Your account id. The usage counters and funnel milestones are kept by account id. |
-| 8 | Identifiers > Device ID | Yes | App Functionality | **add** | Plaid Link's device data, used to recognise the device and prevent fraud (Plaid's End User Privacy Policy). Linked, because the bank connection belongs to the account. Tracking No. |
-| 9 | Purchases > Purchase History | Yes | App Functionality, Analytics | **add** | In-app subscriptions through RevenueCat (Purchases.logIn uses your account id; RevenueCat's own privacy manifest declares Purchase History), plus the paid, cancelled and refunded milestones. |
-| 10 | Usage Data > Product Interaction | **Yes** (now: not linked) | Analytics, **App Functionality** | **change** (linked Yes, add App Functionality) | <ul><li>account_attribution: every signup, with platform and activation time.</li><li>account_milestones and account_days (0042).</li><li>The coach and AI usage counts per account, which also enforce the limits.</li></ul> |
+| 5 | Location > Coarse Location | Yes | App Functionality | **add** | Plaid infers location from the IP address during Link, for fraud prevention ("we may derive location from IP address", Plaid's End User Privacy Policy). The app itself reads no location. Added so the two stores match. |
+| 6 | User Content > Customer Support | Yes | App Functionality, **Analytics** | **change** (add Analytics) | "Send feedback" and the day-7 check-in question (Evidence 5). |
+| 7 | User Content > Other User Content | Yes | App Functionality, **Analytics** | **change** (add Analytics) | <ul><li>Coach messages, and statement text sent for parsing. Both go to Anthropic through our server, with names turned into roles, and are not stored by us. Parsed transactions are under Other Financial Info.</li><li>What the money meeting decided.</li><li>Tester answers.</li></ul> |
+| 8 | Identifiers > User ID | Yes | App Functionality, **Analytics** | **change** (add Analytics) | Your account id, which keys the usage counters and funnel milestones. |
+| 9 | Purchases > Purchase History | Yes | App Functionality, Analytics | **add** | In-app subscriptions through RevenueCat (Purchases.logIn uses your account id; RevenueCat's own privacy manifest in 526911 declares Purchase History), plus the paid, cancelled and refunded milestones. |
+| 10 | Usage Data > Product Interaction | **Yes** (now: not linked) | Analytics, **App Functionality** | **change** (linked Yes, add App Functionality) | <ul><li>account_attribution, account_milestones and account_days.</li><li>The coach and AI usage counts per account, which also enforce the limits.</li></ul> |
 | 11 | Diagnostics > Crash Data | **Yes** (now: not linked) | App Functionality | **change** (linked Yes) | Sentry errors. See the note below the table. |
-| 12 | Diagnostics > Other Diagnostic Data | **Yes** (now: not linked) | App Functionality | **change** (linked Yes) | Sentry's device, OS and browser context, and breadcrumbs. Also Plaid Link's hardware, OS, browser and network data, used for fraud prevention, which Apple counts as App Functionality. |
-| 13 | Other Data > Other Data Types | Yes | App Functionality, Analytics | **add** | <ul><li>Birth year, life stages and homeowner, from your profile (App Functionality).</li><li>A tester code and the date it was entered (App Functionality and Analytics).</li></ul> |
+| 12 | Diagnostics > Other Diagnostic Data | **Yes** (now: not linked) | App Functionality | **change** (linked Yes) | Sentry's device, OS and browser context, and breadcrumbs. |
+| 13 | Other Data > Other Data Types | Yes | App Functionality | **add** | Birth year, life stages and homeowner from your profile, and a tester code and the date it was entered. No Analytics: no code measures the tester code (Evidence 5). |
+
+**Device ID is not declared.** Plaid's End User Privacy Policy names no device identifier. It lists IP address, hardware model and OS, browser data, network data and other technical data, but never a "device identifier", "device ID", "unique identifier" or advertising ID. Apple's Device ID means an advertising identifier or another device-level ID. The app itself reads neither IDFV nor IDFA.
 
 Not collected on iPhone (leave unticked):
 - phone number, physical address;
-- health, location, sensitive info, contacts;
+- health, precise location, sensitive info, contacts;
 - emails or texts, photos or videos, audio, gameplay;
-- browsing or search history;
+- browsing or search history, device ID;
 - advertising data, other usage data, performance data;
 - surroundings, body.
 
 The iPhone app reads no campaign or attribution value: an iPhone account's account_attribution row is always "direct".
 
-**Why crash data is linked.** Nothing calls Sentry's setUser, and sendDefaultPii is false. But console.error lines become Sentry breadcrumbs, and some of them print an id:
+**Why crash data is linked.** Nothing calls Sentry's setUser, and sendDefaultPii is false (src/lib/errorReporting.js:133). But console.error lines become Sentry breadcrumbs, and some of them print an id:
 - src/lib/persistence.js:191 prints the account id;
 - src/App.jsx:19247, 19269 and 19652 print Plaid item ids, which our database ties to an account.
 
-console.log is stripped from builds, but console.error is not. 1.1.6 must say linked. A later build could drop those ids and go back to "not linked".
+console.log is stripped from builds (vite.config.js:46), but console.error is not. 1.1.6 must say linked. A later build could drop those ids and go back to "not linked".
 
 Summary for Apple: **4 add, 7 change, 2 same as now.**
 
 ## Play Console: Data safety
 
-In the form's order. No type is shared. "Ephemeral" stays as it is now on every type that is already declared.
+In the form's order. "Ephemeral" stays as it is now on every type already declared, except where a row says otherwise.
 
 | # | Section > Data type | Collected | Shared | Required or optional | Purposes | Mark |
 |---|---|---|---|---|---|---|
-| 1 | Personal info > Name | Yes | No | Optional | App functionality, Personalization | same as now (now also covers your partner's and children's names) |
-| 2 | Personal info > Email address | Yes | No | Required | App functionality, Account management, **Advertising or marketing**, **Developer communications**, **Fraud prevention, security, and compliance** | **change** (add Fraud prevention, security, and compliance, because sign-ups and newsletter sign-ups are rate-limited by the email, kept hashed; add Advertising or marketing for the newsletter, and Developer communications for the trial and account emails; also covers the partner invite email) |
-| 3 | Personal info > User IDs | Yes | No | Required | App functionality, Account management, **Analytics** | **change** (add Analytics) |
-| 4 | Personal info > Other info | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; birth year, life stages, tester code) |
-| 5 | Financial info > Purchase history | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics) |
-| 6 | Financial info > Credit score | Yes | No | Optional | App functionality | **add** |
-| 7 | Financial info > Other financial info | Yes | No | Required | App functionality | same as now |
-| 8 | Messages > Other in-app messages | Yes | No | Optional | App functionality | **change**: **Processed ephemerally: No**, the same as Files and docs. Coach messages go through our server to Anthropic, which keeps API data for a limited time. The published listing doesn't show the current answer; if the Console already says No, this row is the same as now. |
-| 9 | Files and docs > Files and docs | Yes | No | Optional | App functionality | **add**. The statement text (at most 7,000 characters, emails, household names and full account numbers removed) is sent through our server to Anthropic for parsing. The file never leaves the phone, and neither we nor our server keep the text. **Processed ephemerally: No**, because Anthropic, as our service provider, keeps API data for a limited time; Play's "ephemeral" means held only in memory for the request. |
-| 10 | App activity > App interactions | Yes | No | Required | Analytics, **App functionality** | **change** (add App functionality: the coach and AI limits use the counts) |
-| 11 | App activity > Other user-generated content | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; feedback, tester answers, meeting decisions) |
-| 12 | App activity > Other actions | Yes | No | Required | Analytics, Advertising or marketing | **add** (the Google Play Install Referrer campaign code, kept on the account) |
-| 13 | App info and performance > Crash logs | Yes | No | Required | App functionality, Analytics | same as now |
-| 14 | App info and performance > Diagnostics | Yes | No | Required | App functionality, Analytics, **Fraud prevention, security, and compliance** | **change** (add Fraud prevention, security, and compliance, for Plaid Link's device data) |
-| 15 | Device or other IDs > Device or other IDs | Yes | No | Optional | App functionality, Fraud prevention, security, and compliance | **add**. Plaid Link's device data, collected only when someone connects a bank. Not ephemeral. Not shared: the person starts the bank connection, the app's consent screen names Plaid first, and Plaid states no advertising use. |
+| 1 | Location > Approximate location | Yes | **Yes** | Optional (only when connecting a bank) | Collected and shared for Fraud prevention, security, and compliance | **add**. Plaid derives location from the IP address during Link. Google: location "inferred, such as via IP address ... must be disclosed here". Not ephemeral. |
+| 2 | Personal info > Name | Yes | No | Optional | App functionality, Personalization | same as now (now also covers your partner's and children's names) |
+| 3 | Personal info > Email address | Yes | No | Required | App functionality, Account management, **Advertising or marketing**, **Developer communications**, **Fraud prevention, security, and compliance** | **change**. Added: the newsletter (Advertising or marketing), the trial and account emails (Developer communications), and sign-up rate limits keyed by the hashed email (Fraud prevention). Also covers the partner invite email. |
+| 4 | Personal info > User IDs | Yes | No | Required | App functionality, Account management, **Analytics** | **change** (add Analytics) |
+| 5 | Personal info > Other info | Yes | No | Optional | App functionality | same as now (now covers birth year, life stages and tester code; no Analytics, Evidence 5) |
+| 6 | Financial info > Purchase history | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics) |
+| 7 | Financial info > Credit score | Yes | No | Optional | App functionality | **add** |
+| 8 | Financial info > Other financial info | Yes | No | Required | App functionality | same as now |
+| 9 | Messages > Other in-app messages | Yes | No | Optional | App functionality | **change**: Processed ephemerally: **No**. Coach messages go to Anthropic, which deletes API inputs and outputs within 30 days. If the Console already says No, this row is the same as now. |
+| 10 | Files and docs > Files and docs | Yes | No | Optional | App functionality | **add**. The statement's text content is sent for parsing (Evidence 3). Processed ephemerally: **No**, for the same 30-day reason. |
+| 11 | App activity > App interactions | Yes | No | Required | Analytics, **App functionality** | **change** (add App functionality: the coach and AI limits use the counts) |
+| 12 | App activity > Other user-generated content | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; feedback, tester answers, meeting decisions) |
+| 13 | App activity > Other actions | Yes | No | Required | Analytics, Advertising or marketing | **add** (the Google Play Install Referrer campaign code, kept on the account; Evidence 4) |
+| 14 | App info and performance > Crash logs | Yes | No | Required | App functionality, Analytics | same as now |
+| 15 | App info and performance > Diagnostics | Yes | No | Required | App functionality, Analytics | same as now |
+| 16 | Device or other IDs > Device or other IDs | Yes | **Yes** | Optional (only when connecting a bank) | Collected and shared for Fraud prevention, security, and compliance | **add**. Plaid's device and browser data, which Plaid uses "to remember you or your device when you return". Google's definition: "Identifiers that relate to an individual device, browser or app." Not ephemeral. |
+
+The store listing will no longer say "No data shared with third parties": rows 1 and 16 are shared with Plaid.
 
 Security practices, same as now:
-- data is encrypted in transit: Yes;
-- users can ask for their data to be deleted: Yes.
-
-Account deletion removes everything listed above:
-- account_attribution, account_milestones, account_days, the tester code and tester answers all go with the account (on delete cascade);
-- the newsletter is separate by design and ends with its own unsubscribe.
+- data is encrypted in transit: Yes (Evidence 6);
+- users can ask for their data to be deleted: Yes (Evidence 6).
 
 Not collected on Android (leave unticked):
-- location; address, phone, race, beliefs, orientation; user payment info;
+- precise location; address, phone, race, beliefs, orientation; user payment info;
 - health, fitness; emails, SMS; photos, videos, audio;
 - calendar, contacts; in-app search history, installed apps; web browsing;
 - other app performance data.
 
-Summary for Play: **4 add, 8 change, 3 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 7 change and 4 same.
+Summary for Play: **5 add, 6 change, 5 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 5 change and 6 same.
+
+## Evidence (for the 2026-11-10 review)
+
+**1. Service providers.**
+- Anthropic's DPA, B.1: "Customer is the controller and Anthropic is Customer's processor" (https://www.anthropic.com/legal/data-processing-addendum). API retention: inputs and outputs are deleted "within 30 days of receipt or generation" (https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data).
+- Sentry's DPA, 2.1.2: "Sentry is a Processor of Personal Data and Customer is the Controller" (https://sentry.io/legal/dpa/).
+- RevenueCat's DPA: "RevenueCat is its Data Processor in relation to Customer Personal Data" (https://www.revenuecat.com/dpa/). Its App Privacy page lists Purchase History, and User ID when a custom app user id is used (https://www.revenuecat.com/docs/platform-resources/apple-platform-resources/apple-app-privacy).
+- Plaid is not a processor for this data: "Plaid is the controller of the personal data collected", except for Identity Verification, which we don't use (https://plaid.com/legal/#end-user-privacy-policy).
+
+**2. Optional on Play.** Each item can be skipped and the app still works:
+- **Name:** onboarding starts with an empty name (src/App.jsx:4243). It is entered only in Settings (src/App.jsx:12164), and the partner's name likewise (src/App.jsx:12394).
+- **Credit score:** the 680 in the profile is a placeholder with creditKnown false. The app shows a score only when the household entered one (creditScoreEntered, src/App.jsx:6788).
+- **Coach:** it has an on/off switch (src/App.jsx:12661) and an AI notice before first use.
+- **Statement import:** one of three ways to add money data. The others are a bank connection and typing numbers by hand.
+- **Bank connection:** it opens only from the consent screen (src/App.jsx:4278, 4613). Plaid's device data and location are collected only then.
+- **Purchases:** the app runs on the 14-day trial and then the free plan.
+- **Other info:** birth year starts empty. Life stages has a default that the person can change.
+
+Required: email address, user IDs, app interactions, crash logs, diagnostics and other financial info, as now; and the Install Referrer code, which is read automatically on Android.
+
+**3. Statement import.**
+- The file is picked on the phone (`accept=".pdf,.csv"`, src/App.jsx:4635).
+- A CSV is parsed on the phone and never sent anywhere (parseCSVStatement, src/App.jsx:3774 and 4451).
+- A PDF is read on the phone with pdf.js (src/App.jsx:3818). Up to 7,000 characters of its text are redacted and sent to /api/coach, type "document", and on to Anthropic (src/App.jsx:3866–3886).
+
+The file itself never leaves the phone, but its content does. Play's "Files and docs" covers the content of files, so it stays declared.
+
+**4. Install Referrer.** Google's Data safety help names no category for install referrer or campaign data. "Other actions" is "Any other user activity or actions in-app not listed here" (https://support.google.com/googleplay/android-developer/answer/10787469). It stays there: the code records the link the person followed to install, and it is not a device ID, a location or anything else the form lists.
+
+**5. Analytics, type by type.**
+- User ID / User IDs: account_milestones and account_days are keyed by account id (netlify/functions/_lib/funnel.js:46, 70), as is account_attribution (netlify/functions/_lib/attribution.js:71).
+- Product Interaction / App interactions: /api/activation records the milestones and active days (netlify/functions/activation.js:133–148).
+- Purchase History / Purchase history: the paid, cancelled and refunded milestones come from the store and Stripe webhooks (netlify/functions/revenuecat-webhook.js:98, netlify/functions/stripe-webhook.js:295).
+- Other actions: the campaign code feeds funnel_by_source (migration 0043).
+- Crash logs and Diagnostics: Sentry starts with its default integrations (src/lib/errorReporting.js:123), which report errors and release health per build.
+- Customer Support, Other User Content and Other user-generated content:
+  - The day-7 question asks how the app helped (src/lib/feedback.js:17).
+  - Tester answers are saved per question (netlify/functions/tester.js:40).
+  - Both are read to judge and improve the app, which is Apple's and Google's meaning of Analytics. A person reads them; no code counts them.
+- **Removed:** Analytics on Apple Other Data Types and Play Other info. No funnel table, migration or report uses the tester code: a search of 0042, 0043, MEASUREMENT.md and _lib/funnel.js finds none.
+
+**6. Encryption in transit and deletion.**
+- Every flow uses HTTPS:
+  - the app's API is `https://flourishmoney.app` (src/App.jsx:139);
+  - Supabase is an `https://` host in the bundle;
+  - Plaid's script is loaded over https (src/App.jsx:1019), and the server calls Plaid's https API (netlify/functions/plaid.js:23);
+  - Anthropic is called at `https://api.anthropic.com` (netlify/functions/coach.js:33);
+  - Sentry sends to an https ingest host;
+  - RevenueCat's SDK uses HTTPS.
+- The platforms allow nothing else:
+  - iOS has no NSAllowsArbitraryLoads, so App Transport Security requires HTTPS.
+  - Android targets SDK 36 with no usesCleartextTraffic or network security config, so cleartext is off.
+  - The 526911 bundle's only http:// strings are XML namespaces and localhost.
+- Delete account (netlify/functions/plaid.js:679–880):
+  - removes every Plaid item at Plaid (/item/remove, line 821) and our plaid_items rows;
+  - deletes meeting_records, subscriptions, feedback and plaid_account_owners (line 810), and user_data, coach_usage and profiles (line 842 on);
+  - deletes the auth user (line 872), which cascades to every other per-account table: account_attribution, account_milestones, account_days, ai_usage_daily, tester_accounts, tester_answers, household membership, trial reminders and policy-notice records.
+- What stays after deletion, by design:
+  - billing_events keeps payment ids with the account id set to null, and no event payload (0010);
+  - founding_seats keeps the seat's account id with no link to an account (0032, "a deleted account keeps its seat");
+  - tester_free_months sets the account id to null (0039);
+  - a partner's shared household data stays with that partner;
+  - the newsletter is separate and ends with its own unsubscribe;
+  - Sentry and Anthropic delete on their own schedules (Anthropic within 30 days).
+- Plaid's /item/remove is best effort: if Plaid is down, the account is still deleted and the item is logged.
 
 ## The Nov 8 list, checked
 
 | Item | Finding |
 |---|---|
-| Crash data (Sentry) linked to the account | **Confirmed**, but through error breadcrumbs, not setUser (see above). |
+| Crash data (Sentry) linked to the account | **Confirmed**, through error breadcrumbs, not setUser (see above). |
 | Usage data linked through account_attribution and 0042/0043 | **Confirmed.** Every signup gets a row (src "direct" on the web and iPhone), and 0042's tables are keyed by account. 0043 is counts only. |
-| The PostHog line | **Confirmed false.** PostHog isn't in the app. Apple's Product Interaction "not linked" came from that plan and must change. |
-| The activation "aggregate" also writing a linked time | **Confirmed.** /api/activation calls markActivated, which writes account_attribution.activated_at, and the milestones and days. activation_daily and onboarding_counts themselves hold no id. |
-| Feedback purposes should include Analytics | **Confirmed.** |
-| The review note mentions camera or photos | **Ruled out for 1.1.6.** The 1.1.6 review notes in ASC don't mention either. The line is only in the old draft in docs/ops/LEGAL-PACKET.md. |
-| Names | Already declared on both stores. They now also cover your partner's and children's names. |
-| Purchases | Missing on Apple (add). Already on Play. |
-| Coach messages and statement text | Covered by Other User Content (Apple) and Other in-app messages (Play). |
-| Partner invite email | Covered by Email Address. |
-| Account-keyed usage counters | Confirmed: coach usage, AI usage per day, account_days, account_milestones. |
-| Newsletter email | Apple Email Address and Play Email address: add the marketing purpose. |
-| Install Referrer code | Android only: Play Other actions (add). |
-| Tester code and tester answers | Apple Other Data Types and Other User Content. Play Other info and Other user-generated content. |
+| The PostHog line | **Confirmed false.** PostHog isn't in the app. |
+| The activation "aggregate" also writing a linked time | **Confirmed.** markActivated writes account_attribution.activated_at. |
+| Feedback purposes should include Analytics | **Confirmed** (Evidence 5). |
+| The review note mentions camera or photos | **Ruled out for 1.1.6.** The line is only in the old draft in docs/ops/LEGAL-PACKET.md. |
+| Names, purchases, coach messages and statement text, partner invite email, account-keyed counters | Covered in the tables above. |
+| Newsletter, Install Referrer, tester code and answers | Covered in the tables above. |
 
 ## Decisions (Amanda, 2026-11-10)
 
-1. **Location stays off on both stores.** Province and country are typed in or come from the device's region setting, never from location services.
-2. **Statement and document text.**
-   - Play: Files and docs is added (above). It is not shared, because Anthropic is our service provider. It is marked "not ephemeral", for the reason in the row.
-   - Apple: the text stays under Other User Content.
-   - Parsed transactions stay under the financial info types.
-3. **Play Email address** gets Developer communications, for the trial and account emails.
-4. **Tester codes stay declared** (optional), because a server row can switch them on without a new build.
-   - **Creator codes must be declared on both stores before they are switched on.** That means the creator code on the account, and what it is used for (Analytics, and Advertising or marketing on Play). Today the flag is unset and 0035 is not run.
-5. **Play Console has no unpublished Data safety draft.** Read-only on 2026-11-10, the Publishing overview showed nothing waiting to be sent for review and nothing ready to publish (last published Nov 7). The published listing is therefore the "now" above.
+1. **Province and country** are typed in or come from the device's region, so they are not location. The only location declared is the one Plaid infers from the IP address.
+2. **Statement text** is on Play as Files and docs, and under Other User Content on Apple. Parsed transactions are under financial info. Coach messages and statement text are not ephemeral.
+3. **Play Email address** gets Developer communications.
+4. **Tester codes stay declared.**
+   - **Creator codes must be declared on both stores before they are switched on.** That means the creator code on the account, and what it is used for. Today the flag is unset and 0035 is not run.
+5. **Plaid on Play:** Device or other IDs and Approximate location are Shared: Yes, for Fraud prevention, security, and compliance. Bank data is not shared.
+6. **Apple Tracking stays No.** Device ID is dropped, because Plaid's policy names no device identifier.
 
 ## Still open
 
-- **Location Plaid may infer from the IP address.** Plaid's policy says it "may infer your geolocation" from data it collects, which includes the IP address. Play counts location inferred from an IP address as Approximate location, and Apple counts it as Coarse Location. Your decision kept Location off, but that decision was about province and country. Decide whether Plaid's inference changes it.
-- **Plaid deprecates Link in a web view.** If Link moves to Hosted Link (PR #76) or to the native SDK, check these rows again. The native SDK ships its own privacy manifest.
-- **Ephemeral on Files and docs and Other in-app messages.** If Anthropic keeps no API data for our account (zero data retention), this can be "Yes". I have not seen that confirmed.
-- **Apple's subscription display names were not read.** I couldn't open the groups ("Flourish" with 2 subscriptions, "Flourish Founding" with 1). Apple shows those names on the purchase sheet, so check that none says "Flourish Plus" before submitting.
-- **Some text the reviewer can read still says "Flourish Plus" or "free plan".** The in-app Terms (section 7) in 526911, and the store listing's FLOURISH PLUS section, are items 1–4 in docs/ops/PLUS-AND-FREE-PLAN-CLEANUP.md. The review notes below no longer say it.
+- **Apple Coarse Location was added for consistency.** Play declares the location Plaid infers from the IP address, and the same collection applies on iPhone. Remove it if you decide otherwise.
+- **Plaid deprecates Link in a web view.** If Link moves to Hosted Link (PR #76) or to the native SDK, check these rows again.
+- **Apple's subscription display names were not read.** Check that none says "Flourish Plus" before submitting.
+- **Some text the reviewer can read still says "Flourish Plus" or "free plan".** That means the in-app Terms (section 7) in 526911 and the Play listing's FLOURISH PLUS section (docs/ops/PLUS-AND-FREE-PLAN-CLEANUP.md, items 1–4).
 
 ## Apple review notes for 1.1.6 (draft, not entered in App Store Connect)
 
 These match build 526911 with today's production flags: TRIAL_PLAN_FIRST and PLUS_ENABLED off, and the free plan still in place.
-- Paragraphs 1 to 3 and the 3.1.3(b) paragraph are unchanged from the 1.1.6 notes in ASC.
-- The subscription paragraph drops "Flourish Plus" and says what the free plan keeps.
-- The 1.1.3 paragraph becomes a household paragraph.
-- A 1.1.6 paragraph is added.
 
 ```
 Flourish is a budgeting and cash-flow forecasting app for Canadian households. It does not offer cash advances, loans, credit, wage access or any money movement. Bank connection is read-only through Plaid and is optional; statements can be imported or numbers entered by hand. The AI coach explains figures the app calculates, does not tell users what to do, and shows an AI notice before first use.
@@ -191,32 +216,30 @@ A subscription bought on our website also counts in the app (Guideline 3.1.3(b))
 Review flourish 1.1.6 store privacy answers (iOS 526911, Android 27; Canadian budgeting app). Reply AGREE or exact fixes, with a score out of 100.
 
 Collected, linked to the account:
-- names (yours, partner's, children's, plus children's age ranges)
+- names (yours, partner's, children's), all optional
 - emails (sign-in, partner invite, optional newsletter)
-- entered credit score; bank data via Plaid; statements, balances, bills, goals
-- birth year, life stages; tester code and answers; feedback; meeting decisions
-- coach messages and redacted statement text, sent via our server to Anthropic (our provider), not stored by us
-- in-app purchases (RevenueCat); usage counters keyed by account
-- Sentry crash and diagnostic data (breadcrumbs can carry the account id)
-- Plaid Link (Plaid's web script in our web view): device, browser and network data, for device recognition and fraud prevention
-- Android only: the Play Install Referrer campaign code
+- optional credit score; bank data via Plaid; statements, balances, bills, goals
+- birth year, life stages, tester code; tester answers, feedback, meeting decisions
+- coach messages and a PDF statement's redacted text, sent via our server to Anthropic (processor, deletes within 30 days)
+- RevenueCat purchases; usage counters keyed by account
+- Sentry crash and diagnostic data (breadcrumbs can carry ids)
+- Plaid Link (web script in our web view; Plaid is controller): device and browser data, IP-derived location, for fraud prevention
+- Android: Play Install Referrer campaign code
 
-No ad SDKs, advertising ID, location permission or data sales.
+No ad SDKs, advertising ID, location permission or data sales. HTTPS everywhere; deletion removes the account, its tables and the Plaid item.
 
 Apple (all linked, tracking No):
-- Name, Credit Info, Other Financial Info, Device ID, Crash Data, Other Diagnostic Data: App Functionality
+- Name, Credit Info, Other Financial Info, Coarse Location, Crash Data, Other Diagnostic Data, Other Data Types: App Functionality
 - Email Address: App Functionality; Developer's Advertising or Marketing
-- Customer Support, Other User Content, User ID, Purchase History, Product Interaction, Other Data Types: App Functionality; Analytics
+- Customer Support, Other User Content, User ID, Purchase History, Product Interaction: App Functionality; Analytics
 
-Play (nothing shared; encrypted in transit; deletion available):
+Play (encrypted in transit; deletion available):
+- Approximate location, Device or other IDs (optional; shared with Plaid): Fraud prevention
 - Name (optional): App functionality; Personalization
 - Email address: App functionality; Account management; Advertising or marketing; Developer communications; Fraud prevention
-- User IDs: App functionality; Account management; Analytics
-- Other info, Purchase history, Other user-generated content (optional): App functionality; Analytics
-- Credit score, Other in-app messages, Files and docs (optional; last two not ephemeral): App functionality
+- User IDs, Purchase history (optional), Other user-generated content (optional): App functionality; Analytics
+- Other info, Credit score, Other in-app messages, Files and docs (all optional; last two not ephemeral): App functionality
 - Other financial info: App functionality
-- App interactions, Crash logs: App functionality; Analytics
-- Diagnostics: App functionality; Analytics; Fraud prevention
-- Device or other IDs (optional): App functionality; Fraud prevention
+- App interactions, Crash logs, Diagnostics: App functionality; Analytics
 - Other actions: Analytics; Advertising or marketing
 ```
