@@ -111,6 +111,11 @@ exports.handler = async (event) => {
 
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
+      // Every link token, new or update-mode, names its country and the same redirect address. Plaid requires
+      // country_codes on update mode too: without it /link/token/create answers 400 MISSING_FIELDS and a bank whose
+      // sign-in ran out (ITEM_LOGIN_REQUIRED) can never be reconnected (Plaid logs, Scotiabank, Nov 10 2026).
+      const COUNTRY_CODES = [country];
+      const REDIRECT_URI = "https://flourishmoney.app";
 
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
@@ -133,10 +138,12 @@ exports.handler = async (event) => {
       const linkBody = isUpdate
         ? {
             user:         { client_user_id: user_id },
-            client_name:  "Flourish Money",
-            access_token: updateAccessToken,
-            webhook:      WEBHOOK_URL,
-            language:     "en",
+            client_name:   "Flourish Money",
+            access_token:  updateAccessToken,
+            country_codes: COUNTRY_CODES,
+            language:      "en",
+            redirect_uri:  REDIRECT_URI,
+            webhook:       WEBHOOK_URL,
           }
         : {
             user:              { client_user_id: user_id },
@@ -149,10 +156,10 @@ exports.handler = async (event) => {
             // any user whose accounts didn't support EVERY product ("Connectivity not supported").
             products:          ["transactions"],
             optional_products: ["investments", "liabilities"],
-            country_codes:     [country],
+            country_codes:     COUNTRY_CODES,
             language:          "en",
             transactions:      { days_requested: 90 },
-            redirect_uri:      "https://flourishmoney.app",
+            redirect_uri:      REDIRECT_URI,
             webhook:           WEBHOOK_URL,
           };
       const data = await plaid("/link/token/create", linkBody);

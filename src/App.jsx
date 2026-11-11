@@ -114,7 +114,7 @@ import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js"
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
-import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
+import { sendOnboardingCount, noteFirstSignin, linkFailDetail } from "./lib/onboardingCounts.js";
 import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
 import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
@@ -4383,7 +4383,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     }catch(err){
       // Bug fix: always clear the progress interval even if exchange fails
       if(progTimer) clearInterval(progTimer);
-      count("bank_link_failed");
+      // The failed count says where and why (counts only): our exchange, or the free plan's one-bank limit.
+      count("bank_link_failed", linkFailDetail(currentPlatform(), /plan_limit/.test(String(err?.message||"")) ? "PLAN_LIMIT" : "EXCHANGE_FAILED"));
       // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
       // Every other failure (an expired session included) is W4: try again or enter the numbers.
       if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
@@ -4393,7 +4394,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   },[]);
   // W4 when Plaid closes without linking: err is null when the person closed it, an error when Plaid failed.
   const onPlaidExit=useCallback((err)=>{
-    count(err ? "bank_link_failed" : "bank_link_cancelled");
+    // A failure carries the platform and Plaid's error code from the fixed list (never its message): lib/onboardingCounts.js.
+    if (err) count("bank_link_failed", linkFailDetail(currentPlatform(), err.error_code)); else count("bank_link_cancelled");
     setBankOutcome(err ? "failed" : "cancelled");
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
 

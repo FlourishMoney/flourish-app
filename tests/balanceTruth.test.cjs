@@ -241,7 +241,7 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     t.ok(/usePlaidLinkSDK\(reconnectToken, onReconnectSuccess, onReconnectExit\)/.test(APP), "3h the Settings bank window (add and reconnect) now hears every exit");
     t.ok(/const onReconnectExit = useCallback\(\(err, meta\) => \{[\s\S]{0,400}setReconnectToken\(null\);\s*alertModal\(\{ message: linkExitMessage\(err, \{ intent, bank \}\)\.message \}\);/.test(APP),
       "3i …and says it in a dialog, with the spent token cleared so the next tap starts fresh");
-    t.ok(/const onPlaidExit=useCallback\(\(err\)=>\{\s*count\(err \? "bank_link_failed" : "bank_link_cancelled"\);\s*setBankOutcome\(err \? "failed" : "cancelled"\);/.test(APP), "3j onboarding keeps its approved W4 answer");
+    t.ok(/const onPlaidExit=useCallback\(\(err\)=>\{\s*(\/\/[^\n]*\n\s*)?if \(err\) count\("bank_link_failed", linkFailDetail\(currentPlatform\(\), err\.error_code\)\); else count\("bank_link_cancelled"\);\s*setBankOutcome\(err \? "failed" : "cancelled"\);/.test(APP), "3j onboarding keeps its approved W4 answer (a failure counted with its platform and Plaid code)");
     // Settings' consent sheet "Connect My Bank" is the only way in, and a bank already linked is not added twice.
     t.ok(/\.find\(it => it\.status === "login_required" \|\| it\.status === "error" \|\| it\.status === "pending_expiration"\)/.test(APP), "3k Reconnect picks a bank that needs a sign-in, login_required included");
   }

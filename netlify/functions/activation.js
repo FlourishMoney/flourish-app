@@ -138,7 +138,12 @@ async function handler(event, _context, now = new Date()) {
     if (onboarding) {
       const cohortDay = torontoDay(new Date(user.created_at));
       for (const row of onboardingRows(body, user.created_at, now)) {
-        const { error: bumpError } = await admin.rpc("onboarding_bump", { p_cohort_day: cohortDay, p_event: row.event, p_detail: row.detail });
+        let { error: bumpError } = await admin.rpc("onboarding_bump", { p_cohort_day: cohortDay, p_event: row.event, p_detail: row.detail });
+        // A failed link's "<platform>:<code>" needs migration 0047's wider check. Until it runs the database refuses the
+        // detail (23514, check_violation) and the event is counted as before, with no detail.
+        if (bumpError && bumpError.code === "23514" && row.fallbackDetail !== undefined) {
+          ({ error: bumpError } = await admin.rpc("onboarding_bump", { p_cohort_day: cohortDay, p_event: row.event, p_detail: row.fallbackDetail }));
+        }
         if (bumpError) { console.error("[activation] onboarding bump failed", row.event); return retryLater; }
       }
       return done;
