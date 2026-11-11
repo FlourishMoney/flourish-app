@@ -150,7 +150,7 @@ A subscription bought on our website also counts in the app (Guideline 3.1.3(b))
 ## Review block for ChatGPT and Grok
 
 ```
-Review the store privacy answers for flourish 1.1.6 (iOS 526911, Android 27), a Canadian budgeting app. Reply AGREE, or give exact fixes, with a score out of 100.
+Review flourish 1.1.6 store privacy answers (iOS 526911, Android 27; Canadian budgeting app). Reply AGREE, or give exact fixes, with a score out of 100.
 
 What it collects (kept on our servers and linked to the account unless noted):
 - names: yours, a partner's, and children's names and age ranges
