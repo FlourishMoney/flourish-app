@@ -1,4 +1,6 @@
-# Store privacy answers for 1.1.6 (draft, 2026-11-10)
+# Store privacy answers for 1.1.6 (APPROVED 2026-11-11)
+
+**Approved by Amanda on 2026-11-11, after ChatGPT and Grok both scored it 100.** The final change was to remove Play's Other actions. The Install Referrer campaign code is a campaign label, not an in-app action, and it stays disclosed in the privacy policy.
 
 For iOS 1.1.6 (526911) and Android 1.1.6 (versionCode 27), built from release-1.1.6 517a2d4. That build's code is main 00ed1f0, which is 126fd82 plus the version bump and the approved What's New (no data change).
 
@@ -74,10 +76,9 @@ In the form's order. "Ephemeral" stays as it is now on every type already declar
 | 10 | Files and docs > Files and docs | Yes | No | Optional | App functionality | **add**. The statement's text content is sent for parsing (Evidence 3). Processed ephemerally: **No**, for the same 30-day reason. |
 | 11 | App activity > App interactions | Yes | No | Required | Analytics, **App functionality** | **change** (add App functionality: the coach and AI limits use the counts) |
 | 12 | App activity > Other user-generated content | Yes | No | Optional | App functionality, **Analytics** | **change** (add Analytics; feedback, tester answers, meeting decisions) |
-| 13 | App activity > Other actions | Yes | No | Required | Analytics, Advertising or marketing | **add** (the Google Play Install Referrer campaign code, kept on the account; Evidence 4) |
-| 14 | App info and performance > Crash logs | Yes | No | Required | App functionality, Analytics | same as now |
-| 15 | App info and performance > Diagnostics | Yes | No | Required | App functionality, Analytics | same as now |
-| 16 | Device or other IDs > Device or other IDs | Yes | **Yes** | Optional (only when connecting a bank) | Collected and shared for Fraud prevention, security, and compliance | **add**. Plaid's device and browser data, which Plaid uses "to remember you or your device when you return". Google's definition: "Identifiers that relate to an individual device, browser or app." Not ephemeral. |
+| 13 | App info and performance > Crash logs | Yes | No | Required | App functionality, Analytics | same as now |
+| 14 | App info and performance > Diagnostics | Yes | No | Required | App functionality, Analytics | same as now |
+| 15 | Device or other IDs > Device or other IDs | Yes | **Yes** | Optional (only when connecting a bank) | Collected and shared for Fraud prevention, security, and compliance | **add**. Plaid's device and browser data, which Plaid uses "to remember you or your device when you return". Google's definition: "Identifiers that relate to an individual device, browser or app." Not ephemeral. |
 
 The store listing will no longer say "No data shared with third parties": rows 1 and 16 are shared with Plaid.
 
@@ -91,7 +92,7 @@ Not collected on Android (leave unticked):
 - calendar, contacts; in-app search history, installed apps; web browsing;
 - other app performance data.
 
-Summary for Play: **5 add, 6 change, 5 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 5 change and 6 same.
+Summary for Play: **4 add, 6 change, 5 same as now.** If the Console already says "not ephemeral" on Other in-app messages, it is 5 change and 6 same.
 
 ## Evidence (for the 2026-11-10 review)
 
@@ -110,7 +111,7 @@ Summary for Play: **5 add, 6 change, 5 same as now.** If the Console already say
 - **Purchases:** the app runs on the 14-day trial and then the free plan.
 - **Other info:** birth year starts empty. Life stages has a default that the person can change.
 
-Required: email address, user IDs, app interactions, crash logs, diagnostics and other financial info, as now; and the Install Referrer code, which is read automatically on Android.
+Required: email address, user IDs, app interactions, crash logs, diagnostics and other financial info, as now.
 
 **3. Statement import.**
 - The file is picked on the phone (`accept=".pdf,.csv"`, src/App.jsx:4635).
@@ -119,13 +120,12 @@ Required: email address, user IDs, app interactions, crash logs, diagnostics and
 
 The file itself never leaves the phone, but its content does. Play's "Files and docs" covers the content of files, so it stays declared.
 
-**4. Install Referrer.** Google's Data safety help names no category for install referrer or campaign data. "Other actions" is "Any other user activity or actions in-app not listed here" (https://support.google.com/googleplay/android-developer/answer/10787469). It stays there: the code records the link the person followed to install, and it is not a device ID, a location or anything else the form lists.
+**4. Install Referrer.** Google's Data safety help names no category for install referrer or campaign data. Decision (2026-11-11): it is a campaign label, not an in-app action, so it is not declared on Play. It stays disclosed in the privacy policy (the Nov 5 approved words, section 1).
 
 **5. Analytics, type by type.**
 - User ID / User IDs: account_milestones and account_days are keyed by account id (netlify/functions/_lib/funnel.js:46, 70), as is account_attribution (netlify/functions/_lib/attribution.js:71).
 - Product Interaction / App interactions: /api/activation records the milestones and active days (netlify/functions/activation.js:133–148).
 - Purchase History / Purchase history: the paid, cancelled and refunded milestones come from the store and Stripe webhooks (netlify/functions/revenuecat-webhook.js:98, netlify/functions/stripe-webhook.js:295).
-- Other actions: the campaign code feeds funnel_by_source (migration 0043).
 - Crash logs and Diagnostics: Sentry starts with its default integrations (src/lib/errorReporting.js:123), which report errors and release health per build.
 - Customer Support, Other User Content and Other user-generated content:
   - The day-7 question asks how the app helped (src/lib/feedback.js:17).
@@ -169,7 +169,7 @@ The file itself never leaves the phone, but its content does. Play's "Files and 
 | Feedback purposes should include Analytics | **Confirmed** (Evidence 5). |
 | The review note mentions camera or photos | **Ruled out for 1.1.6.** The line is only in the old draft in docs/ops/LEGAL-PACKET.md. |
 | Names, purchases, coach messages and statement text, partner invite email, account-keyed counters | Covered in the tables above. |
-| Newsletter, Install Referrer, tester code and answers | Covered in the tables above. |
+| Newsletter, tester code and answers | Covered in the tables above. The Install Referrer code is in the privacy policy, not in the Play form (Evidence 4). |
 
 ## Decisions (Amanda, 2026-11-10)
 
@@ -215,7 +215,7 @@ A subscription bought on our website also counts in the app (Guideline 3.1.3(b))
 ```
 Review flourish 1.1.6 privacy answers (iOS 526911, Android 27). Reply AGREE or exact fixes, score /100.
 
-Collected (linked): optional names (own, partner, children); emails (sign-in, partner invite, newsletter); optional credit score; Plaid bank data; statements, balances, bills, goals; birth year, life stages, tester code; tester answers, feedback, meeting decisions; coach messages and redacted PDF statement text via our server to Anthropic (processor, deletes within 30 days); RevenueCat purchases; account-keyed usage counters; Sentry crash and diagnostics (breadcrumbs carry ids); Plaid Link web script (Plaid is controller): device and browser data, IP-derived location, for fraud prevention; Android Install Referrer code. No ad SDKs or advertising ID; HTTPS only; deletion removes account tables and the Plaid item.
+Collected (linked): optional names (own, partner, children); emails (sign-in, partner invite, newsletter); optional credit score; Plaid bank data; statements, balances, bills, goals; birth year, life stages, tester code; tester answers, feedback, meeting decisions; coach messages and redacted PDF statement text via our server to Anthropic (processor, deletes within 30 days); RevenueCat purchases; account-keyed usage counters; Sentry crash and diagnostics (breadcrumbs carry ids); Plaid Link web script (Plaid is controller): device and browser data, IP-derived location, for fraud prevention; Android Install Referrer code (privacy policy only). No ad SDKs or advertising ID; HTTPS only; deletion removes account tables and the Plaid item.
 
 Apple (all linked, tracking No):
 - App Functionality: Name, Credit Info, Other Financial Info, Coarse Location, Crash Data, Other Diagnostic Data, Other Data Types
@@ -230,5 +230,4 @@ Play (* optional):
 - Other info*, Credit score*, In-app messages*, Files and docs* (last two not ephemeral): App functionality
 - Other financial info: App functionality
 - App interactions, Crash logs, Diagnostics: App functionality, Analytics
-- Other actions: Analytics, Advertising or marketing
 ```
