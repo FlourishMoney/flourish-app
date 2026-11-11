@@ -20,7 +20,10 @@ src/App.jsx.bak
 
 # Local marketing assets and generated App Store screenshots (regenerable, not source).
 # *-screenshot.png matches the desktop/mobile screenshots and none of the tracked app icons.
-marketing/
+# marketing/reel-factory is the exception: it is SOURCE, not an asset dump. Its own .gitignore
+# keeps its output (out/, recordings/, node_modules/) and its .env out of the repo.
+marketing/*
+!marketing/reel-factory/
 *-screenshot.png
 
 # Seed helper contains a real screenshot-account password — must never be committed.
