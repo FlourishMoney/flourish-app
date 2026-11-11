@@ -213,33 +213,22 @@ A subscription bought on our website also counts in the app (Guideline 3.1.3(b))
 ## Review block for ChatGPT and Grok
 
 ```
-Review flourish 1.1.6 store privacy answers (iOS 526911, Android 27; Canadian budgeting app). Reply AGREE or exact fixes, with a score out of 100.
+Review flourish 1.1.6 privacy answers (iOS 526911, Android 27). Reply AGREE or exact fixes, score /100.
 
-Collected, linked to the account:
-- names (yours, partner's, children's), all optional
-- emails (sign-in, partner invite, optional newsletter)
-- optional credit score; bank data via Plaid; statements, balances, bills, goals
-- birth year, life stages, tester code; tester answers, feedback, meeting decisions
-- coach messages and a PDF statement's redacted text, sent via our server to Anthropic (processor, deletes within 30 days)
-- RevenueCat purchases; usage counters keyed by account
-- Sentry crash and diagnostic data (breadcrumbs can carry ids)
-- Plaid Link (web script in our web view; Plaid is controller): device and browser data, IP-derived location, for fraud prevention
-- Android: Play Install Referrer campaign code
-
-No ad SDKs, advertising ID, location permission or data sales. HTTPS everywhere; deletion removes the account, its tables and the Plaid item.
+Collected (linked): optional names (own, partner, children); emails (sign-in, partner invite, newsletter); optional credit score; Plaid bank data; statements, balances, bills, goals; birth year, life stages, tester code; tester answers, feedback, meeting decisions; coach messages and redacted PDF statement text via our server to Anthropic (processor, deletes within 30 days); RevenueCat purchases; account-keyed usage counters; Sentry crash and diagnostics (breadcrumbs carry ids); Plaid Link web script (Plaid is controller): device and browser data, IP-derived location, for fraud prevention; Android Install Referrer code. No ad SDKs or advertising ID; HTTPS only; deletion removes account tables and the Plaid item.
 
 Apple (all linked, tracking No):
-- Name, Credit Info, Other Financial Info, Coarse Location, Crash Data, Other Diagnostic Data, Other Data Types: App Functionality
-- Email Address: App Functionality; Developer's Advertising or Marketing
-- Customer Support, Other User Content, User ID, Purchase History, Product Interaction: App Functionality; Analytics
+- App Functionality: Name, Credit Info, Other Financial Info, Coarse Location, Crash Data, Other Diagnostic Data, Other Data Types
+- also Developer's Advertising or Marketing: Email Address
+- also Analytics: Customer Support, Other User Content, User ID, Purchase History, Product Interaction
 
-Play (encrypted in transit; deletion available):
-- Approximate location, Device or other IDs (optional; shared with Plaid): Fraud prevention
-- Name (optional): App functionality; Personalization
-- Email address: App functionality; Account management; Advertising or marketing; Developer communications; Fraud prevention
-- User IDs, Purchase history (optional), Other user-generated content (optional): App functionality; Analytics
-- Other info, Credit score, Other in-app messages, Files and docs (all optional; last two not ephemeral): App functionality
+Play (* optional):
+- Approximate location*, Device or other IDs* (shared with Plaid): Fraud prevention
+- Name*: App functionality, Personalization
+- Email: App functionality, Account management, Advertising or marketing, Developer communications, Fraud prevention
+- User IDs, Purchase history*, Other user-generated content*: App functionality, Analytics
+- Other info*, Credit score*, In-app messages*, Files and docs* (last two not ephemeral): App functionality
 - Other financial info: App functionality
-- App interactions, Crash logs, Diagnostics: App functionality; Analytics
-- Other actions: Analytics; Advertising or marketing
+- App interactions, Crash logs, Diagnostics: App functionality, Analytics
+- Other actions: Analytics, Advertising or marketing
 ```
