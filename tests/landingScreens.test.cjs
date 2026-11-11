@@ -98,7 +98,7 @@ function imageSize(file) {
     t.ok(order.every((x, i) => x >= 0 && (i === 0 || x > order[i - 1])), `6a2 the hero's column: the main button, its line, the badges, the read-only line, the founding line (${order.join(", ")})`);
     t.ok((landing.match(/🔒 Bank connections are read-only\. flourish can't move your money\./g) || []).length === 1, "6a3 the read-only line moved, not copied (once on the page)");
     const trial = APP.slice(APP.indexOf("function TrialButton("), APP.indexOf("\n}\n", APP.indexOf("function TrialButton(")));
-    t.ok(/>Try flourish free for 14 days<\/button>/.test(trial) && /countLanding\("main_tap"/.test(trial) && /onClick\(\);/.test(trial), "6a4 the main button's words; a tap is counted, then opens sign-up");
+    t.ok(trial.includes('>{tpfOn ? trialWords("trialfirst-get-started") : "Try flourish free for 14 days"}</button>') && /countLanding\("main_tap"/.test(trial) && /onClick\(\);/.test(trial), "6a4 the main button's words (today's; \"Get started\" while TRIAL_PLAN_FIRST is on); a tap is counted, then opens sign-up");
   }
   {
     const demoCol = landing.slice(landing.indexOf('<div className="fll-hero-demo">'), landing.indexOf("{/* Proof"));

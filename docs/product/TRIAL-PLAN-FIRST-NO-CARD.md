@@ -7,14 +7,16 @@ Amanda's decision (2026-11-10): from the day `TRIAL_PLAN_FIRST` goes on, a new p
 |---|---|---|
 | App, first onboarding screen (`src/App.jsx`, Onboarding) | "Free to start · Canada & USA · No credit card" | "Made for Canadian households" |
 | Website landing, under the main button (`src/App.jsx`, AuthScreen) | "Every feature free for 14 days. Also on iPhone and Android." | "Choose a plan to get started. Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled. Also on iPhone and Android." |
+| Website landing, the main button, top and bottom (`src/App.jsx`, TrialButton; approved 2026-11-11) | "Try flourish free for 14 days" | "Get started", with the line above under it (top and bottom) |
+| Terms of Service section 7, website and a store app that sells (`src/App.jsx` TermsOfService, `src/lib/freePlan.js` trialFirstTermsSection7; approved 2026-11-11) | the web "Free Tier / Flourish Plus" text; in the apps STORE_TERMS_SECTION_7_IAP | "7. Plans and billing": one text for both, with terms-7-founding and the switch's date; "Last updated" is that date |
 
-Both ask `GET /api/trial-plan-first` before sign-in. With no answer they keep today's line.
+All ask `GET /api/trial-plan-first` (the Terms, for its `since` as well). With no answer they keep today's line. A store build only has what it was built with: 1.1.6 (526911 / 27) and older keep their bundled section 7, so the apps' Terms follow the switch from the first build made with this change.
 
 ## Not switched by the code: change on the day (Amanda, or a small follow-up PR)
-1. **`index.html`** meta description and og:description: "Every feature free for 14 days." Static, read by search engines and link previews. Correct as a claim (14 days free), but it doesn't say a plan is chosen first.
-2. **Website Terms of Service section 7** (`src/App.jsx`, web Terms): "a 14-day trial of premium features" describes the account trial. It goes through the legal review (`docs/ops/LEGAL-PACKET.md` carries the reviewed text, including "14-day free trial without a card").
-3. **Store builds' Terms section 7** (`src/lib/freePlan.js`): "every feature for its first 14 days". Same review.
-4. **`TrialButton`** (`src/App.jsx`), the landing's main button: "Try flourish free for 14 days". Not switched. With the switch on, it is shown before sign-in to everyone, including someone the store will later find ineligible. It needs new words, approved, before the switch goes on (reviewers' check, 2026-11-10).
+1. **`index.html`** meta description and og:description, by hand on the day (approved 2026-11-11): the last sentence "Every feature free for 14 days." becomes "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled." Static, read by search engines and link previews, so it can't follow the switch.
+2. **Terms section 7:** switched by the code since 2026-11-11 (the table above), on the website and in store builds made from then on. `docs/ops/LEGAL-PACKET.md` still carries the older reviewed text.
+3. **Store builds already in the stores' hands (1.1.6 and older):** their section 7 is bundled and still describes the account trial. They need a new build to change.
+4. **`TrialButton`:** switched by the code since 2026-11-11 (the table above).
 5. **`PremiumGate`** (`src/App.jsx`): "Start 14 days free →" and "14 days free. Cancel any time." Shown only while billing is off. Not seen in production; left alone.
 6. **The store founding "keep my trial" link** (`src/lib/pendingWords.js`, "Not now, keep my 14-day trial"): shown only to someone inside the old account trial. Correct for them; it ends when the last account trial ends.
 7. **App Store and Google Play listings** (not in the repo; nothing in the repo or ~/Documents/Flourish records "no card" in them). Amanda checks the live descriptions, promotional text and What's New in App Store Connect and Play Console. Apple's App Review notes in `docs/ops/LEGAL-PACKET.md` say "A 14-day trial of Plus".

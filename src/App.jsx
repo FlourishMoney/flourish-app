@@ -78,7 +78,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
+import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP, TRIAL_FIRST_TERMS_7_HEADING, trialFirstTermsSection7 } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
@@ -98,7 +98,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
-import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, chipChargeDate } from "./lib/trialPlanFirst.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, askTrialPlanFirst, chipChargeDate } from "./lib/trialPlanFirst.js";
 import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
@@ -14125,11 +14125,17 @@ function DeleteAccount({onBack}){
   );
 }
 
-function TermsOfService({onBack}){
+function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="October 14, 2026";
+  // TRIAL_PLAN_FIRST (approved 2026-11-11): while the switch is on, section 7 is the one text for the website and a store
+  // app that sells (lib/freePlan.js trialFirstTermsSection7), dated from the switch. The Terms ask the server themselves
+  // (GET /api/trial-plan-first), so every place that opens them follows it; off, or no answer, is today's section 7.
+  const [tpfSince,setTpfSince]=useState(tpfSinceFirst);
+  useEffect(()=>{ let live=true; askTrialPlanFirst(fetch, API_BASE).then(a=>{ if(!live) return; if(a===false) setTpfSince(null); else if(a&&a.since) setTpfSince(a.since); }); return ()=>{ live=false; }; },[]);
+  const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;
+  const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -14162,8 +14168,8 @@ function TermsOfService({onBack}){
       <div style={h2}>6. Acceptable Use</div>
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
-      <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={h2}>{tpfTerms ? TRIAL_FIRST_TERMS_7_HEADING : isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
+      <div style={p}>{tpfTerms && tpfTerms.map((x,i)=><span key={i} data-terms7-tpf="">{i>0&&<><br/><br/></>}{x}</span>)}{!tpfTerms && <>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -15814,14 +15820,15 @@ function FoundingListLine() {
   return <p className="fll-found-line" data-founding-line="">{line}</p>;
 }
 
-// THE MAIN BUTTON, top and bottom of the landing (approved Oct 22): it opens website signup. The visit's src
+// THE MAIN BUTTON, top and bottom of the landing (approved Oct 22; with TRIAL_PLAN_FIRST on, "Get started" with
+// trialfirst-landing under it, approved 2026-11-11): it opens website signup. The visit's src
 // (lib/waitlistSrc.js) goes with the signup to the new account; the tap is counted (lib/landingCounts.js).
-function TrialButton({ onClick }) {
+function TrialButton({ onClick, tpfOn = false }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       <button type="button" className="fll-btn fll-main"
-        onClick={() => { countLanding("main_tap", { base: API_BASE }); track(EVENT.tryFree); onClick(); }}>Try flourish free for 14 days</button>
+        onClick={() => { countLanding("main_tap", { base: API_BASE }); track(EVENT.tryFree); onClick(); }}>{tpfOn ? trialWords("trialfirst-get-started") : "Try flourish free for 14 days"}</button>
     </>
   );
 }
@@ -16459,7 +16466,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
                 {/* Founding spots open (approved Oct 22): the main button, its line, the badges, the read-only line and
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
-                {trialFirst && <TrialButton onClick={goSignup}/>}
+                {trialFirst && <TrialButton onClick={goSignup} tpfOn={tpfOn}/>}
                 {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
@@ -16550,7 +16557,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
           {trialFirst && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
-              <TrialButton onClick={goSignup}/>
+              <TrialButton onClick={goSignup} tpfOn={tpfOn}/>
+              {tpfOn && <p className="fll-trial-line">{trialWords("trialfirst-landing")}</p>}
             </div>
           </div>
           )}

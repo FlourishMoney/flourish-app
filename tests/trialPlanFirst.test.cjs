@@ -118,7 +118,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.eq(res.statusCode, 404, "1w GET /api/trial-plan-first: 404 while off");
     setEnv({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
     res = await loadWith(FLAG_FN, {}).handler({ httpMethod: "GET", headers: NATIVE });
-    t.eq([res.statusCode, JSON.parse(res.body)], [200, { on: true }], "1x …200 { on: true } while on, from the app too");
+    t.eq([res.statusCode, JSON.parse(res.body)], [200, { on: true, since: new Date(Date.parse(SINCE)).toISOString() }], "1x …200 { on: true, since } while on, from the app too (since: the switch's time, for the Terms' date)");
     res = await loadWith(FLAG_FN, {}).handler({ httpMethod: "POST", headers: WEB, body: "{}" });
     t.eq(res.statusCode, 405, "1y …and nothing but GET");
     t.ok(/from\s+= "\/api\/trial-plan-first"\s+to\s+= "\/\.netlify\/functions\/trial-plan-first"/.test(fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8")), "1z the address is routed");
@@ -261,8 +261,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // placeholder any more (the doc's third exception covers nothing now).
     const doc = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-WORDS.md"), "utf8");
     const rows = Object.fromEntries([...doc.matchAll(/^\| `(trialfirst-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+?) \| \d+ \|$/gm)].map((m) => [m[1], m[2]]));
-    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (26)");
-    t.ok(ids.length === 26 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
+    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (27: the 26 of 2026-11-10 and Get started, 2026-11-11)");
+    t.ok(ids.length === 27 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
       "5b …each in the code word for word as approved, and none a placeholder");
     const APPROVED = {
       "trialfirst-cancel-before": "Cancel before {date} to avoid the first charge.",
