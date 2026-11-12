@@ -74,6 +74,26 @@ No Android or iOS Google client is needed. The apps sign in to Google in the sys
 2. **App Review notes for 1.1.7:** the review account still signs in with email and password, as before.
 3. **Nothing to change in Play Console** for sign-in.
 
+## E. Revoking Sign in with Apple when an account is deleted (App Store guideline 5.1.1(v))
+
+Deleting an account (Settings → Delete Account, or flourishmoney.app/delete-account) revokes its Apple sign-in at Apple, on the server, just before the account itself is deleted (`netlify/functions/plaid.js` `delete_account`, `_lib/appleTokens.js`). To do that the server keeps Apple's refresh token from each Apple sign-in, sealed with AES-256-GCM (`apple_tokens`, migration 0049). A failed revoke never stops the deletion and the person sees nothing new; the function log says `apple revoke: revoked`, `failed status=…`, `not_configured`, `no_token` or `unreadable`, with no personal data.
+
+1. **Run migration 0049** (`supabase/migrations/0049_legal_consent_apple_tokens.sql`) in the SQL editor. It also holds the onboarding consent record. Safe to run twice.
+2. **Netlify → Site configuration → Environment variables → Add a variable**, for each row below. Scope **Functions**. Tick **Contains secret values** for the two secrets. Context: **Production** (add Deploy previews too if you want to try it on a preview). Same values in every context you set.
+
+| Variable | Value | Secret |
+| --- | --- | --- |
+| `APPLE_TEAM_ID` | `V8B8MR88SL` | no |
+| `APPLE_SIGNIN_KEY_ID` | the Key ID of the key from step A4 (10 characters) | no |
+| `APPLE_SIGNIN_PRIVATE_KEY` | the whole `.p8` file from step A4, opened in TextEdit, from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----` | yes |
+| `APPLE_CLIENT_ID_IOS` | `app.flourishmoney` | no |
+| `APPLE_CLIENT_ID_WEB` | `app.flourishmoney.web` | no |
+| `APPLE_TOKEN_ENC_KEY` | a new random key: run `openssl rand -base64 32` in Terminal and paste what it prints (44 characters) | yes |
+
+3. **Redeploy** production so the functions read them.
+
+Until all six are set: Apple sign-in works as before, nothing is kept, and a deletion still deletes (`not_configured`). Tokens from sign-ins made before they are set are not kept, so those accounts are not revoked. Never change `APPLE_TOKEN_ENC_KEY` once set: the tokens already kept would no longer open (`unreadable`). The `.p8` key can be the same one Supabase uses; a new key also works, as long as it has Sign in with Apple for `app.flourishmoney`.
+
 ## Checks after setup (Claude can do these read-only)
 - The website's "Continue with Google" and "Continue with Apple" reach each provider's page and come back signed in. Use a test account that's yours.
 - Supabase → Authentication → Users shows the new user with provider `google` or `apple`.

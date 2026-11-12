@@ -110,12 +110,12 @@ function buildApp(supabaseUrl) {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
     } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify((() => { const x = MOCK.makeSession(); if (appMeta) x.user = { ...x.user, app_metadata: appMeta }; return x; })()), signedIn]);
-    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0, beta: [] };
+    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0, beta: [], betaBodies: [] };
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
       ? (seen.reads++, r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" }))
       : (seen.saved.push(r.request().postData() || ""), r.fulfill({ status: 201, contentType: "application/json", body: "[]" })));
     if (appMeta && !user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...MOCK.makeSession().user, app_metadata: appMeta }) }));
-    if (appMeta) await ctx.route("**/api/beta", (r) => { try { seen.beta.push(JSON.parse(r.request().postData() || "{}").action); } catch {} return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ secured: false, recorded: true }) }); });
+    if (appMeta) await ctx.route("**/api/beta", (r) => { try { const b = JSON.parse(r.request().postData() || "{}"); seen.beta.push(b.action); seen.betaBodies.push(b); } catch {} return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ secured: false, recorded: true }) }); });
     if (user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) }));
     await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
     await ctx.route("**/api/activation", (r) => { try { seen.counts.push(JSON.parse(r.request().postData() || "{}")); } catch {} return r.fulfill({ status: 204, body: "" }); });
@@ -342,8 +342,9 @@ function buildApp(supabaseUrl) {
   }
 
   // ── a new Apple or Google account (1.1.7) ───────────────────────────────
-  // The same onboarding as a new email account: the consent step (placeholders until its words are approved, the
-  // approved "Get started"), then Link your accounts. None of the old welcome's words. The server is told once.
+  // The same onboarding as a new email account: the consent step (its approved words, the Terms and the Privacy Policy
+  // tappable before "Get started"), then Link your accounts. None of the old welcome's words. The server is told once, and
+  // the consent is recorded against the account.
   for (const provider of ["apple", "google"]) {
     const { ctx, page, seen, errs } = await open({ appMeta: { provider, providers: [provider] } });
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
@@ -351,14 +352,25 @@ function buildApp(supabaseUrl) {
     await btn(page, "I Understand & Accept").click();
     await btn(page, "Get started").waitFor();
     const first = await text(page);
-    t.ok(/\[WORDS: onboarding-consent-title\]/.test(first) && /\[WORDS: onboarding-consent-line\]/.test(first)
-      && !/every day\.|Try Demo|No credit card|Canada & USA|PIPEDA|Get Started →/.test(first), `S1 ${provider}: the consent step, with none of the old welcome's words`);
+    t.ok(/Before you start/.test(first) && /By tapping Get started, you agree to the Terms and the Privacy Policy, including how flourish collects and uses your information\./.test(first)
+      && !/\[WORDS:|every day\.|Try Demo|No credit card|Canada & USA|PIPEDA|Get Started →/.test(first), `S1 ${provider}: the consent step, its approved words, none of the old welcome's`);
     await shot(page, `${provider}-consent-step`);
+    for (const [which, title] of [["terms", "Terms of Service"], ["privacy", "Privacy Policy"]]) {
+      await page.locator(`[data-consent-legal="${which}"]`).click();
+      await page.getByText(title, { exact: true }).first().waitFor();
+      await btn(page, "← Back").click();
+      await page.getByText("Before you start").waitFor();
+      t.ok(true, `S1b ${provider}: ${title} opens from the step, before Get started, and Back returns to it`);
+    }
+    t.eq(seen.beta.filter((a) => a === "record_consent").length, 0, `S1c ${provider}: nothing recorded before Get started`);
     await btn(page, "Get started").click();
     await page.getByText("Link your accounts (optional)").waitFor();
     t.ok(true, `S2 ${provider}: then Link your accounts, as for a new email account`);
     await page.waitForTimeout(400);
     t.eq(seen.beta.filter((a) => a === "social_signin").length, 1, `S3 ${provider}: social_signin sent once`);
+    const rec = seen.betaBodies.filter((b) => b.action === "record_consent");
+    t.ok(rec.length === 1 && rec[0].consent_id === "onboarding-2026-11-12" && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].terms_version) && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].privacy_version)
+      && Math.abs(Date.parse(rec[0].shown_at) - Date.now()) < 120000, `S3b ${provider}: Get started recorded against the account once: the consent, both documents' dates, when`);
     t.eq(errs, [], `S4 ${provider}: no page errors`);
     await ctx.close();
   }
@@ -385,7 +397,7 @@ function buildApp(supabaseUrl) {
     const readsBefore = seen.reads, tokensBefore = seen.tokenCalls;
     await away();
     const back = await text(page);
-    t.ok(/Link your accounts \(optional\)/.test(back) && !/onboarding-consent-title/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
+    t.ok(/Link your accounts \(optional\)/.test(back) && !/Before you start/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
     t.eq([await page.evaluate(() => window.__plaidOpens), seen.reads - readsBefore, seen.tokenCalls - tokensBefore], [1, 0, 0],
       "R1b …the same Link (never opened again), no re-read of the saved data, no new link token");
     await away();

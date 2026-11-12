@@ -277,10 +277,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
     t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
-    // 1.1.7 (2026-11-12): the first run's consent step waits for its words (src/lib/firstRunWords.js FIRST_RUN_PENDING);
-    // those two are the only placeholders allowed, and the trial plan has none.
-    const left = [...new Set([...String(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]/g)].map((m) => m[1]))].sort();
-    t.eq(left, all.status === 0 ? [] : ["onboarding-consent-line", "onboarding-consent-title"], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the first run's consent step");
+    t.eq(all.status, 0, "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html)");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
       t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
