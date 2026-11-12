@@ -30,6 +30,7 @@ const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
+const { revokeForAccount: revokeAppleTokens } = require("./_lib/appleTokens");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -874,6 +875,17 @@ exports.handler = async (event) => {
           console.warn("[delete_account] no email found for user; beta seat (if any) not freed:", user_id);
         }
       } catch (e) { console.warn("[delete_account] beta seat free threw:", e.message); }
+
+      // 3d. SIGN IN WITH APPLE (App Store guideline 5.1.1(v), 1.1.7): every Apple token kept for this account (migration
+      // 0049 apple_tokens, sealed) is revoked at Apple now, just before the sign-in goes, so the app no longer appears
+      // under the person's Apple ID. Best effort by design: a failure, a missing setting (APPLE_*) or a token never kept
+      // is logged as an outcome with no personal data (_lib/appleTokens.js), the deletion goes on, and the response is
+      // unchanged, so the person sees nothing new. The row itself goes with the account (on delete cascade).
+      {
+        let appleUser = null;
+        try { const { data: au } = await admin.auth.admin.getUserById(user_id); appleUser = (au && au.user) || null; } catch { appleUser = null; }
+        await revokeAppleTokens(admin, user_id, appleUser);
+      }
 
       // 4. Delete the Supabase auth user (service-role only)
       const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);

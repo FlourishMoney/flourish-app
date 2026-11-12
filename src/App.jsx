@@ -73,7 +73,9 @@ import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
-import { FIRST_RUN_WORDS, FIRST_RUN_PENDING } from "./lib/firstRunWords.js";
+import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
+import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
+import { sendAppleGrant, takeWebAppleGrant } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
@@ -166,6 +168,14 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 );
 
+
+// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, and whether the Terms the person could
+// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides).
+function consentDeps(uid) {
+  let storage = null; try { storage = window.localStorage; } catch { storage = null; }
+  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(),
+    getJwt: () => supabase.auth.getSession().then(({ data }) => data?.session?.access_token || null).catch(() => null) };
+}
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
 // "(CRA, 2026)": the authority and the year behind a TAX_DATA figure, for copy that shows one. The
@@ -4238,7 +4248,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
 // debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
 // still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater}){
+function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater}){
   const after = phase==="after";
   const [step,setStep]=useState(after?3:0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
@@ -4571,19 +4581,19 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     // 0: The consent step, for every new account (email, Apple or Google alike). 1.1.7: the value screen before sign-up
     // replaced the old welcome here (its tagline, its line about price and countries, the demo
     // button and the capital-F lockup). What stays is the reason this step exists: the data-processing consent, which the
-    // sign-up card's line (Terms and Privacy only) does not cover and an Apple or Google sign-up never sees. Its words are
-    // not written yet: FIRST_RUN_PENDING placeholders, which scripts/check-pending-words.mjs refuses in a production or
-    // store build, so nothing ships until they are approved.
+    // sign-up card's line (Terms and Privacy only) does not cover and an Apple or Google sign-up never sees. Its words were
+    // approved 2026-11-12 (lib/firstRunWords.js consentTitle, consentLine). The Terms and the Privacy Policy are tappable
+    // here, before Get started; tapping Get started is recorded against the account (onConsent, lib/legalConsent.js).
     <div data-onboarding-consent="" style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
-      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:16,maxWidth:320}}>{FIRST_RUN_PENDING.consentTitle}</div>
+      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:16,maxWidth:320}}>{FIRST_RUN_WORDS.consentTitle}</div>
       <div style={{marginBottom:24,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{FIRST_RUN_PENDING.consentLine}</div>
+        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{FIRST_RUN_WORDS.consentLine}</div>
         <div style={{display:"flex",gap:16,marginTop:6}}>
-          <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Terms</button>
-          <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Privacy Policy</button>
+          <button data-consent-legal="terms" onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Terms</button>
+          <button data-consent-legal="privacy" onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Privacy Policy</button>
         </div>
       </div>
-      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>{FIRST_RUN_WORDS.getStarted}</button>
+      <button data-consent-accept="" onClick={()=>{ try{ onConsent&&onConsent(); }catch{ /* the record never blocks the step */ } done("welcome",1); }} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>{FIRST_RUN_WORDS.getStarted}</button>
     </div>,
 
     // 1: Bank Connection
@@ -16852,7 +16862,10 @@ function SocialSignIn({ onFailed }) {
         import("@capacitor/browser").then(m => m.Browser),
         import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
       ]) : [null, null, null];
-      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener });
+      let storage = null; try { storage = window.sessionStorage; } catch { storage = null; }
+      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage });
+      // An Apple sign-in in the app: what deleting the account will need to revoke it at Apple (lib/appleGrant.js). Not waited for.
+      if (res && res.ok && res.appleGrant) supabase.auth.getSession().then(({ data }) => sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE })).catch(() => {});
     } catch { res = { ok: false }; }
     if (!res.redirecting) setBusy(null);
     if (!res.ok) onFailed && onFailed();
@@ -18643,6 +18656,25 @@ export default function FlourishApp(){
     }).catch(() => { /* the next launch tries again */ });
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 1.1.7: the consent step's record (lib/legalConsent.js). One that could not be sent when Get started was tapped is
+  // sent again here, on the next launch, with the time and the dates it was kept with.
+  useEffect(() => {
+    if (!user?.id) return;
+    flushLegalConsent(consentDeps(user.id));
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 1.1.7: back on the website from Apple's page, Supabase's session carries Apple's refresh token this once; the server
+  // keeps it sealed so that deleting the account can revoke it at Apple (lib/appleGrant.js, App Store guideline 5.1.1(v)).
+  useEffect(() => {
+    if (!user?.id || isNativeApp()) return;
+    supabase.auth.getSession().then(({ data }) => {
+      const s = data?.session;
+      let storage = null; try { storage = window.sessionStorage; } catch { storage = null; }
+      const grant = takeWebAppleGrant(s, storage);
+      if (grant && s?.access_token) sendAppleGrant({ grant, jwt: s.access_token, apiBase: API_BASE });
+    }).catch(() => { /* nothing kept; deleting still deletes */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Phase D1-E: one-time migration of localStorage Plaid tokens to Supabase.
   // Runs after auth confirms. Skips if already done. Non-blocking.
   useEffect(() => {
@@ -19693,7 +19725,7 @@ export default function FlourishApp(){
         return merged;
       });
       setOnboarded(true);
-    }} onViewLegal={s=>setScreen(s)} userId={user?.id}
+    }} onViewLegal={s=>setScreen(s)} userId={user?.id} onConsent={()=>{ recordLegalConsent(consentDeps(user?.id)); }}
     tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.

@@ -13,7 +13,13 @@
 //
 // Google refuses its sign-in inside an embedded web view, which is why it never runs inside the app's own view.
 // Nothing here logs a token, a code or an address.
+//
+// An Apple sign-in also yields what deleting the account later needs to revoke it at Apple (lib/appleGrant.js): the
+// iPhone's one-time code, or on Android Apple's refresh token from the callback, returned as appleGrant; the website
+// marks the sign-in (deps.storage, sessionStorage) and picks the token up from the session when it lands.
 // -----------------------------------------------------------------------------
+
+import { markWebAppleSignIn } from "./appleGrant.js";
 
 export const SOCIAL_PROVIDERS = Object.freeze(["apple", "google"]);
 export const NATIVE_CALLBACK = "flourishmoney://auth-callback";
@@ -42,7 +48,8 @@ export function sessionFromCallback(url) {
   const get = (k) => frag.get(k) || query.get(k);
   if (get("error") || get("error_description")) return { error: get("error") || "cancelled" };
   const access_token = get("access_token"), refresh_token = get("refresh_token");
-  if (access_token && refresh_token) return { access_token, refresh_token };
+  const provider_refresh_token = get("provider_refresh_token");
+  if (access_token && refresh_token) return provider_refresh_token ? { access_token, refresh_token, provider_refresh_token } : { access_token, refresh_token };
   const code = get("code");
   return code ? { code } : { error: "no_session" };
 }
@@ -54,10 +61,11 @@ export function sessionFromCallback(url) {
  *   appListener(cb) subscribes to appUrlOpen and returns an unsubscribe function.
  */
 export async function signInWithProvider(provider, deps) {
-  const { supabase, native, platform, origin, appleSignIn, browser, appListener } = deps || {};
+  const { supabase, native, platform, origin, appleSignIn, browser, appListener, storage } = deps || {};
   if (!SOCIAL_PROVIDERS.includes(provider) || !supabase) return { ok: false };
   try {
     if (!native) {
+      if (provider === "apple") markWebAppleSignIn(storage);
       const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: origin } });
       return error ? { ok: false } : { ok: true, redirecting: true };
     }
@@ -67,7 +75,8 @@ export async function signInWithProvider(provider, deps) {
       const token = res && res.response && res.response.identityToken;
       if (!token) return { ok: false };
       const { error } = await supabase.auth.signInWithIdToken({ provider: "apple", token, nonce: raw });
-      return { ok: !error };
+      const code = res.response.authorizationCode;
+      return !error && typeof code === "string" && code ? { ok: true, appleGrant: { code } } : { ok: !error };
     }
     const { data, error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: NATIVE_CALLBACK, skipBrowserRedirect: true } });
     if (error || !data || !data.url) return { ok: false };
@@ -84,8 +93,9 @@ export async function signInWithProvider(provider, deps) {
     const s = await back;
     // Android: the Custom Tab has already closed itself; closing it again restarts the plugin's helper activity.
     if (platform === "ios") { try { await browser.close(); } catch { /* already gone */ } }
-    if (s.access_token) { const { error: e } = await supabase.auth.setSession(s); return { ok: !e }; }
-    if (s.code) { const { error: e } = await supabase.auth.exchangeCodeForSession(s.code); return { ok: !e }; }
+    const grant = (t) => (provider === "apple" && typeof t === "string" && t ? { appleGrant: { refresh_token: t } } : {});
+    if (s.access_token) { const { error: e } = await supabase.auth.setSession({ access_token: s.access_token, refresh_token: s.refresh_token }); return e ? { ok: false } : { ok: true, ...grant(s.provider_refresh_token) }; }
+    if (s.code) { const { data: x, error: e } = await supabase.auth.exchangeCodeForSession(s.code); return e ? { ok: false } : { ok: true, ...grant(x && x.session && x.session.provider_refresh_token) }; }
     return { ok: false };
   } catch {
     return { ok: false };

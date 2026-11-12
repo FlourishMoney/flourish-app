@@ -31,14 +31,11 @@ export const FIRST_RUN_WORDS = Object.freeze({
   updateNumber: "Update my number →",
   statementTitle: "📄 Import a bank statement",
   statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
-});
 
-// NOT WRITTEN YET (2026-11-12): the consent step that opens onboarding for every new account. The old welcome's words
-// (pre-1.1.7, never reviewed for the store apps) are gone; these placeholders stand in until the lines are written and
-// approved. scripts/check-pending-words.mjs refuses a production or store build while either placeholder is left, so
-// a deploy preview shows them and nothing else does. docs/product/FIRST-RUN-117-WORDS.md lists them for review.
-// The button reuses the approved "Get started".
-export const FIRST_RUN_PENDING = Object.freeze({
-  consentTitle: "[WORDS: onboarding-consent-title]",
-  consentLine: "[WORDS: onboarding-consent-line]",
+  // The consent step that opens onboarding for every new account (email, Apple or Google), APPROVED 2026-11-12 (ChatGPT
+  // 100, Grok 100), word for word. Its button is getStarted above; the Terms and the Privacy Policy are tappable on the
+  // step, before it. Tapping Get started is recorded against the account (netlify/functions/_lib/legalConsent.js keeps
+  // the server's copy of these two lines; tests/legalConsent.test.cjs holds the two equal).
+  consentTitle: "Before you start",
+  consentLine: "By tapping Get started, you agree to the Terms and the Privacy Policy, including how flourish collects and uses your information.",
 });

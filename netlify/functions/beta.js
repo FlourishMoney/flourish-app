@@ -38,6 +38,8 @@ const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 const { accountPlatform, recordAccountAttribution, bumpAttributionCount, platformFromUserAgent } = require("./_lib/attribution");
 const { recordMilestone } = require("./_lib/funnel");
+const { recordConsent } = require("./_lib/legalConsent");
+const { storeGrant: storeAppleGrant, isApple: isAppleUser } = require("./_lib/appleTokens");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
@@ -615,6 +617,43 @@ async function handle(event) {
       console.error("[beta:social_signin] failed");
       return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
     }
+  }
+
+  // THE CONSENT STEP (1.1.7, _lib/legalConsent.js, migration 0049): recorded against the signed-in account when they tap Get
+  // started: the words (the server's own copy for the consent id), the Terms' and the Privacy Policy's dates, when, where.
+  // Once per account per consent. 503 while it cannot be written (0049 not run yet): the app keeps it and sends it again.
+  if (action === "record_consent") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    const r = await recordConsent(admin, user_id, body, accountPlatform(event));
+    if (r.recorded) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: true }) };
+    if (r.error === "store_failed") { console.error("[beta:record_consent] not stored"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: r.error }) };
+  }
+
+  // SIGN IN WITH APPLE: KEEP WHAT DELETING THE ACCOUNT NEEDS TO REVOKE IT AT APPLE (App Store guideline 5.1.1(v), 1.1.7,
+  // _lib/appleTokens.js, migration 0049). Sent by the app after an Apple sign-in: the iPhone's one-time code, or the refresh
+  // token the website or Android got from Supabase. Stored sealed. Always 200 with { stored }: whatever happens, sign-in is
+  // unaffected and there is nothing for the person to see. Only an outcome is logged.
+  if (action === "apple_grant") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let stored = false;
+    try {
+      const admin = getAdminClient();
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      if (!error && data && isAppleUser(data.user)) {
+        const r = await storeAppleGrant(admin, user_id, body.grant);
+        stored = !!r.stored;
+        console.log(`[beta:apple_grant] ${r.stored ? `stored client=${r.client}` : `not stored: ${r.reason}${r.status ? ` status=${r.status}` : ""}`}`);
+      } else {
+        console.log("[beta:apple_grant] not stored: not_apple");
+      }
+    } catch { console.error("[beta:apple_grant] not stored: failed"); }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ stored }) };
   }
 
   if (action === "signup") {
