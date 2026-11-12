@@ -45,6 +45,18 @@ function pendingTrialWordIds() {
     .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
 
+// A FOURTH EXCEPTION, AS NARROW: THE 1.1.7 FIRST RUN'S CONSENT STEP (2026-11-12, placeholders until approved). The same
+// three conditions: the id starts "onboarding-consent-"; docs/product/FIRST-RUN-117-WORDS.md lists it with the placeholder
+// as its line; and it is in src/lib/firstRunWords.js. The same refusal keeps them from shipping.
+const FIRST_RUN_DOC = path.join(__dirname, "..", "docs", "product", "FIRST-RUN-117-WORDS.md");
+const FIRST_RUN_HOME = path.join("src", "lib", "firstRunWords.js");
+function pendingFirstRunWordIds() {
+  let doc = "";
+  try { doc = fs.readFileSync(FIRST_RUN_DOC, "utf8"); } catch { return []; }
+  return [...doc.matchAll(/^\| `(onboarding-consent-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: (onboarding-consent-[a-z0-9-]+)\] \| \d+ \|$/gm)]
+    .filter((m) => m[1] === m[2]).map((m) => m[1]);
+}
+
 // Every placeholder in a text, by its id.
 const placeholders = (src) => [...String(src).matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
 // The placeholders in a file that the exceptions do not cover: every one, unless the file is one of the two words files.
@@ -53,8 +65,9 @@ function strayPlaceholders(src, file) {
   const where = path.normalize(String(file || ""));
   if (where === HOME) { const pending = pendingCreatorWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (where === FIRST_RUN_HOME) { const pending = pendingFirstRunWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (TRIAL_HOMES.includes(where)) { const pending = pendingTrialWordIds(); return found.filter((id) => !pending.includes(id)); }
   return found;
 }
 
-module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, placeholders, strayPlaceholders };
+module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingFirstRunWordIds, placeholders, strayPlaceholders };

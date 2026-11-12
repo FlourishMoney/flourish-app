@@ -33,12 +33,11 @@ Every new account (email, Apple or Google) starts onboarding on a consent step. 
 
 The step stays because of its consent. The sign-up card's line covers Terms and Privacy only, and an Apple or Google sign-up never sees that card.
 
-| id | where | now |
-| --- | --- | --- |
-| `onboarding-consent-title` | the step's heading | placeholder |
-| `onboarding-consent-line` | the consent sentence, above the Terms and Privacy Policy links | placeholder |
-| (button) | the step's button | reuses the approved "Get started" |
+| id | where | facts it must state | line | limit |
+| --- | --- | --- | --- | --- |
+| `onboarding-consent-title` | the consent step's heading | what this step is | [WORDS: onboarding-consent-title] | 40 |
+| `onboarding-consent-line` | the consent sentence, above the Terms and Privacy Policy links | agreement to the Terms and Privacy Policy, and consent to the processing they describe | [WORDS: onboarding-consent-line] | 200 |
 
-Facts the line has to fit: it is the account's agreement to the Terms and Privacy Policy, and its consent to the processing those describe.
+The step's button reuses the approved "Get started".
 
 The placeholders live in `src/lib/firstRunWords.js` (`FIRST_RUN_PENDING`). `scripts/check-pending-words.mjs` refuses the production web build and every store build while either is left, so merging #136 before these are written makes the production deploy fail rather than ship them.
