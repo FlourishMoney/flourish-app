@@ -1049,7 +1049,7 @@ function usePlaidLinkSDK(linkToken, onSuccess, onExit) {
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => { markPlaidLinkClosed(); onSuccessRef.current(...args); },
-      onExit: (err, meta) => { markPlaidLinkClosed(); if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } markPlaidLinkClosed(); if (onExitRef.current) onExitRef.current(err || null, meta); },
     }).open();
   }, [sdkReady, linkToken]);
 

@@ -209,7 +209,7 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     t.eq([L.isPlaidLinkOpen(), (L.markPlaidLinkOpen(), L.isPlaidLinkOpen()), (L.markPlaidLinkOpen(), L.markPlaidLinkClosed(), L.isPlaidLinkOpen())], [false, true, false],
       "7a open until Link reports back; a yes or no, never left open by a second open");
     const sdk = APP.slice(APP.indexOf("function usePlaidLinkSDK("), APP.indexOf("\n}\n", APP.indexOf("function usePlaidLinkSDK(")));
-    t.ok(/markPlaidLinkOpen\(\);\s*window\.Plaid\.create\(/.test(sdk) && /onSuccess: \(\.\.\.args\) => \{ markPlaidLinkClosed\(\);/.test(sdk) && /onExit: \(err, meta\) => \{ markPlaidLinkClosed\(\);/.test(sdk),
+    t.ok(/markPlaidLinkOpen\(\);\s*window\.Plaid\.create\(/.test(sdk) && /onSuccess: \(\.\.\.args\) => \{ markPlaidLinkClosed\(\);/.test(sdk) && /onExit: \(err, meta\) => \{ if \(err\) \{[^}]*\} markPlaidLinkClosed\(\);/.test(sdk),
       "7b every Link the app opens is marked open, and closed on success or exit");
     t.ok(APP.includes("setUser(prev => (isPlaidLinkOpen() && prev && session?.user && prev.id === session.user.id) ? prev : (session?.user ?? null));"),
       "7c while Link is open, the same session announced again keeps the same account (no re-read, no loader under Link)");

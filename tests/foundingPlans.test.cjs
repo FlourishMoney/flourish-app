@@ -140,7 +140,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.ok(/planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown \}\)\) return;/.test(fx)
       && /\},\[storeBilling, user\?\.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep\]\);/.test(fx),
       "5b it waits for this account's answer, its plan, its data, Apple's AI disclosure (5.1.2), the end of onboarding and the intro tips (Flourish first, 2026-11-05)");
-    t.ok(/if\(!onboarded\)return <><Onboarding\n/.test(APP) && /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\/>\{storePaywallOverlay\}<\/>;/.test(APP),
+    t.ok(/if\(!onboarded\)return <><Onboarding key="before"\n/.test(APP) && /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\/>\{storePaywallOverlay\}<\/>;/.test(APP),
       "5c the overlay is still drawn over onboarding, but it never opens there by itself: inApp needs onboarding finished (5b)");
     t.ok(/return <><FirstVisitScreen /.test(APP) && /signalOnboarding\("first_number_shown",[^\n]*\}\}\/>\{storePaywallOverlay\}<\/>;/.test(APP), "5d …and over the first-number screen");
     t.ok(APP.indexOf("const storePaywallOverlay =") < APP.indexOf("if(!user && !appData?.demo)return <AuthScreen"), "5e the overlay is built before the early returns that use it");

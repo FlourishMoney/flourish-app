@@ -336,8 +336,8 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
       } catch (e) { t.ok(false, `5e-5g backgroundRefresh: ${describe(e)}`); } finally { global.fetch = realFetch; }
     }
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/document\.addEventListener\("visibilitychange", onShow\)/.test(APP) && /if \(document\.visibilityState === "visible"\) refreshBanksRef\.current\?\.\(\)/.test(APP),
-      "5h the app looks again each time it comes back on screen (a phone app resumed, a tab shown)");
+    t.ok(/document\.addEventListener\("visibilitychange", onShow\)/.test(APP) && /if \(document\.visibilityState === "visible" && !isPlaidLinkOpen\(\)\) refreshBanksRef\.current\?\.\(\)/.test(APP),
+      "5h the app looks again each time it comes back on screen (a phone app resumed, a tab shown), except while Plaid Link is open (1.1.7)");
     t.ok(/const waiting = items\.some\(it => it && it\.transactions_pending\);/.test(APP) && /const forced = force \|\| waiting \|\| pending\.length > 0;/.test(APP),
       "5i new transactions waiting (the webhook's flag) or a history loading: no 30-minute wait");
   }
