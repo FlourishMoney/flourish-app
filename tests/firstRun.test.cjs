@@ -195,6 +195,8 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     const at = textOf(after);
     t.ok(at.includes("Your bills") && at.includes(W.billsLead) && at.includes(W.notNow) && /value="Hydro"/.test(after) && !at.includes("Link your accounts"),
       "6c the after step opens on bills, seeded with what the household has, with \"Not now\"");
+    const found = textOf(A.render(A.h(A.Onboarding, { phase: "after", initialBills: [{ name: "Netflix", amount: 16.99, date: 12, auto: true }], initialDebts: [], onComplete: () => {}, onLater: () => {} })));
+    t.ok(/We found 1 recurring bill/.test(found) && !/Bills will auto-detect/.test(found), "6c2 after the number, a linked bank's bills are shown as found, not as still to come");
     const fv = (bills) => textOf(A.render(A.h(A.FirstVisitScreen, { data: { ...A.buildDemoState("CA"), demo: false, bills, profile: { ...A.buildDemoState("CA").profile, billsAfterNumber: "pending" } }, onDismiss: () => {} })));
     t.ok(fv([]).includes(W.billsPending) && !fv([{ name: "Rent", amount: "1", date: "1" }]).includes(W.billsPending), "6d the first number says bills aren't in it yet, only while there are none");
     const bank = textOf(as("ios", () => A.render(A.h(A.Onboarding, { onComplete: () => {} }))));

@@ -4298,7 +4298,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const connAccts = Array.isArray(connectedAccounts) ? connectedAccounts : [];
   const [plaidTxns,setPlaidTxns]=useState([]);
   const [linkToken,setLinkToken]=useState(null);
-  const [detectedBills,setDetectedBills]=useState(null); // null=not yet detected, []=detected but empty
+  // null=not yet detected, []=detected but empty. After the number, the bills the bank showed are already in the household's
+  // data (marked auto), so the step says what was found rather than that detection is still to come.
+  const [detectedBills,setDetectedBills]=useState(()=>after&&Array.isArray(initialBills)&&initialBills.some(b=>b&&b.auto)?initialBills.filter(b=>b&&b.auto):null);
 
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
