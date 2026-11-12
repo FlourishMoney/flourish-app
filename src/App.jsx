@@ -15902,92 +15902,6 @@ function StoreBadges(){
   );
 }
 
-// THE STORE APPS' FIRST SCREEN (1.1.7): the value before any account. The sample number is the demo household's own,
-// worked out by the same engine as Today, and labelled as an example; "Get started" is the way in, "Log in" a small link.
-function AppWelcome({ onGetStarted, onLogIn, onDemo }) {
-  const view = useMemo(() => {
-    try {
-      const d = buildDemoState("CA");
-      return safeToSpendView(SafeSpendEngine.calculate(d), { hasCashAccount: true, hasIncome: true });
-    } catch { return null; }
-  }, []);
-  const W = FIRST_RUN_WORDS;
-  return (
-    <div data-app-welcome="" style={{ minHeight: "100dvh", background: AUTH_C.page, color: AUTH_C.ink, display: "flex", justifyContent: "center", padding: `${SPACE.xl}px ${SPACE.xl}px` }}>
-      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: SPACE.lg }}>
-        <div style={{ display: "flex", justifyContent: "center", marginTop: SPACE.md }}><FlourishLockup size={48} color={AUTH_C.heading} /></div>
-        <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 30, lineHeight: 1.15, fontWeight: 900, color: AUTH_C.heading, textAlign: "center", margin: 0 }}>{W.valueHeadline}</h1>
-        <p style={{ color: AUTH_C.muted, fontSize: 15, lineHeight: 1.6, textAlign: "center", margin: 0 }}>{W.valueLead}</p>
-        {view && view.headline != null && (
-          <div data-sample-number="" style={{ background: AUTH_C.card, border: `1px solid ${AUTH_C.border}`, borderRadius: 22, padding: SPACE.lg, boxShadow: "0 10px 30px rgba(22,58,28,0.07)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", rowGap: SPACE.xs, columnGap: SPACE.sm }}>
-              <span style={{ color: AUTH_C.heading, fontWeight: 700, fontSize: 13 }}>{W.sampleLabel}</span>
-              <span data-sample-tag="" style={{ background: "#f3ead6", border: "1px solid #e3d3ad", color: "#7a5a12", borderRadius: 99, padding: "2px 10px", fontSize: 13, fontWeight: 700 }}>{W.sampleTag}</span>
-            </div>
-            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 56, lineHeight: 1.1, color: AUTH_C.heading, margin: `${SPACE.sm}px 0` }}>{formatMoney(view.headline)}</div>
-            {view.rows.map(r => (
-              <div key={r.key} style={{ display: "flex", justifyContent: "space-between", gap: SPACE.sm, fontSize: 13, color: AUTH_C.muted, padding: "2px 0" }}>
-                <span>{r.sign ? `${r.sign} ` : ""}{r.label}</span><span style={{ color: AUTH_C.ink, fontWeight: 700 }}>{r.value}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <button data-get-started="" onClick={onGetStarted} style={{ minHeight: LAYOUT.minTap, width: "100%", padding: "14px 22px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#2E8B2E,#1f6b22)", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{W.getStarted}</button>
-        <div style={{ textAlign: "center", color: AUTH_C.muted, fontSize: 14 }}>
-          {W.haveAccount} <button data-welcome-login="" onClick={onLogIn} style={{ background: "none", border: "none", color: AUTH_C.link, fontWeight: 700, fontSize: 14, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, minHeight: LAYOUT.minTap, padding: "0 6px", fontFamily: "inherit" }}>{W.logIn}</button>
-        </div>
-        {onDemo && (
-          <div style={{ textAlign: "center" }}>
-            <button onClick={onDemo} style={{ minHeight: LAYOUT.minTap, background: AUTH_C.card, border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 {W.demo}</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// SIGN IN WITH APPLE AND GOOGLE (1.1.7, lib/socialSignIn.js): on the sign-up and log-in cards, website and apps, above
-// the email form. The session lands through Supabase; the app's auth listener does the rest.
-function SocialSignIn({ onFailed }) {
-  const [busy, setBusy] = useState(null);
-  const platform = (() => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } })();
-  const go = async (provider) => {
-    if (busy) return;
-    setBusy(provider);
-    let res = { ok: false };
-    try {
-      const native = isNativeApp();
-      const [appleSignIn, browser, appListener] = native ? await Promise.all([
-        platform === "ios" && provider === "apple" ? import("@capacitor-community/apple-sign-in").then(m => m.SignInWithApple) : null,
-        import("@capacitor/browser").then(m => m.Browser),
-        import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
-      ]) : [null, null, null];
-      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener });
-    } catch { res = { ok: false }; }
-    if (!res.redirecting) setBusy(null);
-    if (!res.ok) onFailed && onFailed();
-  };
-  const W = FIRST_RUN_WORDS;
-  const btn = (dark) => ({ width: "100%", minHeight: LAYOUT.minTap, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 16px", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif", border: dark ? "none" : `1.5px solid ${AUTH_C.inputBorder}`, background: dark ? "#000" : "#fff", color: dark ? "#fff" : "#1f1f1f" });
-  return (
-    <div data-social-signin="" style={{ display: "flex", flexDirection: "column", gap: SPACE.sm, marginBottom: SPACE.lg }}>
-      {SOCIAL_PROVIDERS.includes("apple") && <button data-provider="apple" onClick={() => go("apple")} disabled={!!busy} style={btn(true)}>
-        <svg aria-hidden="true" width="16" height="19" viewBox="0 0 814 1000" fill="currentColor"><path d="M788 341c-6 4-110 63-110 193 0 151 132 204 136 205-1 3-21 73-70 145-43 63-89 126-158 126s-87-40-167-40c-78 0-106 41-169 41s-107-58-158-129C33 798 0 663 0 534c0-207 135-317 267-317 70 0 129 46 173 46 42 0 107-49 187-49 31 0 140 3 161 127zM554 160c33-39 56-93 56-147 0-8-1-15-2-21-53 2-117 36-155 80-30 34-58 88-58 143 0 8 1 16 2 19 3 0 9 1 14 1 48 0 108-32 143-75z"/></svg>
-        {busy === "apple" ? "…" : W.continueApple}
-      </button>}
-      {SOCIAL_PROVIDERS.includes("google") && <button data-provider="google" onClick={() => go("google")} disabled={!!busy} style={btn(false)}>
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.1 5.5c4.2-3.9 7.2-9.6 7.2-16.9z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.4-4.6 2.2-8.8 2.2-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
-        {busy === "google" ? "…" : W.continueGoogle}
-      </button>}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: SPACE.xs }}>
-        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
-        <span style={{ color: AUTH_C.muted, fontSize: 13 }}>{W.orEmail}</span>
-        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
-      </div>
-    </div>
-  );
-}
-
 function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpfOn = false }) {
   // 1.1.7: a store app opens on its value screen ("welcome"), never on a log-in form a new person can't use.
   const [mode, setMode] = useState(() => (isNativeApp() && !startOnLogin ? "welcome" : "login"));
@@ -16864,6 +16778,92 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
   );
 }
 
+
+// THE STORE APPS' FIRST SCREEN (1.1.7): the value before any account. The sample number is the demo household's own,
+// worked out by the same engine as Today, and labelled as an example; "Get started" is the way in, "Log in" a small link.
+function AppWelcome({ onGetStarted, onLogIn, onDemo }) {
+  const view = useMemo(() => {
+    try {
+      const d = buildDemoState("CA");
+      return safeToSpendView(SafeSpendEngine.calculate(d), { hasCashAccount: true, hasIncome: true });
+    } catch { return null; }
+  }, []);
+  const W = FIRST_RUN_WORDS;
+  return (
+    <div data-app-welcome="" style={{ minHeight: "100dvh", background: AUTH_C.page, color: AUTH_C.ink, display: "flex", justifyContent: "center", padding: `${SPACE.xl}px ${SPACE.xl}px` }}>
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: SPACE.lg }}>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: SPACE.md }}><FlourishLockup size={48} color={AUTH_C.heading} /></div>
+        <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 30, lineHeight: 1.15, fontWeight: 900, color: AUTH_C.heading, textAlign: "center", margin: 0 }}>{W.valueHeadline}</h1>
+        <p style={{ color: AUTH_C.muted, fontSize: 15, lineHeight: 1.6, textAlign: "center", margin: 0 }}>{W.valueLead}</p>
+        {view && view.headline != null && (
+          <div data-sample-number="" style={{ background: AUTH_C.card, border: `1px solid ${AUTH_C.border}`, borderRadius: 22, padding: SPACE.lg, boxShadow: "0 10px 30px rgba(22,58,28,0.07)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", rowGap: SPACE.xs, columnGap: SPACE.sm }}>
+              <span style={{ color: AUTH_C.heading, fontWeight: 700, fontSize: 13 }}>{W.sampleLabel}</span>
+              <span data-sample-tag="" style={{ background: "#f3ead6", border: "1px solid #e3d3ad", color: "#7a5a12", borderRadius: 99, padding: "2px 10px", fontSize: 13, fontWeight: 700 }}>{W.sampleTag}</span>
+            </div>
+            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 56, lineHeight: 1.1, color: AUTH_C.heading, margin: `${SPACE.sm}px 0` }}>{formatMoney(view.headline)}</div>
+            {view.rows.map(r => (
+              <div key={r.key} style={{ display: "flex", justifyContent: "space-between", gap: SPACE.sm, fontSize: 13, color: AUTH_C.muted, padding: "2px 0" }}>
+                <span>{r.sign ? `${r.sign} ` : ""}{r.label}</span><span style={{ color: AUTH_C.ink, fontWeight: 700 }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button data-get-started="" onClick={onGetStarted} style={{ minHeight: LAYOUT.minTap, width: "100%", padding: "14px 22px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#2E8B2E,#1f6b22)", color: textOn("#2E8B2E", "#1f6b22"), fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{W.getStarted}</button>
+        <div style={{ textAlign: "center", color: AUTH_C.muted, fontSize: 14 }}>
+          {W.haveAccount} <button data-welcome-login="" onClick={onLogIn} style={{ background: "none", border: "none", color: AUTH_C.link, fontWeight: 700, fontSize: 14, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, minHeight: LAYOUT.minTap, padding: "0 6px", fontFamily: "inherit" }}>{W.logIn}</button>
+        </div>
+        {onDemo && (
+          <div style={{ textAlign: "center" }}>
+            <button onClick={onDemo} style={{ minHeight: LAYOUT.minTap, background: AUTH_C.card, border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 {W.demo}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// SIGN IN WITH APPLE AND GOOGLE (1.1.7, lib/socialSignIn.js): on the sign-up and log-in cards, website and apps, above
+// the email form. The session lands through Supabase; the app's auth listener does the rest.
+function SocialSignIn({ onFailed }) {
+  const [busy, setBusy] = useState(null);
+  const platform = (() => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } })();
+  const go = async (provider) => {
+    if (busy) return;
+    setBusy(provider);
+    let res = { ok: false };
+    try {
+      const native = isNativeApp();
+      const [appleSignIn, browser, appListener] = native ? await Promise.all([
+        platform === "ios" && provider === "apple" ? import("@capacitor-community/apple-sign-in").then(m => m.SignInWithApple) : null,
+        import("@capacitor/browser").then(m => m.Browser),
+        import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
+      ]) : [null, null, null];
+      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener });
+    } catch { res = { ok: false }; }
+    if (!res.redirecting) setBusy(null);
+    if (!res.ok) onFailed && onFailed();
+  };
+  const W = FIRST_RUN_WORDS;
+  const btn = (dark) => ({ width: "100%", minHeight: LAYOUT.minTap, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 16px", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif", border: dark ? "none" : `1.5px solid ${AUTH_C.inputBorder}`, background: dark ? "#000" : "#fff", color: textOn(dark ? "#000000" : "#FFFFFF") });
+  return (
+    <div data-social-signin="" style={{ display: "flex", flexDirection: "column", gap: SPACE.sm, marginBottom: SPACE.lg }}>
+      {SOCIAL_PROVIDERS.includes("apple") && <button data-provider="apple" onClick={() => go("apple")} disabled={!!busy} style={btn(true)}>
+        <svg aria-hidden="true" width="16" height="19" viewBox="0 0 814 1000" fill="currentColor"><path d="M788 341c-6 4-110 63-110 193 0 151 132 204 136 205-1 3-21 73-70 145-43 63-89 126-158 126s-87-40-167-40c-78 0-106 41-169 41s-107-58-158-129C33 798 0 663 0 534c0-207 135-317 267-317 70 0 129 46 173 46 42 0 107-49 187-49 31 0 140 3 161 127zM554 160c33-39 56-93 56-147 0-8-1-15-2-21-53 2-117 36-155 80-30 34-58 88-58 143 0 8 1 16 2 19 3 0 9 1 14 1 48 0 108-32 143-75z"/></svg>
+        {busy === "apple" ? "…" : W.continueApple}
+      </button>}
+      {SOCIAL_PROVIDERS.includes("google") && <button data-provider="google" onClick={() => go("google")} disabled={!!busy} style={btn(false)}>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.1 5.5c4.2-3.9 7.2-9.6 7.2-16.9z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.4-4.6 2.2-8.8 2.2-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+        {busy === "google" ? "…" : W.continueGoogle}
+      </button>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: SPACE.xs }}>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+        <span style={{ color: AUTH_C.muted, fontSize: 13 }}>{W.orEmail}</span>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+      </div>
+    </div>
+  );
+}
 
 // ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
 // ── Quality Sprint item 4: shared modal family (replaces window.confirm/alert/prompt) ─────────

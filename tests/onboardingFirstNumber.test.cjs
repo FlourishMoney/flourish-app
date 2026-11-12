@@ -173,7 +173,7 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
   t.ok(ob.includes(`>${W1}</label>`) && ob.includes(W1_HELP), "6a W1 and its helper on the paycheque screen");
   t.ok(/const PAYDAY_FREQS = \["weekly", ?"biweekly", ?"semimonthly"\]/.test(ob.replace(/\s+/g, " ").replace(/" ,/g, "\",")) || /PAYDAY_FREQS\s*=\s*\[\s*"weekly"\s*,\s*"biweekly"\s*,\s*"semimonthly"\s*\]/.test(ob),
     "6b …for weekly, every two weeks and twice a month");
-  t.ok(/onClick=\{\(\)=>done\("income",3\)\} disabled=\{[^}]*\|\| incomes\.some\(payDateMissing\)\}/.test(ob), "6c Continue waits for it");
+  t.ok(/onClick=\{finishBeforeNumber\} disabled=\{[^}]*\|\| incomes\.some\(payDateMissing\)\}/.test(ob), "6c Continue (now the step that shows the number, 1.1.7) waits for it");
   t.ok(!/About you/.test(ob) && !/Your credit score|credit-score/i.test(ob.replace(/\/\/[^\n]*|\{\/\*[\s\S]*?\*\/\}/g, "")), "6d no About you screen and no credit-score screen in onboarding");
   t.ok(/sourceTypes:\["employment"\]/.test(ob) && /data-income-type-toggle/.test(ob) && /aria-expanded=/.test(ob), "6e Employment by default; the type grid collapsed behind a toggle");
   t.ok(ob.includes(W4) && /label="Try again"/.test(ob) && /label="Enter it myself" onClick=\{\(\)=>\{ setBankOutcome\(null\); skipBank\(\); \}\}/.test(ob), "6f W4 with \"Try again\" and \"Enter it myself\"");

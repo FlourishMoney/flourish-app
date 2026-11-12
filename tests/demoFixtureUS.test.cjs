@@ -151,8 +151,8 @@ const { create } = require("./_runner.cjs");
     // the strip. Every demo entry in AuthScreen passes the chosen country; there are four.
     const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\n}\n", app.indexOf("function AuthScreen(")));
     const calls = auth.match(/onTryDemo\([^)]*\)/g) || [];
-    t.eq([calls.length, calls.filter(c => c === "onTryDemo(waitlistCountry)").length], [4, 4],
-      "5f …at all four of its demo entry points (the hero's card, the hero's demo button, each screenshot, and the iOS shell), and no call passes anything else");
+    t.eq([calls.length, calls.filter(c => c === "onTryDemo(waitlistCountry)").length], [5, 5],
+      "5f …at all five of its demo entry points (the hero's card, the hero's demo button, each screenshot, the store apps' sign-in card and their value screen, 1.1.7), and no call passes anything else");
     t.ok(/onTryDemo=\{\(country\)=>\{ const dd=buildDemoState\(country\);/.test(app),
       "5g and the handler feeds that country straight into buildDemoState");
     t.ok(/onComplete\(buildDemoState\(p\.country\)\)/.test(app),

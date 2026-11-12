@@ -140,7 +140,8 @@ async function call({ body, user, now, upsertError = null }) {
   // ── 6. the wiring ───────────────────────────────────────────────────────────────────────────────────────
   const beta = read("netlify/functions/beta.js");
   t.ok(/recordMilestone\(admin, newAccountId, "signed_up", platform\)/.test(beta), "6a signup records the channel the account was made on");
-  t.ok(beta.indexOf('"signed_up"') > beta.indexOf("if (newAccountId && !isTestEmail(email))") && beta.indexOf('"signed_up"') < beta.indexOf("if (newAccountId && testerCode)"),
+  const signupMilestone = beta.indexOf('recordMilestone(admin, newAccountId, "signed_up"');   // the email signup's (Apple and Google: socialSignIn test)
+  t.ok(signupMilestone > beta.indexOf("if (newAccountId && !isTestEmail(email))") && signupMilestone < beta.indexOf("if (newAccountId && testerCode)"),
     "6b …inside the test-address check, beside the account's attribution");
   const rcw = read("netlify/functions/revenuecat-webhook.js");
   t.ok(/revenueCatMilestone\(evt\)/.test(rcw) && rcw.indexOf("revenueCatMilestone(evt)") > rcw.indexOf("billing_events\").insert") && rcw.indexOf("revenueCatMilestone(evt)") < rcw.indexOf("syncStoreSubscription(admin"),
