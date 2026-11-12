@@ -11,6 +11,11 @@
 
 export const APPLE_GRANT_FLAG = "flourish_apple_grant_pending";
 
+/** Where the website's mark is kept: this tab's sessionStorage (it must survive the trip to Apple and back), or null. */
+export function appleGrantStorage() {
+  try { return globalThis.sessionStorage || null; } catch { return null; }
+}
+
 /** The website, just before leaving for Apple's page. */
 export function markWebAppleSignIn(storage) {
   try { storage && storage.setItem(APPLE_GRANT_FLAG, "1"); } catch { /* no grant kept; deleting still deletes */ }

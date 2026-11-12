@@ -75,7 +75,7 @@ import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
 import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
-import { sendAppleGrant, takeWebAppleGrant } from "./lib/appleGrant.js";
+import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
@@ -16862,8 +16862,7 @@ function SocialSignIn({ onFailed }) {
         import("@capacitor/browser").then(m => m.Browser),
         import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
       ]) : [null, null, null];
-      let storage = null; try { storage = window.sessionStorage; } catch { storage = null; }
-      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage });
+      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage: appleGrantStorage() });
       // An Apple sign-in in the app: what deleting the account will need to revoke it at Apple (lib/appleGrant.js). Not waited for.
       if (res && res.ok && res.appleGrant) supabase.auth.getSession().then(({ data }) => sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE })).catch(() => {});
     } catch { res = { ok: false }; }
@@ -18669,8 +18668,7 @@ export default function FlourishApp(){
     if (!user?.id || isNativeApp()) return;
     supabase.auth.getSession().then(({ data }) => {
       const s = data?.session;
-      let storage = null; try { storage = window.sessionStorage; } catch { storage = null; }
-      const grant = takeWebAppleGrant(s, storage);
+      const grant = takeWebAppleGrant(s, appleGrantStorage());
       if (grant && s?.access_token) sendAppleGrant({ grant, jwt: s.access_token, apiBase: API_BASE });
     }).catch(() => { /* nothing kept; deleting still deletes */ });
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
