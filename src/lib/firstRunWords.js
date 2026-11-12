@@ -1,6 +1,6 @@
 // src/lib/firstRunWords.js
 // -----------------------------------------------------------------------------
-// THE FIRST RUN'S NEW WORDS (1.1.7, Amanda 2026-11-11, from the first-run audit). Every new or changed line is here, in
+// THE FIRST RUN'S NEW WORDS (1.1.7, 2026-11-11, from the first-run audit). Every new or changed line is here, in
 // one place, so the review block for ChatGPT and Grok is this file and nothing else. NOT YET APPROVED: the 1.1.7 PR is
 // not merged until they are. tests/firstRun.test.cjs holds the code to these words and the copy rules (lowercase
 // flourish, no dash, no competitor, no money instruction, no "learns" or "remembers").

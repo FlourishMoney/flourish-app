@@ -74,6 +74,7 @@ import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_H
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
+import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
@@ -1043,10 +1044,12 @@ function usePlaidLinkSDK(linkToken, onSuccess, onExit) {
 
   const openPlaidLink = useCallback(() => {
     if (!sdkReady || !window.Plaid || !linkToken) return;
+    // Open until it reports back (lib/plaidLinkOpen.js): coming back from the bank's own app must not start anything over under it.
+    markPlaidLinkOpen();
     window.Plaid.create({
       token: linkToken,
-      onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
+      onSuccess: (...args) => { markPlaidLinkClosed(); onSuccessRef.current(...args); },
+      onExit: (err, meta) => { markPlaidLinkClosed(); if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -4231,7 +4234,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
 // score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
 // completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
-// FIRST RUN (1.1.7, Amanda 2026-11-11): two phases. "before": welcome, the bank (or a statement, or enter it myself and the
+// FIRST RUN (1.1.7, 2026-11-11): two phases. "before": welcome, the bank (or a statement, or enter it myself and the
 // balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
 // debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
 // still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
@@ -18247,6 +18250,7 @@ export default function FlourishApp(){
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
       if(document.visibilityState!=="visible") return;
+      if(isPlaidLinkOpen()) return;   // back from the bank's own app with Link open: nothing changes under it
       askStore("store_status").then(s=>{ if(s) setStoreStatus(s); }).catch(()=>{});
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -18596,7 +18600,9 @@ export default function FlourishApp(){
         if (fromInit) setAuthLoading(false);
         return;
       }
-      setUser(session?.user ?? null);
+      // Plaid Link open (lib/plaidLinkOpen.js): back from the bank's app, supabase-js announces the same session again.
+      // Keep the same account object so nothing re-reads under Link; only the token is taken. Otherwise, as before.
+      setUser(prev => (isPlaidLinkOpen() && prev && session?.user && prev.id === session.user.id) ? prev : (session?.user ?? null));
       accessTokenRef.current = session?.access_token || null; // Sprint Z2 #12: keep JWT fresh for the exit beacon
       if (fromInit) setAuthLoading(false);
     };
@@ -18774,6 +18780,7 @@ export default function FlourishApp(){
   useEffect(()=>{
     const onVis = async ()=>{
       if (document.visibilityState !== "visible") return;
+      if (isPlaidLinkOpen()) return;   // Link open: the household is looked at again on the next return
       const hh = householdRef.current;
       if (!hh || !user || hydratedUidRef.current !== user.id) return;
       let remote;
@@ -19553,7 +19560,7 @@ export default function FlourishApp(){
   },[appData?.bankConnected, isPremium]);
   // Back on screen (a phone app resumed, a browser tab shown again): look again, under the same rules.
   useEffect(()=>{
-    const onShow = () => { if (document.visibilityState === "visible") refreshBanksRef.current?.(); };
+    const onShow = () => { if (document.visibilityState === "visible" && !isPlaidLinkOpen()) refreshBanksRef.current?.(); };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
   },[]);
@@ -19657,7 +19664,9 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);signalCheckIn("weekly", appData?.demo);}}/>;
-  if(!onboarded)return <><Onboarding
+  // Keyed by phase: with the first-number screen already seen on this device, "after" follows "before" directly, and
+  // without a key React would keep the first phase's step (pay) instead of starting the second at the bills.
+  if(!onboarded)return <><Onboarding key="before"
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
     onComplete={d=>{
@@ -19682,7 +19691,7 @@ export default function FlourishApp(){
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
   // 1.1.7: bills and debts come AFTER the first number, for a household onboarded from 1.1.7 on (billsAfterNumber
   // "pending", set by onboarding's first phase). "Not now" leaves them to the checklist on Today.
-  if(firstVisitDone&&appData&&!appData.demo&&appData.profile?.billsAfterNumber==="pending")return <><Onboarding phase="after"
+  if(firstVisitDone&&appData&&!appData.demo&&appData.profile?.billsAfterNumber==="pending")return <><Onboarding key="after" phase="after"
     initialBills={appData.bills||[]} initialDebts={appData.debts||[]}
     connectedAccounts={appData?.accounts||[]} onAccountsConnected={promoteConnectedAccounts} onViewLegal={s=>setScreen(s)} userId={user?.id} tpfOn={tpfOn}
     onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}

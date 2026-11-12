@@ -1,6 +1,6 @@
 // tests/firstRun.test.cjs
 // -----------------------------------------------------------------------------
-// THE FIRST RUN, 1.1.7 (Amanda, 2026-11-11, from the first-run audit):
+// THE FIRST RUN, 1.1.7 (2026-11-11, from the first-run audit):
 //   1  the words: one file (lib/firstRunWords.js), every line used, and the copy rules (lowercase flourish, no dash, no
 //      competitor, no "learns" or "remembers", no money instruction, no verdict).
 //   2  the store apps open on a value screen: the demo household's own number, labelled as an example, "Get started"
@@ -74,7 +74,7 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     t.eq(entries.filter(([k, v]) => k !== "getStarted" && (STARTS.test(v) || VERDICT.test(v))).map(([k]) => k), [],
       "1c no line starts with a money instruction or holds a verdict (\"Get started\" is the approved go-live button)");
     t.eq(entries.filter(([k]) => !APP.includes(`W.${k}`) && !APP.includes(`FIRST_RUN_WORDS.${k}`)).map(([k]) => k), [], "1d every line is used");
-    t.eq(W.sampleTag, "Example, sample data", "1e the sample number is labelled as Amanda asked");
+    t.eq(W.sampleTag, "Example, sample data", "1e the sample number is labelled as asked");
   }
 
   // ── 2. The value screen ─────────────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
       (await socialSignup(fresh("google"), { hadMilestone: true })).body.recorded],
       [true, false, false, false], "5b Apple too; never an email account, an account older than 15 minutes, or one already counted");
     t.eq((await socialSignup(fresh("google"), { signedIn: false })).status, 401, "5c only for the signed-in account");
-    const test = await socialSignup(fresh("google", 2, "amanda@flourishmoney.app"));
+    const test = await socialSignup(fresh("google", 2, "test@flourishmoney.app"));
     t.ok(!test.writes.some(w => w.table === "account_milestones"), "5d a test address is not put in the funnel");
     t.ok(/useEffect\(\(\) => \{\s*const provider = user\?\.app_metadata\?\.provider;[\s\S]{0,700}action: "social_signup"/.test(APP), "5e the app asks once, after a new Apple or Google sign-in");
   }
@@ -189,8 +189,8 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
   {
     const ob = APP.slice(APP.indexOf("function Onboarding({"), APP.indexOf("\nfunction ", APP.indexOf("function Onboarding({") + 30));
     t.ok(/<Btn label=\{FIRST_RUN_WORDS\.showNumber\} onClick=\{finishBeforeNumber\}/.test(ob) && /billsAfterNumber:"pending"/.test(ob), "6a pay and the next payday are the last questions: the number comes next, bills and debts marked to do");
-    t.ok(/if\(firstVisitDone&&appData&&!appData\.demo&&appData\.profile\?\.billsAfterNumber==="pending"\)return <><Onboarding phase="after"/.test(APP),
-      "6b after the number: bills then debts, only for a household marked to do them (nobody onboarded before 1.1.7)");
+    t.ok(/if\(firstVisitDone&&appData&&!appData\.demo&&appData\.profile\?\.billsAfterNumber==="pending"\)return <><Onboarding key="after" phase="after"/.test(APP) && /if\(!onboarded\)return <><Onboarding key="before"/.test(APP),
+      "6b after the number: bills then debts, only for a household marked to do them (nobody onboarded before 1.1.7), each phase its own screen (keyed)");
     const after = A.render(A.h(A.Onboarding, { phase: "after", initialBills: [{ name: "Hydro", amount: 90, date: 15 }], initialDebts: [], onComplete: () => {}, onLater: () => {} }));
     const at = textOf(after);
     t.ok(at.includes("Your bills") && at.includes(W.billsLead) && at.includes(W.notNow) && /value="Hydro"/.test(after) && !at.includes("Link your accounts"),
@@ -201,6 +201,22 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     t.ok(APP.includes("{FIRST_RUN_WORDS.statementTitle}</div>") && APP.includes("{FIRST_RUN_WORDS.statementSub}</div>") && !APP.includes("📄 Upload a statement instead"),
       "6e the statement import is offered beside the bank as a first path, in its own words");
     t.ok(bank.length > 0, "6f onboarding still renders from its first screen");
+  }
+
+  // ── 7. Leaving the app with Plaid Link open (a bank's "did you just sign in?" in its own app) ──────────────────────
+  {
+    const L = await import(path.join(REPO, "src", "lib", "plaidLinkOpen.js"));
+    t.eq([L.isPlaidLinkOpen(), (L.markPlaidLinkOpen(), L.isPlaidLinkOpen()), (L.markPlaidLinkOpen(), L.markPlaidLinkClosed(), L.isPlaidLinkOpen())], [false, true, false],
+      "7a open until Link reports back; a yes or no, never left open by a second open");
+    const sdk = APP.slice(APP.indexOf("function usePlaidLinkSDK("), APP.indexOf("\n}\n", APP.indexOf("function usePlaidLinkSDK(")));
+    t.ok(/markPlaidLinkOpen\(\);\s*window\.Plaid\.create\(/.test(sdk) && /onSuccess: \(\.\.\.args\) => \{ markPlaidLinkClosed\(\);/.test(sdk) && /onExit: \(err, meta\) => \{ markPlaidLinkClosed\(\);/.test(sdk),
+      "7b every Link the app opens is marked open, and closed on success or exit");
+    t.ok(APP.includes("setUser(prev => (isPlaidLinkOpen() && prev && session?.user && prev.id === session.user.id) ? prev : (session?.user ?? null));"),
+      "7c while Link is open, the same session announced again keeps the same account (no re-read, no loader under Link)");
+    t.ok(/if\(isPlaidLinkOpen\(\)\) return;\s*\/\/ back from the bank's own app[^\n]*\n\s*askStore\("store_status"\)/.test(APP)
+      && /if \(isPlaidLinkOpen\(\)\) return;\s*\/\/ Link open: the household/.test(APP)
+      && APP.includes('if (document.visibilityState === "visible" && !isPlaidLinkOpen()) refreshBanksRef.current?.();'),
+      "7d …and the store, household and bank checks wait while it is open (browser test R1: they still run once it is closed)");
   }
 
   t.summary("firstRun.test");

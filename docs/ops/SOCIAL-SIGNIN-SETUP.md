@@ -1,4 +1,4 @@
-# Sign in with Apple and Google: what Amanda sets up (1.1.7)
+# Sign in with Apple and Google: what the account owner sets up (1.1.7)
 
 These steps need your logins. Nothing in them is a value Claude can guess: every key, ID and secret is created here and pasted straight into Supabase. **Do all of them before the 1.1.7 PR merges.** Merging deploys the website, and its Apple and Google buttons only work once Supabase has both providers.
 

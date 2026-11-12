@@ -63,8 +63,11 @@ function bankTxns(today = new Date()) {
 }
 
 // Plaid's Link script, as a stand-in: what open() does is set by window.__plaidMode before each tap.
-const PLAID_STUB = `window.Plaid = { create: function (cfg) { return { open: function () {
+// "wait" holds Link open, as a bank's "did you just sign in?" approval does, until window.__plaidFinish(mode).
+const PLAID_STUB = `window.__plaidOpens = 0; window.Plaid = { create: function (cfg) { return { open: function () {
+  window.__plaidOpens++;
   var m = window.__plaidMode || "success";
+  if (m === "wait") { window.__plaidFinish = function (f) { if (f === "success") cfg.onSuccess("public-test-token", { institution: { name: "Test Bank" } }); else cfg.onExit(null, { status: "requires_credentials" }); }; return; }
   setTimeout(function () {
     if (m === "success") cfg.onSuccess("public-test-token", { institution: { name: "Test Bank" } });
     else if (m === "cancel") cfg.onExit(null, { status: "requires_credentials" });
@@ -107,9 +110,9 @@ function buildApp(supabaseUrl) {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
     } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), signedIn]);
-    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [] };
+    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0 };
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
-      ? r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" })
+      ? (seen.reads++, r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" }))
       : (seen.saved.push(r.request().postData() || ""), r.fulfill({ status: 201, contentType: "application/json", body: "[]" })));
     if (user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) }));
     await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
@@ -333,6 +336,44 @@ function buildApp(supabaseUrl) {
       await page.getByRole("button", { name: "Enter it myself", exact: true }).first().click();
       t.ok(/Your chequing balance/.test(await text(page)), "3d \"Enter it myself\" goes to the balance");
     }
+    await ctx.close();
+  }
+
+  // ── leaving with Link open (1.1.7) ─────────────────────────────────────────────────────
+  // A bank asks the person to approve the sign-in in its own app: flourish goes to the background with Link open and
+  // comes back. Coming back must not start anything over under Link (lib/plaidLinkOpen.js).
+  {
+    const { ctx, page, seen, errs } = await open();
+    const away = async () => {
+      await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); Object.defineProperty(document, "hidden", { value: true, configurable: true }); document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); });
+      await page.waitForTimeout(300);
+      await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); Object.defineProperty(document, "hidden", { value: false, configurable: true }); document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); });
+      await page.waitForTimeout(2500);   // supabase-js re-announces the session after its lock; the app's checks run
+    };
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    await btn(page, "Get Started →").click();
+    await page.locator('[data-bank-button="connect"]').click();
+    await page.evaluate(() => { window.__plaidMode = "wait"; });
+    await btn(page, "Connect My Bank").click();
+    await page.waitForFunction(() => window.__plaidOpens === 1);
+    const readsBefore = seen.reads, tokensBefore = seen.tokenCalls;
+    await away();
+    const back = await text(page);
+    t.ok(/Link your accounts \(optional\)/.test(back) && !/Get Started →/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
+    t.eq([await page.evaluate(() => window.__plaidOpens), seen.reads - readsBefore, seen.tokenCalls - tokensBefore], [1, 0, 0],
+      "R1b …the same Link (never opened again), no re-read of the saved data, no new link token");
+    await away();
+    t.eq(await page.evaluate(() => window.__plaidOpens), 1, "R1c …and again, after a second trip away");
+    await page.evaluate(() => window.__plaidFinish("success"));
+    const connected = await page.getByText("Connected!").first().waitFor({ timeout: 8000 }).then(() => true, () => false);
+    t.ok(connected, "R1d the approval goes through: Link finishes and the bank is connected (before 1.1.7 it went to a screen that was gone)");
+    // With Link closed, coming back refreshes exactly as before (the household data is read again).
+    const readsClosed = seen.reads;
+    await away();
+    t.ok(seen.reads > readsClosed, "R1e with Link closed, coming back still refreshes as before");
+    t.eq(errs, [], "R1f no page errors");
     await ctx.close();
   }
 

@@ -1,6 +1,6 @@
 // src/lib/socialSignIn.js
 // -----------------------------------------------------------------------------
-// SIGN IN WITH APPLE AND GOOGLE, THROUGH SUPABASE (1.1.7, Amanda 2026-11-11). No new account path of our own: Supabase
+// SIGN IN WITH APPLE AND GOOGLE, THROUGH SUPABASE (1.1.7, 2026-11-11). No new account path of our own: Supabase
 // Auth creates the account (handle_new_user gives it the 14-day trial, as for an email signup) and issues the session.
 //
 //   website           supabase.auth.signInWithOAuth: the provider's page, then back to flourishmoney.app, where
