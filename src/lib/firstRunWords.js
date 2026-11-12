@@ -1,15 +1,15 @@
 // src/lib/firstRunWords.js
 // -----------------------------------------------------------------------------
 // THE FIRST RUN'S NEW WORDS (1.1.7, 2026-11-11, from the first-run audit). Every new or changed line is here, in
-// one place, so the review block for ChatGPT and Grok is this file and nothing else. NOT YET APPROVED: the 1.1.7 PR is
-// not merged until they are. tests/firstRun.test.cjs holds the code to these words and the copy rules (lowercase
+// one place, so the review block for ChatGPT and Grok is this file and nothing else. APPROVED 2026-11-12 (ChatGPT 100,
+// Grok 100), word for word. tests/firstRun.test.cjs holds the code to these words and the copy rules (lowercase
 // flourish, no dash, no competitor, no money instruction, no "learns" or "remembers").
 // -----------------------------------------------------------------------------
 
 export const FIRST_RUN_WORDS = Object.freeze({
   // The store apps' first screen, before any account: the value, then the way in.
-  valueHeadline: "Know what's safe to spend until payday.",
-  valueLead: "flourish takes the bills due before payday, your minimum debt payments, a buffer and your savings out of your balance, and shows what's left.",
+  valueHeadline: "See what's safe to spend before your next payday.",
+  valueLead: "flourish takes the bills due before payday, your minimum debt payments, a spending buffer and your savings out of your balance, and shows what's left.",
   sampleTag: "Example, sample data",
   sampleLabel: "Safe to spend until next payday",
   getStarted: "Get started",
@@ -24,9 +24,9 @@ export const FIRST_RUN_WORDS = Object.freeze({
   socialFailed: "That sign-in didn't finish. Try again, or use your email.",
 
   // Onboarding: the number comes right after pay and the next payday.
-  showNumber: "Show me my number →",
-  billsPending: "Your bills aren't in this number yet. You'll add them next.",
-  billsLead: "Add the bills due before payday so your number is exact.",
+  showNumber: "Show my starting number →",
+  billsPending: "Your bills and debt payments aren't in this number yet. You'll add them in the next steps.",
+  billsLead: "Add the bills due before payday so they're in your number.",
   notNow: "Not now",
   updateNumber: "Update my number →",
   statementTitle: "📄 Import a bank statement",

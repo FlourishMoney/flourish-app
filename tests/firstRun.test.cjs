@@ -75,6 +75,21 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
       "1c no line starts with a money instruction or holds a verdict (\"Get started\" is the approved go-live button)");
     t.eq(entries.filter(([k]) => !APP.includes(`W.${k}`) && !APP.includes(`FIRST_RUN_WORDS.${k}`)).map(([k]) => k), [], "1d every line is used");
     t.eq(W.sampleTag, "Example, sample data", "1e the sample number is labelled as asked");
+    // APPROVED 2026-11-12 (ChatGPT 100, Grok 100), word for word: docs/product/FIRST-RUN-117-WORDS.md.
+    const APPROVED = {
+      valueHeadline: "See what's safe to spend before your next payday.",
+      valueLead: "flourish takes the bills due before payday, your minimum debt payments, a spending buffer and your savings out of your balance, and shows what's left.",
+      sampleTag: "Example, sample data", sampleLabel: "Safe to spend until next payday", getStarted: "Get started",
+      haveAccount: "Already have an account?", logIn: "Log in", demo: "Try the demo, no account needed",
+      continueApple: "Continue with Apple", continueGoogle: "Continue with Google", orEmail: "or use your email",
+      socialFailed: "That sign-in didn't finish. Try again, or use your email.",
+      showNumber: "Show my starting number →",
+      billsPending: "Your bills and debt payments aren't in this number yet. You'll add them in the next steps.",
+      billsLead: "Add the bills due before payday so they're in your number.",
+      notNow: "Not now", updateNumber: "Update my number →",
+      statementTitle: "📄 Import a bank statement", statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
+    };
+    t.eq({ ...W }, APPROVED, "1f every line is the approved line, word for word, and there are no others");
   }
 
   // ── 2. The value screen ─────────────────────────────────────────────────────────────────────────
