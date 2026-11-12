@@ -43,6 +43,10 @@ const W2 = "The spending buffer starts after flourish has enough of your transac
 const W3 = "From the numbers you entered. A linked bank can keep them up to date.";
 const W4 = "Your bank wasn't connected. You can try again or enter your numbers yourself.";
 const W6 = "Here's your number.";
+// 1.1.7 (src/lib/firstRunWords.js; not yet approved, so read from the file rather than typed twice).
+const FRW = fs.readFileSync(path.join(ROOT, "src", "lib", "firstRunWords.js"), "utf8");
+const word = (k) => (FRW.match(new RegExp(`\\b${k}: "([^"]+)"`)) || [])[1];
+const SHOW_NUMBER = word("showNumber"), BILLS_PENDING = word("billsPending"), BILLS_LEAD = word("billsLead"), NOT_NOW = word("notNow"), UPDATE_NUMBER = word("updateNumber");
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -170,9 +174,10 @@ function buildApp(supabaseUrl) {
     t.ok((await text(page)).includes("tap all that apply") && await page.getByRole("button", { name: "Self-Employed" }).count() > 0, "1d …and the type chips are one tap away");
     await page.locator("[data-income-type-toggle]").first().click();
     t.ok(inc.includes(W1) && inc.includes(W1_HELP), "1e every two weeks (the default): W1 and its helper, word for word");
-    const cont = page.getByRole("button", { name: "Continue →", exact: true }).last();
+    // 1.1.7: pay and the next payday are the last questions; the button shows the number.
+    const cont = page.getByRole("button", { name: SHOW_NUMBER, exact: true }).last();
     await page.getByPlaceholder("e.g. 2100").first().fill("2100"); taps.push("field: pay amount");
-    t.ok(await cont.isDisabled(), "1f Continue waits for the next payday");
+    t.ok(await cont.isDisabled(), "1f the number waits for the next payday");
     // The bill falls 3 days out (or on the 1st when that would pass the 28th, the field's limit) and payday 2 days
     // after it, so the bill is always strictly before payday. Payday was today + 5, which on the 27th to the 31st put
     // it on the same day as a bill moved to the 1st, and the bill dropped out of the number (failed 2026-10-27).
@@ -185,31 +190,23 @@ function buildApp(supabaseUrl) {
     const monthly = await text(page);
     t.ok(!monthly.includes(W1) && monthly.includes("Day of the month you're paid"), "1h monthly pay keeps its day-of-month question, without W1");
     await page.locator("select[aria-label='How often']").first().selectOption("biweekly");
-    await tap(page, "Continue →", "Continue (paycheques)");
-    t.ok(/Your bills/.test(await text(page)), "1i then the bills");
-    await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent"); taps.push("field: bill name");
-    await page.locator('input[type="number"]').first().fill("1400"); taps.push("field: bill amount");
-    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate())); taps.push("field: bill day");
-    await shot(page, "manual-bills");
-    await tap(page, "Continue →", "Continue (bills)");
-    const debts = await text(page);
-    t.ok(/Your debts/.test(debts) && debts.includes("No debt, skip") && debts.includes("Show me today's number →"), "1j then the debts, with \"No debt, skip\" and the way to the number");
-    await shot(page, "manual-debts");
-    await tap(page, "No debt, skip");
+    await tap(page, SHOW_NUMBER, "Show me my number");
     await page.getByText(W6).first().waitFor();
     const first = await text(page);
+    t.ok(!/^Your bills$|^Your debts$/m.test(first) && first.includes(BILLS_PENDING), "1i 1.1.7: straight to the number, which says bills aren't in it yet");
     t.ok(!/credit score/i.test(first), "1k no credit-score screen before the number");
     t.ok(/^Welcome$/m.test(first) && !/Welcome, /.test(first), "1l with no name given, the greeting is \"Welcome\" (W5)");
     t.ok(first.includes(W6) && !/You're covered|breathing room/.test(first), "1m the headline is W6, not \"You're covered\"");
     const line = await page.locator("[data-first-number-line]").textContent();
-    t.ok(/accounted for\./.test(line) && !/a spending buffer/.test(line) && line.includes(W2), `1n the sentence names only what is in the number, and W2 for the $0 buffer ("${line}")`);
+    // 1.1.7: no bills or debts yet, so the sentence names nothing they would add; W2 still says why the buffer is $0.
+    t.ok(!/a spending buffer|bills due/.test(line) && line.includes(W2), `1n the sentence names only what is in the number (no bills yet), and W2 for the $0 buffer ("${line}")`);
     const elapsed = Date.now() - started;
     await shot(page, "manual-first-number");
     const firstTaps = taps.length;
     // The counts so far.
     await page.waitForTimeout(800);
     const steps = seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail);
-    t.eq(steps, ["welcome", "balance", "bank", "income", "bills", "debts"], "1o each step counted once, in order");
+    t.eq(steps, ["welcome", "balance", "bank", "income"], "1o each step counted once, in order, to the number");
     const fn = seen.counts.filter((c) => c.metric === "first_number_shown");
     t.ok(fn.length === 1 && fn[0].mode === "manual" && Number.isFinite(fn[0].fromSigninMs), "1p first_number_shown once, as \"manual\", with the time since sign-in");
     t.ok(seen.counts.some((c) => c.metric === "safe_view"), "1q safe_view fires on the first-number screen");
@@ -218,6 +215,21 @@ function buildApp(supabaseUrl) {
     await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
     const dashBtn = page.getByRole("button", { name: /Take me to my dashboard/ });
     if (await dashBtn.count()) await dashBtn.first().click(); else await page.getByRole("button", { name: "Skip for now" }).click();
+    // 1.1.7: after the number, the bills, then the debts.
+    await page.getByText("Your bills").first().waitFor();
+    const billsAfter = await text(page);
+    t.ok(billsAfter.includes(BILLS_LEAD) && await page.getByRole("button", { name: NOT_NOW, exact: true }).count() === 1, "1j then the bills, with their lead line and \"Not now\"");
+    await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent");
+    await page.locator('input[type="number"]').first().fill("1400");
+    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate()));
+    await shot(page, "manual-bills");
+    await tap(page, "Continue →", "Continue (bills)");
+    const debts = await text(page);
+    t.ok(/Your debts/.test(debts) && debts.includes("No debt, skip") && debts.includes(UPDATE_NUMBER), "1j2 then the debts, with \"No debt, skip\" and the way back to the number");
+    await shot(page, "manual-debts");
+    await tap(page, "No debt, skip");
+    await page.waitForTimeout(800);
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "balance", "bank", "income", "bills", "debts"], "1j3 bills and debts counted after the number");
     await page.getByText("Step 1 of 5").first().waitFor();
     const today = await text(page);
     t.ok(!/Getting set up/.test(today), "1s Today opens with the tour, and no \"Getting set up\" while it shows");
@@ -267,12 +279,7 @@ function buildApp(supabaseUrl) {
       "2a the pay is pre-filled from the bank's deposits, to confirm");
     t.ok(!inc.includes(W1), "2b payday is not asked: the deposits show it");
     await shot(page, "bank-paycheques");
-    await tap(page, "Continue →", "Continue (paycheques)");
-    const bills = await text(page);
-    t.ok(/We found \d+ recurring bills? from your transactions/.test(bills) || /Auto-detected/.test(bills), "2c the bills are pre-filled from the bank, to confirm");
-    await shot(page, "bank-bills");
-    await tap(page, "Continue →", "Continue (bills)");
-    await tap(page, "No debt, skip");
+    await tap(page, SHOW_NUMBER, "Show me my number");
     await page.getByText(W6).first().waitFor();
     const elapsed = Date.now() - started;
     await shot(page, "bank-first-number");
@@ -281,7 +288,19 @@ function buildApp(supabaseUrl) {
     const fn = seen.counts.filter((c) => c.metric === "first_number_shown");
     t.ok(fn.length === 1 && fn[0].mode === "linked", "2d first_number_shown once, as \"linked\"");
     t.eq(seen.counts.filter((c) => /^bank_link_/.test(c.metric)).map((c) => c.metric), ["bank_link_started", "bank_link_completed"], "2e the bank link: started, then completed");
-    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income", "bills", "debts"], "2f the steps, with no balance step on the bank path");
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income"], "2f the steps to the number, with no balance step on the bank path");
+    t.ok(!(await text(page)).includes(BILLS_PENDING), "2f2 the bank's bills are already in the number, so it doesn't say they aren't");
+    // After the number: the bank's bills, to confirm, then the debts.
+    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
+    const dash2 = page.getByRole("button", { name: /Take me to my dashboard/ });
+    if (await dash2.count()) await dash2.first().click(); else await page.getByRole("button", { name: "Skip for now" }).click();
+    await page.getByText("Your bills").first().waitFor();
+    const bills = await text(page);
+    t.ok(/We found \d+ recurring bills? from your transactions/.test(bills) || /Auto-detected/.test(bills), "2c the bills are pre-filled from the bank, to confirm");
+    await shot(page, "bank-bills");
+    await btn(page, "Continue →").click(); await page.waitForTimeout(300);
+    await btn(page, "No debt, skip").click(); await page.waitForTimeout(800);
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income", "bills", "debts"], "2f3 then bills and debts");
     t.eq(errs, [], "2g no page errors");
     console.log(`  bank: ${firstTaps} taps to the first number in ${(elapsed / 1000).toFixed(1)} s (by the test, screenshots included): ${taps.slice(0, firstTaps).join(", ")}`);
     await ctx.close();
@@ -454,20 +473,21 @@ function buildApp(supabaseUrl) {
     const billOn = (() => { const d = addDays(new Date(), 3); return d.getDate() > 28 ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : d; })();
     await page.getByPlaceholder("e.g. 2100").first().fill("2100");
     await page.locator('input[type="date"]').first().fill(iso(addDays(billOn, 2)));
-    await btn(page, "Continue →").click();
+    await btn(page, SHOW_NUMBER).click();
+    await page.getByText(W6).first().waitFor();
+    t.ok(true, `F3a ${w}: the first number`);
+    await shot(page, `founding-${w}-first-number`);
+
+    // Today: the trial countdown (H13), in the trial's words, and not "Flourish Plus". The bills and debts come first (1.1.7).
+    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
+    const dash = page.getByRole("button", { name: /Take me to my dashboard/ });
+    if (await dash.count()) await dash.first().click();
+    await page.getByText("Your bills").first().waitFor();
     await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent");
     await page.locator('input[type="number"]').first().fill("1400");
     await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate()));
     await btn(page, "Continue →").click();
     await btn(page, "No debt, skip").click();
-    await page.getByText(W6).first().waitFor();
-    t.ok(true, `F3a ${w}: the first number`);
-    await shot(page, `founding-${w}-first-number`);
-
-    // Today: the trial countdown (H13), in the trial's words, and not "Flourish Plus".
-    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
-    const dash = page.getByRole("button", { name: /Take me to my dashboard/ });
-    if (await dash.count()) await dash.first().click();
     await page.locator("[data-trial-countdown]").first().waitFor({ timeout: 15000 });
     const cd = await page.locator("[data-trial-countdown]").first().innerText();
     t.ok(/^13 days left in your trial\s*Upgrade →$/.test(cd.replace(/\n/g, " ").trim()) || /13 days left in your trial/.test(cd), `F4a ${w}: the countdown: "13 days left in your trial" with Upgrade → (H13) ("${cd.replace(/\n/g, " ")}")`);
