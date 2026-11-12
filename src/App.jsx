@@ -18623,18 +18623,18 @@ export default function FlourishApp(){
     return () => subscription.unsubscribe();
   }, []);
 
-  // 1.1.7: a NEW account made with Apple or Google is counted as a signup is (beta.js social_signup), once per account on
-  // this device. The server checks the provider and that the account is new; a failed call is tried on the next launch.
+  // 1.1.7: after an Apple or Google sign-in, the server is told once per account on this device (beta.js social_signin). It
+  // secures an account whose address was never proved and that Apple or Google has just reached (a new random password,
+  // other sessions signed out), and counts a NEW Apple or Google account as a signup. A failed call is tried on the next launch.
   useEffect(() => {
-    const provider = user?.app_metadata?.provider;
-    if (!user?.id || !["apple", "google"].includes(provider)) return;
-    if (Date.now() - Date.parse(user.created_at || "") > 15 * 60 * 1000) return;
-    const key = `flourish_social_signup_sent:${user.id}`;
+    const providers = user?.app_metadata?.providers || (user?.app_metadata?.provider ? [user.app_metadata.provider] : []);
+    if (!user?.id || !providers.some(p => p === "apple" || p === "google")) return;
+    const key = `flourish_social_signin_sent:${user.id}`;
     try { if (localStorage.getItem(key)) return; } catch { return; }
     supabase.auth.getSession().then(({ data }) => {
       const jwt = data?.session?.access_token;
       if (!jwt) return;
-      return fetch(`${API_BASE}/api/beta`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action: "social_signup" }) })
+      return fetch(`${API_BASE}/api/beta`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action: "social_signin" }) })
         .then(r => { if (r.ok) { try { localStorage.setItem(key, "1"); } catch { /* sent; may send once more */ } } });
     }).catch(() => { /* the next launch tries again */ });
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps

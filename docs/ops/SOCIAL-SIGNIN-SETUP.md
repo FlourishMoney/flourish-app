@@ -40,7 +40,16 @@ The Supabase callback address used below is `https://qhcccjkmvijrybagkvyw.supaba
 3. **Where people come back to.**
    - Authentication → URL Configuration → Redirect URLs → **Add URL**: `flourishmoney://auth-callback` → Save.
    - Check that `https://flourishmoney.app` is already the Site URL, or is listed. Add it if it isn't.
-4. **Leave on:** Authentication → Sign In / Providers → "Allow new users to sign up" stays on. With it off, Apple and Google can't create accounts.
+4. **Let Apple and Google create accounts, and nothing else.** With "Allow new users to sign up" off, Supabase refuses a new Apple or Google user ("Signups not allowed for this instance"), on the website and in the iPhone's Apple sheet. But "Confirm email" is off too, so turning sign-ups on by itself would also let anyone with the app's public key make an email account straight through Supabase, past our server's gate. Migration 0048 closes that: a "Before User Created" hook that lets only Apple and Google create accounts. Our own server makes email accounts with the admin API, which the hook never sees, so instant signup is unchanged. **In this order:**
+   1. SQL Editor → New query → paste `supabase/migrations/0048_signup_hook.sql` → Run. It touches no table and no row.
+   2. Authentication → Auth Hooks → **Add hook** → **Before User Created** → Hook type **Postgres** → Schema `public` → Function `flourish_before_user_created` → **Create hook**. Check that it shows as enabled.
+   3. Only then: Authentication → Sign In / Providers → **Allow new users to sign up** → on → Save.
+
+   Done the other way round, email sign-ups through Supabase stay open for the minutes in between. To undo, turn "Allow new users to sign up" off first, then disable the hook.
+
+5. **Same address, existing account.** Supabase joins an Apple or Google sign-in to the existing account with the same address, so a household that already has a password account lands in it, not in a second one. Apple's "Hide My Email" gives a different address, and that becomes a new account.
+
+   The app then tells our server (`social_signin`). If that account's address was never proved (made by instant signup, or with an invite code), the server replaces its password with a random one and signs out every other session. Only the person who just proved the address through Apple or Google keeps it, and Forgot password still works for them. That closes the case where someone made an account with another person's address before they arrived.
 
 ## C. Google Cloud (console.cloud.google.com, the account that owns the flourish project; make a project called `flourish` if there is none)
 

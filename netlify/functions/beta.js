@@ -27,6 +27,8 @@
 
 "use strict";
 
+const crypto = require("crypto");
+
 const { getAdminClient, getPublicClient, getUserFromRequest } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, signupInstantEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
@@ -552,35 +554,66 @@ async function handle(event) {
   // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
   // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
   // created unconfirmed and must open the email first.
-  // SIGN IN WITH APPLE OR GOOGLE (1.1.7, src/lib/socialSignIn.js). Supabase made the account, so nothing above saw it:
-  // the app asks once, signed in, and a NEW Apple or Google account (made in the last 15 minutes) is counted as a signup
-  // is: account_created by src and device, its platform and channel, the funnel's signed_up. Once per account (the
-  // milestone is the record); test addresses are not counted. It grants nothing and changes nothing about the account.
-  if (action === "social_signup") {
+  // SIGN IN WITH APPLE OR GOOGLE (1.1.7, src/lib/socialSignIn.js). Supabase made or found the account, so nothing above
+  // saw it. The app asks once per account on a device, signed in, after an Apple or Google sign-in. Two things:
+  //
+  //   SECURE. Supabase links an Apple or Google sign-in to an existing account with the same address, whether or not that
+  //   account's owner ever proved the address. An account made by instant signup ("instant") or with an invite code while
+  //   signup was shut ("auto") never was: someone could have made it with another person's address and kept its password.
+  //   When such an account is reached through Apple or Google (which did prove the address), its password is replaced
+  //   with a random one nobody holds and every other session is signed out, so only the person who just signed in keeps
+  //   it; the account is then marked "provider" and this is not done again. Forgot password still works for its owner.
+  //
+  //   COUNT. A NEW Apple or Google account (made in the last 15 minutes) is counted as a signup is: account_created by
+  //   src and device, its platform and channel, the funnel's signed_up. Once per account; test addresses not counted.
+  //
+  // It grants nothing. Nothing about the account is logged.
+  if (action === "social_signin") {
     const { user_id } = await getUserFromRequest(event);
     if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    const jwt = String((event.headers && (event.headers.authorization || event.headers.Authorization)) || "").replace(/^Bearer\s+/i, "");
     let admin;
     try { admin = getAdminClient(); }
     catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
     try {
       const { data, error } = await admin.auth.admin.getUserById(user_id);
       const user = !error && data && data.user;
-      const provider = user && user.app_metadata && user.app_metadata.provider;
-      const fresh = user && Date.now() - Date.parse(user.created_at) < 15 * 60 * 1000;
-      if (!user || !["apple", "google"].includes(provider) || !fresh) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
-      const { data: had } = await admin.from("account_milestones").select("user_id").eq("user_id", user_id).eq("milestone", "signed_up").limit(1);
-      if (Array.isArray(had) && had.length) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
-      if (!isTestEmail(user.email)) {
-        const platform = accountPlatform(event);
-        await recordAccountAttribution(admin, user_id, platform === "android" ? body.attribution : null, platform);
-        await recordMilestone(admin, user_id, "signed_up", platform);
+      const meta = (user && user.app_metadata) || {};
+      const providers = Array.isArray(meta.providers) ? meta.providers : (meta.provider ? [meta.provider] : []);
+      if (!user || !providers.some((p) => p === "apple" || p === "google")) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured: false, recorded: false }) };
       }
-      console.log(`[beta:social_signup] signup_completed provider=${provider}`);
-      await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: true }) };
+      let secured = false;
+      if ((meta.email_confirmation === "instant" || meta.email_confirmation === "auto") && providers.includes("email")) {
+        const { error: pwErr } = await admin.auth.admin.updateUserById(user_id, {
+          password: crypto.randomBytes(32).toString("base64url"),
+          app_metadata: { ...meta, email_confirmation: "provider" },
+        });
+        if (pwErr) { console.error("[beta:social_signin] not secured"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+        const { error: outErr } = await admin.auth.admin.signOut(jwt, "others");
+        if (outErr) console.error("[beta:social_signin] other sessions not signed out");
+        secured = true;
+        console.log("[beta:social_signin] secured an unproved account reached through a provider");
+      }
+      let recorded = false;
+      const fresh = Date.now() - Date.parse(user.created_at) < 15 * 60 * 1000;
+      if (["apple", "google"].includes(meta.provider) && fresh) {
+        const { data: had } = await admin.from("account_milestones").select("user_id").eq("user_id", user_id).eq("milestone", "signed_up").limit(1);
+        if (!(Array.isArray(had) && had.length)) {
+          if (!isTestEmail(user.email)) {
+            const platform = accountPlatform(event);
+            await recordAccountAttribution(admin, user_id, platform === "android" ? body.attribution : null, platform);
+            await recordMilestone(admin, user_id, "signed_up", platform);
+          }
+          console.log(`[beta:social_signin] signup_completed provider=${meta.provider}`);
+          await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
+          recorded = true;
+        }
+      }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured, recorded }) };
     } catch {
-      console.error("[beta:social_signup] not recorded");
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
+      console.error("[beta:social_signin] failed");
+      return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
     }
   }
 

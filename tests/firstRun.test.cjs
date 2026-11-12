@@ -8,7 +8,8 @@
 //   3  Sign in with Apple and Google on the sign-up and log-in cards (website and apps), through Supabase
 //      (lib/socialSignIn.js): the website's redirect, Apple's own sheet on an iPhone, the in-app browser elsewhere.
 //   4  the apps' setup for it: the flourishmoney:// return address, the Sign in with Apple entitlement, the plugins.
-//   5  the server counts a new Apple or Google account as a signup, once, and nothing else (beta.js social_signup).
+//   5  after an Apple or Google sign-in (beta.js social_signin): an account whose address was never proved is secured
+//      (a new random password, other sessions signed out); a new Apple or Google account is counted as a signup, once.
 //   6  onboarding asks only the balance, pay and the next payday before the number; bills and debts come after it, for
 //      a household onboarded from 1.1.7 only; the statement import sits beside the bank as a first path.
 // -----------------------------------------------------------------------------
@@ -25,7 +26,7 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
 const BETA_PATH = require.resolve("../netlify/functions/beta.js");
 const BLOBS_PATH = require.resolve("@netlify/blobs");
 
-// beta.js's social_signup with _lib/auth faked: the signed-in account is `user`; every write is recorded.
+// beta.js's social_signin with _lib/auth faked: the signed-in account is `user`; every write is recorded.
 async function socialSignup(user, { signedIn = true, hadMilestone = false, origin = "https://localhost" } = {}) {
   const writes = [];
   const saved = { ...process.env }, savedFetch = global.fetch;
@@ -45,14 +46,16 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
   require.cache[AUTH_PATH] = { id: AUTH_PATH, filename: AUTH_PATH, loaded: true, exports: {
     getUserFromRequest: async () => (signedIn ? { user_id: user.id } : { user_id: null }),
     getAdminClient: () => ({ from: chain, rpc: async (fn, args) => { writes.push({ rpc: fn, args }); return { error: null }; },
-      auth: { admin: { getUserById: async () => ({ data: { user }, error: null }) } } }),
+      auth: { admin: { getUserById: async () => ({ data: { user }, error: null }),
+        updateUserById: async (id, attrs) => { writes.push({ update: id, attrs }); return { error: null }; },
+        signOut: async (jwt, scope) => { writes.push({ signOut: scope, jwt }); return { error: null }; } } } }),
     getPublicClient: () => ({}),
   } };
   global.fetch = async (url, init) => { writes.push({ fetch: String(url).replace(/^https:\/\/[^/]+/, ""), body: init && init.body }); return { ok: true, status: 201, json: async () => ({}), text: async () => "" }; };
   const realLog = console.log, realErr = console.error; console.log = () => {}; console.error = () => {};
   try {
     process.env.SUPABASE_URL = "https://supabase.test.invalid"; process.env.SUPABASE_SECRET_KEY = "test-secret-not-real";
-    const res = await require(BETA_PATH).handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x", "user-agent": "Mozilla/5.0 (Linux; Android 15)" }, body: JSON.stringify({ action: "social_signup" }) });
+    const res = await require(BETA_PATH).handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x", "user-agent": "Mozilla/5.0 (Linux; Android 15)" }, body: JSON.stringify({ action: "social_signin" }) });
     return { status: res.statusCode, body: JSON.parse(res.body || "{}"), writes };
   } finally {
     console.log = realLog; console.error = realErr;
@@ -184,20 +187,41 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
       && /capacitor-browser/.test(read("android", "capacitor.settings.gradle")), "4e …registered in both store projects");
   }
 
-  // ── 5. The server counts a new Apple or Google account once ────────────────────────────────────
+  // ── 5. After an Apple or Google sign-in: secure an unproved account, count a new one ──────────────────────────────
   {
     const now = Date.now();
-    const fresh = (provider, ageMin = 2, email = "new@example.invalid") => ({ id: "11111111-2222-4333-8444-555555555555", email, created_at: new Date(now - ageMin * 60000).toISOString(), app_metadata: { provider } });
-    const g = await socialSignup(fresh("google"));
-    t.ok(g.status === 200 && g.body.recorded === true && g.writes.some(w => w.table === "account_milestones" && w.row.milestone === "signed_up" && w.row.channel === "android")
-, "5a a new Google account: counted, on its platform");
-    t.eq([(await socialSignup(fresh("apple"))).body.recorded, (await socialSignup(fresh("email"))).body.recorded, (await socialSignup(fresh("google", 60))).body.recorded,
-      (await socialSignup(fresh("google"), { hadMilestone: true })).body.recorded],
-      [true, false, false, false], "5b Apple too; never an email account, an account older than 15 minutes, or one already counted");
-    t.eq((await socialSignup(fresh("google"), { signedIn: false })).status, 401, "5c only for the signed-in account");
-    const test = await socialSignup(fresh("google", 2, "test@flourishmoney.app"));
+    const acct = (provider, providers, ageMin = 2, email = "new@example.invalid", marker) => ({ id: "11111111-2222-4333-8444-555555555555", email,
+      created_at: new Date(now - ageMin * 60000).toISOString(), app_metadata: { provider, providers, ...(marker ? { email_confirmation: marker } : {}) } });
+    const g = await socialSignup(acct("google", ["google"]));
+    t.ok(g.status === 200 && g.body.recorded === true && g.body.secured === false && g.writes.some(w => w.table === "account_milestones" && w.row.milestone === "signed_up" && w.row.channel === "android"),
+      "5a a new Google account: counted, on its platform, and nothing to secure");
+    t.eq([(await socialSignup(acct("apple", ["apple"]))).body.recorded, (await socialSignup(acct("email", ["email"]))).body.recorded,
+      (await socialSignup(acct("google", ["google"], 60))).body.recorded, (await socialSignup(acct("google", ["google"]), { hadMilestone: true })).body.recorded],
+      [true, false, false, false], "5b Apple too; never an email-only account, an account older than 15 minutes, or one already counted");
+    t.eq((await socialSignup(acct("google", ["google"]), { signedIn: false })).status, 401, "5c only for the signed-in account");
+    const test = await socialSignup(acct("google", ["google"], 2, "test@flourishmoney.app"));
     t.ok(!test.writes.some(w => w.table === "account_milestones"), "5d a test address is not put in the funnel");
-    t.ok(/useEffect\(\(\) => \{\s*const provider = user\?\.app_metadata\?\.provider;[\s\S]{0,700}action: "social_signup"/.test(APP), "5e the app asks once, after a new Apple or Google sign-in");
+    // An instant (or invite-code) account, never proved, now reached through Google with the same address.
+    for (const marker of ["instant", "auto"]) {
+      const r = await socialSignup(acct("email", ["email", "google"], 60 * 24 * 3, "same@example.invalid", marker));
+      const upd = r.writes.find(w => w.update);
+      t.ok(r.body.secured === true && r.body.recorded === false && upd && typeof upd.attrs.password === "string" && upd.attrs.password.length >= 40
+        && upd.attrs.app_metadata.email_confirmation === "provider" && r.writes.some(w => w.signOut === "others" && w.jwt === "x"),
+        `5e a "${marker}" account reached through Google: a new random password, marked proved, every other session signed out`);
+    }
+    for (const marker of ["link", "provider", undefined]) {
+      const r = await socialSignup(acct("email", ["email", "google"], 60 * 24 * 3, "same@example.invalid", marker));
+      t.ok(r.body.secured === false && !r.writes.some(w => w.update || w.signOut), `5f a ${marker || "no-marker"} account (proved, or already secured): left as it is`);
+    }
+    t.ok(/useEffect\(\(\) => \{\s*const providers = user\?\.app_metadata\?\.providers[\s\S]{0,700}action: "social_signin"/.test(APP),
+      "5g the app asks once per account on this device, after any Apple or Google sign-in");
+  }
+
+  // ── 5b. The signup hook (migration 0048, run in a real Postgres in signupHook.sql.test.cjs) ─────────────────────────
+  {
+    const sql = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0048_signup_hook.sql"), "utf8");
+    t.ok(/provider in \('apple', 'google'\) and not anonymous/.test(sql) && /grant execute on function public\.flourish_before_user_created\(jsonb\) to supabase_auth_admin/.test(sql) && /revoke execute on function public\.flourish_before_user_created\(jsonb\) from public/.test(sql),
+      "5h the before-user-created hook lets only Apple and Google create an account, and only Supabase Auth may run it");
   }
 
   // ── 6. Onboarding ───────────────────────────────────────────────────────────────────────────────
