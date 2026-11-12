@@ -16118,6 +16118,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
         return;
       }
       setPendingConfirm("");
+      // INSTANT SIGNUP (SIGNUP_INSTANT on the server): the account is ready, so sign in with the address and password
+      // just typed and go straight into onboarding. No inbox, no second sign-in. A store build from before this keeps
+      // the line below: one tap on Log In, with both fields still filled in.
+      if (out.instant) { setLoading(false); await handleLogin(); return; }
       setSuccess("Account created. You can log in now.");
       setMode("login");
       setLoading(false);
