@@ -27,7 +27,7 @@
 
 "use strict";
 
-const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { getAdminClient, getPublicClient, getUserFromRequest } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -552,6 +552,38 @@ async function handle(event) {
   // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
   // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
   // created unconfirmed and must open the email first.
+  // SIGN IN WITH APPLE OR GOOGLE (1.1.7, src/lib/socialSignIn.js). Supabase made the account, so nothing above saw it:
+  // the app asks once, signed in, and a NEW Apple or Google account (made in the last 15 minutes) is counted as a signup
+  // is: account_created by src and device, its platform and channel, the funnel's signed_up. Once per account (the
+  // milestone is the record); test addresses are not counted. It grants nothing and changes nothing about the account.
+  if (action === "social_signup") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    try {
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      const user = !error && data && data.user;
+      const provider = user && user.app_metadata && user.app_metadata.provider;
+      const fresh = user && Date.now() - Date.parse(user.created_at) < 15 * 60 * 1000;
+      if (!user || !["apple", "google"].includes(provider) || !fresh) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
+      const { data: had } = await admin.from("account_milestones").select("user_id").eq("user_id", user_id).eq("milestone", "signed_up").limit(1);
+      if (Array.isArray(had) && had.length) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
+      if (!isTestEmail(user.email)) {
+        const platform = accountPlatform(event);
+        await recordAccountAttribution(admin, user_id, platform === "android" ? body.attribution : null, platform);
+        await recordMilestone(admin, user_id, "signed_up", platform);
+      }
+      console.log(`[beta:social_signup] signup_completed provider=${provider}`);
+      await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: true }) };
+    } catch {
+      console.error("[beta:social_signup] not recorded");
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: false }) };
+    }
+  }
+
   if (action === "signup") {
     const email = cleanEmail(body.email);   // a phone keyboard's stray space is not a different address
     const password = body.password;

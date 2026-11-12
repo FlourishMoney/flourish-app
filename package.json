@@ -17,8 +17,10 @@
     "build:native": "node scripts/check-native-build.mjs --env && VITE_NATIVE_BUILD=true vite build && node scripts/strip-landing-media.mjs && node scripts/check-native-build.mjs --artifact && node scripts/check-pending-words.mjs dist"
   },
   "dependencies": {
+    "@capacitor-community/apple-sign-in": "7.1.0",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "8.0.5",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",

@@ -73,6 +73,8 @@ import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
+import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
+import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
@@ -4229,8 +4231,13 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
 // score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
 // completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false}){
-  const [step,setStep]=useState(0);
+// FIRST RUN (1.1.7, Amanda 2026-11-11): two phases. "before": welcome, the bank (or a statement, or enter it myself and the
+// balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
+// debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
+// still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater}){
+  const after = phase==="after";
+  const [step,setStep]=useState(after?3:0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
   const onCountRef=useRef(onCount); onCountRef.current=onCount;
   const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
@@ -4242,8 +4249,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // is Canada; else a US time zone or US region is the US; else Canada); Settings changes it. It is also Plaid's search.
   const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
-  const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
-  const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
+  const [bills,setBills]=useState(()=>after&&Array.isArray(initialBills)&&initialBills.length?initialBills.map(b=>({...b,amount:String(b.amount??""),date:String(b.date??"")})):[{name:"",amount:"",date:""}]);
+  const [debts,setDebts]=useState(()=>after&&Array.isArray(initialDebts)&&initialDebts.length?initialDebts.map(d=>({...d,balance:String(d.balance??""),rate:String(d.rate??""),min:String(d.min??"")})):[{name:"",balance:"",rate:"",min:""}]);
   // Pre-populate debts from connected credit card accounts when user reaches debt step
   useEffect(()=>{
     if(step !== 4) return;
@@ -4530,7 +4537,14 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // get_accounts succeeds, so re-sending them here would let a stale local copy overwrite the truth.
   // `transactions` still carries statement-upload rows (plaidTxns); the parent MERGES rather than
   // replaces, so bank transactions promoted earlier survive.
-  const finish=()=>{ count("onboarding_step_completed","debts"); return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
+  const finish=()=>{ count("onboarding_step_completed","debts");
+    // After the number: only the bills and the debts go back; App merges them and marks the household done.
+    if (after) return onComplete({bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance)});
+    return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
+  // Before the number: pay and the next payday are the last questions. Bills found in a linked bank's transactions and
+  // cards from the bank still go in now (nobody typed them); everything else waits for "after".
+  const finishBeforeNumber=()=>{ count("onboarding_step_completed","income");
+    return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null,billsAfterNumber:"pending"},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
   // W1: weekly, every-two-weeks and twice-a-month pay asks for the next payday, unless the bank's deposits
@@ -4631,8 +4645,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
-          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>For accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
+          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementTitle}</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementSub}</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4886,12 +4900,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source, even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>done("income",3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
+      <Btn label={FIRST_RUN_WORDS.showNumber} onClick={finishBeforeNumber} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
     </div>,
 
-    // 3: Bills
+    // 3: Bills (after the number)
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your bills</div>
+      {after&&<div data-after-number-lead="" style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,marginBottom:12}}>{FIRST_RUN_WORDS.billsLead}</div>}
       {detectedBills&&detectedBills.length>0?(
         <div style={{color:C.muted,fontSize:14,marginBottom:14}}>
           We found <span style={{color:C.tealBright,fontWeight:700}}>{detectedBills.length} recurring bills</span> from your transactions. Amounts are averaged. Edit anything that looks off.
@@ -4925,6 +4940,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       ))}
       <Btn label="+ Add Bill" onClick={addBill} outline color={C.green} small/>
       <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>done("bills",4)}/></div>
+      {after&&onLater&&<div style={{marginTop:6}}><Btn label={FIRST_RUN_WORDS.notNow} onClick={onLater} outline color={C.muted} small/></div>}
     </div>,
 
     // 4: Debts (then the first number)
@@ -4962,7 +4978,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       ))}
       <Btn label="+ Add Debt" onClick={addDebt} outline color={C.green} small/>
       <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={finish} outline color={C.muted} small/></div>
-      <div style={{marginTop:8}}><Btn label="Show me today's number →" onClick={finish}/></div>
+      <div style={{marginTop:8}}><Btn label={after?FIRST_RUN_WORDS.updateNumber:"Show me today's number →"} onClick={finish}/></div>
     </div>,
 
   ];
@@ -4970,12 +4986,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,minWidth:0,boxSizing:"border-box",padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
-        {step>0&&(
+        {step>(after?3:0)&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
           </div>
         )}
-        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:4}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
+        {/* Two steps each side of the number: the bank and pay before it, bills and debts after it. */}
+        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:2}).map((_,i)=>{ const at=after?step-3:step-1; return <div key={i} style={{height:3,borderRadius:99,flex:i===at?3:1,background:i<=at?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<=at?`0 0 8px ${C.green}44`:"none"}}/>; })}</div>}
         {screens[step]}
       </div>
     </div>
@@ -14893,6 +14910,10 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
               ? <span data-first-number-line="">{firstNumberSentence(ss)}{bufferPending(data, ss)&&<>{firstNumberSentence(ss)?" ":""}<span data-buffer-pending="">{BUFFER_PENDING_LINE}</span></>}</span>
               : "Add your income in Settings to see your personalised safe to spend number."}
         </div>
+        {/* 1.1.7: bills come after the number, so the number says it doesn't hold them yet. */}
+        {data.profile?.billsAfterNumber==="pending" && !(data.bills||[]).length && !ssView.needsSetup && !noIncome && (
+          <div data-bills-pending="" style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:280,margin:"-20px auto 28px"}}>{FIRST_RUN_WORDS.billsPending}</div>
+        )}
 
         {/* Breakdown — progressive disclosure. Never when needsSetup: there are no rows and no
             total, so the card would be a heading, nothing, and a labelled blank. */}
@@ -15881,8 +15902,95 @@ function StoreBadges(){
   );
 }
 
+// THE STORE APPS' FIRST SCREEN (1.1.7): the value before any account. The sample number is the demo household's own,
+// worked out by the same engine as Today, and labelled as an example; "Get started" is the way in, "Log in" a small link.
+function AppWelcome({ onGetStarted, onLogIn, onDemo }) {
+  const view = useMemo(() => {
+    try {
+      const d = buildDemoState("CA");
+      return safeToSpendView(SafeSpendEngine.calculate(d), { hasCashAccount: true, hasIncome: true });
+    } catch { return null; }
+  }, []);
+  const W = FIRST_RUN_WORDS;
+  return (
+    <div data-app-welcome="" style={{ minHeight: "100dvh", background: AUTH_C.page, color: AUTH_C.ink, display: "flex", justifyContent: "center", padding: `${SPACE.xl}px ${SPACE.xl}px` }}>
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: SPACE.lg }}>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: SPACE.md }}><FlourishLockup size={48} color={AUTH_C.heading} /></div>
+        <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 30, lineHeight: 1.15, fontWeight: 900, color: AUTH_C.heading, textAlign: "center", margin: 0 }}>{W.valueHeadline}</h1>
+        <p style={{ color: AUTH_C.muted, fontSize: 15, lineHeight: 1.6, textAlign: "center", margin: 0 }}>{W.valueLead}</p>
+        {view && view.headline != null && (
+          <div data-sample-number="" style={{ background: AUTH_C.card, border: `1px solid ${AUTH_C.border}`, borderRadius: 22, padding: SPACE.lg, boxShadow: "0 10px 30px rgba(22,58,28,0.07)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", rowGap: SPACE.xs, columnGap: SPACE.sm }}>
+              <span style={{ color: AUTH_C.heading, fontWeight: 700, fontSize: 13 }}>{W.sampleLabel}</span>
+              <span data-sample-tag="" style={{ background: "#f3ead6", border: "1px solid #e3d3ad", color: "#7a5a12", borderRadius: 99, padding: "2px 10px", fontSize: 13, fontWeight: 700 }}>{W.sampleTag}</span>
+            </div>
+            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 56, lineHeight: 1.1, color: AUTH_C.heading, margin: `${SPACE.sm}px 0` }}>{formatMoney(view.headline)}</div>
+            {view.rows.map(r => (
+              <div key={r.key} style={{ display: "flex", justifyContent: "space-between", gap: SPACE.sm, fontSize: 13, color: AUTH_C.muted, padding: "2px 0" }}>
+                <span>{r.sign ? `${r.sign} ` : ""}{r.label}</span><span style={{ color: AUTH_C.ink, fontWeight: 700 }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button data-get-started="" onClick={onGetStarted} style={{ minHeight: LAYOUT.minTap, width: "100%", padding: "14px 22px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#2E8B2E,#1f6b22)", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{W.getStarted}</button>
+        <div style={{ textAlign: "center", color: AUTH_C.muted, fontSize: 14 }}>
+          {W.haveAccount} <button data-welcome-login="" onClick={onLogIn} style={{ background: "none", border: "none", color: AUTH_C.link, fontWeight: 700, fontSize: 14, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, minHeight: LAYOUT.minTap, padding: "0 6px", fontFamily: "inherit" }}>{W.logIn}</button>
+        </div>
+        {onDemo && (
+          <div style={{ textAlign: "center" }}>
+            <button onClick={onDemo} style={{ minHeight: LAYOUT.minTap, background: AUTH_C.card, border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 {W.demo}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// SIGN IN WITH APPLE AND GOOGLE (1.1.7, lib/socialSignIn.js): on the sign-up and log-in cards, website and apps, above
+// the email form. The session lands through Supabase; the app's auth listener does the rest.
+function SocialSignIn({ onFailed }) {
+  const [busy, setBusy] = useState(null);
+  const platform = (() => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } })();
+  const go = async (provider) => {
+    if (busy) return;
+    setBusy(provider);
+    let res = { ok: false };
+    try {
+      const native = isNativeApp();
+      const [appleSignIn, browser, appListener] = native ? await Promise.all([
+        platform === "ios" && provider === "apple" ? import("@capacitor-community/apple-sign-in").then(m => m.SignInWithApple) : null,
+        import("@capacitor/browser").then(m => m.Browser),
+        import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
+      ]) : [null, null, null];
+      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener });
+    } catch { res = { ok: false }; }
+    if (!res.redirecting) setBusy(null);
+    if (!res.ok) onFailed && onFailed();
+  };
+  const W = FIRST_RUN_WORDS;
+  const btn = (dark) => ({ width: "100%", minHeight: LAYOUT.minTap, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 16px", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif", border: dark ? "none" : `1.5px solid ${AUTH_C.inputBorder}`, background: dark ? "#000" : "#fff", color: dark ? "#fff" : "#1f1f1f" });
+  return (
+    <div data-social-signin="" style={{ display: "flex", flexDirection: "column", gap: SPACE.sm, marginBottom: SPACE.lg }}>
+      {SOCIAL_PROVIDERS.includes("apple") && <button data-provider="apple" onClick={() => go("apple")} disabled={!!busy} style={btn(true)}>
+        <svg aria-hidden="true" width="16" height="19" viewBox="0 0 814 1000" fill="currentColor"><path d="M788 341c-6 4-110 63-110 193 0 151 132 204 136 205-1 3-21 73-70 145-43 63-89 126-158 126s-87-40-167-40c-78 0-106 41-169 41s-107-58-158-129C33 798 0 663 0 534c0-207 135-317 267-317 70 0 129 46 173 46 42 0 107-49 187-49 31 0 140 3 161 127zM554 160c33-39 56-93 56-147 0-8-1-15-2-21-53 2-117 36-155 80-30 34-58 88-58 143 0 8 1 16 2 19 3 0 9 1 14 1 48 0 108-32 143-75z"/></svg>
+        {busy === "apple" ? "…" : W.continueApple}
+      </button>}
+      {SOCIAL_PROVIDERS.includes("google") && <button data-provider="google" onClick={() => go("google")} disabled={!!busy} style={btn(false)}>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.1 5.5c4.2-3.9 7.2-9.6 7.2-16.9z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.4-4.6 2.2-8.8 2.2-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+        {busy === "google" ? "…" : W.continueGoogle}
+      </button>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: SPACE.xs }}>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+        <span style={{ color: AUTH_C.muted, fontSize: 13 }}>{W.orEmail}</span>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpfOn = false }) {
-  const [mode, setMode] = useState("login");
+  // 1.1.7: a store app opens on its value screen ("welcome"), never on a log-in form a new person can't use.
+  const [mode, setMode] = useState(() => (isNativeApp() && !startOnLogin ? "welcome" : "login"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [betaCode, setBetaCode] = useState("");
@@ -16595,6 +16703,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
 
         </div>
 
+      ) : mode === "welcome" ? (
+        <AppWelcome onGetStarted={() => { setMode("signup"); setError(""); setSuccess(""); setTouched({}); }}
+          onLogIn={() => { setMode("login"); setError(""); setSuccess(""); setTouched({}); }}
+          onDemo={onTryDemo ? () => onTryDemo(waitlistCountry) : null} />
       ) : (
 
         /* ───────────────── AUTH FORM ─────────────────
@@ -16670,6 +16782,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
                       <button onClick={retrySignupStatus} style={{ ...authLinkStyle, padding: "0 10px" }}>Try again</button>
                     </div>
                   )}
+                  <SocialSignIn onFailed={() => { setSuccess(""); setError(FIRST_RUN_WORDS.socialFailed); }} />
                   <label htmlFor="auth-email" style={fieldLabelStyle}>Email address</label>
                   <input id="auth-email" style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
@@ -18498,6 +18611,22 @@ export default function FlourishApp(){
     return () => subscription.unsubscribe();
   }, []);
 
+  // 1.1.7: a NEW account made with Apple or Google is counted as a signup is (beta.js social_signup), once per account on
+  // this device. The server checks the provider and that the account is new; a failed call is tried on the next launch.
+  useEffect(() => {
+    const provider = user?.app_metadata?.provider;
+    if (!user?.id || !["apple", "google"].includes(provider)) return;
+    if (Date.now() - Date.parse(user.created_at || "") > 15 * 60 * 1000) return;
+    const key = `flourish_social_signup_sent:${user.id}`;
+    try { if (localStorage.getItem(key)) return; } catch { return; }
+    supabase.auth.getSession().then(({ data }) => {
+      const jwt = data?.session?.access_token;
+      if (!jwt) return;
+      return fetch(`${API_BASE}/api/beta`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action: "social_signup" }) })
+        .then(r => { if (r.ok) { try { localStorage.setItem(key, "1"); } catch { /* sent; may send once more */ } } });
+    }).catch(() => { /* the next launch tries again */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Phase D1-E: one-time migration of localStorage Plaid tokens to Supabase.
   // Runs after auth confirms. Skips if already done. Non-blocking.
   useEffect(() => {
@@ -19551,6 +19680,14 @@ export default function FlourishApp(){
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
+  // 1.1.7: bills and debts come AFTER the first number, for a household onboarded from 1.1.7 on (billsAfterNumber
+  // "pending", set by onboarding's first phase). "Not now" leaves them to the checklist on Today.
+  if(firstVisitDone&&appData&&!appData.demo&&appData.profile?.billsAfterNumber==="pending")return <><Onboarding phase="after"
+    initialBills={appData.bills||[]} initialDebts={appData.debts||[]}
+    connectedAccounts={appData?.accounts||[]} onAccountsConnected={promoteConnectedAccounts} onViewLegal={s=>setScreen(s)} userId={user?.id} tpfOn={tpfOn}
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}
+    onComplete={d=>setAppData(prev=>({...(prev||{}),bills:d.bills||[],debts:d.debts||[],profile:{...(prev?.profile||{}),billsAfterNumber:"done"}}))}
+    onLater={()=>setAppData(prev=>({...(prev||{}),profile:{...(prev?.profile||{}),billsAfterNumber:"later"}}))}/>{storePaywallOverlay}</>;
   // TRIAL_PLAN_FIRST: the activation moment (the first safe-to-spend number, above) is kept; then the plans, first.
   if(plansRequired && firstVisitDone){
     if(storeBilling) return (
