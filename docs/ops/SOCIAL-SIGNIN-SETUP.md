@@ -11,7 +11,8 @@ The Supabase callback address used below is `https://qhcccjkmvijrybagkvyw.supaba
    - Capabilities → tick **Sign in with Apple** (leave it as "Enable as a primary App ID") → Save → Confirm.
 2. **Make a Services ID** (the website, and Apple on Android, use it).
    - Identifiers → **+** → Services IDs → Continue.
-   - Description: `flourish web sign in`. Identifier: `app.flourishmoney.web`. Continue → Register.
+   - Description: `flourish` (Apple shows this to people: "sign in to flourish"). Identifier: `app.flourishmoney.web`. Continue → Register.
+   - Already made with another description? Open `app.flourishmoney.web`, change Description to `flourish`, Save.
 3. **Point the Services ID at Supabase.**
    - Open `app.flourishmoney.web` → tick **Sign in with Apple** → Configure.
    - Primary App ID: `app.flourishmoney`.
