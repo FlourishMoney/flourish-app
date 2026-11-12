@@ -274,7 +274,7 @@ function apple({ revoke = 200, token = 200, hang = false } = {}) {
     t.eq(sent, [["https://x.invalid/api/beta", "Bearer j", { action: "apple_grant", grant: { code: "c" } }]], "8l …signed in, to apple_grant");
     t.eq(await G.sendAppleGrant({ grant: { code: "c" }, jwt: "j", fetchImpl: async () => { throw new Error("offline"); } }), false, "8m a failed send never throws");
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/if \(res && res\.ok && res\.appleGrant\) supabase\.auth\.getSession\(\)\.then\([^\n]*sendAppleGrant\(\{ grant: res\.appleGrant/.test(APP), "8n the app sends the iPhone's and Android's grant after the sign-in, not waited for");
+    t.ok(/if \(res && res\.ok && res\.appleGrant\) \(async \(\) => \{[^\n]*sendAppleGrant\(\{ grant: res\.appleGrant/.test(APP), "8n the app sends the iPhone's and Android's grant after the sign-in, not waited for");
     t.ok(/const grant = takeWebAppleGrant\(s, appleGrantStorage\(\)\);\s*if \(grant && s\?\.access_token\) sendAppleGrant/.test(APP), "8o the website sends its grant when the session lands");
   }
 

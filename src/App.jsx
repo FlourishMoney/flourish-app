@@ -174,7 +174,7 @@ const supabase = createClient(
 function consentDeps(uid) {
   let storage = null; try { storage = window.localStorage; } catch { storage = null; }
   return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(),
-    getJwt: () => supabase.auth.getSession().then(({ data }) => data?.session?.access_token || null).catch(() => null) };
+    getJwt: async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || null; } catch { return null; } } };
 }
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
@@ -16864,7 +16864,7 @@ function SocialSignIn({ onFailed }) {
       ]) : [null, null, null];
       res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage: appleGrantStorage() });
       // An Apple sign-in in the app: what deleting the account will need to revoke it at Apple (lib/appleGrant.js). Not waited for.
-      if (res && res.ok && res.appleGrant) supabase.auth.getSession().then(({ data }) => sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE })).catch(() => {});
+      if (res && res.ok && res.appleGrant) (async () => { try { const { data } = await supabase.auth.getSession(); await sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE }); } catch { /* nothing kept; deleting still deletes */ } })();
     } catch { res = { ok: false }; }
     if (!res.redirecting) setBusy(null);
     if (!res.ok) onFailed && onFailed();
