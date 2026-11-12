@@ -70,7 +70,7 @@ const plan = async (p) => { await TAB(p, "Do"); await ARIA(p, "Build Plan"); };
 // words are read from src/lib/firstRunWords.js, not typed twice.
 const SHOW_NUMBER = (require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "firstRunWords.js"), "utf8").match(/\bshowNumber: "([^"]+)"/) || [])[1];
 const ONBOARDING = ["welcome", "connect a bank", "balances", "income", "bills (after the number)", "debts (after the number)"];
-const FORWARD = ["Get Started →", "Enter it myself", "Continue →", SHOW_NUMBER, "Continue →"];
+const FORWARD = ["Get started", "Enter it myself", "Continue →", SHOW_NUMBER, "Continue →"];
 const FILL = () => {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   for (const el of document.querySelectorAll("input")) {

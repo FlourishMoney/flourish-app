@@ -77,3 +77,5 @@ No Android or iOS Google client is needed. The apps sign in to Google in the sys
 ## Checks after setup (Claude can do these read-only)
 - The website's "Continue with Google" and "Continue with Apple" reach each provider's page and come back signed in. Use a test account that's yours.
 - Supabase → Authentication → Users shows the new user with provider `google` or `apple`.
+- A direct email sign-up through Supabase's own endpoint, with the publishable key, is refused with a 403 and the hook's message, and no user is made. Checked 2026-11-12 after G4.
+- **A deploy preview cannot run `social_signin`.** `SUPABASE_SECRET_KEY` is a secret Netlify variable set for the Production context only, so on a preview the call fails and the client tries again on the next launch. A new Apple or Google account made on a preview is therefore not counted and gets no `signed_up` milestone. Securing an unproved account is the same. Prove those on production after the merge, not on a preview.

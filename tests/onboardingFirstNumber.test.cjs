@@ -190,8 +190,10 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
   t.ok(/signalOnboarding\("first_number_shown",\{mode:appData\.bankConnected\?"linked":"manual"/.test(app), "6p first_number_shown by mode");
   t.ok(/function confirmedFromApp\(user\)\{ return !!\(user && user\.user_metadata && user\.user_metadata\.signup_platform === "app"\); \}/.test(app), "6q the confirmation link: an app signup keeps \"Open Flourish and sign in.\"");
   t.ok(/signup_platform: isNativeRequest\(event\) \? "app" : "web"/.test(read("netlify", "functions", "beta.js")), "6r the signup is labelled by where it was made");
-  // The Welcome screen stays: its consent line covers more than the signup card's.
-  t.ok(/consent to data processing per PIPEDA \(CA\) and US privacy laws\./.test(ob) && /onClick=\{\(\)=>done\("welcome",1\)\}/.test(ob) && ob.includes("Get Started →"), "6s the Welcome screen and its data-processing consent stay (the signup card's consent covers Terms and Privacy only)");
+  // The consent step stays: its data-processing consent covers more than the signup card's, and an Apple or Google
+  // sign-up sees no signup card. 1.1.7: its old words are gone; the new ones are placeholders until approved.
+  t.ok(/FIRST_RUN_PENDING\.consentTitle/.test(ob) && /FIRST_RUN_PENDING\.consentLine/.test(ob) && /onClick=\{\(\)=>done\("welcome",1\)\}[^>]*>\{FIRST_RUN_WORDS\.getStarted\}<\/button>/.test(ob)
+    && !/PIPEDA|every day\.|Try Demo|No credit card|Get Started →|FlourishLockup/.test(ob), "6s the consent step stays, for every new account, with no old words (placeholders until approved)");
 
   // ── 7. the device's country ────────────────────────────────────────────────────────────────
   const D = await import("../src/lib/deviceCountry.js");

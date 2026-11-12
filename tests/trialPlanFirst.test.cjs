@@ -277,7 +277,10 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
     t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
-    t.eq(all.status, 0, "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html)");
+    // 1.1.7 (2026-11-12): the first run's consent step waits for its words (src/lib/firstRunWords.js FIRST_RUN_PENDING);
+    // those two are the only placeholders allowed, and the trial plan has none.
+    const left = [...new Set([...String(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]/g)].map((m) => m[1]))].sort();
+    t.eq(left, all.status === 0 ? [] : ["onboarding-consent-line", "onboarding-consent-title"], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the first run's consent step");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
       t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
@@ -286,7 +289,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const pkg = require("../package.json");
     t.ok(/command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),
       "5e …and it runs on the production web build (the bundle and the functions) and on every store build");
-    t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-welcome") : "Free to start · Canada & USA · No credit card"}'), "5f onboarding: no \"No credit card\" while the switch is on; today's line while off");
+    t.ok(!APP.includes("No credit card") && !APP.includes("Canada & USA"), "5f onboarding: the old welcome's price and countries line is gone (1.1.7), switch on or off");
     t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same");
     const fake = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
     t.eq([await lib.askTrialPlanFirstOn(fake(200, { on: true })), await lib.askTrialPlanFirstOn(fake(404, {})), await lib.askTrialPlanFirstOn(fake(500, {})),

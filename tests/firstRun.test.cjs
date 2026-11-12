@@ -93,6 +93,16 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
       statementTitle: "📄 Import a bank statement", statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
     };
     t.eq({ ...W }, APPROVED, "1f every line is the approved line, word for word, and there are no others");
+    // Not written yet: the consent step's title and line. Placeholders only, and the build guard refuses them, so a
+    // production or store build cannot ship before they are approved (docs/product/FIRST-RUN-117-WORDS.md lists them).
+    const { FIRST_RUN_PENDING: P } = await import(path.join(REPO, "src", "lib", "firstRunWords.js"));
+    t.eq({ ...P }, { consentTitle: "[WORDS: onboarding-consent-title]", consentLine: "[WORDS: onboarding-consent-line]" }, "1g the consent step's words are placeholders, nothing more");
+    let refused = "";
+    try { require("child_process").execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "firstRunWords.js")], { stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { refused = String(e.stderr || ""); }
+    t.ok(/onboarding-consent-title/.test(refused) && /onboarding-consent-line/.test(refused), "1h the build guard refuses both placeholders");
+    t.ok(!/Know what's safe to spend, every day|Try Demo \(no account needed\)|Free to start · Canada & USA|consent to data processing per PIPEDA \(CA\) and US privacy laws/.test(APP),
+      "1i none of the old welcome's words is left in the app");
   }
 
   // ── 2. The value screen ─────────────────────────────────────────────────────────────────────────

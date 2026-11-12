@@ -26,3 +26,19 @@ Onboarding (the number now comes before bills and debts):
 14. Debts step final button: "Update my number →"
 15. Bank step, beside "Connect My Bank Securely →": "📄 Import a bank statement" / "A PDF or CSV from your bank's website. No bank sign-in needed."
 ```
+
+## Still to write (2026-11-12): the consent step
+
+Every new account (email, Apple or Google) starts onboarding on a consent step. Before 1.1.7 it was an old welcome: the capital-F lockup, a tagline, "Get Started →", a demo button, a line claiming free, Canada and USA and no credit card, and a consent line naming PIPEDA and US privacy laws. None of that was reviewed for 1.1.7, and the value screen before sign-up now does the welcoming, so all of it is gone.
+
+The step stays because of its consent. The sign-up card's line covers Terms and Privacy only, and an Apple or Google sign-up never sees that card.
+
+| id | where | now |
+| --- | --- | --- |
+| `onboarding-consent-title` | the step's heading | placeholder |
+| `onboarding-consent-line` | the consent sentence, above the Terms and Privacy Policy links | placeholder |
+| (button) | the step's button | reuses the approved "Get started" |
+
+Facts the line has to fit: it is the account's agreement to the Terms and Privacy Policy, and its consent to the processing those describe.
+
+The placeholders live in `src/lib/firstRunWords.js` (`FIRST_RUN_PENDING`). `scripts/check-pending-words.mjs` refuses the production web build and every store build while either is left, so merging #136 before these are written makes the production deploy fail rather than ship them.

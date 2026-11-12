@@ -103,17 +103,19 @@ function buildApp(supabaseUrl) {
 
   // A new account (signed in, no saved data), or, with signedIn false, nobody yet (the confirmation link).
   // A Canadian device unless a test says otherwise (Playwright's own default is en-US, which is the US).
-  const open = async ({ token = "ok", signedIn = true, user = null, locale = "en-CA", timezoneId = "America/Toronto", desktop = false } = {}) => {
+  const open = async ({ token = "ok", signedIn = true, user = null, appMeta = null, locale = "en-CA", timezoneId = "America/Toronto", desktop = false } = {}) => {
     const ctx = await browser.newContext({ viewport: desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1,
       isMobile: !desktop, hasTouch: !desktop, colorScheme: "light", locale, timezoneId });
     await ctx.addInitScript(([key, session, signedIn]) => { try {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), signedIn]);
-    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0 };
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify((() => { const x = MOCK.makeSession(); if (appMeta) x.user = { ...x.user, app_metadata: appMeta }; return x; })()), signedIn]);
+    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0, beta: [] };
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
       ? (seen.reads++, r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" }))
       : (seen.saved.push(r.request().postData() || ""), r.fulfill({ status: 201, contentType: "application/json", body: "[]" })));
+    if (appMeta && !user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...MOCK.makeSession().user, app_metadata: appMeta }) }));
+    if (appMeta) await ctx.route("**/api/beta", (r) => { try { seen.beta.push(JSON.parse(r.request().postData() || "{}").action); } catch {} return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ secured: false, recorded: true }) }); });
     if (user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) }));
     await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
     await ctx.route("**/api/activation", (r) => { try { seen.counts.push(JSON.parse(r.request().postData() || "{}")); } catch {} return r.fulfill({ status: 204, body: "" }); });
@@ -158,9 +160,9 @@ function buildApp(supabaseUrl) {
     const started = Date.now();
     await shot(page, "manual-ai-disclosure");
     await tap(page, "I Understand & Accept");
-    await btn(page, "Get Started →").waitFor();
+    await btn(page, "Get started").waitFor();
     await shot(page, "manual-welcome");
-    await tap(page, "Get Started →");
+    await tap(page, "Get started");
     const bank = await text(page);
     t.ok(/Link your accounts \(optional\)/.test(bank) && !/About you|Your name/.test(bank), "1a after Welcome: Link your accounts, with no \"About you\" screen before it");
     await shot(page, "manual-link-your-accounts");
@@ -265,7 +267,7 @@ function buildApp(supabaseUrl) {
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     const started = Date.now();
     await tap(page, "I Understand & Accept");
-    await tap(page, "Get Started →");
+    await tap(page, "Get started");
     await page.locator('[data-bank-button="connect"]').waitFor();
     await shot(page, "bank-link-your-accounts");
     await page.locator('[data-bank-button="connect"]').click(); taps.push("Connect My Bank Securely");
@@ -315,7 +317,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="connect"]').click();
     await page.evaluate((m) => { window.__plaidMode = m; }, mode);
     await btn(page, "Connect My Bank").click();
@@ -339,6 +341,28 @@ function buildApp(supabaseUrl) {
     await ctx.close();
   }
 
+  // ── a new Apple or Google account (1.1.7) ───────────────────────────────
+  // The same onboarding as a new email account: the consent step (placeholders until its words are approved, the
+  // approved "Get started"), then Link your accounts. None of the old welcome's words. The server is told once.
+  for (const provider of ["apple", "google"]) {
+    const { ctx, page, seen, errs } = await open({ appMeta: { provider, providers: [provider] } });
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    await btn(page, "Get started").waitFor();
+    const first = await text(page);
+    t.ok(/\[WORDS: onboarding-consent-title\]/.test(first) && /\[WORDS: onboarding-consent-line\]/.test(first)
+      && !/every day\.|Try Demo|No credit card|Canada & USA|PIPEDA|Get Started →/.test(first), `S1 ${provider}: the consent step, with none of the old welcome's words`);
+    await shot(page, `${provider}-consent-step`);
+    await btn(page, "Get started").click();
+    await page.getByText("Link your accounts (optional)").waitFor();
+    t.ok(true, `S2 ${provider}: then Link your accounts, as for a new email account`);
+    await page.waitForTimeout(400);
+    t.eq(seen.beta.filter((a) => a === "social_signin").length, 1, `S3 ${provider}: social_signin sent once`);
+    t.eq(errs, [], `S4 ${provider}: no page errors`);
+    await ctx.close();
+  }
+
   // ── leaving with Link open (1.1.7) ─────────────────────────────────────────────────────
   // A bank asks the person to approve the sign-in in its own app: flourish goes to the background with Link open and
   // comes back. Coming back must not start anything over under Link (lib/plaidLinkOpen.js).
@@ -353,7 +377,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="connect"]').click();
     await page.evaluate(() => { window.__plaidMode = "wait"; });
     await btn(page, "Connect My Bank").click();
@@ -361,7 +385,7 @@ function buildApp(supabaseUrl) {
     const readsBefore = seen.reads, tokensBefore = seen.tokenCalls;
     await away();
     const back = await text(page);
-    t.ok(/Link your accounts \(optional\)/.test(back) && !/Get Started →/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
+    t.ok(/Link your accounts \(optional\)/.test(back) && !/onboarding-consent-title/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
     t.eq([await page.evaluate(() => window.__plaidOpens), seen.reads - readsBefore, seen.tokenCalls - tokensBefore], [1, 0, 0],
       "R1b …the same Link (never opened again), no re-read of the saved data, no new link token");
     await away();
@@ -383,7 +407,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="retry"]').waitFor({ timeout: 15000 });
     const label = (await page.locator("[data-bank-button]").textContent()).trim();
     t.ok(label === "↺ Retry" && await page.locator("[data-bank-button]").isEnabled() && !/\bReady\b/.test(await text(page)), `4a after a link-token error the main button is the retry ("${label}"), never "Ready"`);
@@ -400,7 +424,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="connect"]').waitFor();
     t.eq([...new Set(seen.tokenCountries)], [want], `6a a ${locale} device in ${timezoneId}: the country is ${want}, and Plaid's institution search is asked for ${want}`);
     if (want === "US") {
@@ -507,7 +531,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/confirmed" + hash, { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.getByRole("button", { name: "Enter it myself", exact: true }).last().click();
     await page.getByPlaceholder("0.00").first().fill("2500");
     await btn(page, "Continue →").click();

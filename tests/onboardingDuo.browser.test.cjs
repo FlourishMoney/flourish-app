@@ -169,8 +169,8 @@ function buildApp(supabaseUrl) {
   const SHOW_NUMBER = (fs.readFileSync(path.join(__dirname, "..", "src", "lib", "firstRunWords.js"), "utf8").match(/\bshowNumber: "([^"]+)"/) || [])[1];
   const MANUAL = [
     ["AI disclosure", async () => {}],
-    ["Welcome", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get Started →").waitFor(); }],
-    ["Link your accounts", async (p) => { await btn(p, "Get Started →").click(); await p.locator('[data-bank-button="connect"]').waitFor(); }],
+    ["Welcome", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get started").waitFor(); }],
+    ["Link your accounts", async (p) => { await btn(p, "Get started").click(); await p.locator('[data-bank-button="connect"]').waitFor(); }],
     ["Chequing balance", async (p) => { await btn(p, "Enter it myself").click(); await p.getByPlaceholder("0.00").first().fill("2500"); }],
     ["Paycheques", async (p) => { await btn(p, "Continue →").click(); await p.getByPlaceholder("e.g. 2100").first().fill("2100"); await p.locator('input[type="date"]').first().fill(payday); }],
     ["Paycheques, income type open", async (p) => { await p.locator("[data-income-type-toggle]").first().click(); }],
@@ -183,7 +183,7 @@ function buildApp(supabaseUrl) {
     ["Today, after the tour", async (p) => { await p.getByRole("button", { name: "Skip", exact: true }).first().click(); await p.getByText("Getting set up").first().waitFor(); }],
   ];
   const BANK = [
-    ["Link your accounts", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get Started →").click(); await p.locator('[data-bank-button="connect"]').waitFor(); }],
+    ["Link your accounts", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get started").click(); await p.locator('[data-bank-button="connect"]').waitFor(); }],
     ["Bank consent sheet", async (p) => { await p.locator('[data-bank-button="connect"]').click(); await btn(p, "Connect My Bank").waitFor(); }, true],
     ["W4, Plaid closed", async (p) => { await p.evaluate(() => { window.__plaidMode = "cancel"; }); await btn(p, "Connect My Bank").click(); await p.locator("[data-bank-outcome]").waitFor(); }],
     ["Connected!", async (p) => { await p.evaluate(() => { window.__plaidMode = "success"; }); await btn(p, "Try again").click(); await p.getByText("Connected!").first().waitFor(); }],
@@ -192,7 +192,7 @@ function buildApp(supabaseUrl) {
       await p.getByRole("button", { name: /Skip for now/ }).first().click(); await p.getByText("Auto-detected", { exact: false }).first().waitFor(); }],
   ];
   const TOKEN = [
-    ["Link-token retry", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get Started →").click(); await p.locator('[data-bank-button="retry"]').waitFor({ timeout: 20000 }); }],
+    ["Link-token retry", async (p) => { await btn(p, "I Understand & Accept").click(); await btn(p, "Get started").click(); await p.locator('[data-bank-button="retry"]').waitFor({ timeout: 20000 }); }],
   ];
 
   const STORE = [

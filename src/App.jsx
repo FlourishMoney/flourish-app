@@ -73,7 +73,7 @@ import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
-import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
+import { FIRST_RUN_WORDS, FIRST_RUN_PENDING } from "./lib/firstRunWords.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
@@ -4568,18 +4568,22 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const [typesOpen,setTypesOpen]=useState(()=>new Set());
 
   const screens=[
-    // 0: Welcome (slim — Phase 3e-A trim)
-    <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
-      {/* Quality Sprint item 9: single combined lockup (diamond + wordmark are baked into the
-          app-icon art) replaces the icon + a separate text wordmark — no more duplicated "flourish". */}
-      <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
-      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
-      <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>{tpfOn ? trialWords("trialfirst-welcome") : "Free to start · Canada & USA · No credit card"}</div>
-      <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
+    // 0: The consent step, for every new account (email, Apple or Google alike). 1.1.7: the value screen before sign-up
+    // replaced the old welcome here (its tagline, its line about price and countries, the demo
+    // button and the capital-F lockup). What stays is the reason this step exists: the data-processing consent, which the
+    // sign-up card's line (Terms and Privacy only) does not cover and an Apple or Google sign-up never sees. Its words are
+    // not written yet: FIRST_RUN_PENDING placeholders, which scripts/check-pending-words.mjs refuses in a production or
+    // store build, so nothing ships until they are approved.
+    <div data-onboarding-consent="" style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
+      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:16,maxWidth:320}}>{FIRST_RUN_PENDING.consentTitle}</div>
+      <div style={{marginBottom:24,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
+        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{FIRST_RUN_PENDING.consentLine}</div>
+        <div style={{display:"flex",gap:16,marginTop:6}}>
+          <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Terms</button>
+          <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Privacy Policy</button>
+        </div>
       </div>
+      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>{FIRST_RUN_WORDS.getStarted}</button>
     </div>,
 
     // 1: Bank Connection
