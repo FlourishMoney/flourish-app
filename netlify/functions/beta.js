@@ -28,7 +28,7 @@
 "use strict";
 
 const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
-const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
+const { openSignupEnabled, signupInstantEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
@@ -620,7 +620,11 @@ async function handle(event) {
     // handed it out, not that this person owns the address they typed, and the founding price follows the
     // address (_lib/foundingCohort.js). So every account created while the door is open confirms its
     // email by clicking the link we send.
-    const confirmOnCreate = gate.usedCode && !open;
+    //
+    // INSTANT SIGNUP (SIGNUP_INSTANT "true", _lib/signupGate.js): with the door open, every new account is confirmed on
+    // creation and signed straight in, marked "instant" (never proved by its owner). Off, nothing here changes.
+    const instant = open && signupInstantEnabled();
+    const confirmOnCreate = (gate.usedCode && !open) || instant;
 
     // CHECKED BEFORE THE ACCOUNT EXISTS. An account that must confirm its address is unusable until it
     // does, so creating one we cannot possibly email would leave a person holding an account that can
@@ -694,7 +698,7 @@ async function handle(event) {
         // was confirmed here. _lib/foundingCohort.js offers the founding price only to "link" accounts
         // whose address has been confirmed, so an auto-confirmed address never gets it.
         // `tester` only saves everyone else a call from the app; /api/tester checks the tester_accounts row.
-        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link", ...(testerCode ? { tester: true } : {}) },
+        app_metadata: { email_confirmation: instant ? "instant" : confirmOnCreate ? "auto" : "link", ...(testerCode ? { tester: true } : {}) },
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
@@ -770,7 +774,8 @@ async function handle(event) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
     }
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source }) };
+    // Instant: the app signs in with the address and password it already holds, straight into onboarding.
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, ...(instant ? { instant: true } : {}) }) };
   }
 
   try {
