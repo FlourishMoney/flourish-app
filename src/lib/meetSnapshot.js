@@ -6,6 +6,7 @@
 // and the facilitator context use — so what is displayed is exactly what is generated and sent.
 
 import { ForecastEngine } from "./forecastEngine.js";
+import { nextMainPaydayFor } from "./forecastEdits.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { selectHighestRateDebt, savingsBufferAfter, spareUntilDeposit } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
@@ -128,17 +129,20 @@ export function buildMeetSnapshot(data = {}, now = new Date()) {
     const { spare: extra, safe } = spareUntilDeposit(data, now);
     if (top && extra > 0) {
       const buf    = savingsBufferAfter(data.accounts, 0); // engine helper: the savings balance now
+      // The date is the next MAIN payday, the last day of the window the figure was worked out over
+      // (safeSpendEngine.js; forecastEdits.js nextMainPaydayFor). It used to be the forecast's first deposit of
+      // any size, so a benefit landing before the paycheque read "spare before Nov 20" for a figure that ran to
+      // the paycheque on Nov 26 (tests/paydayWords.test.cjs).
       let periodEnd = "";
       try {
-        const fc2 = ForecastEngine.generate(data, 31, null, now) || {};
-        const pay = (fc2.forecast || []).find(f => f.day > 0 && f.isPayday);
+        const pay = nextMainPaydayFor(data, now);
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
-      } catch { /* no payday found → generic period label */ }
+      } catch { /* no payday known: the generic period label */ }
       const savingsAccts = (data.accounts || []).filter(a => String((a && (a.type || a.subtype)) || "").toLowerCase() === "savings");
       snap.decisions = [{
-        question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
+        question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next payday"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
         explain: {
-          title: `Spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}`, value: formatMoney(extra),
+          title: `Spare ${periodEnd ? `before ${periodEnd}` : "until your next payday"}`, value: formatMoney(extra),
           meaning: "A quarter of what's safe to spend until your next payday, rounded down to the dollar. It is a figure to talk about: nothing is moved.",
           rows: [...(_safeRows(data) || [{ label: "= Safe until next payday", value: formatMoney(safe) }]),
                  { label: "× 25%, rounded down", value: formatMoney(extra) }],
