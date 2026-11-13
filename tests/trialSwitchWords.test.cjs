@@ -19,6 +19,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 const { fakeAdmin, fakeStripe, loadWith } = require("./_trialFakes.cjs");
+const { tempDir } = require("./_tmp.cjs");
 
 const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 const INDEX = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
@@ -89,8 +90,7 @@ const ph = (id) => `[WORDS: ${id}]`;
 
     {
       // 1i-1k A REAL BUILD, twice: `vite build` with the switch off and on, into a folder of its own each time.
-      const os = require("os");
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-meta-"));
+      const dir = tempDir("meta");   // removed when this test's process ends (tests/_tmp.cjs)
       const build = (name, env) => {
         const out = path.join(dir, name);
         const base = { ...process.env, VITE_SUPABASE_URL: "https://placeholder.invalid", VITE_SUPABASE_PUBLISHABLE_KEY: "placeholder" };
@@ -104,7 +104,6 @@ const ph = (id) => `[WORDS: ${id}]`;
       t.eq([on.status, on.html && descriptions(on.html), !!on.html && on.html.includes("Every feature free for 14 days.")], [0, [META_ON, META_ON], false], "1j a real build with the switch on: both are the approved sentence, and the old one is gone");
       const same = (h) => String(h).replace(/assets\/[A-Za-z0-9_.-]+/g, "assets/X");
       t.ok(!!off.html && !!half.html && same(half.html) === same(off.html) && same(strip(on.html)) === same(strip(off.html)), "1k a date with no time builds as off; and on, nothing but the two descriptions differs in the page");
-      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* a temp folder left behind */ }
     }
     {
       // 1l-1m index.html reworded or reformatted so the step cannot change it: on, the build stops; off, nothing happens.
