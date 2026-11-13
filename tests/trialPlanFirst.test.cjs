@@ -359,7 +359,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     }
     t.ok(store.includes('(trial?.claim ? trialWords("trialfirst-button") : copy.button)') && web.includes('(trialOf(chosen)?.claim ? trialWords("trialfirst-button") : UPGRADE_COPY.reviewConfirm)'),
       "9h \"Start free trial\" is the button only where the plan claims the trial");
-    t.ok(APP.includes("{tpfStatus?.trialing&&chipChargeDate(") && !/free/i.test(W.TRIAL_WORDS["trialfirst-welcome"]), "9i the chip shows only during a real trial; the onboarding line makes no trial claim");
+    // 2026-11-13: the chip's date follows where the trial was bought (chipChargeDateFor; tests/trialGoLiveFailures.test.cjs 4e-4i).
+    t.ok(APP.includes("{tpfStatus?.trialing&&chipChargeDateFor(") && !/free/i.test(W.TRIAL_WORDS["trialfirst-welcome"]), "9i the chip shows only during a real trial; the onboarding line makes no trial claim");
     // 9j the chip's date is the store's or Stripe's own trial end (on iPhone the day before: Apple may charge 24 hours early).
     const end = "2026-11-27T15:00:00.000Z";
     t.eq([lib.chargeDateLabel(lib.chipChargeDate("android", end)), lib.chargeDateLabel(lib.chipChargeDate(undefined, end)), lib.chargeDateLabel(lib.chipChargeDate("ios", end)), lib.chipChargeDate("ios", null)],
