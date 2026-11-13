@@ -19926,7 +19926,7 @@ export default function FlourishApp(){
       console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
     }
 
-    // Confirmed deleted server-side: sign out, then every flourish key (localStorage, sessionStorage) and database
+    // Confirmed deleted server-side: sign out, then every flourish key (both web storages) and database
     // (IndexedDB) goes, the iPhone and Android apps' scheduled reminders too, and the page reloads. The storage stays
     // locked throughout: signing out re-renders the app with no user, and its save effect once wrote the deleted
     // account's finances back, ownerless, for the next sign-up to take (2026-11-13, lib/accountWipe.js). The device is
