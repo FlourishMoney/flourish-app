@@ -192,3 +192,13 @@ export function chipChargeDate(platform, trialEndsIso) {
   if (!Number.isFinite(t)) return null;
   return new Date(platform === "ios" ? t - 86400000 : t);
 }
+
+// WHERE THE TRIAL WAS BOUGHT decides that date, not the device it is read on (go-live review, 2026-11-13). The chip
+// took the device's platform, so an iPhone trial read on the website or on Android stated the trial's end, a day after
+// Apple may charge, and a website trial read on an iPhone stated the day before Stripe charges. provider is the
+// server's own (billing.js status and store_status): "app_store" | "play_store" | "stripe". Not known: the earliest
+// the charge could be (the day before), so the date stated is never later than the charge.
+const PROVIDER_PLATFORM = Object.freeze({ app_store: "ios", play_store: "android", stripe: "web" });
+export function chipChargeDateFor(provider, trialEndsIso) {
+  return chipChargeDate(PROVIDER_PLATFORM[provider] || "ios", trialEndsIso);
+}

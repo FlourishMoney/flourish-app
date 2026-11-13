@@ -105,7 +105,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
-import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, askTrialPlanFirst, chipChargeDate } from "./lib/trialPlanFirst.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, askTrialPlanFirst, chipChargeDateFor } from "./lib/trialPlanFirst.js";
 import { trialWords } from "./lib/trialWords.js";
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
@@ -20261,8 +20261,9 @@ input,button,select,textarea { font-family:inherit; }
         {countdown&&<TrialCountdown countdown={countdown} onUpgrade={openUpgrade}/>}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
-        {/* TRIAL_PLAN_FIRST: during the store's or Stripe's 14 days, the date of the first charge (apps and website). */}
-        {tpfStatus?.trialing&&chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(chipChargeDate(window.Capacitor?.getPlatform?.(), tpfStatus.trial_ends)) })}</div>}
+        {/* TRIAL_PLAN_FIRST: during the store's or Stripe's 14 days, the date of the first charge (apps and website), for
+            where the trial was bought, not the device it is read on (lib/trialPlanFirst.js chipChargeDateFor). */}
+        {tpfStatus?.trialing&&chipChargeDateFor(tpfPaySource?.provider, tpfStatus.trial_ends)&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(chipChargeDateFor(tpfPaySource?.provider, tpfStatus.trial_ends)) })}</div>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab
