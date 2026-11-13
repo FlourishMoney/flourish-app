@@ -261,15 +261,9 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // placeholder any more (the doc's third exception covers nothing now).
     const doc = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-WORDS.md"), "utf8");
     const rows = Object.fromEntries([...doc.matchAll(/^\| `(trialfirst-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+?) \| \d+ \|$/gm)].map((m) => [m[1], m[2]]));
-    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (35: the 26 of 2026-11-10, Get started of 2026-11-11, and the 8 still to come of 2026-11-13)");
-    // 2026-11-13: eight lines that follow the switch are still to come (tests/trialSwitchWords.test.cjs). They are
-    // placeholders, listed as such in the doc; the other 27 are word for word as approved, and none of those is one.
-    const TO_COME = ["trialfirst-checkout-done", "trialfirst-demo-coach", "trialfirst-demo-coach-button", "trialfirst-demo-meeting", "trialfirst-disclosure-android", "trialfirst-disclosure-ios", "trialfirst-meeting-locked", "trialfirst-signup-title"];
-    const lines = [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)];
-    t.eq([ids.length, lines.every(([id, w]) => w === rows[id]), lines.filter(([, w]) => /\[WORDS:/.test(w)).map(([id]) => id).sort(), PW.pendingTrialWordIds().sort(),
-      lines.filter(([id]) => TO_COME.includes(id)).every(([id, w]) => w === `[WORDS: ${id}]`), Object.keys(SW.TRIAL_EMAIL_WORDS).some((id) => TO_COME.includes(id))],
-      [35, true, TO_COME, TO_COME, true, false],
-      "5b …each in the code exactly as the doc has it: 27 approved lines, and the 8 still to come as their own placeholders (none of them in an email)");
+    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (35: the 26 of 2026-11-10, Get started of 2026-11-11, and the 8 that follow the switch, 2026-11-13)");
+    t.ok(ids.length === 35 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
+      "5b …each in the code word for word as approved, and none a placeholder");
     const APPROVED = {
       "trialfirst-cancel-before": "Cancel before {date} to avoid the first charge.",
       "trialfirst-button": "Start free trial",
@@ -283,13 +277,11 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
     t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
-    // 2026-11-13: with the 8 lines still to come, the guard refuses the app's source, naming exactly those 8 and only
-    // in src/lib/trialWords.js; the functions (every email), public and index.html hold none.
-    const named = (out) => [...String(out).matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (.+)/g)].map((m) => [m[1], m[2].trim()]);
-    t.eq([all.status, named(all.stderr).map(([id]) => id), [...new Set(named(all.stderr).map(([, f]) => f))]], [1, TO_COME, [path.join("src", "lib", "trialWords.js")]],
-      "5d0 the build guard refuses while the 8 are placeholders: exactly those ids, all in src/lib/trialWords.js");
-    const rest = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
-    t.eq(rest.status, 0, "5d …and passes the functions (the emails), public and index.html: no placeholder there");
+    t.eq(all.status, 0, "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html)");
+    for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
+      const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
+      t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
+    }
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const pkg = require("../package.json");
     t.ok(/command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),

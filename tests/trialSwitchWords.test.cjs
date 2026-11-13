@@ -2,15 +2,14 @@
 // -----------------------------------------------------------------------------
 // THE LINES THAT ARE TRUE ONLY WHILE TRIAL_PLAN_FIRST IS OFF NOW FOLLOW THE SWITCH (2026-11-13).
 // The rule for every one of them: with the switch off (or no answer about it) the screen says today's words, word for
-// word; with it on, the line still to come, which is a placeholder until Amanda's approved words are pasted in, and
-// nothing ships while one is left.
+// word; with it on, the approved line (Amanda, 2026-11-13: ChatGPT 100, Grok 100), word for word.
 //   1  index.html's two descriptions, put in by the build that turns the switch on (scripts/trial-first-meta.mjs);
-//   2  the eight lines: the switch off, each is today's line exactly; on, each is its own placeholder;
+//   2  the eight lines: the switch off, each is today's line exactly; on, each is the approved line exactly;
 //   3  on the screens themselves (the real components, rendered);
 //   4  the website's return from a Stripe checkout: "Payment received" unless that checkout started the 14 days;
 //   5  the store plans' disclosure: the approved line unless a plan on the screen claims the 14 days;
 //   6  what was left alone on purpose: the website's review line and the reminder email;
-//   7  nothing ships with a placeholder: the build guard names these eight, and only these.
+//   7  no placeholder is left: the build guard passes the words module, and the builds still run it.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -41,10 +40,20 @@ const DISCLOSURE = {
   ios: "Payment is charged to your Apple Account when you confirm. Your subscription renews automatically unless you cancel at least 24 hours before the current period ends. You can manage or cancel it in your Apple Account settings.",
   android: "Payment is charged through Google Play when you confirm. Your subscription renews automatically unless you cancel before the renewal date. You can manage or cancel it in Google Play under Subscriptions.",
 };
-const TO_COME = [...Object.keys(TODAY), "trialfirst-disclosure-ios", "trialfirst-disclosure-android"].sort();
+// The switch on: the approved words, 2026-11-13, exactly as Amanda pasted them.
+const APPROVED = {
+  "trialfirst-checkout-done": "Your 14 days free have started. Nothing was charged today. Your plan updates when Stripe confirms your subscription. You'll then see your first-charge date.",
+  "trialfirst-disclosure-ios": "With 14 days free, nothing is charged when you confirm. Your Apple Account is charged when the 14 days end, or up to 24 hours before. A plan without 14 days free is charged when you confirm. Renews unless cancelled in Apple Account settings at least 24 hours before the trial or period ends.",
+  "trialfirst-disclosure-android": "With 14 days free, nothing is charged when you confirm. The first charge goes through Google Play on the date shown. A plan without 14 days free is charged when you confirm. It renews automatically unless cancelled in Google Play under Subscriptions before the first charge or renewal date.",
+  "trialfirst-signup-title": "Create your account",
+  "trialfirst-demo-meeting": "A scripted preview on sample data. Create an account and choose a plan to run it on your own numbers.",
+  "trialfirst-demo-coach": "That's the coach working on sample data. Create an account and choose a plan to ask about your own numbers.",
+  "trialfirst-demo-coach-button": "Create account →",
+  "trialfirst-meeting-locked": "Choose a plan to run the meeting with your coach.",
+};
+const EIGHT = Object.keys(APPROVED).sort();
 const META_OFF = "Know what&#39;s safe to spend until payday. A Canadian money app where safe to spend is built around your paydays. Every feature free for 14 days.";
 const META_ON = "Know what&#39;s safe to spend until payday. A Canadian money app where safe to spend is built around your paydays. Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.";
-const ph = (id) => `[WORDS: ${id}]`;
 
 (async () => {
   const t = create();
@@ -121,14 +130,14 @@ const ph = (id) => `[WORDS: ${id}]`;
     for (const id of Object.keys(TODAY)) {
       t.eq([W.switchWords(id, false), W.switchWords(id, undefined), W.switchWords(id, null), W.switchWords(id, "true"), W.switchWords(id, 1)], Array(5).fill(TODAY[id]),
         `2b ${id}: off, no answer, or anything but a definite "on": today's line`);
-      t.eq(W.switchWords(id, true), ph(id), `2c ${id}: on: the line still to come (a placeholder until the approved words are in)`);
+      t.eq(W.switchWords(id, true), APPROVED[id], `2c ${id}: on: the approved line, word for word`);
     }
     let threw = false; try { W.switchWords("trialfirst-button", true); } catch { threw = true; }
     t.ok(threw, "2d a line with no words for the switch off is refused, never guessed");
     for (const [p, id] of [["ios", "trialfirst-disclosure-ios"], ["android", "trialfirst-disclosure-android"]]) {
       t.eq([offer.storeDisclosure(p), offer.storeDisclosure(p, {}), offer.storeDisclosure(p, { trialClaimed: false }), offer.storeDisclosure(p, { trialClaimed: "yes" })], Array(4).fill(DISCLOSURE[p]),
         `2e ${p}: no plan claims the 14 days: the approved disclosure of 2026-10-20, word for word`);
-      t.eq(offer.storeDisclosure(p, { trialClaimed: true }), ph(id), `2f ${p}: a plan claims the 14 days: the line still to come`);
+      t.eq(offer.storeDisclosure(p, { trialClaimed: true }), APPROVED[id], `2f ${p}: a plan claims the 14 days: the approved line, word for word`);
     }
     t.eq(offer.STORE_DISCLOSURE, DISCLOSURE, "2g the approved disclosures themselves are untouched");
 
@@ -160,15 +169,15 @@ const ph = (id) => `[WORDS: ${id}]`;
       t.ok(m.includes(TODAY["trialfirst-demo-meeting"]) && !m.includes("[WORDS:"), "3f the demo meeting, switch off: today's line, word for word");
       A.setTpfOn(true);
       try { c = coach(); m = meet(); } catch (e) { t.ok(false, `the demo renders with the switch on: ${describe(e)}`); }
-      t.ok(c.includes(`${ph("trialfirst-demo-coach")} ${ph("trialfirst-demo-coach-button")}`) && !c.includes("free account"), "3g the demo coach, switch on: the lines still to come, and \"free account\" is gone");
-      t.ok(m.includes(ph("trialfirst-demo-meeting")) && !m.includes("free account"), "3h the demo meeting, switch on: the line still to come, and \"free account\" is gone");
+      t.ok(c.includes(`${APPROVED["trialfirst-demo-coach"]} ${APPROVED["trialfirst-demo-coach-button"]}`) && !/free account/i.test(c) && !c.includes("[WORDS:"), "3g the demo coach, switch on: the approved line and button, and \"free account\" is gone");
+      t.ok(m.includes(APPROVED["trialfirst-demo-meeting"]) && !/free account/i.test(m) && !m.includes("[WORDS:"), "3h the demo meeting, switch on: the approved line, and \"free account\" is gone");
       // A signed-in account with no plan, on the website: the meeting's locked line.
       const mine = { ...demo, demo: false };
       const locked = () => textOf(A.render(A.h(A.MeetAgenda, { data: mine, isCouple: false, setScreen: () => {}, setAppData: () => {} })));
       let on = "", off = "";
       try { on = locked(); A.setTpfOn(false); off = locked(); } catch (e) { t.ok(false, `the meeting renders for a signed-in account: ${describe(e)}`); }
       t.ok(off.includes(TODAY["trialfirst-meeting-locked"]) && !off.includes("[WORDS:"), "3i the meeting with no plan, switch off: \"Start your trial to run the meeting with your coach.\"");
-      t.ok(on.includes(ph("trialfirst-meeting-locked")) && !on.includes("Start your trial"), "3j …switch on: the line still to come, and no trial to \"start\" is promised");
+      t.ok(on.includes(APPROVED["trialfirst-meeting-locked"]) && !on.includes("Start your trial") && !on.includes("[WORDS:"), "3j …switch on: \"Choose a plan to run the meeting with your coach.\", and no trial to \"start\" is promised");
       A.setTpfOn(false);
     }
     t.ok(APP.includes('{mode === "signup" ? switchWords("trialfirst-signup-title", tpfOn) : mode === "check_email" ? "Almost there" : "Welcome back"}')
@@ -180,7 +189,7 @@ const ph = (id) => `[WORDS: ${id}]`;
     t.eq([vis.billingReturnNotice("?billing=success&trial=0&session_id=cs_1").text, vis.billingReturnNotice("?billing=success&trial=true").text, vis.billingReturnNotice("?trial=1"), vis.billingReturnNotice("?billing=cancelled&trial=1")],
       [TODAY["trialfirst-checkout-done"], TODAY["trialfirst-checkout-done"], null, { kind: "cancelled", text: "Checkout cancelled. Nothing was charged." }],
       "4b only the server's own mark (trial=1 on a success return) changes it; a cancelled checkout says what it always said");
-    t.eq(vis.billingReturnNotice("?billing=success&trial=1&session_id=cs_1"), { kind: "success", text: ph("trialfirst-checkout-done") }, "4c back from a checkout that started the 14 days: the line still to come, never \"Payment received\"");
+    t.eq(vis.billingReturnNotice("?billing=success&trial=1&session_id=cs_1"), { kind: "success", text: APPROVED["trialfirst-checkout-done"] }, "4c back from a checkout that started the 14 days: \"Your 14 days free have started. Nothing was charged today. …\", never \"Payment received\"");
     t.ok(vis.BILLING_RETURN_PARAMS.includes("trial") && vis.BILLING_RETURN_PARAMS.includes("billing") && vis.BILLING_RETURN_PARAMS.includes("session_id"), "4d the mark comes off the address bar with the rest");
     {
       // The server puts the mark on a trial checkout only: the real checkout, switch off and on, eligible and not.
@@ -218,16 +227,17 @@ const ph = (id) => `[WORDS: ${id}]`;
       ["On {date}, you'll be charged {amount}, plus any applicable tax, unless you cancel first.", "To keep your plan, you don't need to do anything.", false],
       "6c the reminder email's charge lines: the approved words of 2026-11-10, unchanged, and no placeholder (an email holding one is never sent)");
 
-    // ════ 7. NOTHING SHIPS WITH A PLACEHOLDER ═════════════════════════════════════════════════════════
+    // ════ 7. NO PLACEHOLDER IS LEFT ═══════════════════════════════════════════════════════════════════
     const guard = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join("src", "lib", "trialWords.js")], { cwd: REPO, encoding: "utf8" });
-    const named = [...String(guard.stderr).matchAll(/\[WORDS: ([a-z0-9-]+)\]/g)].map((m) => m[1]).sort();
-    t.eq([guard.status, named], [1, TO_COME], "7a the build guard refuses the words module, naming exactly the eight lines still to come");
-    t.eq(Object.entries(W.TRIAL_WORDS).filter(([, w]) => /\[WORDS:/.test(w)).map(([id, w]) => [id, w === ph(id)]), TO_COME.map((id) => [id, true]).sort((a, b) => Object.keys(W.TRIAL_WORDS).indexOf(a[0]) - Object.keys(W.TRIAL_WORDS).indexOf(b[0])),
-      "7b each is its own placeholder, and no other line in the module is one");
+    t.eq([guard.status, String(guard.stderr).includes("[WORDS:")], [0, false], "7a the build guard passes the words module: the eight lines are in");
+    t.eq([EIGHT.map((id) => W.TRIAL_WORDS[id] === APPROVED[id]), Object.values(W.TRIAL_WORDS).some((w) => /\[WORDS:/.test(w)), Object.values(W.SWITCH_OFF_WORDS).some((w) => /\[WORDS:/.test(w))],
+      [Array(8).fill(true), false, false], "7b each of the eight is the approved line in the module, and no line there is a placeholder");
+    // The approved lines keep the house rules: no "free account", no em dash, lowercase flourish where it is named.
+    t.ok(Object.values(APPROVED).every((w) => !/free account|\u2014|Flourish/.test(w)), "7b2 none of them says \"free account\", uses an em dash, or capitalises flourish");
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
     t.ok(/\[context\.production\]\s+command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /node scripts\/check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),
-      "7c the production web build and every store build run that guard, so none of this reaches a household before the words do");
+      "7c the production web build and every store build still run that guard");
   } finally {
     for (const k of ENV_KEYS) { if (k in saved) process.env[k] = saved[k]; else delete process.env[k]; }
   }
