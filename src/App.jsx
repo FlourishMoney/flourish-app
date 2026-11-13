@@ -1229,7 +1229,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "savings",
       icon: "💚",
       color: C.green,
-      title: `$${safeToMove} spare until your next deposit`,
+      title: `$${safeToMove} spare until your next payday`,
       detail: spareWorking(safeToMove, spareInfo.safe),
       action: "See Goals", screen: "goals"
     });
@@ -1315,7 +1315,7 @@ function AutopilotCard({data, setScreen}) {
     // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
     // are gone, and so is "Left over" (it was net of those amounts, and read as more money free).
     {
-      icon:"🐷", label:"Spare until your next deposit", amount:formatMoney(plan.spare),
+      icon:"🐷", label:"Spare until your next payday", amount:formatMoney(plan.spare),
       color:C.teal, detail: plan.spare > 0 ? spareWorking(plan.spare, plan.spareFrom)
         : plan.spareReason === "tight" ? "Nothing: safe to spend is below 15% of your monthly income."
         : plan.spareReason === "overdraft" ? "Nothing: the forecast shows an overdraft in the next 30 days."
@@ -6276,7 +6276,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next deposit.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
+              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next payday.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
             </div>}
           </div>
         </div>
@@ -6291,7 +6291,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         <HowWeGotThis
           title="Safe to spend until next payday"
           value={ssView.headlineText}
-          meaning="What is left after the bills, debt payments and savings already committed before your next deposit."
+          meaning="What is left after bills, minimum debt payments, a spending buffer and savings are counted until your next payday."
           inputs={[
             {label:"In your accounts", value:ssView.balanceText},
             ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
@@ -6418,12 +6418,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
           // second division of safe. The weekly framing is that daily figure, not safe/7.
-          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
-          // this surface has not established WHICH income arrives next.
+          // Prompt 3d: the engine's pace as a fact, not an instruction. "payday" (2026-11-13): safe to spend runs to
+          // the next main payday (forecastEdits.js nextMainPaydayFor), so that is the day this line names.
           const doIt = safe>0
             // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
             ? paceSentence(dailyPace, ssView.headline)
-            : "Nothing is left to spend until your next deposit lands.";
+            : "Nothing is left to spend until your next payday.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
@@ -7432,7 +7432,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
 // "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
 // else explains itself by being tapped, because the number opens HowWeGotThis.
 const TERMS = {
-  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit.",
+  "Safe to spend": "Not your balance. What is left after bills, minimum debt payments, a spending buffer and savings are counted until your next payday.",
   "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
   "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",

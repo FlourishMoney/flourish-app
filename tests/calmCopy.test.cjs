@@ -49,7 +49,8 @@ const RENDERED = (PROSE.match(/>[^<>{}]{12,180}</g) || []).map(s => s.slice(1, -
   t.ok(/The day-by-day list below shows that day, and what lands on it\./.test(APP) && /Pick a longer range above to see it\./.test(APP),
     "2b …and points at where to see it, rather than prescribing a remedy");
   // Split across a <strong>, so matched as it is actually written.
-  t.ok(/>Heads up<\/strong>: your bills come to more than your balance before your next deposit\./.test(APP),
+  // 2026-11-13: "before your next payday" (approved words; safe to spend runs to the next main payday since PR #138).
+  t.ok(/>Heads up<\/strong>: your bills come to more than your balance before your next payday\./.test(APP),
     "2c Today's strip does the same");
   t.ok(/See what's coming →/.test(APP), "2d …with a link to the forecast");
   // Prompt 3: the "$45 to $48" fee range was a figure Flourish did not source, so the line names the fee without one.

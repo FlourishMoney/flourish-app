@@ -115,12 +115,12 @@ const { create } = require("./_runner.cjs");
     const moved = { ...d, forecastEdits: fe.editOccurrence(d.forecastEdits, occ, "one", { date: "2026-11-27" }) };
     t.ok(q(spareOf(moved)).includes(` is spare before ${meetDay("2026-11-27")}: `), "3i a paycheque the household moved to Nov 27: Nov 27");
 
-    // No date known: the approved fallback.
-    const none = spareOf({ ...house([]), accounts: cash(6000) });
-    if (none) {
-      t.ok(q(none).includes(" is spare until your next payday: a quarter of your "), "3j no income entered: \"until your next payday\"");
-      t.eq(none.explain.title, "Spare until your next payday", "3k …and in the title");
-    }
+    // No date known (the only income is a yearly one more than 400 days off): the approved fallback.
+    const far = { ...house([{ id: 9, label: "Bonus", amount: "5000", freq: "annually", nextPayDate: "2028-03-01" }]), bills: [] };
+    const none = spareOf(far);
+    t.eq([fe.nextMainPaydayFor(far, today), DE.spareUntilDeposit(far, today).spare > 0, !!none], [null, true, true], "3j0 a household with no payday in sight, and something spare");
+    t.ok(q(none).includes(" is spare until your next payday: a quarter of your "), "3j no date known: \"until your next payday\"");
+    t.eq(none && none.explain.title, "Spare until your next payday", "3k …and in the title");
     const SRC = code(read("src/lib/meetSnapshot.js"));
     t.eq([(SRC.match(/"until your next payday"/g) || []).length, /until your next deposit/.test(SRC)], [2, false],
       "3l the fallback is \"until your next payday\" in the question and the title, and \"until your next deposit\" is gone");

@@ -22,7 +22,7 @@
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { suggestedDailyView, paceSentence } from "./suggestedDaily.js";
-import { nextDepositFor, daysToNextDepositFor } from "./forecastEdits.js";
+import { nextDepositFor, daysToNextDepositFor, nextMainPaydayFor } from "./forecastEdits.js";
 import { selectHighestRateDebt } from "./decisionEngine.js";
 import { meetAgendaFor } from "./meetSnapshot.js";
 import { formatMoney } from "./format.js";
@@ -48,9 +48,13 @@ function facts(data, today) {
   const pace = suggestedDailyView(view.headline, data.incomes, data.transactions, today, data);
   const nd = nextDepositFor(data, today);
   const days = daysToNextDepositFor(data, today);
+  // The next MAIN payday: the day safe to spend runs to (forecastEdits.js nextMainPaydayFor). The sentences that say
+  // "safe to spend until your next payday on [date]" name this day; `nd` stays the next deposit of any size, for the
+  // answer about the next deposit itself.
+  const payday = nextMainPaydayFor(data, today);
   const debt = selectHighestRateDebt(data.debts || []);
   const decision = (meetAgendaFor(data, today).decisions || [])[0] || null;   // the same day as every other figure here
-  return { ss, view, pace, nd, days, debt, decision };
+  return { ss, view, pace, nd, days, payday, debt, decision };
 }
 
 // The demo's weekly check-in insight (Muse review item 4). The demo never calls the AI, so instead of
@@ -65,7 +69,7 @@ export function demoCheckInInsight(data, today = new Date()) {
   const deductions = f.view.rows
     .filter(r => r.kind === "deduction")
     .map(r => (PHRASE[r.key] ? PHRASE[r.key](r.value) : `${r.value} in ${r.label.toLowerCase()}`));
-  const until = f.nd ? ` until your next deposit on ${_date(f.nd.date, data.profile?.country)}` : " until your next deposit";
+  const until = f.payday ? ` until your next payday on ${_date(f.payday.date, data.profile?.country)}` : " until your next payday";
   return `${f.view.headlineText} is safe to spend${until}. It starts from ${f.view.balanceText} in your accounts` +
     (deductions.length ? `, less ${_list(deductions)}.` : ".");
 }
@@ -88,7 +92,7 @@ export function demoCoachExchanges(data, today = new Date()) {
   out.push({
     q: "What's actually safe for me to spend right now?",
     a: `${f.view.headlineText}. You have ${f.view.balanceText} in your accounts. Flourish accounts for ${_list(deductions)}.` +
-       (f.nd ? ` That's what's safe to spend until your next deposit on ${_date(f.nd.date, data.profile?.country)}.` : ""),
+       (f.payday ? ` That's what's safe to spend until your next payday on ${_date(f.payday.date, data.profile?.country)}.` : ""),
   });
 
   // 2 — the daily pace, and why it is not a spending cap.
@@ -96,7 +100,7 @@ export function demoCoachExchanges(data, today = new Date()) {
     out.push({
       q: "So how much can I spend today?",
       a: `${paceSentence(f.pace, f.view.headline)} ` +
-         `It's a pace, not a limit. Safe to spend is the total until your next deposit; this spreads it across the days. ` +
+         `It's a pace, not a limit. Safe to spend is the amount left until your next payday. This shows it per day. ` +
          `The pace always uses at least 14 days, even when a deposit is closer.`,
     });
   }

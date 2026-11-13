@@ -75,7 +75,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq([planF.spare, planF.spareFrom, planF.spareReason], [487, 1951, null], "1h …with $487 spare: 25% × $1,951 rounded down, the Decisions figure");
     t.ok(!("savingsTransfer" in planF) && !("buffer" in planF) && ssF.balance > 0, "1i …and no $240 / $200 split and no Left over");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(!/label:"Left over"/.test(app) && /label:"Spare until your next deposit"/.test(app), "1j the card shows the spare amount, and no residual");
+    t.ok(!/label:"Left over"/.test(app) && /label:"Spare until your next payday"/.test(app), "1j the card shows the spare amount, and no residual");
   }
 
   // ── 2 to 5: Decisions, rendered ───────────────────────────────────────────────────────────────
@@ -100,10 +100,10 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.ok(/Cash is running tight/.test(qa), "2c QA: Decisions warns");
     t.ok(/Your safe to spend \(\$879\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
     t.ok(!/Your balance is below/.test(qa), "2e …not the $3,083 balance");
-    // Prompt 3d: the savings and debt cards state facts ("$487 spare until your next deposit", "Visa card: $150 more a month").
-    t.ok(!/\$\d+ spare until your next deposit/.test(qa) && !/: \$\d+ more a month/.test(qa), "2f …and shows neither the spare-for-savings card nor the extra-on-debt card");
+    // Prompt 3d: the savings and debt cards state facts ("$487 spare until your next payday", "Visa card: $150 more a month"). The words were "…your next deposit" until 2026-11-13.
+    t.ok(!/\$\d+ spare until your next (?:payday|deposit)/.test(qa) && !/: \$\d+ more a month/.test(qa), "2f …and shows neither the spare-for-savings card nor the extra-on-debt card");
     // Prompt 3e: the "$150 more a month on the Visa" card is gone (a suggested amount for a debt).
-    t.ok(!/Cash is running tight/.test(fixed) && /\$487 spare until your next deposit/.test(fixed) && !/more a month/.test(fixed),
+    t.ok(!/Cash is running tight/.test(fixed) && /\$487 spare until your next payday/.test(fixed) && !/more a month/.test(fixed),
          "2g fixed date: no warning, and the spare-amount card is back (with no debt amount card)");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/const lowCash = cashIsTight\(data, todayD\)\.tight;/.test(app), "2h Decisions asks the same rule the Money Plan asks");
