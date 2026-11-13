@@ -9,12 +9,16 @@
 // and safe to spend rose from $434 to $899. It lasted from the change in November to the one in March.
 //
 // Every check runs in a child process started in the zone (TZ is read when a process starts):
-//   America/Toronto     clocks change (Nov 1 2026, Mar 14 2027; Mar 8 2026)
-//   America/Vancouver   clocks change
-//   America/Edmonton    as this machine's zone data has it
+//   America/Toronto     \
+//   America/Vancouver    } each as the zone data on THIS machine has it. That data differs from machine to machine:
+//   America/Edmonton    /  the Mac this was written on (2026-11-13) still has all three changing their clocks, while
+//                          GitHub's runner already has Vancouver on UTC-7 all year. The fix must be right under either,
+//                          so nothing below depends on which a machine holds.
+//   EST5EDT, PST8PDT    the two fixed-rule zones that change their clocks whatever a province decides, so the
+//                       clock-change case is always exercised (the last check makes sure at least one zone does)
 //   Etc/GMT+6           a fixed UTC-6 with no clock change at all, which is what Alberta observes from Nov 1 2026
 //                       whatever the zone data on a given phone or server still says
-//   UTC                 the CI runner
+//   UTC                 no clock change
 // The expected dates are worked out in UTC calendar arithmetic, which has no clock changes, never with the code
 // under test.
 //
@@ -26,7 +30,7 @@
 "use strict";
 const { spawnSync } = require("child_process");
 
-const ZONES = ["America/Toronto", "America/Vancouver", "America/Edmonton", "Etc/GMT+6", "UTC"];
+const ZONES = ["America/Toronto", "America/Vancouver", "America/Edmonton", "EST5EDT", "PST8PDT", "Etc/GMT+6", "UTC"];
 
 // Calendar arithmetic with no time zone in it.
 const utc = (iso) => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d); };
@@ -98,9 +102,16 @@ function parent() {
     t.eq(o.changeDays, [["2026-11-01", true, "2026-11-08"], ["2026-03-08", true, "2026-03-15"], ["2027-03-14", true, "2027-03-21"]],
          `${zone} 4 a weekly bill due on the Sunday the clocks change is due that day, and next due a week later`);
   }
-  // The zones really differ: this is not five runs of one clock.
-  const off = (zone) => { const r = spawnSync(process.execPath, ["-e", "process.stdout.write(String(new Date(2026,11,1,9).getTimezoneOffset()))"], { env: { ...process.env, TZ: zone }, encoding: "utf8" }); return Number(r.stdout); };
-  t.eq([off("America/Toronto"), off("America/Vancouver"), off("Etc/GMT+6"), off("UTC")], [300, 480, 360, 0], "0 December offsets: Toronto UTC-5, Vancouver UTC-8, the fixed zone UTC-6, UTC 0");
+  // The zones really differ, and at least one of them changes its clocks, so this is not seven runs of one clock.
+  // Only the zones whose offsets are fixed by their definition are pinned. What a Canadian zone does in December
+  // depends on the machine's zone data (see the top of this file), so those are reported, not pinned.
+  const off = (zone) => { const r = spawnSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify([new Date(2026,6,1,9).getTimezoneOffset(), new Date(2026,11,1,9).getTimezoneOffset()]))"], { env: { ...process.env, TZ: zone }, encoding: "utf8" }); return JSON.parse(r.stdout); };
+  const offsets = Object.fromEntries(ZONES.map((z) => [z, off(z)]));                 // [July, December], minutes behind UTC
+  t.eq([offsets["Etc/GMT+6"], offsets.UTC], [[360, 360], [0, 0]], "0a the fixed zones: UTC-6 all year, and UTC");
+  t.eq([offsets.EST5EDT, offsets.PST8PDT], [[240, 300], [420, 480]], "0b the two fixed-rule zones change their clocks: UTC-4 and UTC-5, UTC-7 and UTC-8");
+  const changing = ZONES.filter((z) => offsets[z][0] !== offsets[z][1]);
+  t.ok(changing.length >= 2 && new Set(ZONES.map((z) => String(offsets[z]))).size >= 4,
+       `0c at least two zones change their clocks and at least four differ (on this machine: ${ZONES.map((z) => `${z} ${offsets[z].join("/")}`).join(", ")})`);
   t.summary("billDst");
 }
 
