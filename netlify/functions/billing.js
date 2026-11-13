@@ -419,7 +419,9 @@ exports.handler = async (event) => {
         ...taxParams(),                             // Stripe Tax, behind STRIPE_TAX_ENABLED
         expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,   // before its attempt ends (round 5: every checkout)
         allow_promotion_codes: true,
-        success_url: `${APP_ORIGIN()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
+        // trial=1 (2026-11-13): this checkout starts the 14 days and takes no payment, so the app does not say
+        // "Payment received" when the browser comes back (src/lib/billingVisibility.js billingReturnNotice).
+        success_url: `${APP_ORIGIN()}/?billing=success${trialDays ? "&trial=1" : ""}&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?billing=cancelled`,
       // Each checkout is one attempt: never handed back again by Stripe's idempotency (it may be expired below).
       }, { idempotencyKey: `checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` });

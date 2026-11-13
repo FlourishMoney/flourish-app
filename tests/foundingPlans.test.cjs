@@ -152,7 +152,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
     t.ok(/if\(r\.outcome==="paid" && onClose\) onClose\(\);/.test(sp), "5h a confirmed purchase closes it (in the trial the entitlement close never fired)");
     t.ok(/\{onClose&&<div style=\{\{display:"flex",justifyContent:"flex-end"\}\}><button aria-label="Close" onClick=\{onClose\}/.test(sp) && /minWidth:LAYOUT\.minTap,minHeight:LAYOUT\.minTap/.test(sp),
       "5i the close button is always there, at full tap size (Apple: a visible way out)");
-    t.ok(/priceString: p\.product\.priceString/.test(sp) && /\{storeDisclosure\(platform\)\}/.test(sp), "5j prices are the store's own strings, and the approved disclosure stays under the plans");
+    t.ok(/priceString: p\.product\.priceString/.test(sp) && /\{storeDisclosure\(platform, \{ trialClaimed \}\)\}/.test(sp), "5j prices are the store's own strings, and the approved disclosure stays under the plans");
     const lib = read("src", "lib", "foundingPlans.js");
     const strings = [...lib.replace(/\/\/.*$/gm, "").matchAll(/"([^"\n]*)"/g)].map((m) => m[1]).filter((x) => / /.test(x));
     t.eq(strings, [], "5k the library carries no words for the screen: the plans screen keeps only its approved lines");

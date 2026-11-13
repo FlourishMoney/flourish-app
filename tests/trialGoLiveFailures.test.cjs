@@ -265,8 +265,8 @@ function androidProduct(plan, price, { offer = false } = {}) {
       const book = fs.readFileSync(path.join(REPO, "docs", "ops", "TRIAL-FIRST-GO-LIVE.md"), "utf8");
       t.ok(book.includes("**The switch (`TRIAL_PLAN_FIRST`) goes on last, and never before the store offers exist.**"), "5a the one line: the switch goes on last, and never before the store offers exist");
       const at = (needle) => { const i = book.indexOf(needle); return i < 0 ? Infinity : i; };
-      const order = [at("4. **Stripe, live mode.**"), at("5. **Play Console: three offers.**"), at("6. **App Store Connect: three introductory offers.**"), at("7. **Netlify: the switch.**"), at("9. **Merge the `index.html` pull request.**"), at("10. **The places that still say")];
-      t.ok(order.every(Number.isFinite) && order.every((v, i) => i === 0 || order[i - 1] < v), "5b the order: Stripe's event, the Play offers, Apple's offers, the switch, index.html, the \"no card\" places");
+      const order = [at("4. **Stripe, live mode.**"), at("5. **Play Console: three offers.**"), at("6. **App Store Connect: three introductory offers.**"), at("7. **Netlify: the switch.**"), at("9. **Check the page's descriptions.**"), at("10. **The places that still say")];
+      t.ok(order.every(Number.isFinite) && order.every((v, i) => i === 0 || order[i - 1] < v), "5b the order: Stripe's event, the Play offers, Apple's offers, the switch, the page's descriptions, the \"no card\" places");
       t.ok(/Deploys > Trigger deploy > Deploy site/.test(book) && /A setting does nothing until a deploy\./.test(book), "5c the switch needs a deploy, and the runbook says so");
       for (const id of [...Object.values(IOS_ID), "free-14-monthly", "free-14-annual", "free-14-founding", "flourish_plus"]) t.ok(book.includes("`" + id + "`"), `5d the runbook names ${id}`);
       t.ok(/Type: `Free`/.test(book) && /Duration: `2 Weeks`/.test(book) && /Phase duration: `2 weeks`/.test(book) && /Eligibility: `New customer acquisition`/.test(book) && /`Never had this subscription`/.test(book) && /Tags: none/.test(book),

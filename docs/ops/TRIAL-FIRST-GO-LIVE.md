@@ -31,9 +31,10 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
    - Play Console > Production: the live release is **28 (1.1.6)**, not 27. Build 27 does not have the Terms section 7 change (#133).
    - App Store Connect: the live build is **526912**, not 526911, for the same reason.
    - If either store shows the older build: stop here and tell CC. That app's Terms would keep the old section 7 after the switch.
-3. **Get the `index.html` pull request ready.** Who: CC. Not merged yet.
-   - The last sentence of the meta description and og:description, "Every feature free for 14 days.", becomes "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled."
-   - Check after: gate and CI green on that pull request.
+3. **Merge the words pull request.** Who: Amanda pastes the approved words for its eight placeholders (`docs/product/TRIAL-PLAN-FIRST-WORDS.md`, "Words still to come"), then says go; CC merges.
+   - It makes eight lines follow the switch, and makes the `index.html` descriptions follow it at build time: "Every feature free for 14 days." becomes "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled." in the deploy that turns the switch on.
+   - It cannot go out before the words are in: the production build refuses a placeholder.
+   - Check after: the production deploy id; the page source still ends "Every feature free for 14 days." twice (the switch is off).
 4. **Stripe, live mode.** Who: Amanda. Can be done days ahead: it does nothing while the switch is off.
    - Developers > Webhooks > the production endpoint > add one event: `customer.subscription.created`. Keep every event it has.
    - Settings > Billing > Subscriptions and emails > Manage free trial messaging: Stripe's trial reminder stays **on**.
@@ -64,9 +65,9 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
    - If a phone's plans say "charged today" instead: that store is not giving its offer to that account yet. Nobody is mis-told in that state, but a new household would pay on day one. **Before the time arrives,** set `TRIAL_PLAN_FIRST_SINCE` an hour later and Trigger deploy again, then sort out step 5 or 6. Moving the time later is safe while it is still ahead.
    - After the time: a new test account meets "Choose your plan" after its first number, and the only ways out are a plan, "Restore purchases" (apps) and "Sign out".
    - A page that was already open before the switch keeps its old words until it is reloaded.
-9. **Merge the `index.html` pull request.** Who: Amanda says go, CC merges.
-   - Check after: the deploy id; the page source carries the new sentence twice; `/api/trial-plan-first` still answers 200.
-   - Undo: revert that pull request.
+9. **Check the page's descriptions.** Who: CC, read only. Nothing to merge: step 7's deploy built them.
+   - Check after: the source of `https://flourishmoney.app/` carries "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled." twice, and "Every feature free for 14 days." not at all.
+   - If it still shows the old sentence: the two variables are not visible to builds. In Netlify, set each variable's scope to include Builds, then Trigger deploy again.
 10. **The places that still say "no card" or the old trial.** Who: Amanda. The list is in "Every place that names the trial or a card" below.
 
 ### After
@@ -161,7 +162,7 @@ There is no minimum-version gate, so some people will still be on them.
 2. Straight after: end the store offers. App Store Connect: set each introductory offer's end date to today. Play Console: deactivate each `free-14-*` offer.
 3. Between 1 and 2 the gap in "Why this order", point 4, is open again on iPhone. Keep it to minutes.
 4. What keeps going: trials already running are charged on their day 14 as agreed, and their reminders are still sent.
-5. Put the `index.html` sentence back.
+5. Step 1's deploy also puts the `index.html` descriptions back. Check the page source.
 
 ## Every place that names the trial or a card
 Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/functions` (every email), `ios/`, `android/`, `docs/`, and `~/Documents/Flourish` (store copy, reels, captions). Line numbers are main's on that day. Nothing here was changed.
@@ -178,7 +179,7 @@ Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/funct
 ### B. The 14-day trial, by name
 | Where | What it says | On the day |
 |---|---|---|
-| `index.html:21` and `:22` (meta description, og:description) | "… Every feature free for 14 days." | By hand: runbook step 9 |
+| `index.html:21` and `:22` (meta description, og:description) | "… Every feature free for 14 days." | Follows the switch at build time; checked in runbook step 9 |
 | `src/App.jsx:15869`, landing button, top and bottom | "Try flourish free for 14 days" | Follows the switch: "Get started" |
 | `src/App.jsx:16513`, landing | "Every feature free for 14 days. Also on iPhone and Android." | Follows the switch: `trialfirst-landing` |
 | `src/App.jsx:14206`, Terms section 7, website | "Core features are available at no charge with a 14-day trial of premium features." | Follows the switch |
