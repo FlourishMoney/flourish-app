@@ -939,8 +939,8 @@ function withoutServerKeys(metadata) {
 }
 
 exports.handler = async (event) => {
-  logAppleConfigOnce("beta");   // names only: whether this instance can sign for Apple
   connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
+  logAppleConfigOnce("beta");   // names only: whether this instance can sign for Apple
   let res;
   try { res = await handle(event); }
   catch (e) { console.log(logLine(event, { statusCode: 500, body: JSON.stringify({ error: "threw" }) })); throw e; }
