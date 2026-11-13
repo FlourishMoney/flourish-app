@@ -20,6 +20,7 @@
 // -----------------------------------------------------------------------------
 
 import { pendingWords } from "./pendingWords.js";
+import { switchWords } from "./trialWords.js";
 import { getPricing, formatPrice } from "./pricing.js";
 
 // A Capacitor shell, by either signal. getPlatform() is the direct answer; the URL scheme is the
@@ -116,15 +117,19 @@ export function foundingLabel(cohortLimit) {
  * plan changes when the webhook writes it and the profile is read back — never here.
  */
 export function billingReturnNotice(search) {
-  const value = (() => {
+  const params = (() => {
     try {
       const q = String(search || "");
-      return new URLSearchParams(q.startsWith("?") ? q.slice(1) : q).get("billing");
+      return new URLSearchParams(q.startsWith("?") ? q.slice(1) : q);
     } catch { return null; }
   })();
+  const value = params ? params.get("billing") : null;
+  // TRIAL_PLAN_FIRST (2026-11-13): a checkout that started the 14 days took no payment, so "Payment received" is
+  // untrue for it. billing.js marks that return with trial=1 (only it can start a trial, and only while the switch is
+  // on); every other return says today's line, word for word.
   if (value === "success") return {
     kind: "success",
-    text: "Payment received. Your plan will update when Stripe confirms it, usually within a few seconds.",
+    text: switchWords("trialfirst-checkout-done", params.get("trial") === "1"),
   };
   if (value === "cancelled") return { kind: "cancelled", text: "Checkout cancelled. Nothing was charged." };
   if (value === "portal_return") return { kind: "portal", text: "Back from Stripe's billing portal." };
@@ -167,4 +172,4 @@ export function foundingConfirmResult(httpStatus) {
 }
 
 // The query keys this feature owns, so the caller can strip them from the URL afterwards.
-export const BILLING_RETURN_PARAMS = Object.freeze(["billing", "session_id"]);
+export const BILLING_RETURN_PARAMS = Object.freeze(["billing", "session_id", "trial"]);

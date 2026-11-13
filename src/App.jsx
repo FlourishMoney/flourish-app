@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useId, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
@@ -106,7 +106,15 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
 import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, askTrialPlanFirst, chipChargeDateFor } from "./lib/trialPlanFirst.js";
-import { trialWords } from "./lib/trialWords.js";
+import { trialWords, switchWords } from "./lib/trialWords.js";
+// TRIAL_PLAN_FIRST FOR SCREENS DEEP IN THE TREE (2026-11-13): is the switch known to be on? FlourishApp sets it from the
+// server's answers (tpfOn); a screen that must not promise a free account or a trial to start reads it with useTpfOn().
+// Off until an answer says on, so every such line is today's line by default (lib/trialWords.js switchWords).
+const TPF_STORE = { on: false, subs: new Set() };
+function setTpfOn(v){ const on = v === true; if(TPF_STORE.on !== on){ TPF_STORE.on = on; TPF_STORE.subs.forEach(f => f()); } }
+const tpfSubscribe = (f) => { TPF_STORE.subs.add(f); return () => { TPF_STORE.subs.delete(f); }; };
+const tpfSnapshot = () => TPF_STORE.on;
+function useTpfOn(){ return useSyncExternalStore(tpfSubscribe, tpfSnapshot, tpfSnapshot); }
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -10475,6 +10483,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
+  const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo's and the locked meeting's line follow the switch
   const [started, setStarted] = useState(false);
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -10666,11 +10675,11 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
         <div style={{...card,background:C.cardAlt}}>
           <div style={{marginBottom:SPACE.sm}}><span style={exampleTagStyle()}>{DEMO_STATUS_LABEL}</span></div>
           <div data-chat="plain" style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
+          <div data-demo-meeting-line="" style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>{switchWords("trialfirst-demo-meeting", tpfOnNow)}</div>
         </div>
       ) : facilitatorGate === "trial" ? (
         /* A store app sells nothing: it says the meeting isn't on the free plan (lib/freePlan.js), and stops. */
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? LOCKED_LINE : "Start your trial to run the meeting with your coach."}</div></div>
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? LOCKED_LINE : switchWords("trialfirst-meeting-locked", tpfOnNow)}</div></div>
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
@@ -13298,6 +13307,7 @@ function SegTabs({ tabs, value, onChange }) {
 
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
+  const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo coach's last line and button follow the switch
   const [messages, setMessages] = useState(()=>{
     try {
       const saved = safeLoadLS("flourish_coach_history", null);
@@ -13675,8 +13685,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           <CalcByFlourish style={{marginTop:2}}/>
           <NotAdviceLine/>
           <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
-            {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{switchWords("trialfirst-demo-coach", tpfOnNow)}</div>
+            {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{switchWords("trialfirst-demo-coach-button", tpfOnNow)}</button>}
           </div>
         </div>
       ) : (<>
@@ -14622,6 +14632,8 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
     const trial = (trialFirst && copy) ? trialDisclosure({ platform, eligible: storeTrialEligible({ platform, product: p.product, eligibility: introElig }), price: copy.price, planKey: plan, words: trialWords }) : null;
     return { plan, pkg:p, copy, trial };
   }).filter(c=>!!c.copy) : [];
+  // Does a plan on this screen claim the 14 days? Then "charged when you confirm" is untrue under it (lib/storeOffer.js storeDisclosure).
+  const trialClaimed = cards.some(c=>c.trial?.claim===true);
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
   // KEEP THE TRIAL (2026-10-29, lib/storeOffer.js TRIAL_KEEP_COPY): small print under the founding plans, for a
@@ -14674,7 +14686,9 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
             </div>
           ))}
         </div>
-        {!held && cards.length>0 && <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform)}</div>}
+        {/* TRIAL_PLAN_FIRST: beside a plan that claims the 14 days, "charged when you confirm" is untrue; the line still to
+            come takes its place there, and only there (lib/storeOffer.js storeDisclosure). */}
+        {!held && cards.length>0 && <div data-store-disclosure={trialClaimed?"trial":"standard"} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform, { trialClaimed })}</div>}
         {showKeepTrial && <div style={{display:"flex",justifyContent:"center",marginTop:SPACE.xs}}>
           <button type="button" data-trial-link="" onClick={openKeepTrial} style={link}>{TRIAL_KEEP_COPY.link}</button>
         </div>}
@@ -16656,7 +16670,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
               </button>}
               <div style={{ display: "flex", justifyContent: "center", marginBottom: SPACE.sm }}><FlourishLockup size={60} color={AUTH_C.heading} /></div>
               <div style={{ color: AUTH_C.muted, fontSize: 14, marginTop: SPACE.xs }}>
-                {mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
+                {mode === "signup" ? switchWords("trialfirst-signup-title", tpfOn) : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
@@ -17912,6 +17926,7 @@ export default function FlourishApp(){
   const [tpfPublic,setTpfPublic]=useState(null);
   useEffect(()=>{ let live = true; askTrialPlanFirstOn(fetch, API_BASE).then(v=>{ if(live) setTpfPublic(v); }); return ()=>{ live = false; }; },[]);
   const tpfOn = !!tpfStatus || tpfPublic===true;
+  useEffect(()=>{ setTpfOn(tpfOn); },[tpfOn]);
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);

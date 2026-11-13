@@ -31,9 +31,10 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
    - Play Console > Production: the live release is **28 (1.1.6)**, not 27. Build 27 does not have the Terms section 7 change (#133).
    - App Store Connect: the live build is **526912**, not 526911, for the same reason.
    - If either store shows the older build: stop here and tell CC. That app's Terms would keep the old section 7 after the switch.
-3. **Get the `index.html` pull request ready.** Who: CC. Not merged yet.
-   - The last sentence of the meta description and og:description, "Every feature free for 14 days.", becomes "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled."
-   - Check after: gate and CI green on that pull request.
+3. **Merge the words pull request.** Who: Amanda says go; CC merges. Its eight lines are approved and in (2026-11-13; `docs/product/TRIAL-PLAN-FIRST-WORDS.md`, "Lines that follow the switch").
+   - It makes eight lines follow the switch, and makes the `index.html` descriptions follow it at build time: "Every feature free for 14 days." becomes "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled." in the deploy that turns the switch on.
+   - **The store apps get these lines only with a build made after it merges.** Six of the eight show in the apps (the two store disclosures, the sign-up heading, the demo's two lines and its button). On 1.1.6 an iPhone still shows "Payment is charged to your Apple Account when you confirm" under a plan that says "14 days free", and "Create your free account", after the switch. To have them right on the day, the switch waits for the next store release.
+   - Check after: the production deploy id; the page source still ends "Every feature free for 14 days." twice (the switch is off).
 4. **Stripe, live mode.** Who: Amanda. Can be done days ahead: it does nothing while the switch is off.
    - Developers > Webhooks > the production endpoint > add one event: `customer.subscription.created`. Keep every event it has.
    - Settings > Billing > Subscriptions and emails > Manage free trial messaging: Stripe's trial reminder stays **on**.
@@ -64,9 +65,10 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
    - If a phone's plans say "charged today" instead: that store is not giving its offer to that account yet. Nobody is mis-told in that state, but a new household would pay on day one. **Before the time arrives,** set `TRIAL_PLAN_FIRST_SINCE` an hour later and Trigger deploy again, then sort out step 5 or 6. Moving the time later is safe while it is still ahead.
    - After the time: a new test account meets "Choose your plan" after its first number, and the only ways out are a plan, "Restore purchases" (apps) and "Sign out".
    - A page that was already open before the switch keeps its old words until it is reloaded.
-9. **Merge the `index.html` pull request.** Who: Amanda says go, CC merges.
-   - Check after: the deploy id; the page source carries the new sentence twice; `/api/trial-plan-first` still answers 200.
-   - Undo: revert that pull request.
+9. **Check the page's descriptions.** Who: CC, read only. Nothing to merge: step 7's deploy built them.
+   - Check after: the source of `https://flourishmoney.app/` carries "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled." twice, and "Every feature free for 14 days." not at all.
+   - If it still shows the old sentence: the two variables are not visible to builds. In Netlify, set each variable's scope to include Builds, then Trigger deploy again.
+   - If the deploy in step 7 failed with "trial-first-meta": `index.html`'s descriptions were reworded since, and the build refused to publish the old sentence with the switch on. The deploy before it is still live and the switch is still off. Tell CC.
 10. **The places that still say "no card" or the old trial.** Who: Amanda. The list is in "Every place that names the trial or a card" below.
 
 ### After
@@ -161,24 +163,24 @@ There is no minimum-version gate, so some people will still be on them.
 2. Straight after: end the store offers. App Store Connect: set each introductory offer's end date to today. Play Console: deactivate each `free-14-*` offer.
 3. Between 1 and 2 the gap in "Why this order", point 4, is open again on iPhone. Keep it to minutes.
 4. What keeps going: trials already running are charged on their day 14 as agreed, and their reminders are still sent.
-5. Put the `index.html` sentence back.
+5. Step 1's deploy also puts the `index.html` descriptions back. Check the page source.
 
 ## Every place that names the trial or a card
-Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/functions` (every email), `ios/`, `android/`, `docs/`, and `~/Documents/Flourish` (store copy, reels, captions). Line numbers are main's on that day. Nothing here was changed.
+Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/functions` (every email), `ios/`, `android/`, `docs/`, and `~/Documents/Flourish` (store copy, reels, captions). Line numbers are main's on that day. The words pull request (runbook step 3) then made eight of these lines follow the switch; each such row says so.
 
 ### A. "No card"
 | Where | What it says | On the day |
 |---|---|---|
 | The 1.1.6 store apps, first screen (not on main since #136) | "Free to start · Canada & USA · No credit card" | Follows the switch: "Made for Canadian households" |
 | Reel paycheque, end card and captions (`~/Documents/Flourish/01 Marketing/Reel paycheque (2026-11-08)/REEL-PAYCHEQUE-APPROVED-2026-11-08.md` lines 11, 20, 30, 39, 42) | "No card needed to start. Then a paid plan." | Built, not posted. Untrue once the switch is on: do not post as it is. The words are also inside the end-card image and the video files |
-| `src/App.jsx:16659`, the sign-up card | "Create your free account" | Amanda's call: the account is free to make, but a new one must then choose a plan |
-| `src/App.jsx:10669` and `13678`, the demo | "Create a free account to run this meeting on your own numbers." / "Create a free account to ask it about your own." | The same call |
+| `src/App.jsx:16659`, the sign-up card | "Create your free account" | Follows the switch since the words pull request: `trialfirst-signup-title` |
+| `src/App.jsx:10669` and `13678`, the demo | "Create a free account to run this meeting on your own numbers." / "Create a free account to ask it about your own." / the button "Create free account →" | Follow the switch since the words pull request: `trialfirst-demo-meeting`, `trialfirst-demo-coach`, `trialfirst-demo-coach-button` |
 | The website, the app's other screens, every email, `public/`, `content/` | no "no card" wording found | nothing to do |
 
 ### B. The 14-day trial, by name
 | Where | What it says | On the day |
 |---|---|---|
-| `index.html:21` and `:22` (meta description, og:description) | "… Every feature free for 14 days." | By hand: runbook step 9 |
+| `index.html:21` and `:22` (meta description, og:description) | "… Every feature free for 14 days." | Follows the switch at build time; checked in runbook step 9 |
 | `src/App.jsx:15869`, landing button, top and bottom | "Try flourish free for 14 days" | Follows the switch: "Get started" |
 | `src/App.jsx:16513`, landing | "Every feature free for 14 days. Also on iPhone and Android." | Follows the switch: `trialfirst-landing` |
 | `src/App.jsx:14206`, Terms section 7, website | "Core features are available at no charge with a 14-day trial of premium features." | Follows the switch |
@@ -189,7 +191,7 @@ Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/funct
 | `src/App.jsx:20159`, website sidebar | "Trial ended 🔒", "Trial ends today ⚠️", "{n} days left" | Stays, the same accounts |
 | `src/lib/upgradeFlow.js:64`, website plans | "Your trial ends on {date}." | Stays, the same accounts |
 | `src/lib/pendingWords.js:18`, `:19`, `:22`, store founding plans | "Not now, keep my 14-day trial", "Keep your trial for now?", "Keep my trial" | Stays: shown only inside the account trial |
-| `src/App.jsx:10673`, the meeting, website | "Start your trial to run the meeting with your coach." | Check: a new account has no trial to start |
+| `src/App.jsx:10673`, the meeting, website | "Start your trial to run the meeting with your coach." | Follows the switch since the words pull request: `trialfirst-meeting-locked` |
 | `src/App.jsx:14313` and `:14317`, PremiumGate | "Start 14 days free →", "14 days free. Cancel any time." | Only while billing is off: not seen in production |
 | `src/App.jsx:6910`, Home | "Try Free →" | Only while billing is off: not seen in production |
 | `src/lib/creatorWords.js:15`, Settings (creator program) | "… add their code within 14 days of sign-up, before your first payment. …" | A different 14 days. Only while the creator program is on |
@@ -203,8 +205,8 @@ Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/funct
 ### C. A card, or when the charge is made
 | Where | What it says | On the day |
 |---|---|---|
-| `src/lib/storeOffer.js:29`, under the iPhone plans | "Payment is charged to your Apple Account when you confirm. Your subscription renews automatically unless you cancel at least 24 hours before the current period ends. …" | **Stays on the screen with the switch on, under a plan that says "14 days free" and "First charge: {date}".** Two statements on one screen: for the words pass |
-| `src/lib/storeOffer.js:30`, under the Android plans | "Payment is charged through Google Play when you confirm. …" | The same |
+| `src/lib/storeOffer.js:29`, under the iPhone plans | "Payment is charged to your Apple Account when you confirm. Your subscription renews automatically unless you cancel at least 24 hours before the current period ends. …" | Follows the switch since the words pull request, in a store build made after it: under a plan that says "14 days free", `trialfirst-disclosure-ios` shows in its place. The 1.1.6 apps keep both statements on one screen |
+| `src/lib/storeOffer.js:30`, under the Android plans | "Payment is charged through Google Play when you confirm. …" | The same, with `trialfirst-disclosure-android` |
 | `src/lib/freePlan.js:71`, Terms section 7, a store app that sells | "Payment is charged to your Apple or Google account when you confirm." | Follows the switch |
 | `src/App.jsx:14206`, Terms section 7, website | "Subscription fees are billed in advance on a monthly or annual basis." | Follows the switch |
 | `src/lib/upgradeFlow.js:69` and `:70`, website review step | "If you subscribe, you're charged today in CAD plus tax, then every month until you cancel. … Any trial ends when you subscribe." | Follows the switch: the trial lines take its place |
@@ -213,7 +215,7 @@ Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/funct
 | `netlify/functions/_lib/trialWords.js:14` to `:17` | "On {date}, you'll be charged {amount}, plus any applicable tax, unless you cancel first.", "To keep your plan, you don't need to do anything.", "To avoid the first charge, cancel at least 24 hours before your trial ends. …" | The reminder email |
 | `src/App.jsx:13002` and `:14446`, website | "Change your card or cancel." / "Change your card or cancel in Stripe's billing portal." | Stays: true |
 | `src/App.jsx:14522`, website plans | "Payment is handled by Stripe. Your plan changes once Stripe confirms the payment." | Stays: during a trial the plan also changes with no payment taken |
-| `src/lib/billingVisibility.js:127`, back from Stripe | "Payment received. Your plan will update when Stripe confirms it, usually within a few seconds." | **Shown after a trial checkout too, when no payment was received.** For the words pass |
+| `src/lib/billingVisibility.js:127`, back from Stripe | "Payment received. Your plan will update when Stripe confirms it, usually within a few seconds." | Follows the switch since the words pull request: after a checkout that started the 14 days, `trialfirst-checkout-done` shows in its place |
 | `src/lib/billingVisibility.js:129` | "Checkout cancelled. Nothing was charged." | Stays: true |
 | `src/App.jsx:13919`, Privacy Policy, website | "If you subscribe on flourishmoney.app, Stripe processes your payment. Stripe collects your card details and billing address to charge you and to calculate sales tax." | Stays: true |
 | `src/lib/pendingWords.js:25` and `:26`, Settings | "… To avoid being charged during a plan change, cancel your current plan in your Apple Account settings first. …" | Stays |

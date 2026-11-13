@@ -123,7 +123,9 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
       t.ok(rx.test(comp), `6b the paywall always offers ${what}`);
     }
     t.ok(/\{platform==="ios"\s*\? <a href=\{APPLE_EULA_URL\} target="_blank" rel="noopener noreferrer"[^>]*>\{PAYWALL_COPY\.terms\}<\/a>\s*: <button onClick=\{\(\)=>onViewLegal\("terms"\)\} style=\{link\}>\{PAYWALL_COPY\.terms\}<\/button>\}/.test(comp)
-      && /\{!held && cards\.length>0 && <div[^>]*>\{storeDisclosure\(platform\)\}<\/div>\}/.test(comp),
+      // 2026-11-13: the approved disclosure, unless a card on the screen claims the 14 days (tests/trialSwitchWords.test.cjs 2e, 2f, 5a).
+      && /\{!held && cards\.length>0 && <div[^>]*>\{storeDisclosure\(platform, \{ trialClaimed \}\)\}<\/div>\}/.test(comp) && comp.includes("const trialClaimed = cards.some(c=>c.trial?.claim===true);")
+      && (comp.match(/storeDisclosure\(/g) || []).length === 1 && O.storeDisclosure("ios") === O.STORE_DISCLOSURE.ios && O.storeDisclosure("android") === O.STORE_DISCLOSURE.android,
       "6c on iOS \"Terms of Use\" opens Apple's standard EULA, on Android the app's Terms; the disclosure sits under the plans once");
     // TRIAL_PLAN_FIRST: the one screen that cannot be closed (no onClose) has a way out, sign out; every other has none.
     t.ok(!/onDeleteAccount|<ModalHost\/>/.test(comp) && (comp.match(/onSignOut/g) || []).length === 3 && /\{!onClose&&onSignOut&&<button/.test(comp),

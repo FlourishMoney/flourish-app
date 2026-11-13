@@ -36,9 +36,40 @@ export const TRIAL_WORDS = Object.freeze({
   // The website landing's main button, top and bottom, instead of "Try flourish free for 14 days" (approved 2026-11-11,
   // ChatGPT 100, Grok 100): trialfirst-landing sits under it.
   "trialfirst-get-started": "Get started",
+  // ── APPROVED 2026-11-13 (ChatGPT 100, Grok 100): lines that were true only while the switch is off. Each shows only
+  // while it is on; off, today's line shows, word for word (SWITCH_OFF_WORDS below, lib/storeOffer.js STORE_DISCLOSURE).
+  // The website, back from a Stripe checkout that started the 14 days (no payment was taken).
+  "trialfirst-checkout-done": "Your 14 days free have started. Nothing was charged today. Your plan updates when Stripe confirms your subscription. You'll then see your first-charge date.",
+  // Under the store plans, when a plan on the screen claims the 14 days (in place of "Payment is charged … when you confirm").
+  "trialfirst-disclosure-ios": "With 14 days free, nothing is charged when you confirm. Your Apple Account is charged when the 14 days end, or up to 24 hours before. A plan without 14 days free is charged when you confirm. Renews unless cancelled in Apple Account settings at least 24 hours before the trial or period ends.",
+  "trialfirst-disclosure-android": "With 14 days free, nothing is charged when you confirm. The first charge goes through Google Play on the date shown. A plan without 14 days free is charged when you confirm. It renews automatically unless cancelled in Google Play under Subscriptions before the first charge or renewal date.",
+  // The sign-up card's heading, the demo's two lines and its button, and the website's meeting line for an account with no plan.
+  "trialfirst-signup-title": "Create your account",
+  "trialfirst-demo-meeting": "A scripted preview on sample data. Create an account and choose a plan to run it on your own numbers.",
+  "trialfirst-demo-coach": "That's the coach working on sample data. Create an account and choose a plan to ask about your own numbers.",
+  "trialfirst-demo-coach-button": "Create account →",
+  "trialfirst-meeting-locked": "Choose a plan to run the meeting with your coach.",
+});
+
+// TODAY'S LINES, WORD FOR WORD, for the places that follow the switch: shown while it is off (and while there is no
+// answer about it). tests/trialSwitchWords.test.cjs pins each.
+export const SWITCH_OFF_WORDS = Object.freeze({
+  "trialfirst-checkout-done": "Payment received. Your plan will update when Stripe confirms it, usually within a few seconds.",
+  "trialfirst-signup-title": "Create your free account",
+  "trialfirst-demo-meeting": "A scripted preview. Create a free account to run this meeting on your own numbers.",
+  "trialfirst-demo-coach": "That's the coach working on sample data. Create a free account to ask it about your own.",
+  "trialfirst-demo-coach-button": "Create free account →",
+  "trialfirst-meeting-locked": "Start your trial to run the meeting with your coach.",
 });
 
 const isPlaceholder = (w) => /^\[WORDS: [a-z0-9-]+\]$/.test(w);
+
+/** A line that follows the switch: today's words unless the switch is known to be on (only `true` counts). */
+export function switchWords(id, on) {
+  const off = SWITCH_OFF_WORDS[id];
+  if (typeof off !== "string") throw new Error(`no such switch words: ${id}`);
+  return on === true ? trialWords(id) : off;
+}
 
 /** A line, with its facts. A placeholder keeps the facts after it in brackets; a real line has them put in. */
 export function trialWords(id, facts = {}) {

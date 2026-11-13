@@ -18,6 +18,7 @@
 // -----------------------------------------------------------------------------
 
 import { pendingWords } from "./pendingWords.js";
+import { trialWords } from "./trialWords.js";
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
 
@@ -48,9 +49,16 @@ export function offerCopy({ plan, priceString, platform = "ios" }) {
   };
 }
 
-/** The approved disclosure under the plans, for this platform. */
-export function storeDisclosure(platform) {
-  return platform === "android" ? STORE_DISCLOSURE.android : STORE_DISCLOSURE.ios;
+/**
+ * The disclosure under the plans, for this platform: the approved line of 2026-10-20, which says the payment is
+ * charged when the purchase is confirmed. That is untrue beside a plan that claims 14 days free (TRIAL_PLAN_FIRST on and
+ * the store's own yes for this person), so there, and only there, the line still to come shows in its place
+ * (lib/trialWords.js trialfirst-disclosure-ios / -android). trialClaimed: a plan on this screen claims the 14 days.
+ */
+export function storeDisclosure(platform, { trialClaimed = false } = {}) {
+  const android = platform === "android";
+  if (trialClaimed === true) return trialWords(android ? "trialfirst-disclosure-android" : "trialfirst-disclosure-ios");
+  return android ? STORE_DISCLOSURE.android : STORE_DISCLOSURE.ios;
 }
 
 // THE FOUNDING SWITCH (2026-10-18): a household holding a founding position while a regular store subscription is

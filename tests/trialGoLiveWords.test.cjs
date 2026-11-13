@@ -6,7 +6,8 @@
 //   2  the Terms learn the switch and its date from the server themselves (GET /api/trial-plan-first, since);
 //   3  the landing's main button: "Get started" while on (top and bottom, trialfirst-landing under it), today's
 //      "Try flourish free for 14 days" while off;
-//   4  index.html's meta sentence is changed by hand on the day: the approved sentence is listed for it.
+//   4  index.html's meta sentence: the approved sentence is listed for it, and (2026-11-13) the build puts it in while
+//      the switch is on (scripts/trial-first-meta.mjs; tests/trialSwitchWords.test.cjs holds the build step itself).
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -100,10 +101,12 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     && APP.includes('<TrialButton onClick={goSignup} tpfOn={tpfOn}/>\n              {tpfOn && <p className="fll-trial-line">{trialWords("trialfirst-landing")}</p>}'),
     "3d …each with trialfirst-landing under it while on (the bottom one adds nothing while off)");
 
-  // ── 4. index.html, by hand on the day ───────────────────────────────────────────────────────────
+  // ── 4. index.html: at build time since 2026-11-13 (it was "by hand on the day") ─────────────────────
   const list = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-NO-CARD.md"), "utf8");
-  t.ok(list.includes("\"Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.\"") && /index\.html.{0,80}by hand on the day/.test(list),
-    "4a the approved meta sentence is listed for index.html, changed by hand on the day");
+  const META = await import(path.join(REPO, "scripts", "trial-first-meta.mjs"));
+  t.ok(list.includes("\"Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.\"") && list.includes("Since 2026-11-13 it follows the switch at build time instead (`scripts/trial-first-meta.mjs`)") && /^1\. \*\*`index\.html`\*\* meta description and og:description/m.test(list)
+    && META.META_ON === "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.",
+    "4a the approved meta sentence is listed for index.html, and it is the one the build puts in while the switch is on");
 
   t.summary("trialGoLiveWords.test");
   setImmediate(() => process.exit(process.exitCode || 0));

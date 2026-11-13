@@ -261,8 +261,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     // placeholder any more (the doc's third exception covers nothing now).
     const doc = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-WORDS.md"), "utf8");
     const rows = Object.fromEntries([...doc.matchAll(/^\| `(trialfirst-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+?) \| \d+ \|$/gm)].map((m) => [m[1], m[2]]));
-    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (27: the 26 of 2026-11-10 and Get started, 2026-11-11)");
-    t.ok(ids.length === 27 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
+    t.eq(Object.keys(rows).sort(), ids, "5a every line, in the app and in the emails, is listed in TRIAL-PLAN-FIRST-WORDS.md (35: the 26 of 2026-11-10, Get started of 2026-11-11, and the 8 that follow the switch, 2026-11-13)");
+    t.ok(ids.length === 35 && [...Object.entries(W.TRIAL_WORDS), ...Object.entries(SW.TRIAL_EMAIL_WORDS)].every(([id, w]) => w === rows[id] && !/\[WORDS:/.test(w)) && PW.pendingTrialWordIds().length === 0,
       "5b …each in the code word for word as approved, and none a placeholder");
     const APPROVED = {
       "trialfirst-cancel-before": "Cancel before {date} to avoid the first charge.",
