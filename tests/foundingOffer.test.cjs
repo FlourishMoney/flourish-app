@@ -263,8 +263,13 @@ async function callEndpoint({ supabase = { seats: 37 }, env = true, method = "GE
     if (A.FoundingOffer && A.AuthScreen) {
       for (const p of ["ios", "android"]) {
         t.eq(as(p, () => A.render(A.h(A.FoundingOffer, {}))), "", `5a on ${p} the block renders nothing`);
-        const auth = as(p, () => textOf(A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }))));
-        t.ok(!/\$\d|Founding price|founding spots/i.test(auth), `5b …and the ${p} sign-in screen carries no price and no founding line`);
+        // 1.1.7: the store apps open on a value screen whose sample safe-to-spend card shows dollar figures (an example,
+        // labelled as one, not a price). The card is cut out; everything else on the screen, and the log-in form, has none.
+        const html = as(p, () => A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} })));
+        const at = html.indexOf("data-sample-number"), end = html.indexOf("data-get-started");
+        const auth = textOf(at > 0 && end > at ? html.slice(0, html.lastIndexOf("<", at)) + html.slice(html.lastIndexOf("<", end)) : html);
+        const login = as(p, () => textOf(A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {}, startOnLogin: true }))));
+        t.ok(at > 0 && !/\$\d|Founding price|founding spots/i.test(auth) && !/\$\d|Founding price|founding spots/i.test(login), `5b …and the ${p} sign-in screen carries no price and no founding line (only the sample card's example figures)`);
       }
       t.ok(as("web", () => textOf(A.render(A.h(A.FoundingOffer, {})))).includes("$79.99"), "5c on the web the same render does show the price, so the native check is not blind");
     }

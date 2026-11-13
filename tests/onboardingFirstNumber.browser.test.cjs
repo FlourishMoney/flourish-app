@@ -43,6 +43,10 @@ const W2 = "The spending buffer starts after flourish has enough of your transac
 const W3 = "From the numbers you entered. A linked bank can keep them up to date.";
 const W4 = "Your bank wasn't connected. You can try again or enter your numbers yourself.";
 const W6 = "Here's your number.";
+// 1.1.7 (src/lib/firstRunWords.js; not yet approved, so read from the file rather than typed twice).
+const FRW = fs.readFileSync(path.join(ROOT, "src", "lib", "firstRunWords.js"), "utf8");
+const word = (k) => (FRW.match(new RegExp(`\\b${k}: "([^"]+)"`)) || [])[1];
+const SHOW_NUMBER = word("showNumber"), BILLS_PENDING = word("billsPending"), BILLS_LEAD = word("billsLead"), NOT_NOW = word("notNow"), UPDATE_NUMBER = word("updateNumber");
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -59,8 +63,11 @@ function bankTxns(today = new Date()) {
 }
 
 // Plaid's Link script, as a stand-in: what open() does is set by window.__plaidMode before each tap.
-const PLAID_STUB = `window.Plaid = { create: function (cfg) { return { open: function () {
+// "wait" holds Link open, as a bank's "did you just sign in?" approval does, until window.__plaidFinish(mode).
+const PLAID_STUB = `window.__plaidOpens = 0; window.Plaid = { create: function (cfg) { return { open: function () {
+  window.__plaidOpens++;
   var m = window.__plaidMode || "success";
+  if (m === "wait") { window.__plaidFinish = function (f) { if (f === "success") cfg.onSuccess("public-test-token", { institution: { name: "Test Bank" } }); else cfg.onExit(null, { status: "requires_credentials" }); }; return; }
   setTimeout(function () {
     if (m === "success") cfg.onSuccess("public-test-token", { institution: { name: "Test Bank" } });
     else if (m === "cancel") cfg.onExit(null, { status: "requires_credentials" });
@@ -96,17 +103,19 @@ function buildApp(supabaseUrl) {
 
   // A new account (signed in, no saved data), or, with signedIn false, nobody yet (the confirmation link).
   // A Canadian device unless a test says otherwise (Playwright's own default is en-US, which is the US).
-  const open = async ({ token = "ok", signedIn = true, user = null, locale = "en-CA", timezoneId = "America/Toronto", desktop = false } = {}) => {
+  const open = async ({ token = "ok", signedIn = true, user = null, appMeta = null, locale = "en-CA", timezoneId = "America/Toronto", desktop = false } = {}) => {
     const ctx = await browser.newContext({ viewport: desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1,
       isMobile: !desktop, hasTouch: !desktop, colorScheme: "light", locale, timezoneId });
     await ctx.addInitScript(([key, session, signedIn]) => { try {
       localStorage.setItem("flourish_theme", "light"); localStorage.setItem("flourish_theme_manual", "1");
       if (signedIn) localStorage.setItem(key, session);
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), signedIn]);
-    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [] };
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify((() => { const x = MOCK.makeSession(); if (appMeta) x.user = { ...x.user, app_metadata: appMeta }; return x; })()), signedIn]);
+    const seen = { counts: [], plaid: [], tokenCalls: 0, tokenCountries: [], saved: [], reads: 0, beta: [], betaBodies: [] };
     await ctx.route("**/rest/v1/user_data*", (r) => r.request().method() === "GET"
-      ? r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" })
+      ? (seen.reads++, r.fulfill({ status: 200, contentType: "application/json", body: /vnd\.pgrst\.object/.test(r.request().headers().accept || "") ? "null" : "[]" }))
       : (seen.saved.push(r.request().postData() || ""), r.fulfill({ status: 201, contentType: "application/json", body: "[]" })));
+    if (appMeta && !user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...MOCK.makeSession().user, app_metadata: appMeta }) }));
+    if (appMeta) await ctx.route("**/api/beta", (r) => { try { const b = JSON.parse(r.request().postData() || "{}"); seen.beta.push(b.action); seen.betaBodies.push(b); } catch {} return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ secured: false, recorded: true }) }); });
     if (user) await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) }));
     await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
     await ctx.route("**/api/activation", (r) => { try { seen.counts.push(JSON.parse(r.request().postData() || "{}")); } catch {} return r.fulfill({ status: 204, body: "" }); });
@@ -151,9 +160,9 @@ function buildApp(supabaseUrl) {
     const started = Date.now();
     await shot(page, "manual-ai-disclosure");
     await tap(page, "I Understand & Accept");
-    await btn(page, "Get Started →").waitFor();
+    await btn(page, "Get started").waitFor();
     await shot(page, "manual-welcome");
-    await tap(page, "Get Started →");
+    await tap(page, "Get started");
     const bank = await text(page);
     t.ok(/Link your accounts \(optional\)/.test(bank) && !/About you|Your name/.test(bank), "1a after Welcome: Link your accounts, with no \"About you\" screen before it");
     await shot(page, "manual-link-your-accounts");
@@ -170,9 +179,10 @@ function buildApp(supabaseUrl) {
     t.ok((await text(page)).includes("tap all that apply") && await page.getByRole("button", { name: "Self-Employed" }).count() > 0, "1d …and the type chips are one tap away");
     await page.locator("[data-income-type-toggle]").first().click();
     t.ok(inc.includes(W1) && inc.includes(W1_HELP), "1e every two weeks (the default): W1 and its helper, word for word");
-    const cont = page.getByRole("button", { name: "Continue →", exact: true }).last();
+    // 1.1.7: pay and the next payday are the last questions; the button shows the number.
+    const cont = page.getByRole("button", { name: SHOW_NUMBER, exact: true }).last();
     await page.getByPlaceholder("e.g. 2100").first().fill("2100"); taps.push("field: pay amount");
-    t.ok(await cont.isDisabled(), "1f Continue waits for the next payday");
+    t.ok(await cont.isDisabled(), "1f the number waits for the next payday");
     // The bill falls 3 days out (or on the 1st when that would pass the 28th, the field's limit) and payday 2 days
     // after it, so the bill is always strictly before payday. Payday was today + 5, which on the 27th to the 31st put
     // it on the same day as a bill moved to the 1st, and the bill dropped out of the number (failed 2026-10-27).
@@ -185,31 +195,23 @@ function buildApp(supabaseUrl) {
     const monthly = await text(page);
     t.ok(!monthly.includes(W1) && monthly.includes("Day of the month you're paid"), "1h monthly pay keeps its day-of-month question, without W1");
     await page.locator("select[aria-label='How often']").first().selectOption("biweekly");
-    await tap(page, "Continue →", "Continue (paycheques)");
-    t.ok(/Your bills/.test(await text(page)), "1i then the bills");
-    await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent"); taps.push("field: bill name");
-    await page.locator('input[type="number"]').first().fill("1400"); taps.push("field: bill amount");
-    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate())); taps.push("field: bill day");
-    await shot(page, "manual-bills");
-    await tap(page, "Continue →", "Continue (bills)");
-    const debts = await text(page);
-    t.ok(/Your debts/.test(debts) && debts.includes("No debt, skip") && debts.includes("Show me today's number →"), "1j then the debts, with \"No debt, skip\" and the way to the number");
-    await shot(page, "manual-debts");
-    await tap(page, "No debt, skip");
+    await tap(page, SHOW_NUMBER, "Show me my number");
     await page.getByText(W6).first().waitFor();
     const first = await text(page);
+    t.ok(!/^Your bills$|^Your debts$/m.test(first) && first.includes(BILLS_PENDING), "1i 1.1.7: straight to the number, which says bills aren't in it yet");
     t.ok(!/credit score/i.test(first), "1k no credit-score screen before the number");
     t.ok(/^Welcome$/m.test(first) && !/Welcome, /.test(first), "1l with no name given, the greeting is \"Welcome\" (W5)");
     t.ok(first.includes(W6) && !/You're covered|breathing room/.test(first), "1m the headline is W6, not \"You're covered\"");
     const line = await page.locator("[data-first-number-line]").textContent();
-    t.ok(/accounted for\./.test(line) && !/a spending buffer/.test(line) && line.includes(W2), `1n the sentence names only what is in the number, and W2 for the $0 buffer ("${line}")`);
+    // 1.1.7: no bills or debts yet, so the sentence names nothing they would add; W2 still says why the buffer is $0.
+    t.ok(!/a spending buffer|bills due/.test(line) && line.includes(W2), `1n the sentence names only what is in the number (no bills yet), and W2 for the $0 buffer ("${line}")`);
     const elapsed = Date.now() - started;
     await shot(page, "manual-first-number");
     const firstTaps = taps.length;
     // The counts so far.
     await page.waitForTimeout(800);
     const steps = seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail);
-    t.eq(steps, ["welcome", "balance", "bank", "income", "bills", "debts"], "1o each step counted once, in order");
+    t.eq(steps, ["welcome", "balance", "bank", "income"], "1o each step counted once, in order, to the number");
     const fn = seen.counts.filter((c) => c.metric === "first_number_shown");
     t.ok(fn.length === 1 && fn[0].mode === "manual" && Number.isFinite(fn[0].fromSigninMs), "1p first_number_shown once, as \"manual\", with the time since sign-in");
     t.ok(seen.counts.some((c) => c.metric === "safe_view"), "1q safe_view fires on the first-number screen");
@@ -218,6 +220,21 @@ function buildApp(supabaseUrl) {
     await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
     const dashBtn = page.getByRole("button", { name: /Take me to my dashboard/ });
     if (await dashBtn.count()) await dashBtn.first().click(); else await page.getByRole("button", { name: "Skip for now" }).click();
+    // 1.1.7: after the number, the bills, then the debts.
+    await page.getByText("Your bills").first().waitFor();
+    const billsAfter = await text(page);
+    t.ok(billsAfter.includes(BILLS_LEAD) && await page.getByRole("button", { name: NOT_NOW, exact: true }).count() === 1, "1j then the bills, with their lead line and \"Not now\"");
+    await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent");
+    await page.locator('input[type="number"]').first().fill("1400");
+    await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate()));
+    await shot(page, "manual-bills");
+    await tap(page, "Continue →", "Continue (bills)");
+    const debts = await text(page);
+    t.ok(/Your debts/.test(debts) && debts.includes("No debt, skip") && debts.includes(UPDATE_NUMBER), "1j2 then the debts, with \"No debt, skip\" and the way back to the number");
+    await shot(page, "manual-debts");
+    await tap(page, "No debt, skip");
+    await page.waitForTimeout(800);
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "balance", "bank", "income", "bills", "debts"], "1j3 bills and debts counted after the number");
     await page.getByText("Step 1 of 5").first().waitFor();
     const today = await text(page);
     t.ok(!/Getting set up/.test(today), "1s Today opens with the tour, and no \"Getting set up\" while it shows");
@@ -250,7 +267,7 @@ function buildApp(supabaseUrl) {
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     const started = Date.now();
     await tap(page, "I Understand & Accept");
-    await tap(page, "Get Started →");
+    await tap(page, "Get started");
     await page.locator('[data-bank-button="connect"]').waitFor();
     await shot(page, "bank-link-your-accounts");
     await page.locator('[data-bank-button="connect"]').click(); taps.push("Connect My Bank Securely");
@@ -267,12 +284,7 @@ function buildApp(supabaseUrl) {
       "2a the pay is pre-filled from the bank's deposits, to confirm");
     t.ok(!inc.includes(W1), "2b payday is not asked: the deposits show it");
     await shot(page, "bank-paycheques");
-    await tap(page, "Continue →", "Continue (paycheques)");
-    const bills = await text(page);
-    t.ok(/We found \d+ recurring bills? from your transactions/.test(bills) || /Auto-detected/.test(bills), "2c the bills are pre-filled from the bank, to confirm");
-    await shot(page, "bank-bills");
-    await tap(page, "Continue →", "Continue (bills)");
-    await tap(page, "No debt, skip");
+    await tap(page, SHOW_NUMBER, "Show me my number");
     await page.getByText(W6).first().waitFor();
     const elapsed = Date.now() - started;
     await shot(page, "bank-first-number");
@@ -281,7 +293,19 @@ function buildApp(supabaseUrl) {
     const fn = seen.counts.filter((c) => c.metric === "first_number_shown");
     t.ok(fn.length === 1 && fn[0].mode === "linked", "2d first_number_shown once, as \"linked\"");
     t.eq(seen.counts.filter((c) => /^bank_link_/.test(c.metric)).map((c) => c.metric), ["bank_link_started", "bank_link_completed"], "2e the bank link: started, then completed");
-    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income", "bills", "debts"], "2f the steps, with no balance step on the bank path");
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income"], "2f the steps to the number, with no balance step on the bank path");
+    t.ok(!(await text(page)).includes(BILLS_PENDING), "2f2 the bank's bills are already in the number, so it doesn't say they aren't");
+    // After the number: the bank's bills, to confirm, then the debts.
+    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
+    const dash2 = page.getByRole("button", { name: /Take me to my dashboard/ });
+    if (await dash2.count()) await dash2.first().click(); else await page.getByRole("button", { name: "Skip for now" }).click();
+    await page.getByText("Your bills").first().waitFor();
+    const bills = await text(page);
+    t.ok(/We found \d+ recurring bills? from your transactions/.test(bills) || /Auto-detected/.test(bills), "2c the bills are pre-filled from the bank, to confirm");
+    await shot(page, "bank-bills");
+    await btn(page, "Continue →").click(); await page.waitForTimeout(300);
+    await btn(page, "No debt, skip").click(); await page.waitForTimeout(800);
+    t.eq(seen.counts.filter((c) => c.metric === "onboarding_step_completed").map((c) => c.detail), ["welcome", "bank", "income", "bills", "debts"], "2f3 then bills and debts");
     t.eq(errs, [], "2g no page errors");
     console.log(`  bank: ${firstTaps} taps to the first number in ${(elapsed / 1000).toFixed(1)} s (by the test, screenshots included): ${taps.slice(0, firstTaps).join(", ")}`);
     await ctx.close();
@@ -293,7 +317,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="connect"]').click();
     await page.evaluate((m) => { window.__plaidMode = m; }, mode);
     await btn(page, "Connect My Bank").click();
@@ -317,13 +341,85 @@ function buildApp(supabaseUrl) {
     await ctx.close();
   }
 
+  // ── a new Apple or Google account (1.1.7) ───────────────────────────────
+  // The same onboarding as a new email account: the consent step (its approved words, the Terms and the Privacy Policy
+  // tappable before "Get started"), then Link your accounts. None of the old welcome's words. The server is told once, and
+  // the consent is recorded against the account.
+  for (const provider of ["apple", "google"]) {
+    const { ctx, page, seen, errs } = await open({ appMeta: { provider, providers: [provider] } });
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    await btn(page, "Get started").waitFor();
+    const first = await text(page);
+    t.ok(/Before you start/.test(first) && /By tapping Get started, you agree to the Terms and the Privacy Policy, including how flourish collects and uses your information\./.test(first)
+      && !/\[WORDS:|every day\.|Try Demo|No credit card|Canada & USA|PIPEDA|Get Started →/.test(first), `S1 ${provider}: the consent step, its approved words, none of the old welcome's`);
+    await shot(page, `${provider}-consent-step`);
+    for (const [which, title] of [["terms", "Terms of Service"], ["privacy", "Privacy Policy"]]) {
+      await page.locator(`[data-consent-legal="${which}"]`).click();
+      await page.getByText(title, { exact: true }).first().waitFor();
+      await btn(page, "← Back").click();
+      await page.getByText("Before you start").waitFor();
+      t.ok(true, `S1b ${provider}: ${title} opens from the step, before Get started, and Back returns to it`);
+    }
+    t.eq(seen.beta.filter((a) => a === "record_consent").length, 0, `S1c ${provider}: nothing recorded before Get started`);
+    await btn(page, "Get started").click();
+    await page.getByText("Link your accounts (optional)").waitFor();
+    t.ok(true, `S2 ${provider}: then Link your accounts, as for a new email account`);
+    await page.waitForTimeout(400);
+    t.eq(seen.beta.filter((a) => a === "social_signin").length, 1, `S3 ${provider}: social_signin sent once`);
+    const rec = seen.betaBodies.filter((b) => b.action === "record_consent");
+    t.ok(rec.length === 1 && rec[0].consent_id === "onboarding-2026-11-12" && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].terms_version) && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].privacy_version)
+      && Math.abs(Date.parse(rec[0].shown_at) - Date.now()) < 120000, `S3b ${provider}: Get started recorded against the account once: the consent, both documents' dates, when`);
+    t.eq(errs, [], `S4 ${provider}: no page errors`);
+    await ctx.close();
+  }
+
+  // ── leaving with Link open (1.1.7) ─────────────────────────────────────────────────────
+  // A bank asks the person to approve the sign-in in its own app: flourish goes to the background with Link open and
+  // comes back. Coming back must not start anything over under Link (lib/plaidLinkOpen.js).
+  {
+    const { ctx, page, seen, errs } = await open();
+    const away = async () => {
+      await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); Object.defineProperty(document, "hidden", { value: true, configurable: true }); document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); });
+      await page.waitForTimeout(300);
+      await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); Object.defineProperty(document, "hidden", { value: false, configurable: true }); document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); });
+      await page.waitForTimeout(2500);   // supabase-js re-announces the session after its lock; the app's checks run
+    };
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    await btn(page, "Get started").click();
+    await page.locator('[data-bank-button="connect"]').click();
+    await page.evaluate(() => { window.__plaidMode = "wait"; });
+    await btn(page, "Connect My Bank").click();
+    await page.waitForFunction(() => window.__plaidOpens === 1);
+    const readsBefore = seen.reads, tokensBefore = seen.tokenCalls;
+    await away();
+    const back = await text(page);
+    t.ok(/Link your accounts \(optional\)/.test(back) && !/Before you start/.test(back), "R1a back from the bank's app with Link open: still on the bank step, not sent back to the start");
+    t.eq([await page.evaluate(() => window.__plaidOpens), seen.reads - readsBefore, seen.tokenCalls - tokensBefore], [1, 0, 0],
+      "R1b …the same Link (never opened again), no re-read of the saved data, no new link token");
+    await away();
+    t.eq(await page.evaluate(() => window.__plaidOpens), 1, "R1c …and again, after a second trip away");
+    await page.evaluate(() => window.__plaidFinish("success"));
+    const connected = await page.getByText("Connected!").first().waitFor({ timeout: 8000 }).then(() => true, () => false);
+    t.ok(connected, "R1d the approval goes through: Link finishes and the bank is connected (before 1.1.7 it went to a screen that was gone)");
+    // With Link closed, coming back refreshes exactly as before (the household data is read again).
+    const readsClosed = seen.reads;
+    await away();
+    t.ok(seen.reads > readsClosed, "R1e with Link closed, coming back still refreshes as before");
+    t.eq(errs, [], "R1f no page errors");
+    await ctx.close();
+  }
+
   // ── link token ──────────────────────────────────────────────────────────────────────────────
   {
     const { ctx, page } = await open({ token: "fail-once" });
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="retry"]').waitFor({ timeout: 15000 });
     const label = (await page.locator("[data-bank-button]").textContent()).trim();
     t.ok(label === "↺ Retry" && await page.locator("[data-bank-button]").isEnabled() && !/\bReady\b/.test(await text(page)), `4a after a link-token error the main button is the retry ("${label}"), never "Ready"`);
@@ -340,7 +436,7 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.locator('[data-bank-button="connect"]').waitFor();
     t.eq([...new Set(seen.tokenCountries)], [want], `6a a ${locale} device in ${timezoneId}: the country is ${want}, and Plaid's institution search is asked for ${want}`);
     if (want === "US") {
@@ -447,27 +543,28 @@ function buildApp(supabaseUrl) {
     await page.goto(base + "/confirmed" + hash, { waitUntil: "domcontentloaded" });
     await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
     await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get Started →").click();
+    await btn(page, "Get started").click();
     await page.getByRole("button", { name: "Enter it myself", exact: true }).last().click();
     await page.getByPlaceholder("0.00").first().fill("2500");
     await btn(page, "Continue →").click();
     const billOn = (() => { const d = addDays(new Date(), 3); return d.getDate() > 28 ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : d; })();
     await page.getByPlaceholder("e.g. 2100").first().fill("2100");
     await page.locator('input[type="date"]').first().fill(iso(addDays(billOn, 2)));
-    await btn(page, "Continue →").click();
+    await btn(page, SHOW_NUMBER).click();
+    await page.getByText(W6).first().waitFor();
+    t.ok(true, `F3a ${w}: the first number`);
+    await shot(page, `founding-${w}-first-number`);
+
+    // Today: the trial countdown (H13), in the trial's words, and not "Flourish Plus". The bills and debts come first (1.1.7).
+    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
+    const dash = page.getByRole("button", { name: /Take me to my dashboard/ });
+    if (await dash.count()) await dash.first().click();
+    await page.getByText("Your bills").first().waitFor();
     await page.getByPlaceholder("Netflix, Hydro, Rent…").first().fill("Rent");
     await page.locator('input[type="number"]').first().fill("1400");
     await page.getByPlaceholder("1 to 28").first().fill(String(billOn.getDate()));
     await btn(page, "Continue →").click();
     await btn(page, "No debt, skip").click();
-    await page.getByText(W6).first().waitFor();
-    t.ok(true, `F3a ${w}: the first number`);
-    await shot(page, `founding-${w}-first-number`);
-
-    // Today: the trial countdown (H13), in the trial's words, and not "Flourish Plus".
-    await page.getByRole("button", { name: /Take me to my dashboard|How is this calculated/ }).first().click();
-    const dash = page.getByRole("button", { name: /Take me to my dashboard/ });
-    if (await dash.count()) await dash.first().click();
     await page.locator("[data-trial-countdown]").first().waitFor({ timeout: 15000 });
     const cd = await page.locator("[data-trial-countdown]").first().innerText();
     t.ok(/^13 days left in your trial\s*Upgrade →$/.test(cd.replace(/\n/g, " ").trim()) || /13 days left in your trial/.test(cd), `F4a ${w}: the countdown: "13 days left in your trial" with Upgrade → (H13) ("${cd.replace(/\n/g, " ")}")`);

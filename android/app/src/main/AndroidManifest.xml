@@ -23,6 +23,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 1.1.7: Sign in with Google (and Apple on Android) returns here from the browser (src/lib/socialSignIn.js). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="flourishmoney" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider

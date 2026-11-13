@@ -153,8 +153,8 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
 
   // ── 5. migration 0028 ──────────────────────────────────────────────────────────────────────
   const files = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_/.test(f)).sort();
-  t.eq(files.filter((f) => f >= "0028"), ["0028_onboarding_counts.sql", "0030_couple_household.sql", "0031_couple_household_private.sql", "0032_founding_seats.sql", "0033_meeting_records_grants.sql", "0034_shop_source_tags.sql", "0035_creator_program.sql", "0036_source_funnel.sql", "0037_newsletter.sql", "0038_testers.sql", "0039_tester_free_month.sql", "0040_policy_notice.sql", "0041_leave_keeps_meetings.sql", "0042_funnel_counters.sql", "0043_funnel_by_source.sql", "0046_trial_plan_first.sql", "0047_bank_link_failed_detail.sql"],
-    "5a 0028 is in place, and only couple mode (0030, 0031), the founding seats (0032, 2026-10-29), meeting_records' grants (0033, 2026-10-30), the shop tags (0034, 2026-11-02) the creator program (0035, 2026-11-02) and the marketing setups (0036, 0037, 0038, 2026-11-04; 0039 and 0040, 2026-11-05), a leave keeping its meetings (0041, 2026-11-08) the funnel counters (0042, 0043, 2026-11-08) trial plan first (0046, 2026-11-10) and the failed-link detail (0047, 2026-11-11) came after it");
+  t.eq(files.filter((f) => f >= "0028"), ["0028_onboarding_counts.sql", "0030_couple_household.sql", "0031_couple_household_private.sql", "0032_founding_seats.sql", "0033_meeting_records_grants.sql", "0034_shop_source_tags.sql", "0035_creator_program.sql", "0036_source_funnel.sql", "0037_newsletter.sql", "0038_testers.sql", "0039_tester_free_month.sql", "0040_policy_notice.sql", "0041_leave_keeps_meetings.sql", "0042_funnel_counters.sql", "0043_funnel_by_source.sql", "0046_trial_plan_first.sql", "0047_bank_link_failed_detail.sql", "0048_signup_hook.sql", "0049_legal_consent_apple_tokens.sql"],
+    "5a 0028 is in place, and only couple mode (0030, 0031), the founding seats (0032, 2026-10-29), meeting_records' grants (0033, 2026-10-30), the shop tags (0034, 2026-11-02) the creator program (0035, 2026-11-02) and the marketing setups (0036, 0037, 0038, 2026-11-04; 0039 and 0040, 2026-11-05), a leave keeping its meetings (0041, 2026-11-08) the funnel counters (0042, 0043, 2026-11-08) trial plan first (0046, 2026-11-10) the failed-link detail (0047, 2026-11-11) the signup hook (0048, 2026-11-12) and the consent record with the sealed Apple tokens (0049, 2026-11-12) came after it");
   t.ok(!/onboarding_counts/.test(read("supabase", "migrations", "0033_meeting_records_grants.sql")), "5a2 …and 0033 does not touch the onboarding counts");
   const sql = read("supabase", "migrations", "0028_onboarding_counts.sql");
   const table = sql.slice(sql.indexOf("create table if not exists public.onboarding_counts"), sql.indexOf("alter table public.onboarding_counts"));
@@ -173,7 +173,7 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
   t.ok(ob.includes(`>${W1}</label>`) && ob.includes(W1_HELP), "6a W1 and its helper on the paycheque screen");
   t.ok(/const PAYDAY_FREQS = \["weekly", ?"biweekly", ?"semimonthly"\]/.test(ob.replace(/\s+/g, " ").replace(/" ,/g, "\",")) || /PAYDAY_FREQS\s*=\s*\[\s*"weekly"\s*,\s*"biweekly"\s*,\s*"semimonthly"\s*\]/.test(ob),
     "6b …for weekly, every two weeks and twice a month");
-  t.ok(/onClick=\{\(\)=>done\("income",3\)\} disabled=\{[^}]*\|\| incomes\.some\(payDateMissing\)\}/.test(ob), "6c Continue waits for it");
+  t.ok(/onClick=\{finishBeforeNumber\} disabled=\{[^}]*\|\| incomes\.some\(payDateMissing\)\}/.test(ob), "6c Continue (now the step that shows the number, 1.1.7) waits for it");
   t.ok(!/About you/.test(ob) && !/Your credit score|credit-score/i.test(ob.replace(/\/\/[^\n]*|\{\/\*[\s\S]*?\*\/\}/g, "")), "6d no About you screen and no credit-score screen in onboarding");
   t.ok(/sourceTypes:\["employment"\]/.test(ob) && /data-income-type-toggle/.test(ob) && /aria-expanded=/.test(ob), "6e Employment by default; the type grid collapsed behind a toggle");
   t.ok(ob.includes(W4) && /label="Try again"/.test(ob) && /label="Enter it myself" onClick=\{\(\)=>\{ setBankOutcome\(null\); skipBank\(\); \}\}/.test(ob), "6f W4 with \"Try again\" and \"Enter it myself\"");
@@ -190,8 +190,10 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
   t.ok(/signalOnboarding\("first_number_shown",\{mode:appData\.bankConnected\?"linked":"manual"/.test(app), "6p first_number_shown by mode");
   t.ok(/function confirmedFromApp\(user\)\{ return !!\(user && user\.user_metadata && user\.user_metadata\.signup_platform === "app"\); \}/.test(app), "6q the confirmation link: an app signup keeps \"Open Flourish and sign in.\"");
   t.ok(/signup_platform: isNativeRequest\(event\) \? "app" : "web"/.test(read("netlify", "functions", "beta.js")), "6r the signup is labelled by where it was made");
-  // The Welcome screen stays: its consent line covers more than the signup card's.
-  t.ok(/consent to data processing per PIPEDA \(CA\) and US privacy laws\./.test(ob) && /onClick=\{\(\)=>done\("welcome",1\)\}/.test(ob) && ob.includes("Get Started →"), "6s the Welcome screen and its data-processing consent stay (the signup card's consent covers Terms and Privacy only)");
+  // The consent step stays: its data-processing consent covers more than the signup card's, and an Apple or Google
+  // sign-up sees no signup card. 1.1.7: its old words are gone; its new ones were approved 2026-11-12.
+  t.ok(/FIRST_RUN_WORDS\.consentTitle/.test(ob) && /FIRST_RUN_WORDS\.consentLine/.test(ob) && /onClick=\{\(\)=>\{ try\{ onConsent&&onConsent\(\); \}catch\{[^}]*\} done\("welcome",1\); \}\}[^>]*>\{FIRST_RUN_WORDS\.getStarted\}<\/button>/.test(ob)
+    && !/PIPEDA|every day\.|Try Demo|No credit card|Get Started →|FlourishLockup|\[WORDS:/.test(ob), "6s the consent step stays, for every new account, with its approved words and none of the old ones");
 
   // ── 7. the device's country ────────────────────────────────────────────────────────────────
   const D = await import("../src/lib/deviceCountry.js");

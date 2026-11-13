@@ -27,7 +27,9 @@
 
 "use strict";
 
-const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const crypto = require("crypto");
+
+const { getAdminClient, getPublicClient, getUserFromRequest } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, signupInstantEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -36,6 +38,8 @@ const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 const { accountPlatform, recordAccountAttribution, bumpAttributionCount, platformFromUserAgent } = require("./_lib/attribution");
 const { recordMilestone } = require("./_lib/funnel");
+const { recordConsent } = require("./_lib/legalConsent");
+const { storeGrant: storeAppleGrant, isApple: isAppleUser } = require("./_lib/appleTokens");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
@@ -552,6 +556,106 @@ async function handle(event) {
   // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
   // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
   // created unconfirmed and must open the email first.
+  // SIGN IN WITH APPLE OR GOOGLE (1.1.7, src/lib/socialSignIn.js). Supabase made or found the account, so nothing above
+  // saw it. The app asks once per account on a device, signed in, after an Apple or Google sign-in. Two things:
+  //
+  //   SECURE. Supabase links an Apple or Google sign-in to an existing account with the same address, whether or not that
+  //   account's owner ever proved the address. An account made by instant signup ("instant") or with an invite code while
+  //   signup was shut ("auto") never was: someone could have made it with another person's address and kept its password.
+  //   When such an account is reached through Apple or Google (which did prove the address), its password is replaced
+  //   with a random one nobody holds and every other session is signed out, so only the person who just signed in keeps
+  //   it; the account is then marked "provider" and this is not done again. Forgot password still works for its owner.
+  //
+  //   COUNT. A NEW Apple or Google account (made in the last 15 minutes) is counted as a signup is: account_created by
+  //   src and device, its platform and channel, the funnel's signed_up. Once per account; test addresses not counted.
+  //
+  // It grants nothing. Nothing about the account is logged.
+  if (action === "social_signin") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    const jwt = String((event.headers && (event.headers.authorization || event.headers.Authorization)) || "").replace(/^Bearer\s+/i, "");
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    try {
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      const user = !error && data && data.user;
+      const meta = (user && user.app_metadata) || {};
+      const providers = Array.isArray(meta.providers) ? meta.providers : (meta.provider ? [meta.provider] : []);
+      if (!user || !providers.some((p) => p === "apple" || p === "google")) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured: false, recorded: false }) };
+      }
+      let secured = false;
+      if ((meta.email_confirmation === "instant" || meta.email_confirmation === "auto") && providers.includes("email")) {
+        const { error: pwErr } = await admin.auth.admin.updateUserById(user_id, {
+          password: crypto.randomBytes(32).toString("base64url"),
+          app_metadata: { ...meta, email_confirmation: "provider" },
+        });
+        if (pwErr) { console.error("[beta:social_signin] not secured"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+        const { error: outErr } = await admin.auth.admin.signOut(jwt, "others");
+        if (outErr) console.error("[beta:social_signin] other sessions not signed out");
+        secured = true;
+        console.log("[beta:social_signin] secured an unproved account reached through a provider");
+      }
+      let recorded = false;
+      const fresh = Date.now() - Date.parse(user.created_at) < 15 * 60 * 1000;
+      if (["apple", "google"].includes(meta.provider) && fresh) {
+        const { data: had } = await admin.from("account_milestones").select("user_id").eq("user_id", user_id).eq("milestone", "signed_up").limit(1);
+        if (!(Array.isArray(had) && had.length)) {
+          if (!isTestEmail(user.email)) {
+            const platform = accountPlatform(event);
+            await recordAccountAttribution(admin, user_id, platform === "android" ? body.attribution : null, platform);
+            await recordMilestone(admin, user_id, "signed_up", platform);
+          }
+          console.log(`[beta:social_signin] signup_completed provider=${meta.provider}`);
+          await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
+          recorded = true;
+        }
+      }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured, recorded }) };
+    } catch {
+      console.error("[beta:social_signin] failed");
+      return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
+    }
+  }
+
+  // THE CONSENT STEP (1.1.7, _lib/legalConsent.js, migration 0049): recorded against the signed-in account when they tap Get
+  // started: the words (the server's own copy for the consent id), the Terms' and the Privacy Policy's dates, when, where.
+  // Once per account per consent. 503 while it cannot be written (0049 not run yet): the app keeps it and sends it again.
+  if (action === "record_consent") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    const r = await recordConsent(admin, user_id, body, accountPlatform(event));
+    if (r.recorded) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: true }) };
+    if (r.error === "store_failed") { console.error("[beta:record_consent] not stored"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: r.error }) };
+  }
+
+  // SIGN IN WITH APPLE: KEEP WHAT DELETING THE ACCOUNT NEEDS TO REVOKE IT AT APPLE (App Store guideline 5.1.1(v), 1.1.7,
+  // _lib/appleTokens.js, migration 0049). Sent by the app after an Apple sign-in: the iPhone's one-time code, or the refresh
+  // token the website or Android got from Supabase. Stored sealed. Always 200 with { stored }: whatever happens, sign-in is
+  // unaffected and there is nothing for the person to see. Only an outcome is logged.
+  if (action === "apple_grant") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let stored = false;
+    try {
+      const admin = getAdminClient();
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      if (!error && data && isAppleUser(data.user)) {
+        const r = await storeAppleGrant(admin, user_id, body.grant);
+        stored = !!r.stored;
+        console.log(`[beta:apple_grant] ${r.stored ? `stored client=${r.client}` : `not stored: ${r.reason}${r.status ? ` status=${r.status}` : ""}`}`);
+      } else {
+        console.log("[beta:apple_grant] not stored: not_apple");
+      }
+    } catch { console.error("[beta:apple_grant] not stored: failed"); }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ stored }) };
+  }
+
   if (action === "signup") {
     const email = cleanEmail(body.email);   // a phone keyboard's stray space is not a different address
     const password = body.password;
