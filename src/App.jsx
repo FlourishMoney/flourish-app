@@ -62,7 +62,7 @@ import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
-import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
+import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, cancelAllScheduled } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
@@ -75,6 +75,7 @@ import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
 import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
+import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
@@ -18717,8 +18718,14 @@ export default function FlourishApp(){
     // NOT wiped — it migrates into the new account below. The positive gate keeps DB writes
     // blocked through this whole reset, so the cleared empty state can't be saved up.
     const localUid = loadState()?.userId || (()=>{ try { return localStorage.getItem(STAMP_KEY); } catch { return null; } })();
-    if (localUid && localUid !== user.id) {
-      console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
+    // 2026-11-13 (lib/accountWipe.js): local data with no owner goes into this account only when the account was made
+    // minutes ago (a sign-up on this device) and no account was deleted here since. Otherwise it is cleared, as another
+    // person's would be.
+    const deletedHere = (()=>{ try { return deletedAt(localStorage); } catch { return null; } })();
+    const ownerlessRefused = refuseOwnerlessLocal({ localUid, hasRealData: hasRealLocalData(loadState()?.appData), userCreatedAt: user.created_at, deletedAtMs: deletedHere });
+    if (deletedHere) { try { clearDeletedMark(localStorage); } catch {} }
+    if ((localUid && localUid !== user.id) || ownerlessRefused) {
+      console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id, ownerless: ownerlessRefused });
       clearAllUserLocal();
       setAppData(null); setOnboarded(false); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
     }
@@ -18991,6 +18998,9 @@ export default function FlourishApp(){
       return true;
     } catch { return false; }
   };
+  // The account was deleted in another tab of this device (lib/accountWipe.js): stop saving, clear, reload. Before this,
+  // a second tab saved the deleted account's finances back as the sign-out reached it (2026-11-13).
+  useEffect(()=>onDeletionElsewhere(()=>followDeletionElsewhere()), []);
   useEffect(()=>{
     const flush = ()=>{
       try {
@@ -19879,13 +19889,16 @@ export default function FlourishApp(){
     }
 
     // Phase D2: backend revokes all Plaid items + deletes plaid_items rows + deletes the Supabase auth user.
+    // 2026-11-13 (lib/accountWipe.js): from here on nothing of ours is written to this browser, until the server says
+    // the account was not deleted (each FAIL CLOSED below unlocks) or the page reloads after the wipe.
+    lockBrowserStorage();
     let resp;
     try {
       resp = await callPlaid("delete_account", {}, { jwt });
     } catch (err) {
       console.error("[deleteAllData] backend wipe failed:", err?.message);
       alertModal({message:"We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED — keep session + local data
+      unlockBrowserStorage(); return; // FAIL CLOSED — keep session + local data
     }
 
     // 2a: fail closed on any step that means the account/data was NOT removed. plaid_remove
@@ -19900,24 +19913,28 @@ export default function FlourishApp(){
       // KNOWN-DEFECTS 23: the subscription is cancelled before anything is erased; if it could not be, nothing was.
       if (criticalErrors.some(e => e.step === "billing_cancel")) {
         alertModal({message:"We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."});
-        return; // FAIL CLOSED
+        unlockBrowserStorage(); return; // FAIL CLOSED
       }
       const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
       alertModal({message: untouched
         ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."
         : "Your account deletion did not finish. Some of your data may already be removed, and your account still exists so you can try again to finish it, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED
+      unlockBrowserStorage(); return; // FAIL CLOSED
     }
     if (errs.length) {
       // account IS deleted; only best-effort Plaid bank revocation was incomplete
       console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
     }
 
-    // Confirmed deleted server-side — now sign out + sweep ALL flourish_* keys + reload.
+    // Confirmed deleted server-side: sign out, then every flourish key (both web storages) and database
+    // (IndexedDB) goes, the iPhone and Android apps' scheduled reminders too, and the page reloads. The storage stays
+    // locked throughout: signing out re-renders the app with no user, and its save effect once wrote the deleted
+    // account's finances back, ownerless, for the next sign-up to take (2026-11-13, lib/accountWipe.js). The device is
+    // marked first, so any other open tab stops saving and clears before the sign-out reaches it.
+    markAccountDeleted();
     try { await supabase.auth.signOut(); } catch {}
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_")).forEach(k => localStorage.removeItem(k));
-    } catch {}
+    try { await cancelAllScheduled(); } catch {}
+    await wipeDeletedAccount();
     window.location.reload();
   };
 

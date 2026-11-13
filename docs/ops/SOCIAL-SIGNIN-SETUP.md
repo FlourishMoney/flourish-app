@@ -94,6 +94,8 @@ Deleting an account (Settings → Delete Account, or flourishmoney.app/delete-ac
 
 Until all six are set: Apple sign-in works as before, nothing is kept, and a deletion still deletes (`not_configured`). Tokens from sign-ins made before they are set are not kept, so those accounts are not revoked. Never change `APPLE_TOKEN_ENC_KEY` once set: the tokens already kept would no longer open (`unreadable`). The `.p8` key can be the same one Supabase uses; a new key also works, as long as it has Sign in with Apple for `app.flourishmoney`.
 
+How the key was pasted does not matter (2026-11-13): lost line breaks, spaces where they were, literal `\n`, quotes, no BEGIN/END lines, a SEC1 `EC PRIVATE KEY` or the file base64-encoded again all load (`_lib/appleTokens.js` `pemOf` rebuilds it from its bytes). Each warm `plaid` and `beta` function logs `apple config: ok` once, or `apple config: not usable: <SETTING> missing|unusable`, by name and never a value. A deletion that cannot revoke logs `apple revoke: not_configured (<SETTING> unusable)`. On 2026-11-13 production's key did not load (deletion logged `not_configured`); the rebuilt parser is the fix, with no re-paste.
+
 ## Checks after setup (Claude can do these read-only)
 - The website's "Continue with Google" and "Continue with Apple" reach each provider's page and come back signed in. Use a test account that's yours.
 - Supabase → Authentication → Users shows the new user with provider `google` or `apple`.

@@ -184,7 +184,7 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     finally { if (saved) Object.defineProperty(globalThis, "crypto", saved); }
     t.eq(await S.isReviewAccount(S.SCREENSHOT_EMAIL), false, "8e the screenshot account is not the review account…");
     t.eq(S.SCREENSHOT_EMAIL, "snap@flourish.app", "8f …and keeps its own path, unchanged");
-    const hydrate = slice("const loadSampleHousehold = () => {", 4000);
+    const hydrate = slice("const loadSampleHousehold = () => {", 6000);   // 6000: the ownerless-data check (2026-11-13) sits between
     t.ok(/if \(normalizeEmail\(user\.email\) === SCREENSHOT_EMAIL\) \{ loadSampleHousehold\(\); return; \}/.test(hydrate), "8g the screenshot account still loads the sample household");
     const reviewAt = hydrate.indexOf("if (await isReviewAccount(user.email))"), fetchAt = hydrate.indexOf("await fetchUserData(");
     t.ok(reviewAt > 0 && reviewAt < fetchAt, "8h the review account loads the same household, decided before any database read");

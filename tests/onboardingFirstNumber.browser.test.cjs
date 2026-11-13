@@ -23,6 +23,8 @@
 //             (the address, the resend cooldown, Wrong email?), the confirmation link, the first number, the trial
 //             countdown, and the upgrade screen with the founding price first and selected, a review step, and only
 //             then checkout. And a signup_status check that fails: no beta code, a Try again that works.
+//   delete    (2026-11-13) an account deleted in Settings leaves nothing on the device, and a fresh Apple sign-up on the
+//             same browser gets the full onboarding, "Before you start" and its consent record, with nothing carried over.
 // -----------------------------------------------------------------------------
 "use strict";
 const { tempDir } = require("./_tmp.cjs");
@@ -88,7 +90,9 @@ function buildApp(supabaseUrl) {
   let playwright;
   try { playwright = require("playwright"); } catch { t.ok(false, "playwright is installed"); t.summary("ONBOARDING FIRST NUMBER (browser)"); return; }
   let dist = null;
+  const unloadDumps = [];   // the delete scenario: what the browser held as the page went (a beacon from pagehide)
   const server = http.createServer((req, res) => {
+    if (req.url.startsWith("/__storage_at_unload")) { let b = ""; req.on("data", (c) => { b += c; }); req.on("end", () => { try { unloadDumps.push(JSON.parse(b)); } catch {} res.writeHead(204); res.end(); }); return; }
     if (MOCK.handle(req, res)) return;
     let f = path.join(dist, decodeURIComponent(req.url.split("?")[0]));
     if (!f.startsWith(dist) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(dist, "index.html");
@@ -372,6 +376,127 @@ function buildApp(supabaseUrl) {
     t.ok(rec.length === 1 && rec[0].consent_id === "onboarding-2026-11-12" && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].terms_version) && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].privacy_version)
       && Math.abs(Date.parse(rec[0].shown_at) - Date.now()) < 120000, `S3b ${provider}: Get started recorded against the account once: the consent, both documents' dates, when`);
     t.eq(errs, [], `S4 ${provider}: no page errors`);
+    await ctx.close();
+  }
+
+  // ── delete the account, then a fresh Apple sign-up on the same browser (2026-11-13) ─────────────────────
+  // Found live: the sign-out inside the deletion re-rendered the app, its save effect wrote the deleted account's finances
+  // back with no owner, and the next sign-up imported them (no onboarding, no consent step). src/lib/accountWipe.js.
+  {
+    const OLD = "00000000-0000-4000-8000-0000000000d1", NEW = "00000000-0000-4000-8000-0000000000d2";
+    const MARK = "Oldaccount", PAY = 4321.17;
+    const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const sessionFor = (id, createdMsAgo) => {
+      const now = Math.floor(Date.now() / 1000), s = MOCK.makeSession(now);
+      s.access_token = `${b64u({ alg: "HS256", typ: "JWT" })}.${b64u({ sub: id, role: "authenticated", aud: "authenticated", exp: now + 86400, iat: now })}.test-signature`;
+      s.user = { ...s.user, id, email: `${id.slice(-2)}@privaterelay.apple.test`, created_at: new Date(Date.now() - createdMsAgo).toISOString(), app_metadata: { provider: "apple", providers: ["apple"] } };
+      return s;
+    };
+    const oldSession = sessionFor(OLD, 30 * 86400e3);
+    let who = oldSession;
+    const oldBlob = (() => { const b = MOCK.emptyBlob(); b.userId = OLD;
+      b.core.appData.profile = { name: MARK, country: "CA", province: "ON" };
+      b.core.appData.incomes = [{ id: "inc-old", name: `${MARK} Payroll`, amount: PAY, freq: "biweekly", nextPayDate: iso(addDays(new Date(), 6)) }];
+      b.sideKeys = { ...b.sideKeys, flourish_first_visit_done: "1", flourish_tour_done: "1" };
+      return b; })();
+    const seen = { beta: [], betaAuth: [], plaid: [], saved: [] };
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: "light", locale: "en-CA", timezoneId: "America/Toronto" });
+    await ctx.addInitScript(([key, session]) => { try {
+      if (localStorage.getItem("test_seeded")) return;   // once: the reload after the deletion must find what the app left
+      localStorage.setItem("test_seeded", "1");
+      localStorage.setItem(key, session);
+      localStorage.setItem("flourish_first_visit_done", "1"); localStorage.setItem("flourish_tour_done", "1");
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(oldSession)]);
+    const sub = (r) => { try { return JSON.parse(Buffer.from((r.request().headers().authorization || "").split(".")[1] || "", "base64url").toString()).sub; } catch { return null; } };
+    await ctx.route("**/auth/v1/user", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(who.user) }));
+    await ctx.route("**/auth/v1/token*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(who) }));
+    await ctx.route("**/auth/v1/logout*", (r) => r.fulfill({ status: 204, body: "" }));
+    await ctx.route("**/rest/v1/user_data*", (r) => {
+      if (r.request().method() !== "GET") { seen.saved.push({ by: sub(r), body: r.request().postData() || "" }); return r.fulfill({ status: 201, contentType: "application/json", body: "[]" }); }
+      const row = sub(r) === OLD ? [{ data: oldBlob, updated_at: new Date().toISOString() }] : [];
+      const obj = /vnd\.pgrst\.object/.test(r.request().headers().accept || "");
+      return obj ? (row.length ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row[0]) }) : r.fulfill({ status: 406, contentType: "application/json", body: JSON.stringify({ code: "PGRST116" }) }))
+        : r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row) });
+    });
+    await ctx.route("**/api/beta", (r) => { try { const b = JSON.parse(r.request().postData() || "{}"); seen.beta.push({ ...b, by: sub(r) }); } catch {} return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ recorded: true, stored: true, secured: false }) }); });
+    await ctx.route("**/api/plaid", (r) => { let b = {}; try { b = JSON.parse(r.request().postData() || "{}"); } catch {} seen.plaid.push({ action: b.action, by: sub(r) });
+      const out = b.action === "delete_account" ? { deleted: true, errors: [] } : b.action === "list_items" ? { items: [] } : {};
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(out) }); });
+    await ctx.route("**/api/coach", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
+    await ctx.route("**/api/activation", (r) => r.fulfill({ status: 204, body: "" }));
+    await ctx.route("**/api/**", (r) => r.fallback());
+    const page = await ctx.newPage();
+    page.setDefaultTimeout(15000);
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(String(e.message)));
+    const stores = () => page.evaluate(() => {
+      const dump = (s) => { const o = {}; for (let i = 0; i < s.length; i++) { const k = s.key(i); o[k] = s.getItem(k); } return o; };
+      return { local: dump(localStorage), session: dump(sessionStorage) };
+    });
+    const hasOld = (o) => JSON.stringify(o).includes(MARK) || JSON.stringify(o).includes(String(PAY));
+
+    // The old account, with its data on this device.
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Settings" }).first().waitFor({ timeout: 40000 });
+    await page.waitForFunction((m) => (localStorage.getItem("flourish_v1") || "").includes(m), MARK);
+    t.ok(hasOld((await stores()).local), "D0 the old account's finances are on this device before the deletion");
+    // A second tab on the same account, as a person testing often has. On 2026-11-13 the sign-out reached that tab and it
+    // saved its copy of the deleted account back, ownerless (this scenario fails that way against the code before the fix).
+    const page2 = await ctx.newPage();
+    page2.on("pageerror", (e) => errs.push(String(e.message)));
+    await page2.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await page2.getByRole("button", { name: "Settings" }).first().waitFor({ timeout: 40000 });
+    await page.bringToFront();
+
+    // Settings > Delete Account > Delete account. What the browser holds as the page goes (after every save the old page
+    // still makes) is sent out with a beacon, the one request a page can still make as it unloads.
+    unloadDumps.length = 0;
+    await page.evaluate(() => addEventListener("pagehide", () => {
+      const dump = (st) => { const o = {}; for (let i = 0; i < st.length; i++) { const k = st.key(i); o[k] = st.getItem(k); } return o; };
+      navigator.sendBeacon("/__storage_at_unload", JSON.stringify({ local: dump(localStorage), session: dump(sessionStorage) }));
+    }));
+    await page.getByRole("button", { name: "Settings" }).first().click();
+    await page.getByRole("button", { name: "Delete Account", exact: true }).click();
+    const reloaded = page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.getByRole("button", { name: "Delete account", exact: true }).click();
+    await reloaded;
+    await page.waitForFunction(() => /Log in|Continue with Apple/i.test(document.body.innerText), null, { timeout: 40000 });   // signed out: the landing
+    await page.waitForTimeout(1500);
+    for (let i = 0; i < 20 && !unloadDumps.length; i++) await page.waitForTimeout(100);
+    const gone = unloadDumps[0] || null;
+    const flourishIn = (o) => [...Object.keys(o.local), ...Object.keys(o.session)].filter((k) => k.startsWith("flourish")).sort();
+    t.ok(seen.plaid.filter((p) => p.action === "delete_account" && p.by === OLD).length === 1 && gone && !hasOld(gone) && !gone.local.flourish_uid
+      && !Object.keys(gone.local).some((k) => /^sb-.*-auth-token$/.test(k)),
+      `D1 deleted: as the page reloads, nothing of the old account in localStorage or sessionStorage, no owner stamp, no session (flourish keys: ${gone && flourishIn(gone).join(", ")})`);
+    t.ok(/^\d{13}$/.test((gone && gone.local.flourish_deleted_at) || ""), "D1b …and the device marked (a time, nothing else)");
+    const after = await stores();
+    t.ok(!hasOld(after) && !after.local.flourish_uid, "D1c the reloaded page holds nothing of the old account and no owner stamp");
+    await page2.waitForFunction(() => /Log in|Continue with Apple/i.test(document.body.innerText), null, { timeout: 20000 });
+    await page.waitForTimeout(1000);
+    t.ok(!hasOld(await stores()) && !/Oldaccount/.test(await page2.evaluate(() => document.body.innerText)),
+      "D1d the other tab stopped, cleared and reloaded signed out: it saved nothing back and shows nothing of the old account");
+    await page2.close();
+
+    // A fresh Apple sign-up on the same browser, as Apple's redirect lands it.
+    who = sessionFor(NEW, 3000);
+    await page.evaluate(([key, session]) => localStorage.setItem(key, session), [MOCK.storageKey(base), JSON.stringify(who)]);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+    await btn(page, "I Understand & Accept").click();
+    const consentShown = await page.getByText("Before you start").first().waitFor().then(() => true, () => false);
+    t.ok(consentShown && /By tapping Get started, you agree to the Terms and the Privacy Policy/.test(await text(page)), "D2 the new account gets the full onboarding: \"Before you start\" first");
+    if (consentShown) await btn(page, "Get started").click();
+    await page.getByText("Link your accounts (optional)").waitFor().catch(() => {});
+    await page.waitForTimeout(600);
+    const rec = seen.beta.filter((b) => b.action === "record_consent");
+    t.ok(rec.length === 1 && rec[0].by === NEW && rec[0].consent_id === "onboarding-2026-11-12" && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].terms_version) && /^\d{4}-\d{2}-\d{2}$/.test(rec[0].privacy_version),
+      "D3 the consent is recorded once, against the NEW account, with both documents' dates");
+    const now = await stores();
+    const newSaves = seen.saved.filter((x) => x.by === NEW);
+    t.ok(!hasOld(now) && !newSaves.some((x) => hasOld(x.body)) && !/backed up to your Flourish account/i.test(await text(page)),
+      `D4 zero carry-over: nothing of the old account on the device or saved to the new one (${newSaves.length} saves checked), no "backed up" banner`);
+    t.ok(!now.local.flourish_deleted_at && now.local.flourish_uid === NEW, "D5 the deletion mark is used once and cleared; the device now belongs to the new account");
+    t.eq(errs, [], "D6 no page errors");
     await ctx.close();
   }
 

@@ -39,7 +39,7 @@ const { cleanEmail, isEmail } = require("./_lib/emailAddress");
 const { accountPlatform, recordAccountAttribution, bumpAttributionCount, platformFromUserAgent } = require("./_lib/attribution");
 const { recordMilestone } = require("./_lib/funnel");
 const { recordConsent } = require("./_lib/legalConsent");
-const { storeGrant: storeAppleGrant, isApple: isAppleUser } = require("./_lib/appleTokens");
+const { storeGrant: storeAppleGrant, isApple: isAppleUser, logAppleConfigOnce } = require("./_lib/appleTokens");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
@@ -648,7 +648,7 @@ async function handle(event) {
       if (!error && data && isAppleUser(data.user)) {
         const r = await storeAppleGrant(admin, user_id, body.grant);
         stored = !!r.stored;
-        console.log(`[beta:apple_grant] ${r.stored ? `stored client=${r.client}` : `not stored: ${r.reason}${r.status ? ` status=${r.status}` : ""}`}`);
+        console.log(`[beta:apple_grant] ${r.stored ? `stored client=${r.client}` : `not stored: ${r.reason}${r.problems && r.problems.length ? ` (${r.problems.join(", ")})` : ""}${r.status ? ` status=${r.status}` : ""}`}`);
       } else {
         console.log("[beta:apple_grant] not stored: not_apple");
       }
@@ -940,6 +940,7 @@ function withoutServerKeys(metadata) {
 
 exports.handler = async (event) => {
   connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
+  logAppleConfigOnce("beta");   // names only: whether this instance can sign for Apple
   let res;
   try { res = await handle(event); }
   catch (e) { console.log(logLine(event, { statusCode: 500, body: JSON.stringify({ error: "threw" }) })); throw e; }
