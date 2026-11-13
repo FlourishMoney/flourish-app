@@ -24,7 +24,7 @@ import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
-         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
+         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, needsOnFileStamp, stampOnFile, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
@@ -17771,6 +17771,17 @@ export default function FlourishApp(){
     const needs = (b) => b && !b.nextDueDate && b.type !== "one_off" && (b.freq || "monthly") !== "monthly" && !!computeNextDueDate(b);
     if (!bs.some(needs)) return;
     setAppData(d => ({ ...d, bills: (d.bills || []).map(b => needs(b) ? { ...b, nextDueDate: computeNextDueDate(b) } : b) }));
+  }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Audit of 2026-11-13, finding 3: a recurring bill with no sign of when it was put on file (onboarding's bills, older
+  // ones) is stamped the first time the app sees it. From then on, a due date of its that passes with no payment seen
+  // is known to be overdue and stays counted for a few days (forecastEdits.js OVERDUE_GRACE_DAYS); a due date before
+  // the stamp was never missed. Idempotent: a bill is stamped once, and a bill added by hand or found from the bank
+  // already carries its own sign.
+  useEffect(() => {
+    const bs = appData?.bills;
+    if (!Array.isArray(bs) || !bs.length) return;
+    if (!bs.some(needsOnFileStamp)) return;
+    setAppData(d => ({ ...d, bills: stampOnFile(d.bills) }));
   }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
   // Every debt needs a stable link key so a bill can say which debt it pays (billPaysDebt). Debts added
   // before ids existed, onboarding debts and the demo's are given an id here, once.

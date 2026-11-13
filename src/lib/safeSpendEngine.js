@@ -103,7 +103,9 @@ export const SafeSpendEngine = {
       // An occurrence the household edited (moved, re-priced) stands on its own: it is reserved even when
       // the bill looks archived or already paid this month. A real payment of it is handled by the
       // forecastEdits arrival rule, which already removed it from the list.
-      const editedOnly = all.filter(o => o.edited);
+      // So does one that is overdue and not seen paid (forecastEdits.js OVERDUE_GRACE_DAYS): a one-time bill whose
+      // date passed two days ago is "archived", yet its money has not left.
+      const editedOnly = all.filter(o => o.edited || o.overdue);
       if (isBillArchived(b, todayDate)) return editedOnly;
       return all;
     };

@@ -25,7 +25,7 @@
 // -----------------------------------------------------------------------------
 
 import { depositDatesFor, findAnchor, depositConfidence, isDepositToday } from "./incomeSchedule.js";
-import { billOccursOnDate, isBillArchived, num, clampDayToMonth, paysABill } from "./financialCalculations.js";
+import { billOccursOnDate, billNextDue, isBillArchived, num, clampDayToMonth, paysABill } from "./financialCalculations.js";
 import { anchorEvidence, incomeEvidence } from "./depositClassify.js";
 
 export const EDIT_LOOKAHEAD_DAYS = 62; // an occurrence moved up to this far earlier still appears
@@ -375,6 +375,58 @@ function expectedOccurrences(item, ed, today, days, minDay) {
   return out;
 }
 
+// ── Overdue: due in the last few days and not seen paid (audit of 2026-11-13, finding 3) ────────────────────────
+// A bill used to leave the list the day after its due date, paid or not: rent due on a Sunday and still in the
+// account on Monday was in neither safe to spend nor the forecast, so the number rose by the rent while the money
+// had not gone. Now a bill stays counted after its due date until a matching payment is seen (billArrived above, the
+// one "already paid" rule), for OVERDUE_GRACE_DAYS.
+//   Why 5 days: a due date on a Saturday, a holiday Monday, the payment on Tuesday, and one more day for the bank's
+//   feed. Longer would keep counting a bill that was paid in a way we cannot match (another payee name, a balance
+//   typed in by hand), which shows less than is free.
+//   Only a bill KNOWN TO BE ON FILE before that due date: one added on the 3rd with a due day of the 1st was not
+//   missed. A bill added by hand carries createdAt; one found from the bank carries its next due date as of when it
+//   was found (nextDueDate); any other recurring bill (onboarding's, older ones) is stamped onFileSince the first
+//   time the app sees it (stampOnFile below, App.jsx). A recurring bill with none of the three is never called
+//   overdue: we cannot tell a missed payment from a bill typed in yesterday. A one-time bill's date was chosen as a
+//   coming date when it was made, so it was on file before it.
+// An overdue occurrence keeps its own due date (so lists show it), and is day 0: it is still to leave the balance.
+export const OVERDUE_GRACE_DAYS = 5;
+function onFileSince(b) {
+  if (b && b.createdAt) { const c = new Date(b.createdAt); if (!isNaN(c.getTime())) return noon(c); }
+  if (b && b.onFileSince && fromIso(b.onFileSince)) return fromIso(b.onFileSince);
+  if (b && b.type !== "one_off" && b.nextDueDate) return fromIso(b.nextDueDate);
+  return null;
+}
+/** A recurring bill that carries no sign of when it was put on file. */
+export function needsOnFileStamp(b) {
+  return !!b && b.type !== "one_off" && !b.createdAt && !b.nextDueDate && !b.onFileSince;
+}
+/** The same bills, each one that needs it stamped as on file from today. Bills that need nothing are the same objects. */
+export function stampOnFile(bills, today = new Date()) {
+  const iso = isoOf(today);
+  return (bills || []).map(b => (needsOnFileStamp(b) ? { ...b, onFileSince: iso } : b));
+}
+// The dates in the grace window (the last OVERDUE_GRACE_DAYS days, not today) on which this bill fell due.
+function recentDueDates(b, today) {
+  const t0 = noon(today), from = addDays(today, -OVERDUE_GRACE_DAYS);
+  const since = onFileSince(b);
+  const ok = (d) => d && d >= from && d < t0 && !(since && d < since);
+  if (b.type === "one_off") { const d = fromIso(b.isoDate); return ok(d) ? [d] : []; }
+  if (!since) return [];                          // not known to have been on file: never called overdue
+  const freq = b.freq || "monthly";
+  const out = [];
+  if (freq === "weekly" || freq === "biweekly") {
+    // Stepped back from the next due date, so it does not matter how far ahead of the past the saved date sits.
+    const step = freq === "weekly" ? 7 : 14;
+    const next = billNextDue(b, today);
+    if (!next || !b.nextDueDate) return out;      // no saved date: its phase is not known, so nothing can be late
+    for (let d = addDays(next, -step); d >= from; d = addDays(d, -step)) if (ok(d)) out.push(d);
+    return out.reverse();
+  }
+  for (let i = -OVERDUE_GRACE_DAYS; i < 0; i++) { const d = addDays(today, i); if (ok(d) && billOccursOnDate(b, d, from)) out.push(d); }
+  return out;
+}
+
 // Money out: every bill (freq-aware, one-offs, archived skipped) and every expected item marked "out".
 // Recurring bills never land on day 0 in the forecast (today's balance already reflects them);
 // safe-to-spend counts today too, so it passes includeToday.
@@ -388,8 +440,18 @@ export function billOccurrences(data, today = new Date(), days = 90, { includeTo
     // Looking back only for an edited bill: its original date may have passed while it was moved later
     // (a one-off whose date has passed is "archived", but not if the household moved it forward).
     const back = hasEditsFor(ed, srcKey) ? MAX_MOVE_DAYS : 0;
-    if (!back && isBillArchived(b, today)) continue;
     const base = num(b.amount);
+    // Due in the last few days and not seen paid: still to leave the balance (see OVERDUE_GRACE_DAYS above). One the
+    // household skipped is dropped; one it moved to today or later is the look-back's below, on its new date.
+    for (const d of recentDueDates(b, today)) {
+      const e = applyEdit(ed, srcKey, d, base);
+      const late = dayDiff(today, e.date);
+      if (e.skipped || late >= 0 || late < -OVERDUE_GRACE_DAYS) continue;
+      if (billArrived(b, d, e.date, txns, today)) continue;
+      out.push({ kind: "bill", srcKey, sourceId: b.id ?? null, bill: b, label: b.name || "Bill", originalDate: d, date: e.date, day: 0,
+                 amount: e.amount, estimate: base, skipped: false, edited: e.edited, overdue: true });
+    }
+    if (!back && isBillArchived(b, today)) continue;
     const from = addDays(today, -back);
     for (let i = -back; i <= days + lookahead; i++) {
       const d = addDays(today, i);
