@@ -258,6 +258,25 @@ function androidProduct(plan, price, { offer = false } = {}) {
         t.eq([st.trial_plan_first.web_trial_eligible, res.statusCode, !!made], [false, 409, false], `4k a store trial (${name}), then the website: no second 14 days from Stripe, and a request for one creates nothing`);
       }
     }
+
+    // ════ 5. THE RUNBOOK (docs/ops/TRIAL-FIRST-GO-LIVE.md) ═══════════════════════════════════════════
+    {
+      const book = fs.readFileSync(path.join(REPO, "docs", "ops", "TRIAL-FIRST-GO-LIVE.md"), "utf8");
+      t.ok(book.includes("**The switch (`TRIAL_PLAN_FIRST`) goes on last, and never before the store offers exist.**"), "5a the one line: the switch goes on last, and never before the store offers exist");
+      const at = (needle) => { const i = book.indexOf(needle); return i < 0 ? Infinity : i; };
+      const order = [at("4. **Stripe, live mode.**"), at("5. **Play Console: three offers.**"), at("6. **App Store Connect: three introductory offers.**"), at("7. **Netlify: the switch.**"), at("9. **Merge the `index.html` pull request.**"), at("10. **The places that still say")];
+      t.ok(order.every(Number.isFinite) && order.every((v, i) => i === 0 || order[i - 1] < v), "5b the order: Stripe's event, the Play offers, Apple's offers, the switch, index.html, the \"no card\" places");
+      t.ok(/Deploys > Trigger deploy > Deploy site/.test(book) && /A setting does nothing until a deploy\./.test(book), "5c the switch needs a deploy, and the runbook says so");
+      for (const id of [...Object.values(IOS_ID), "free-14-monthly", "free-14-annual", "free-14-founding", "flourish_plus"]) t.ok(book.includes("`" + id + "`"), `5d the runbook names ${id}`);
+      t.ok(/Type: `Free`/.test(book) && /Duration: `2 Weeks`/.test(book) && /Phase duration: `2 weeks`/.test(book) && /Eligibility: `New customer acquisition`/.test(book) && /`Never had this subscription`/.test(book) && /Tags: none/.test(book),
+        "5e each offer's fields: free, 2 weeks (what the app's own check accepts as the 14 days), new customers, no tag");
+      t.eq((book.match(/\*\*Cannot be undone:\*\*/g) || []).length, 3, "5f the three steps that cannot be undone are marked");
+      t.ok(!/[\u2014]/.test(book), "5g plain words: no em dash");
+      // What the runbook says of the offers is what the code accepts: free, and exactly 2 weeks.
+      t.eq([lib.storeTrialEligible({ platform: "ios", product: iosProduct("founding_annual", "$79.99", FREE_2W), eligibility: { [IOS_ID.founding_annual]: { status: 2 } } }),
+        lib.storeTrialEligible({ platform: "android", product: androidProduct("founding_annual", "$79.99", { offer: true }), eligibility: {} })], [true, true],
+        "5h an offer made to those fields is claimed as the 14 days, on the founding plan too");
+    }
   } finally {
     for (const k of ENV_KEYS) { if (k in saved) process.env[k] = saved[k]; else delete process.env[k]; }
   }
