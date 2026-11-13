@@ -138,18 +138,19 @@ function androidProduct(plan, price, { offer = false } = {}) {
       // 2i-2k What still follows for an iPhone household that bought in that gap: the row says trialing with Apple's
       // end date, and the reminder (date and amount of the first charge, how to cancel) is sent with the switch off.
       const S = require("../netlify/functions/_lib/storeSubscriptions.js");
-      const end = REAL_NOW + 2.5 * DAY;
-      const row = S.storeRowFromSubscriber({ subscriptions: { [IOS_ID.monthly]: { store: "app_store", period_type: "trial", expires_date: iso(end), is_sandbox: false } } }, REAL_NOW).row;
+      // A fixed clock: the sweep runs December 1; Apple's trial ends December 3 at 10 pm Pacific (2.5 days on).
+      const CLOCK = Date.parse("2026-12-01T18:00:00Z");
+      const end = CLOCK + 2.5 * DAY;
+      const row = S.storeRowFromSubscriber({ subscriptions: { [IOS_ID.monthly]: { store: "app_store", period_type: "trial", expires_date: iso(end), is_sandbox: false } } }, CLOCK).row;
       t.eq([row.status, row.provider, row.current_period_end, row.plan_key], ["trialing", "app_store", iso(end), "monthly"], "2i the switch plays no part in what the server writes: Apple's trial is a trialing row with Apple's end date");
       setEnv({ ...OFF, WAITLIST_UNSUBSCRIBE_SECRET: "go-live-test-secret" });
       const state = { subscriptions: [{ user_id: U, ...row }], trial_reminders: [], trial_reminder_optouts: [], __unique: { trial_reminders: ["provider", "subscription_ref"] } };
       const sent = [];
-      const out = await loadWith(SWEEP, { admin: fakeAdmin(state) })._test.sweep({ admin: fakeAdmin(state), now: REAL_NOW, send: async (payload) => { sent.push(payload); return true; } });
+      const out = await loadWith(SWEEP, { admin: fakeAdmin(state) })._test.sweep({ admin: fakeAdmin(state), now: CLOCK, send: async (payload) => { sent.push(payload); return true; } });
       t.eq([out.sent, sent.length], [1, 1], "2j off: the reminder 3 days before the first charge is still sent for that trial");
-      const R = require("../netlify/functions/_lib/trialReminder.js");
-      const dates = R.reminderDates("ios", end);
-      t.ok(sent[0] && sent[0].text.includes(`On ${dates.charge}, you'll be charged $11.99 CAD, plus any applicable tax, unless you cancel first.`) && dates.charge === R.reminderDateLabel(end - DAY),
-        "2k …naming the day before Apple's trial ends (Apple may charge up to 24 hours early) and the plan's price");
+      t.ok(sent[0] && sent[0].subject === "Your flourish trial: first charge on December 2, 2026"
+        && sent[0].text.includes("On December 2, 2026, you'll be charged $11.99 CAD, plus any applicable tax, unless you cancel first."),
+        "2k …naming the day before Apple's trial ends (December 2 for a trial ending December 3, Pacific time) and the plan's price");
     }
 
     // ════ 3. A STATUS READ FAILS AS THE TRIAL ENDS ════════════════════════════════════════════════════
@@ -272,6 +273,24 @@ function androidProduct(plan, price, { offer = false } = {}) {
         "5e each offer's fields: free, 2 weeks (what the app's own check accepts as the 14 days), new customers, no tag");
       t.eq((book.match(/\*\*Cannot be undone:\*\*/g) || []).length, 3, "5f the three steps that cannot be undone are marked");
       t.ok(!/[\u2014]/.test(book), "5g plain words: no em dash");
+      // 5i-5l STEP 7 SETS THE SWITCH'S TIME 30 MINUTES AHEAD. From the deploy every plans screen follows its store; until
+      // the time arrives no account is held at the plans or loses its account trial, so the phones can be checked first.
+      t.ok(book.includes("`TRIAL_PLAN_FIRST_SINCE` = **30 minutes ahead** of the clock as you type it") && book.includes("Moving the time later is safe while it is still ahead."), "5i the runbook sets the switch's time 30 minutes ahead, and says it may be moved later while it is still ahead");
+      const rules = require("../netlify/functions/_lib/planRules.js");
+      const ahead = iso(REAL_NOW + 30 * 60000);
+      setEnv({ ...ON, TRIAL_PLAN_FIRST_SINCE: ahead });
+      const early = { user_id: U, plan: "trial", founder_flag: false, trial_started_at: iso(REAL_NOW - 60000), trial_ends_at: iso(REAL_NOW - 60000 + 14 * DAY) };
+      const st = JSON.parse((await loadWith(BILLING, { admin: fakeAdmin({ profiles: [early], subscriptions: [] }), userId: U }).handler(post({ action: "store_status" }, NATIVE))).body);
+      t.eq([st.trial_plan_first.on, st.trial_plan_first.account_trial, rules.derivePlan(early), lib.plansFirstStage({ tpf: st.trial_plan_first, paid: false, profilePlan: "trial", canSell: true })], [true, true, "trial", null],
+        "5j before the time: the switch is on for the plans screens, and an account opened a minute ago keeps its account trial and is not held at the plans");
+      const d = lib.trialDisclosure({ platform: "android", eligible: lib.storeTrialEligible({ platform: "android", product: androidProduct("monthly", "$11.99"), eligibility: {} }), price: "$11.99 a month", planKey: "monthly", words });
+      t.eq([!!lib.trialPlanFirstOf(st), d.claim, d.lines[0]], [true, false, "$11.99 a month, charged today. Renews until you cancel."], "5k …and a store that is not giving its offer yet shows as \"charged today\" on the phone, before anyone must choose");
+      // Moved an hour later while still ahead: the same account, and one opened after the first time, both keep the account trial.
+      const between = { ...early, trial_started_at: iso(REAL_NOW + 45 * 60000), trial_ends_at: iso(REAL_NOW + 45 * 60000 + 14 * DAY) };
+      const later = Date.parse(ahead) + 3600000;
+      t.eq([rules.accountTrialApplies(early, later), rules.accountTrialApplies(between, later), rules.accountTrialApplies(between, Date.parse(ahead))], [true, true, false],
+        "5l the time moved an hour later: nobody opened before the new time is held (left alone, an account opened after the first time would be)");
+      setEnv(ON);
       // What the runbook says of the offers is what the code accepts: free, and exactly 2 weeks.
       t.eq([lib.storeTrialEligible({ platform: "ios", product: iosProduct("founding_annual", "$79.99", FREE_2W), eligibility: { [IOS_ID.founding_annual]: { status: 2 } } }),
         lib.storeTrialEligible({ platform: "android", product: androidProduct("founding_annual", "$79.99", { offer: true }), eligibility: {} })], [true, true],

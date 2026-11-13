@@ -22,6 +22,8 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 const BILLING = require.resolve("../netlify/functions/billing.js");
 const FLAG_FN = require.resolve("../netlify/functions/trial-plan-first.js");
 const SINCE = "2026-11-20T15:00:00Z";
+// The switch's day as the Terms state it: in the reader's own time zone (November 20 in Canada; the 21st from UTC+9 on).
+const SINCE_DAY = new Date(SINCE).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 const U = "00000000-0000-4000-8000-000000000041";
 const ORIGIN = { web: "https://flourishmoney.app", ios: "capacitor://localhost", android: "https://localhost" };
 const ENV_KEYS = ["TRIAL_PLAN_FIRST", "TRIAL_PLAN_FIRST_SINCE", "BILLING_ENABLED", "IAP_ENABLED"];
@@ -37,7 +39,7 @@ const ON_7 = [
   `flourish is sold as a subscription: flourish monthly, flourish annual and, while offered, flourish founding annual. ${FOUNDING} A new account chooses a plan to keep using flourish. A partner who joins a household can use the same subscription. Prices are in Canadian dollars, plus sales tax on the website.`,
   "Eligible new subscribers get 14 days free. Apple, Google or Stripe decides who is eligible, and the website needs a card to start. The plans screen shows whether the 14 days apply and the first-charge date. Unless you cancel before the first charge, you will be charged automatically. Apple may charge up to 24 hours before the trial ends. Your plan then renews automatically each billing period until you cancel.",
   "To cancel on iPhone: Settings, your name, then Subscriptions, at least 24 hours before the trial or period ends. On Android: Google Play, your profile, Payments & subscriptions, then Subscriptions. On the website: Settings, then Manage subscription. Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
-  "An account opened before November 20, 2026 keeps its 14-day account trial to its end, then moves to the free plan: 2 coach messages a week, 1 What-If a day, 1 connected bank, and no Credit or coach-run meeting.",
+  `An account opened before ${SINCE_DAY} keeps its 14-day account trial to its end, then moves to the free plan: 2 coach messages a week, 1 What-If a day, 1 connected bank, and no Credit or coach-run meeting.`,
   "Apple or Google handle refunds for in-app purchases under their own policies. On the website, partial periods are not refunded unless the law requires it.",
 ].join(" ");
 
@@ -70,11 +72,11 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
   const plansText = (props) => as("web", () => textOf(A.render(A.h(A.UpgradeScreen, { onClose: () => {}, mode: "upgrade", ...props }))));
   const webStatus = (extra = {}) => ({ enabled: true, provider: null, paid: false, period_end: null, manageable: false, web_attention: false, founding: { available: true, cohortLimit: 50, confirmEmail: false }, ...extra });
   // The store plans' card, exactly as StorePaywall builds it (the line is pinned below, 1f).
-  const storeCard = (platform, plan, price, trialFirst) => {
+  const storeCard = (platform, plan, price, trialFirst, now = Date.now()) => {
     const copy = offer.offerCopy({ plan, priceString: price, platform });
     const product = storeProduct(platform, plan, price);
     const eligibility = platform === "ios" ? { [product.identifier]: { status: 2 } } : {};
-    const trial = (trialFirst && copy) ? lib.trialDisclosure({ platform, eligible: lib.storeTrialEligible({ platform, product, eligibility }), price: copy.price, planKey: plan, words: W.trialWords }) : null;
+    const trial = (trialFirst && copy) ? lib.trialDisclosure({ platform, eligible: lib.storeTrialEligible({ platform, product, eligibility }), price: copy.price, planKey: plan, now, words: W.trialWords }) : null;
     return { copy, trial, button: trial && trial.claim ? W.trialWords("trialfirst-button") : copy.button };
   };
 
@@ -150,12 +152,20 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     for (const p of ["web", "ios", "android"]) {
       const text = termsText(p, on[p].terms && on[p].terms.since);
       t.eq(section7(text), `7. Plans and billing ${ON_7}`, `3a on (${p}): section 7 is the approved text, the founding plan and its sentence included`);
-      t.ok(text.includes("Last updated November 20, 2026") && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
+      t.ok(text.includes(`Last updated ${SINCE_DAY}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
         `3b …dated the day the switch went on, with nothing left of the old section (${p})`);
     }
     {
-      const text = plansText({ status: webStatus(), trialFirst: on.web.trialFirst, required: true, onSignOut: () => {} });
-      const at = lib.trialDates("web");
+      // The screen reads the clock itself: rendered again if the day turned over while it was being drawn.
+      let text, at;
+      for (let i = 0; i < 3; i++) {
+        at = lib.trialDates("web");
+        text = plansText({ status: webStatus(), trialFirst: on.web.trialFirst, required: true, onSignOut: () => {} });
+        if (lib.chargeDateLabel(lib.trialDates("web").charge) === lib.chargeDateLabel(at.charge)) break;
+      }
+      // Stripe's 14 days from now: the first charge 14 days on, the last day to cancel 13 days on (not the screen's own sum).
+      const days = (n) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+      t.eq([lib.chargeDateLabel(at.charge), lib.chargeDateLabel(at.cancelBy)], [days(14), days(13)], "3c0 the website's dates: the first charge 14 days from today, the last day to cancel the day before");
       const lines = (price, per) => `14 days free Then ${price} ${per}, renewing until you cancel. First charge: ${lib.chargeDateLabel(at.charge)} Cancel before ${lib.chargeDateLabel(at.cancelBy)} to avoid the first charge. To cancel: in flourish, go to Settings, then Manage subscription.`;
       t.ok(text.includes(`Founding Annual $79.99 a year Founding price for the first 50 households who subscribe. Locked in while you stay subscribed. ${lines("$79.99", "a year")}`)
         && text.includes(`Monthly $11.99 a month CAD plus tax ${lines("$11.99", "a month")}`) && text.includes(`Annual $99.99 a year CAD plus tax ${lines("$99.99", "a year")}`),
@@ -163,11 +173,14 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
       t.ok(text.includes("Choose your plan Pick a plan to keep using flourish. If you qualify for 14 days free, you'll be charged automatically on the first-charge date shown unless you cancel."),
         "3d …under \"Choose your plan\", as section 7 says (\"A new account chooses a plan to keep using flourish\")");
     }
+    // A fixed moment, midday in Canada: 14 days on is December 5, so the iPhone states December 4 and Android December 5.
+    const CLOCK = Date.parse("2026-11-21T18:00:00Z");
+    const dayOf = (isoTime) => new Date(isoTime).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
     for (const p of ["ios", "android"]) for (const [plan, price, per] of PLANS) {
-      const c = storeCard(p, plan, price, on[p].trialFirst);
-      const at = lib.trialDates(p);
+      const c = storeCard(p, plan, price, on[p].trialFirst, CLOCK);
+      const charge = dayOf(p === "ios" ? "2026-12-04T18:00:00Z" : "2026-12-05T18:00:00Z"), cancelBy = dayOf("2026-12-04T18:00:00Z");
       t.eq([c.trial && c.trial.claim, c.button, c.trial && c.trial.lines.slice(0, 4)],
-        [true, "Start free trial", ["14 days free", `Then ${price} ${per}, renewing until you cancel.`, `First charge: ${lib.chargeDateLabel(at.charge)}`, `Cancel before ${lib.chargeDateLabel(at.cancelBy)} to avoid the first charge.`]],
+        [true, "Start free trial", ["14 days free", `Then ${price} ${per}, renewing until you cancel.`, `First charge: ${charge}`, `Cancel before ${cancelBy} to avoid the first charge.`]],
         `3e on, ${p}, ${plan}: the card states the 14 days, the price after, the first charge and the last day to cancel`);
     }
     {

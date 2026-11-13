@@ -15,9 +15,10 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
 1. **A store's 14 days are given by the store, not by our switch.** The moment an Apple introductory offer or a Play offer is active, the store applies it.
 2. **The website does not need the stores.** Its 14 days are Stripe's, started by our own checkout the moment the switch is on.
 3. **Android 1.1.6 buys what its screen showed.** With the switch off it buys the base plan by name, so it is charged when confirmed, as its screen says, even after the Play offer exists.
-4. **An iPhone cannot decline Apple's offer.** From the minute Apple's offer starts until the switch is live, an iPhone plans screen still says "Payment is charged to your Apple Account when you confirm" while Apple gives 14 days free and says so on its own purchase sheet. That household is charged 14 days later than our screen said, never earlier. It still gets the reminder email 3 days before the first charge.
+4. **An iPhone cannot decline Apple's offer.** From the minute Apple's offer starts until the switch is live, an iPhone plans screen still says "Payment is charged to your Apple Account when you confirm" while Apple gives 14 days free and says so on its own purchase sheet. That household is charged 14 days later than our screen said, never earlier. It still gets the reminder email 3 days before the trial ends.
 5. **So the gap in point 4 cannot be removed with 1.1.6 in the store. It can only be kept to minutes:** steps 5 to 7 are done in one sitting, Play first, Apple second, the switch straight after.
-6. **The other order is worse.** With the switch on and no store offer, every new household in the apps is held at "Choose your plan" with no free days: each plan says "charged today", and it is. The screen is true, but they pay on day one while the website gives 14 days free.
+6. **The switch has two parts.** `TRIAL_PLAN_FIRST` makes every plans screen follow the stores from the moment its deploy is published, which closes the gap in point 4. `TRIAL_PLAN_FIRST_SINCE` is the time from which a new account must choose a plan. Step 7 sets that time 30 minutes ahead, so the phones can be checked in step 8 before anyone is held at the plans.
+7. **The other order is worse.** With the switch on and no store offer, every new household in the apps is held at "Choose your plan" with no free days: each plan says "charged today", and it is. The screen is true, but they pay on day one while the website gives 14 days free.
 
 ## The steps
 
@@ -42,7 +43,7 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
 
 ### On the day, in one sitting
 5. **Play Console: three offers.** Who: Amanda. The exact fields are in "The store offers" below.
-   - Check after: each offer says Active. RevenueCat > Products shows each `free-14-*` offer.
+   - Check after: each offer says Active. RevenueCat reads the offers from Play; if its Products page lists each `free-14-*` offer, good. The real proof is step 8.
    - **Cannot be undone:** an offer ID is permanent and cannot be reused. An active offer's phases and eligibility cannot be edited: deactivate it and create a new one under a new ID.
    - In effect at once: nothing changes for Android 1.1.6 (point 3). An Android 1.1.5 or older app starts giving the 14 days while its screen says nothing about them.
 6. **App Store Connect: three introductory offers.** Who: Amanda. The exact fields are in "The store offers" below.
@@ -51,15 +52,18 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
    - In effect at once: every eligible iPhone buyer gets the 14 days. The gap in "Why this order", point 4, is open from now until step 7 is published.
 7. **Netlify: the switch.** Who: Amanda. Production only.
    - `TRIAL_PLAN_FIRST` = `true`
-   - `TRIAL_PLAN_FIRST_SINCE` = the time on the clock as you type it, as a full time with its zone, for example `2026-11-20T15:00:00Z`. A date alone, or a time with no zone, leaves the switch off. Never a time in the past.
+   - `TRIAL_PLAN_FIRST_SINCE` = **30 minutes ahead** of the clock as you type it, as a full time with its zone, for example `2026-11-20T15:30:00Z`. A date alone, or a time with no zone, leaves the switch off. Never a time already past: an account opened between that time and the deploy was told it had 14 days free with no card, and would be held at the plans instead.
    - Then **Deploys > Trigger deploy > Deploy site**, and wait for "Published". A setting does nothing until a deploy.
    - Check after (CC, read only): `https://flourishmoney.app/api/trial-plan-first` answers 200 with `"on": true` and the time. Before the deploy it answers 404.
+   - From "Published": the website's words change, the website gives Stripe's 14 days, and every plans screen follows its store. From the time you set: a new account must choose a plan.
    - Undo: "Switching it off again" below. **Cannot be undone:** an account opened after that time has no account trial, and a store trial once started cannot be taken back.
-8. **Check what people see.** Who: CC reads the website; Amanda checks one iPhone and one Android phone on 1.1.6. Each needs a store account that has never subscribed and a flourish account with no plan (a new test account is the real path: it meets "Choose your plan" after its first number). She does not need to finish a purchase.
+8. **Check what people see, before the time set in step 7 arrives.** Who: CC reads the website; Amanda checks one iPhone and one Android phone on 1.1.6. Each needs a store account that has never subscribed and a flourish account with no plan, opening the plans from Settings. She does not need to finish a purchase.
    - Website, signed out: the main button says "Get started", with "Choose a plan to get started. Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled. Also on iPhone and Android." under it.
    - Terms: "7. Plans and billing", and "Last updated" is the day of the switch.
    - Each phone's plans screen: each plan says "14 days free", "First charge: {date}" and "Cancel before {date} to avoid the first charge.", and the button says "Start free trial". The store's own sheet shows 2 weeks free.
-   - If a phone's plans say "charged today" instead: that store's offer is not live for that account. Check step 5 or 6. Nobody is mis-told in that state.
+   - If a phone's plans say "charged today" instead: that store is not giving its offer to that account yet. Nobody is mis-told in that state, but a new household would pay on day one. **Before the time arrives,** set `TRIAL_PLAN_FIRST_SINCE` an hour later and Trigger deploy again, then sort out step 5 or 6. Moving the time later is safe while it is still ahead.
+   - After the time: a new test account meets "Choose your plan" after its first number, and the only ways out are a plan, "Restore purchases" (apps) and "Sign out".
+   - A page that was already open before the switch keeps its old words until it is reloaded.
 9. **Merge the `index.html` pull request.** Who: Amanda says go, CC merges.
    - Check after: the deploy id; the page source carries the new sentence twice; `/api/trial-plan-first` still answers 200.
    - Undo: revert that pull request.
@@ -69,7 +73,7 @@ Written 2026-11-13 on main `bb10c3d`. Nothing in it has been done. It follows th
 11. **Watch the first trials.** Who: CC reads; Amanda sees Stripe and RevenueCat.
     - Day 0: a website trial shows as "Trialing" in Stripe; a store trial shows as a trial in RevenueCat.
     - Day 7: Stripe sends its own reminder for a website trial.
-    - Day 11: our reminder email goes to an Apple or Google trial.
+    - Day 11: our reminder email goes to an Apple or Google trial (3 days before the trial ends).
     - Day 13 to 14: the first charges. Apple may charge up to 24 hours before the trial ends.
 
 ## The store offers
@@ -140,15 +144,15 @@ The words are the app's own, as it shows them. "Store card" is one plan on the i
 ## What can go wrong, and what happens
 Each has tests in `tests/trialGoLiveFailures.test.cjs`.
 1. **The switch is on and a store's offer does not exist.** No plan claims a trial. Each says "{price}, charged today. Renews until you cancel." and the store charges today. Nobody is mis-told. A new household must pay on day one or sign out.
-2. **A store's offer exists and the switch is off.** Android 1.1.6 buys the base plan: charged when confirmed, as its screen says. An iPhone gets Apple's 14 days while our screen says "Payment is charged to your Apple Account when you confirm": charged 14 days later than our screen said. Apple's sheet states the trial, and our reminder email still goes 3 days before the first charge.
+2. **A store's offer exists and the switch is off.** Android 1.1.6 buys the base plan: charged when confirmed, as its screen says. An iPhone gets Apple's 14 days while our screen says "Payment is charged to your Apple Account when you confirm": charged 14 days later than our screen said. Apple's sheet states the trial, and our reminder email still goes 3 days before the trial ends.
 3. **A status read fails as the trial ends.** The server answers "try again" (503), never "not paid". The app keeps the household's last "paid" answer until the trial's own end; after that, with no answer, it does not put up the plans that cannot be closed and sells nothing. Until a read works the household has the free plan's limits. The app asks again after 5, 20 and 60 seconds and when the network returns.
-4. **A trial starts on the website, then a store app is opened.** The app is told the household already has its plan and sells nothing. The first-charge line shows Stripe's date. The other way round, the website gives no second 14 days.
+4. **A trial starts on the website, then a store app is opened.** The app is told the household already has its plan and sells nothing. The other way round, the website gives no second 14 days. The "Free trial. First charge {date}" line is right on the website once this pull request is deployed. **The 1.1.6 apps keep the old rule until their next build:** an iPhone shows a website trial's charge a day early (harmless), and an Android phone shows an iPhone trial's charge on the trial's end, a day after Apple may charge. That last one needs one account on both an iPhone and an Android phone.
 
 **The worst of the four for a household is the first.** It is the only one where a household pays money it would not otherwise have paid: day one, no free days, while the website is giving 14. That is why the switch goes on last.
 
 ## Apps older than 1.1.6
 There is no minimum-version gate, so some people will still be on them.
-- They know nothing of the switch. Their plans screen never states the 14 days, before or after it: it says the payment is charged when confirmed, and the store gives the 14 days anyway (Apple always; Google because an older Android app buys the default option).
+- They know nothing of the switch, and never show the "Free trial. First charge {date}" line. Their plans screen never states the 14 days, before or after it: it says the payment is charged when confirmed, and the store gives the 14 days anyway (Apple always; Google because an older Android app buys the default option).
 - A new account in one of them is held to the free plan's limits by the server, while the app still shows the old trial chip.
 - Nothing in this runbook changes that. It is why the switch waits until 1.1.6 has been the store version for a few days.
 
@@ -226,3 +230,5 @@ Searched 2026-11-13: `src/`, `index.html`, `public/`, `content/`, `netlify/funct
 - `netlify.toml` says the reminder sweep "does nothing unless TRIAL_PLAN_FIRST is on". It runs with the switch on or off, on purpose, so a store trial started in the gap still gets its reminder.
 - `docs/product/TRIAL-PLAN-FIRST-NO-CARD.md` and `docs/product/TRIAL-PLAN-FIRST-WORDS.md` list the first onboarding line "Free to start · Canada & USA · No credit card", switched to "Made for Canadian households". That line is no longer on main: #136 (the 1.1.7 first run) removed it. It is still in the 1.1.6 store apps, where it follows the switch.
 - `docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md` puts the migration and the store release first. Both are done.
+- `docs/ops/TRIAL-PLAN-FIRST-CONSOLES.md` sets `TRIAL_PLAN_FIRST_SINCE` to "the moment you switch it on". By the time the deploy is published that moment is past, and an account opened in between loses the trial it was just told it had. This runbook sets it 30 minutes ahead (step 7).
+- The same doc puts the Stripe event before the store offers, as this runbook does. The event does nothing while the switch is off, and doing it ahead keeps the sitting short.
