@@ -428,6 +428,51 @@ export function daysToNextDepositFor(data, today = new Date(), horizonDays = 400
   const n = nextDepositFor(data, today, horizonDays);
   return n ? dayDiff(today, n.date) : null;
 }
+// ── The next MAIN payday: where the bill window ends (audit of 2026-11-13, finding 2) ──────────────────────────
+// Safe to spend counts what is due "before payday". That payday is the household's MAIN pay, not the next deposit of
+// any size: a small benefit landing a week before the paycheque used to end the window on the benefit's day, so rent
+// due between the two was not counted and Today showed about two thousand dollars more than was free
+// (tests/mainPayday.test.cjs has the household and its figures).
+//
+// THE RULE, in plain words:
+//   - Main pay is the income that brings in the most per month, together with any other income that brings in at
+//     least half as much per month. So two earners with similar pay both have main paydays, and a child benefit, a
+//     pension beside a job, a side job or a second earner's much smaller pay does not.
+//   - The measure is the month's total, not the size of one deposit: a weekly job is the main pay beside a smaller
+//     monthly pension, though one pension deposit is larger than one week's pay.
+//   - Only income still expected counts. An income the household stopped is not a payday, and the largest one left
+//     is the main one. A household with only benefits has its largest benefit as its main payday.
+//   - A smaller income is still money coming in everywhere else (the forecast, monthly income, the savings row); it
+//     raises safe to spend on the day it lands, when it is in the balance. It only never ends the window.
+// nextDepositFor above is unchanged: it is the next deposit of any size, for the places that name the next deposit.
+export const MAIN_PAY_SHARE = 0.5;
+const PAYS_PER_YEAR = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, annually: 1 };
+// A year of this income in whole cents, at its going rate (monthlyIncomeBasis: variable pay at its low end, a
+// "from this date on" change once it starts). Whole numbers, so "exactly half" is exact.
+const yearlyCents = (inc, data, today) =>
+  Math.round(num(monthlyIncomeBasis(inc, data, today)) * 100) * (PAYS_PER_YEAR[(inc && inc.freq) || "biweekly"] || 12);
+export function nextMainPaydayFor(data, today = new Date(), horizonDays = 400) {
+  const occ = incomeOccurrences(data, today, horizonDays).filter(o => o.kind === "income" && !o.skipped && o.amount > 0);
+  if (!occ.length) return null;
+  const incomes = (data && data.incomes) || [];
+  const expected = new Set(occ.map(o => o.srcKey));          // still to come: a stopped income has no occurrence left
+  const yearly = new Map();
+  for (const inc of incomes) {
+    const k = incomeSrcKey(inc);
+    if (expected.has(k)) yearly.set(k, (yearly.get(k) || 0) + yearlyCents(inc, data, today));
+  }
+  const top = Math.max(0, ...yearly.values());
+  const isMain = (k) => !(top > 0) || (yearly.get(k) || 0) >= top * MAIN_PAY_SHARE;
+  const first = occ.find(o => isMain(o.srcKey)) || occ[0];
+  const inc = incomes.find(i => incomeSrcKey(i) === first.srcKey);
+  const conf = inc ? depositConfidence(inc, num(inc.amount) || first.amount, anchorEvidence(data)) : "estimated";
+  return { date: first.date, amount: first.amount, sourceLabel: first.label || "Income", confidence: conf,
+           low: first.low, high: first.high, variable: first.variable, edited: first.edited };
+}
+export function daysToNextMainPaydayFor(data, today = new Date(), horizonDays = 400) {
+  const n = nextMainPaydayFor(data, today, horizonDays);
+  return n ? dayDiff(today, n.date) : null;
+}
 export function isDepositTodayFor(data, today = new Date()) {
   return isDepositToday((data && data.incomes) || [], anchorEvidence(data || {}), today);
 }
