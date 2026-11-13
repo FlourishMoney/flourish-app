@@ -5,7 +5,8 @@
 // finances back with no owner, and the next sign-up imported them (no onboarding, no consent step, the old numbers).
 //   1  once a deletion starts, no flourish key can be written to localStorage or sessionStorage; others still can
 //   2  the wipe: every flourish key (flourish_..., flourishReviewPrompt_v1, ...) from both storages, every flourish IndexedDB
-//      database, then the deletion mark; a hanging IndexedDB never holds the reload up
+//      database, but the deletion mark; a hanging IndexedDB never holds the reload up; the mark goes first, before the
+//      sign-out, and every other open tab locks, clears and reloads once the session is gone
 //   3  ownerless local data goes into an account only when it was made minutes ago and no deletion happened here since
 //   4  the reproduction: a save after the sweep lands nothing
 //   5  the app: lock before the server is asked, unlock on every FAIL CLOSED, sign out, reminders, wipe, reload; the
@@ -76,6 +77,37 @@ function fakeIdb(names, { hang = false } = {}) {
     t.eq(none, { local: 0, session: 0, databases: 0 }, "2f no storage at all (a locked-down browser): nothing throws");
   }
 
+  // ── 2g to 2l. Other tabs (the live carry-over: a second tab saved its copy back as the sign-out reached it) ───────────
+  {
+    const local = new FakeStorage({ flourish_v1: "old", flourish_uid: "u1" });
+    W.lockBrowserStorage(FakeStorage.prototype);
+    W.markAccountDeleted(local, 1763000000001);
+    t.eq(local.getItem(W.DELETED_MARK), "1763000000001", "2g the mark is written past the lock, before the sign-out");
+    await W.wipeDeletedAccount({ local, session: new FakeStorage(), idb: null, now: 1763000000999 });
+    t.eq([local.keys(), local.getItem(W.DELETED_MARK)], [["flourish_deleted_at"], "1763000000001"], "2h the wipe keeps that mark (every other flourish key goes)");
+    W.unlockBrowserStorage();
+    const listeners = {};
+    const target = { addEventListener: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); }, removeEventListener: (ev, f) => { listeners[ev] = (listeners[ev] || []).filter((x) => x !== f); } };
+    const fire = (e) => (listeners.storage || []).slice().forEach((f) => f(e));
+    let heard = 0;
+    const off = W.onDeletionElsewhere(() => { heard++; }, target);
+    fire({ key: "flourish_v1", newValue: "x" }); fire({ key: W.DELETED_MARK, newValue: null });
+    t.eq(heard, 0, "2i another tab hears nothing for other keys, or for the mark being cleared");
+    fire({ key: W.DELETED_MARK, newValue: "1763000000001" }); fire({ key: W.DELETED_MARK, newValue: "1763000000002" });
+    t.eq(heard, 1, "2j …and once when an account was deleted in another tab");
+    off();
+    const l2 = new FakeStorage({ flourish_v1: "old copy", [W.DELETED_MARK]: "1" }), s2 = new FakeStorage({ flourish_landing_viewed: "1" });
+    let reloads = 0;
+    W.followDeletionElsewhere({ local: l2, session: s2, target, waitMs: 60000, reload: () => { reloads++; }, proto: FakeStorage.prototype });
+    l2.setItem("flourish_v1", "saved back as the sign-out reached this tab");
+    t.eq([l2.keys(), s2.keys(), reloads], [["flourish_deleted_at"], [], 0], "2k that tab locks and clears at once (nothing it saves lands) and waits for the sign-out");
+    fire({ key: "sb-test-auth-token", newValue: null });
+    t.eq([reloads, l2.keys()], [1, ["flourish_deleted_at"]], "2l …then reloads, signed out, once");
+    fire({ key: "sb-test-auth-token", newValue: null });
+    t.eq(reloads, 1, "2m …only once");
+    W.unlockBrowserStorage();
+  }
+
   // ── 3. Ownerless local data on sign-in ──────────────────────────────────────────────────────
   {
     const now = Date.UTC(2026, 10, 13, 4, 3, 30);
@@ -118,6 +150,8 @@ function fakeIdb(names, { hang = false } = {}) {
     t.ok(at("supabase.auth.signOut()") < at("cancelAllScheduled()") && at("cancelAllScheduled()") < at("await wipeDeletedAccount()") && at("await wipeDeletedAccount()") < at("window.location.reload()"),
       "5c deleted: sign out, the reminders, every flourish key and database, then reload");
     t.ok(!/Object\.keys\(localStorage\)/.test(del), "5d no second, partial sweep of its own");
+    t.ok(at("markAccountDeleted();") > at('callPlaid("delete_account"') && at("markAccountDeleted();") < at("supabase.auth.signOut()"), "5d2 the device is marked after the server confirms and before the sign-out");
+    t.ok(/useEffect\(\(\)=>onDeletionElsewhere\(\(\)=>followDeletionElsewhere\(\)\), \[\]\);/.test(app), "5d3 every open tab follows a deletion made in another");
     const hyd = app.slice(app.indexOf("const localUid = loadState()?.userId"), app.indexOf("// Bug A: capture the local recency stamp"));
     t.ok(/refuseOwnerlessLocal\(\{ localUid, hasRealData: hasRealLocalData\(loadState\(\)\?\.appData\), userCreatedAt: user\.created_at, deletedAtMs: deletedHere \}\)/.test(hyd)
       && /if \(\(localUid && localUid !== user\.id\) \|\| ownerlessRefused\) \{/.test(hyd) && /clearAllUserLocal\(\);\s*\n\s*setAppData\(null\); setOnboarded\(false\);/.test(hyd),

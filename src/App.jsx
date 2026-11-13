@@ -75,7 +75,7 @@ import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
 import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
-import { lockBrowserStorage, unlockBrowserStorage, wipeDeletedAccount, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
+import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
 import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
@@ -18998,6 +18998,9 @@ export default function FlourishApp(){
       return true;
     } catch { return false; }
   };
+  // The account was deleted in another tab of this device (lib/accountWipe.js): stop saving, clear, reload. Before this,
+  // a second tab saved the deleted account's finances back as the sign-out reached it (2026-11-13).
+  useEffect(()=>onDeletionElsewhere(()=>followDeletionElsewhere()), []);
   useEffect(()=>{
     const flush = ()=>{
       try {
@@ -19926,7 +19929,9 @@ export default function FlourishApp(){
     // Confirmed deleted server-side: sign out, then every flourish key (localStorage, sessionStorage) and database
     // (IndexedDB) goes, the iPhone and Android apps' scheduled reminders too, and the page reloads. The storage stays
     // locked throughout: signing out re-renders the app with no user, and its save effect once wrote the deleted
-    // account's finances back, ownerless, for the next sign-up to take (2026-11-13, lib/accountWipe.js).
+    // account's finances back, ownerless, for the next sign-up to take (2026-11-13, lib/accountWipe.js). The device is
+    // marked first, so any other open tab stops saving and clears before the sign-out reaches it.
+    markAccountDeleted();
     try { await supabase.auth.signOut(); } catch {}
     try { await cancelAllScheduled(); } catch {}
     await wipeDeletedAccount();

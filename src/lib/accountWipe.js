@@ -8,10 +8,12 @@
 // saved it into the NEW account: no onboarding, no consent step, the old numbers.
 //
 // So, two guards:
-//   1. Once a deletion starts, nothing may write a flourish key to the browser again (lockBrowserStorage). After the
-//      sign-out, every flourish key goes from localStorage and sessionStorage, and every flourish IndexedDB database
-//      (wipeDeletedAccount); the device is then marked as having just had an account deleted (DELETED_MARK, a time
-//      and nothing else), and the page reloads.
+//   1. Once a deletion starts, nothing may write a flourish key to the browser again (lockBrowserStorage). When the
+//      server confirms it, the device is marked (DELETED_MARK, a time and nothing else) before the sign-out, so every
+//      other open tab locks, clears and reloads first (followDeletionElsewhere: a second tab is how the live carry-over
+//      happened, its in-memory copy saved back as the sign-out reached it). After the sign-out every flourish key goes
+//      from localStorage and sessionStorage but the mark, and every flourish IndexedDB database (wipeDeletedAccount),
+//      and the page reloads.
 //   2. On sign-in, ownerless local data is never imported into an account older than a few minutes, nor after a
 //      deletion on this device (refuseOwnerlessLocal); it is cleared instead.
 // The same code runs in the iPhone and Android apps (their WebView's own localStorage; flourish keeps nothing in
@@ -55,13 +57,13 @@ export function unlockBrowserStorage() {
   locked = false; originalSetItem = null; lockedProto = null;
 }
 
-/** Removes every key of ours from one Storage. Returns how many went. */
-export function clearOurKeys(storage) {
+/** Removes every key of ours from one Storage, but those in keep. Returns how many went. */
+export function clearOurKeys(storage, keep = []) {
   if (!storage) return 0;
   let n = 0;
   try {
     const keys = [];
-    for (let i = 0; i < storage.length; i++) { const k = storage.key(i); if (ours(k)) keys.push(k); }
+    for (let i = 0; i < storage.length; i++) { const k = storage.key(i); if (ours(k) && !keep.includes(k)) keys.push(k); }
     for (const k of keys) { try { storage.removeItem(k); n++; } catch { /* the rest still go */ } }
   } catch { /* no storage: nothing to clear */ }
   return n;
@@ -80,21 +82,64 @@ export async function clearOurDatabases(idb = globalThis.indexedDB, timeoutMs = 
   return names.length;
 }
 
+const defaultLocal = () => { try { return globalThis.localStorage; } catch { return null; } };
+const defaultSession = () => { try { return globalThis.sessionStorage; } catch { return null; } };
+
 /**
- * After the server deleted the account and the session was signed out: every flourish key and database goes, and the
- * device is marked (DELETED_MARK) so the next sign-in imports nothing ownerless. Never throws.
+ * The server has deleted the account: mark this device (DELETED_MARK, the time) BEFORE signing out. Every other open tab
+ * of the app hears it first (followDeletionElsewhere) and stops saving before the sign-out reaches it; the next sign-in
+ * imports nothing ownerless while it is there. Written past the lock. Never throws.
+ */
+export function markAccountDeleted(local = defaultLocal(), now = Date.now()) {
+  try {
+    const write = originalSetItem || (local && local.setItem);
+    if (local && write) write.call(local, DELETED_MARK, String(now));
+  } catch { /* the account's age still guards the next sign-in */ }
+}
+
+/**
+ * After the server deleted the account and the session was signed out: every flourish key and database goes but the
+ * deletion mark (written again if it is missing). Never throws.
  */
 export async function wipeDeletedAccount({ local, session, idb, now = Date.now() } = {}) {
-  const L = local !== undefined ? local : (() => { try { return globalThis.localStorage; } catch { return null; } })();
-  const S = session !== undefined ? session : (() => { try { return globalThis.sessionStorage; } catch { return null; } })();
-  const out = { local: clearOurKeys(L), session: clearOurKeys(S), databases: 0 };
+  const L = local !== undefined ? local : defaultLocal();
+  const S = session !== undefined ? session : defaultSession();
+  const keep = [DELETED_MARK];
+  const out = { local: clearOurKeys(L, keep), session: clearOurKeys(S), databases: 0 };
   try { out.databases = await clearOurDatabases(idb !== undefined ? idb : globalThis.indexedDB); } catch { /* best effort */ }
-  out.local += clearOurKeys(L);   // anything written while the databases were going (nothing should be: the lock)
-  try {
-    const write = originalSetItem || (L && L.setItem);
-    if (L && write) write.call(L, DELETED_MARK, String(now));
-  } catch { /* the second guard still has the account's age */ }
+  out.local += clearOurKeys(L, keep);   // anything written while the databases were going (nothing should be: the lock)
+  if (!deletedAt(L)) markAccountDeleted(L, now);
   return out;
+}
+
+/**
+ * Another tab of the app on this device deleted the account (it set DELETED_MARK). Calls onDeleted once. A tab that
+ * kept the deleted account's finances in memory would otherwise save them back, ownerless, the moment the sign-out
+ * reached it: the live carry-over of 2026-11-13. Returns the unsubscribe.
+ */
+export function onDeletionElsewhere(onDeleted, target = globalThis) {
+  if (!target || typeof target.addEventListener !== "function") return () => {};
+  let fired = false;
+  const h = (e) => { if (!fired && e && e.key === DELETED_MARK && e.newValue) { fired = true; try { onDeleted(); } catch { /* the next sign-in still refuses */ } } };
+  target.addEventListener("storage", h);
+  return () => target.removeEventListener("storage", h);
+}
+
+/**
+ * What a tab does when the account was deleted in another: lock, clear everything of ours but the mark, and reload once
+ * the other tab's sign-out has removed the session (or after waitMs), so it does not come back signed in to an account
+ * that no longer exists.
+ */
+export function followDeletionElsewhere({ local = defaultLocal(), session = defaultSession(), target = globalThis, waitMs = 5000,
+  reload = () => globalThis.location && globalThis.location.reload(), proto = storageProto() } = {}) {
+  lockBrowserStorage(proto);
+  clearOurKeys(local, [DELETED_MARK]);
+  clearOurKeys(session);
+  let done = false, timer = null;
+  const go = () => { if (done) return; done = true; if (timer) clearTimeout(timer); try { target && target.removeEventListener && target.removeEventListener("storage", h); } catch {} clearOurKeys(local, [DELETED_MARK]); try { reload(); } catch { /* the lock holds until it does */ } };
+  const h = (e) => { if (e && typeof e.key === "string" && /^sb-.*-auth-token$/.test(e.key) && !e.newValue) go(); };
+  try { target && target.addEventListener && target.addEventListener("storage", h); } catch { /* the timer still reloads */ }
+  timer = setTimeout(go, waitMs);
 }
 
 /** When this device last had an account deleted (ms), or null. */
