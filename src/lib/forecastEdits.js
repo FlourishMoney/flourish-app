@@ -390,6 +390,8 @@ function expectedOccurrences(item, ed, today, days, minDay) {
 //   overdue: we cannot tell a missed payment from a bill typed in yesterday. A one-time bill's date was chosen as a
 //   coming date when it was made, so it was on file before it.
 // An overdue occurrence keeps its own due date (so lists show it), and is day 0: it is still to leave the balance.
+// The due day itself goes by the same two tests in the forecast (on file, not seen paid): the forecast used to leave
+// a regular bill out on its due day, so its lowest balance rose by the bill for that one day and fell back the next.
 export const OVERDUE_GRACE_DAYS = 5;
 function onFileSince(b) {
   if (b && b.createdAt) { const c = new Date(b.createdAt); if (!isNaN(c.getTime())) return noon(c); }
@@ -407,10 +409,10 @@ export function stampOnFile(bills, today = new Date()) {
   return (bills || []).map(b => (needsOnFileStamp(b) ? { ...b, onFileSince: iso } : b));
 }
 // The dates in the grace window (the last OVERDUE_GRACE_DAYS days, not today) on which this bill fell due.
-function recentDueDates(b, today) {
+function recentDueDates(b, today, withToday = false) {
   const t0 = noon(today), from = addDays(today, -OVERDUE_GRACE_DAYS);
   const since = onFileSince(b);
-  const ok = (d) => d && d >= from && d < t0 && !(since && d < since);
+  const ok = (d) => d && d >= from && (withToday ? d <= t0 : d < t0) && !(since && d < since);
   if (b.type === "one_off") { const d = fromIso(b.isoDate); return ok(d) ? [d] : []; }
   if (!since) return [];                          // not known to have been on file: never called overdue
   const freq = b.freq || "monthly";
@@ -420,16 +422,17 @@ function recentDueDates(b, today) {
     const step = freq === "weekly" ? 7 : 14;
     const next = billNextDue(b, today);
     if (!next || !b.nextDueDate) return out;      // no saved date: its phase is not known, so nothing can be late
-    for (let d = addDays(next, -step); d >= from; d = addDays(d, -step)) if (ok(d)) out.push(d);
+    for (let d = next; d >= from; d = addDays(d, -step)) if (ok(d)) out.push(d);
     return out.reverse();
   }
-  for (let i = -OVERDUE_GRACE_DAYS; i < 0; i++) { const d = addDays(today, i); if (ok(d) && billOccursOnDate(b, d, from)) out.push(d); }
+  for (let i = -OVERDUE_GRACE_DAYS; i <= 0; i++) { const d = addDays(today, i); if (ok(d) && billOccursOnDate(b, d, from)) out.push(d); }
   return out;
 }
 
 // Money out: every bill (freq-aware, one-offs, archived skipped) and every expected item marked "out".
-// Recurring bills never land on day 0 in the forecast (today's balance already reflects them);
-// safe-to-spend counts today too, so it passes includeToday.
+// In the forecast a recurring bill lands on day 0 only while its money is still in today's balance: it is on file,
+// due today or in the last few days, and not seen paid (see OVERDUE_GRACE_DAYS above). Otherwise today's balance
+// already reflects it. Safe-to-spend counts today's bills too, so it passes includeToday.
 export function billOccurrences(data, today = new Date(), days = 90, { includeToday = false, lookahead = EDIT_LOOKAHEAD_DAYS } = {}) {
   const ed = correctionsOf(data);
   const txns = (data && data.transactions) || [];
@@ -443,10 +446,13 @@ export function billOccurrences(data, today = new Date(), days = 90, { includeTo
     const base = num(b.amount);
     // Due in the last few days and not seen paid: still to leave the balance (see OVERDUE_GRACE_DAYS above). One the
     // household skipped is dropped; one it moved to today or later is the look-back's below, on its new date.
-    for (const d of recentDueDates(b, today)) {
+    // The forecast (no includeToday) also takes a regular bill that is due TODAY and not seen paid: its money is still
+    // in today's balance. Safe to spend already counts today's bills in the loop below.
+    const dueTodayToo = !includeToday && b.type !== "one_off";
+    for (const d of recentDueDates(b, today, dueTodayToo)) {
       const e = applyEdit(ed, srcKey, d, base);
       const late = dayDiff(today, e.date);
-      if (e.skipped || late >= 0 || late < -OVERDUE_GRACE_DAYS) continue;
+      if (e.skipped || late > 0 || (late === 0 && !(dueTodayToo && dayDiff(today, d) === 0)) || late < -OVERDUE_GRACE_DAYS) continue;
       if (billArrived(b, d, e.date, txns, today)) continue;
       out.push({ kind: "bill", srcKey, sourceId: b.id ?? null, bill: b, label: b.name || "Bill", originalDate: d, date: e.date, day: 0,
                  amount: e.amount, estimate: base, skipped: false, edited: e.edited, overdue: true });

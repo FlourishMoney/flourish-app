@@ -16,6 +16,8 @@
 //     three is never called overdue. A one-time bill's date was a coming date when it was made.
 //   - "Just this one: skip" still drops it. A bill moved to a later date is counted on that date, once.
 //   - It is counted in safe to spend and taken out of today's forecast balance, listed under its own due date.
+//   - On the due day itself the forecast takes it out too (safe to spend always did), by the same two tests: on file,
+//     and not seen paid.
 //
 //   1  the audit's case: rent due Nov 1, unpaid on Nov 2
 //   2  the grace: counted through Nov 6, not from Nov 7
@@ -87,6 +89,22 @@ const { create } = require("./_runner.cjs");
     t.eq([g.forecast[0].bills.length, Math.round(g.forecast[0].balance)], [0, 2600], "4d Nov 7, past the grace: not in the forecast");
     const p = ForecastEngine.generate(house({ accounts: cash(800), transactions: [paid("2026-11-02")] }), 14, null, at(2026, 11, 3));
     t.eq([p.forecast[0].bills.length, Math.round(p.forecast[0].balance)], [0, 800], "4e paid Nov 2: not taken out a second time");
+    // The due day itself. The forecast used to leave a regular bill out on its due day ("today's balance already
+    // reflects it"), so the lowest balance read $800 the day before, $2,600 on the due day and $800 again the day
+    // after. A bill that is on file, due today and not seen paid is still in today's balance, so it is taken out.
+    const due = ForecastEngine.generate(house(), 14, null, at(2026, 11, 1));
+    t.eq([due.forecast[0].bills.map(b => b.name), Math.round(due.forecast[0].balance)], [["Rent"], 800], "4f Nov 1, the due day, unpaid: the forecast takes the rent out today (was not in it: $2,600)");
+    t.eq(due.forecast.slice(0, 13).flatMap(e => e.bills.map(b => b.name)), ["Rent"], "4g and once only before payday");
+    const paidToday = ForecastEngine.generate(house({ accounts: cash(800), transactions: [paid("2026-11-01")] }), 14, null, at(2026, 11, 1));
+    t.eq([paidToday.forecast[0].bills.length, Math.round(paidToday.forecast[0].balance)], [0, 800], "4h Nov 1, paid that morning: not taken out again");
+    const dayBefore = ForecastEngine.generate(house(), 14, null, at(2026, 10, 31));
+    t.eq([Math.round(dayBefore.forecast[0].balance), Math.round(dayBefore.forecast[1].balance)], [2600, 800], "4i Oct 31: still tomorrow's bill, as before");
+    const bare = ForecastEngine.generate(house({ bills: [{ id: "o1", name: "Rent", amount: 1800, date: "1", freq: "monthly" }] }), 14, null, at(2026, 11, 1));
+    t.eq(Math.round(bare.forecast[0].balance), 2600, "4j a bill with no sign of when it was put on file is left as it was on its due day");
+    const weeklyJob = { ...JOB, nextPayDate: "2026-06-26" };
+    const wk = ForecastEngine.generate(house({ incomes: [weeklyJob], bills: [{ id: "w3", name: "Daycare", amount: "100", freq: "weekly", nextDueDate: "2026-06-05" }] }), 6, null, at(2026, 6, 19));
+    t.eq([wk.forecast[0].bills.map(b => b.name), Math.round(wk.forecast[0].balance)], [["Daycare"], 2500], "4k a weekly bill due today and unpaid is taken out today too");
+    t.eq(shown(house(), at(2026, 11, 1)), [1800, "$591"], "4l safe to spend on the due day is unchanged: it always counted today's bills");
   }
 
   // ── 5. Only a bill already on file before the due date ───────────────────────────────────────────
