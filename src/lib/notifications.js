@@ -103,6 +103,16 @@ export async function listScheduled() {
   try { const r = await LocalNotifications.getPending(); return r?.notifications || []; } catch { return []; }
 }
 
+// Account deletion (lib/accountWipe.js): every reminder this app scheduled goes, whatever its type, so a deleted
+// account's bill names never show on the lock screen. Never throws.
+export async function cancelAllScheduled() {
+  if (!isNative()) return;
+  try {
+    const pending = await listScheduled();
+    if (pending.length) await LocalNotifications.cancel({ notifications: pending.map(n => ({ id: n.id })) });
+  } catch {}
+}
+
 // Cancel every pending notification tagged with this type (via extra.type set in scheduleNotification).
 export async function cancelAllOfType(type) {
   if (!isNative() || !type) return;

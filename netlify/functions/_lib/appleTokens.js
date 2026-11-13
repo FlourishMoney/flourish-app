@@ -15,11 +15,11 @@
 // Everything here reads Netlify environment variables only:
 //   APPLE_TEAM_ID              the Apple Developer team
 //   APPLE_SIGNIN_KEY_ID        the Key ID of the Sign in with Apple key
-//   APPLE_SIGNIN_PRIVATE_KEY   that key's .p8 file, whole (real line breaks, or \n, or the base64 body alone)
+//   APPLE_SIGNIN_PRIVATE_KEY   that key's .p8 file, however it was pasted (pemOf rebuilds it from its bytes)
 //   APPLE_CLIENT_ID_IOS        the iPhone app's bundle ID
 //   APPLE_CLIENT_ID_WEB        the website's Services ID
 //   APPLE_TOKEN_ENC_KEY        32 random bytes, base64: seals the stored tokens
-// Missing any of them: nothing is stored or revoked, nothing fails, and the reason is logged (not_configured).
+// Missing or unusable: nothing is stored or revoked, nothing fails, and the log names the setting (never its value).
 // Nothing here throws, and nothing here logs a token, a key, an address or an account id: only an outcome and Apple's
 // HTTP status.
 // -----------------------------------------------------------------------------
@@ -33,16 +33,33 @@ const TIMEOUT_MS = 3000;
 
 const env = (k, e) => String((e || process.env)[k] || "").trim();
 
-/** The .p8 key as PEM, whichever way it was pasted. null when it is not one. */
-function pemOf(raw) {
-  let v = String(raw || "").trim().replace(/^"|"$/g, "").replace(/\\n/g, "\n");
+/**
+ * The .p8 key as a PEM Node can sign with, however Netlify kept it: real line breaks, lost line breaks (one line, or
+ * spaces where they were), literal \n or \r\n, wrapping quotes, the base64 body with no BEGIN/END lines, a SEC1
+ * "EC PRIVATE KEY", or the whole file base64-encoded once more. The key itself is rebuilt from its bytes, so only a
+ * real P-256 key comes back. null when it is not one. Never throws, never logs.
+ */
+function pemOf(raw, depth = 0) {
+  let v = String(raw == null ? "" : raw).trim().replace(/^APPLE_SIGNIN_PRIVATE_KEY\s*=\s*/, "");
+  v = v.replace(/^(\\?["'])+|(\\?["'])+$/g, "").replace(/\\r\\n|\\n|\\r/g, "\n").trim();
   if (!v) return null;
-  if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(v)) {
-    const body = v.replace(/\s+/g, "");
-    if (!/^[A-Za-z0-9+/=]+$/.test(body)) return null;
-    v = `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----`;
+  const sec1 = /-----BEGIN EC PRIVATE KEY-----/.test(v);
+  let body = v.replace(/-----(BEGIN|END)[^-]*-----/g, "").replace(/\s+/g, "");
+  if (/[-_]/.test(body) && !/[+/]/.test(body)) body = body.replace(/-/g, "+").replace(/_/g, "/");   // base64url
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return null;
+  const der = Buffer.from(body, "base64");
+  if (depth === 0) {
+    const text = der.toString("utf8");
+    if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) return pemOf(text, 1);   // the file, base64-encoded again
   }
-  try { return crypto.createPrivateKey(v).asymmetricKeyType === "ec" ? v : null; } catch { return null; }
+  for (const type of sec1 ? ["sec1", "pkcs8"] : ["pkcs8", "sec1"]) {
+    try {
+      const k = crypto.createPrivateKey({ key: der, format: "der", type });
+      const curve = k.asymmetricKeyDetails && k.asymmetricKeyDetails.namedCurve;
+      if (k.asymmetricKeyType === "ec" && (!curve || curve === "prime256v1")) return k.export({ type: "pkcs8", format: "pem" }).toString();
+    } catch { /* the other encoding */ }
+  }
+  return null;
 }
 
 /** The 32-byte sealing key, or null. */
@@ -54,6 +71,39 @@ function sealKeyOf(raw) {
 function sealConfig(e) {
   const key = sealKeyOf(env("APPLE_TOKEN_ENC_KEY", e));
   return key ? { key } : null;
+}
+
+/**
+ * Which settings stop a call to Apple, by NAME only ("APPLE_SIGNIN_PRIVATE_KEY unusable"), for the logs. [] when none.
+ * Never a value, never a length.
+ */
+function appleConfigProblems(e) {
+  const out = [];
+  const check = (name, ok) => { if (!env(name, e)) out.push(`${name} missing`); else if (!ok()) out.push(`${name} unusable`); };
+  check("APPLE_TEAM_ID", () => true);
+  check("APPLE_SIGNIN_KEY_ID", () => true);
+  check("APPLE_SIGNIN_PRIVATE_KEY", () => !!pemOf(env("APPLE_SIGNIN_PRIVATE_KEY", e)));
+  check("APPLE_CLIENT_ID_IOS", () => true);
+  check("APPLE_CLIENT_ID_WEB", () => true);
+  check("APPLE_TOKEN_ENC_KEY", () => !!sealConfig(e));
+  return out;
+}
+
+/** One line for a log: "ok", or the settings that are missing or unusable, by name. */
+function appleConfigStatus(e) {
+  const p = appleConfigProblems(e);
+  return p.length ? `not usable: ${p.join(", ")}` : "ok";
+}
+
+/**
+ * Once per warm function instance: "[plaid] apple config: ok", or which settings are missing or unusable, by name. So
+ * whether production can sign for Apple is readable in the function log without any value being printed.
+ */
+let configLogged = false;
+function logAppleConfigOnce(tag, { e, log = console } = {}) {
+  if (configLogged) return;
+  configLogged = true;
+  try { log.log(`[${tag}] apple config: ${appleConfigStatus(e)}`); } catch { /* a log line never stops a request */ }
 }
 
 /** Everything a call to Apple needs. null when any of it is missing or unusable. */
@@ -140,7 +190,7 @@ async function storeGrant(admin, userId, grant, { e, fetchImpl = fetch, now } = 
   let client, token;
   if (typeof g.code === "string" && g.code.length > 0 && g.code.length <= 1024) {
     const cfg = appleConfig(e);
-    if (!cfg) return { stored: false, reason: "not_configured" };
+    if (!cfg) return { stored: false, reason: "not_configured", problems: appleConfigProblems(e) };
     const x = await exchangeCode(cfg, g.code, { fetchImpl, now });
     if (x.error) return { stored: false, reason: x.error, status: x.status };
     client = "ios"; token = x.refreshToken;
@@ -150,7 +200,7 @@ async function storeGrant(admin, userId, grant, { e, fetchImpl = fetch, now } = 
     return { stored: false, reason: "bad_grant" };
   }
   const sc = sealConfig(e);
-  if (!sc) return { stored: false, reason: "not_configured" };
+  if (!sc) return { stored: false, reason: "not_configured", problems: appleConfigProblems(e).filter((x) => x.startsWith("APPLE_TOKEN_ENC_KEY")) };
   try {
     const { error } = await admin.from("apple_tokens").upsert(
       { user_id: userId, client, sealed: seal(sc.key, token, userId, client), updated_at: new Date(now || Date.now()).toISOString() },
@@ -172,7 +222,7 @@ async function revokeForAccount(admin, userId, user, { e, fetchImpl = fetch, now
     const rows = !error && Array.isArray(data) ? data.filter((r) => r && CLIENTS.includes(r.client) && typeof r.sealed === "string") : [];
     if (!rows.length) { if (isApple(user)) say(error ? "unreadable" : "no_token"); return out; }
     const cfg = appleConfig(e);
-    if (!cfg) { say("not_configured"); return out; }
+    if (!cfg) { say("not_configured", ` (${appleConfigProblems(e).join(", ")})`); return out; }
     await Promise.all(rows.map(async (r) => {
       const token = open(cfg.key, r.sealed, userId, r.client);
       if (!token) { say("unreadable", ` client=${r.client}`); return; }
@@ -184,4 +234,4 @@ async function revokeForAccount(admin, userId, user, { e, fetchImpl = fetch, now
   return out;
 }
 
-module.exports = { APPLE, CLIENTS, appleConfig, sealConfig, pemOf, clientSecret, seal, open, exchangeCode, revokeToken, storeGrant, revokeForAccount, isApple };
+module.exports = { APPLE, CLIENTS, appleConfig, appleConfigProblems, appleConfigStatus, logAppleConfigOnce, sealConfig, pemOf, clientSecret, seal, open, exchangeCode, revokeToken, storeGrant, revokeForAccount, isApple };

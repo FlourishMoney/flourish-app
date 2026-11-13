@@ -30,7 +30,7 @@ const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
-const { revokeForAccount: revokeAppleTokens } = require("./_lib/appleTokens");
+const { revokeForAccount: revokeAppleTokens, logAppleConfigOnce } = require("./_lib/appleTokens");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -68,6 +68,7 @@ async function plaid(endpoint, body) {
 }
 
 exports.handler = async (event) => {
+  logAppleConfigOnce("plaid");   // names only: whether this instance can sign for Apple (account deletion revokes with it)
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
   const ok = (data) => ({ statusCode: 200, headers: CORS, body: JSON.stringify(data) });

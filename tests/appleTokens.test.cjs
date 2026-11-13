@@ -2,6 +2,7 @@
 // -----------------------------------------------------------------------------
 // SIGN IN WITH APPLE IS REVOKED WHEN THE ACCOUNT IS DELETED (App Store guideline 5.1.1(v), 1.1.7).
 //   1  the settings: read from the environment only; any one missing means "not configured"; the .p8 pasted any way works
+//      (lost line breaks, \n, spaces, quotes, no BEGIN/END, SEC1, base64 again); a bad one is logged by NAME only
 //   2  the client secret: an ES256 JWT Apple can check with our key (iss team, sub client, aud appleid.apple.com, 5 min)
 //   3  the sealed token opens only with the same key, account and client
 //   4  Apple's two calls (token swap, revoke): the right address and fields; a failure, a refusal or a hang never throws
@@ -79,6 +80,50 @@ function apple({ revoke = 200, token = 200, hang = false } = {}) {
   t.eq(A.appleConfig({}), null, "1g nothing set (today): not configured");
   const src = fs.readFileSync(LIB, "utf8");
   t.ok(!/V8B8MR88SL|app\.flourishmoney\b(?!\.)|-----BEGIN [A-Z ]*PRIVATE KEY-----\n[A-Za-z0-9]/.test(src.replace(/\/\/.*$/gm, "")), "1h no team, client or key is written into the code: all from the environment");
+
+  // 1i to 1x (2026-11-13): production logged not_configured with every setting set. The key must load however Netlify kept
+  // it, and signing with what comes back must verify with the real public key.
+  {
+    const lines = PEM.trim().split("\n"), bodyLines = lines.slice(1, -1);
+    const sec1 = privateKey.export({ type: "sec1", format: "pem" });
+    const signs = (raw) => { const cfg = A.appleConfig({ ...ENV, APPLE_SIGNIN_PRIVATE_KEY: raw }); return !!cfg && decodeJwt(A.clientSecret(cfg, "web")).verified; };
+    for (const [label, raw] of [
+      ["line breaks lost (one line)", PEM.replace(/\n/g, "")],
+      ["spaces where the line breaks were", PEM.replace(/\n/g, " ")],
+      ["literal \\n", PEM.replace(/\n/g, "\\n")],
+      ["literal \\r\\n", PEM.replace(/\n/g, "\\r\\n")],
+      ["Windows line breaks", PEM.replace(/\n/g, "\r\n")],
+      ["wrapped in quotes", `"${PEM}"`],
+      ["wrapped in escaped quotes, with literal \\n", `\\"${PEM.replace(/\n/g, "\\n")}\\"`],
+      ["no BEGIN/END lines, the body on its lines", bodyLines.join("\n")],
+      ["no BEGIN/END lines, spaces between", bodyLines.join(" ")],
+      ["spaces and tabs around it", `  \t${PEM}\n\n  `],
+      ["a SEC1 \"EC PRIVATE KEY\"", sec1],
+      ["a SEC1 key with its line breaks lost", sec1.replace(/\n/g, " ")],
+      ["the whole file base64-encoded again", Buffer.from(PEM).toString("base64")],
+      ["base64url body", bodyLines.join("").replace(/\+/g, "-").replace(/\//g, "_")],
+      ["the setting's name pasted in front", `APPLE_SIGNIN_PRIVATE_KEY=${PEM.replace(/\n/g, "\\n")}`],
+    ]) t.ok(signs(raw), `1i the key loads and signs: ${label}`);
+    const rsa = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 }).privateKey.export({ type: "pkcs8", format: "pem" });
+    const p384 = crypto.generateKeyPairSync("ec", { namedCurve: "P-384" }).privateKey.export({ type: "pkcs8", format: "pem" });
+    for (const [label, raw] of [["not base64", "this is not a key"], ["random bytes", crypto.randomBytes(120).toString("base64")],
+      ["an RSA key", rsa], ["a P-384 key (Apple signs with P-256)", p384], ["half a key", PEM.slice(0, 90)], ["the Key ID by mistake", "KEY0000001"]])
+      t.eq(A.pemOf(raw), null, `1j not a usable Apple key: ${label}`);
+    t.eq(A.appleConfigProblems(ENV), [], "1k every setting usable: no problems");
+    t.eq(A.appleConfigStatus(ENV), "ok", "1l …status ok");
+    t.eq(A.appleConfigProblems({ ...ENV, APPLE_SIGNIN_PRIVATE_KEY: "this is not a key" }), ["APPLE_SIGNIN_PRIVATE_KEY unusable"], "1m an unusable key is named, nothing else");
+    t.eq(A.appleConfigProblems({ ...ENV, APPLE_TEAM_ID: "", APPLE_TOKEN_ENC_KEY: "short" }), ["APPLE_TEAM_ID missing", "APPLE_TOKEN_ENC_KEY unusable"], "1n missing and unusable settings, by name");
+    const bad = { ...ENV, APPLE_SIGNIN_PRIVATE_KEY: "Zm9vYmFy" + "secretish", APPLE_TOKEN_ENC_KEY: "c2hvcnQ=" };
+    const st = A.appleConfigStatus(bad);
+    t.ok(/^not usable: APPLE_SIGNIN_PRIVATE_KEY unusable, APPLE_TOKEN_ENC_KEY unusable$/.test(st) && !Object.values(bad).some((v) => st.includes(v)), "1o the status line names settings, never a value");
+    delete require.cache[LIB];
+    const fresh = require(LIB);
+    const got = [];
+    const log = { log: (l) => got.push(l) };
+    fresh.logAppleConfigOnce("plaid", { e: ENV, log }); fresh.logAppleConfigOnce("plaid", { e: ENV, log });
+    t.eq(got, ["[plaid] apple config: ok"], "1p once per function instance: \"apple config: ok\"");
+    delete require.cache[LIB]; require(LIB);
+  }
 
   // ── 2. The client secret ────────────────────────────────────────────────────────────────────
   {
@@ -222,6 +267,7 @@ function apple({ revoke = 200, token = 200, hang = false } = {}) {
     ["Apple is down", { rows: both, ap: apple({ revoke: 503 }) }, /apple revoke: failed client=(ios|web) status=503/],
     ["Apple hangs", { rows: both.slice(0, 1), ap: apple({ hang: true }) }, /apple revoke: failed client=ios status=0/],
     ["no settings yet", { rows: both, env: {} }, /apple revoke: not_configured/],
+    ["a private key that cannot be used", { rows: both, env: { ...ENV, APPLE_SIGNIN_PRIVATE_KEY: "this is not a key" } }, /apple revoke: not_configured \(APPLE_SIGNIN_PRIVATE_KEY unusable\)$/],
     ["no token was ever kept", { rows: [] }, /apple revoke: no_token/],
     ["apple_tokens cannot be read (0049 not run)", { rows: new Error("relation does not exist") }, /apple revoke: unreadable/],
     ["a token sealed with another key", { rows: [{ client: "web", sealed: A.seal(crypto.randomBytes(32), "x", USER, "web") }] }, /apple revoke: unreadable client=web/],
