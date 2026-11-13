@@ -75,8 +75,10 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   bills.forEach(b => { if(!isBillArchived(b, today)) billAmt(b); }); // surface bad amounts up front
 
   // Tier 5 / Sprint Q item 1: freq-aware bill placement anchored on nextDueDate. One-offs may land on
-  // day 0; recurring bills skip day 0 (today's balance already reflects them). An unedited bill is the
-  // bill object itself; an edited one is a copy carrying the edited amount.
+  // day 0. A recurring bill lands on day 0 only while its money is still in today's balance: on file, due today
+  // or in the last few days, and not seen paid (forecastEdits.js OVERDUE_GRACE_DAYS; audit of 2026-11-13, finding 3).
+  // Otherwise today's balance already reflects it. An unedited bill is the bill object itself; an edited one is a
+  // copy carrying the edited amount.
   for(const o of billOccurrences(data, today, days)) {
     const sl = slot(o.day);
     sl.occurrences.push(o);

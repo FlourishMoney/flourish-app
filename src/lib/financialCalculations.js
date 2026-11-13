@@ -690,6 +690,8 @@ export function billMonthlyAmount(bill) {
 // "today". `bill.nextDueDate` ("YYYY-MM-DD") is the phase anchor — set at detection (last
 // occurrence + cadence) and backfilled for legacy bills. Pure + unit-tested.
 const _DAY_MS = 86400000;
+// Est. daily spend looks at this many days of spending, ending at the latest transaction held (avgDailySpendEstimate).
+export const DAILY_SPEND_WINDOW_DAYS = 90;
 function _atNoon(d) { const x = new Date(d); x.setHours(12, 0, 0, 0); return x; }
 function _isoToDate(s) {
   if (typeof s !== "string") return null;
@@ -806,7 +808,16 @@ export function billNextDue(bill, today = new Date()) {
   if (freq === "weekly" || freq === "biweekly") {
     const step = freq === "weekly" ? 7 : 14;
     let a = _isoToDate(bill.nextDueDate) || t; // no legacy anchor → today (phase unknown)
-    if (a < t) { const k = Math.ceil((t - a) / (step * _DAY_MS)); a = new Date(a.getTime() + k * step * _DAY_MS); }
+    // Whole CALENDAR days, never milliseconds (audit of 2026-11-13, finding 8). Noon to noon across the autumn clock
+    // change is a day and an hour, so counting steps in milliseconds came out a fraction over ON the due day and
+    // rounded up to the following cycle: from November to March a weekly or every-two-weeks bill was "next due" a
+    // cycle late on the very day it was due, in every zone that changes its clocks. The days are rounded (an hour
+    // either way is not a day) and the date is moved by the calendar (tests/billDst.test.cjs).
+    if (a < t) {
+      const daysBehind = Math.round((t - a) / _DAY_MS);
+      const k = Math.ceil(daysBehind / step);
+      a = new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * step, 12, 0, 0);
+    }
     return _atNoon(a);
   }
   if (freq === "semimonthly") {
@@ -1660,12 +1671,21 @@ export const FinancialCalcEngine = {
       !bills.some(b => paysABill(t, b))
     );
     if(txns.length === 0) return 0;
-    const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    const dates = txns.map(t => new Date(t.date)).filter(d => !isNaN(d));
+    // ONLY THE LAST 90 DAYS OF SPENDING HELD (audit of 2026-11-13, finding 12). The divisor below is capped at 90
+    // days, but the total used to be every transaction the device holds, and nothing trims those: past 90 days of
+    // history the total kept growing while the divisor stood still, so a steady $50 a day read $100 after six months
+    // and $203 after a year. The window ends at the LATEST transaction held, not at the clock, so the figure depends
+    // only on the data and a device that has not refreshed for a while still averages the last 90 days it knows.
+    // A transaction with no readable date cannot be placed and is counted, as before.
+    const stamped = txns.map(t => ({ t, ms: new Date(t.date).getTime() }));
+    const latest = Math.max(...stamped.filter(x => !isNaN(x.ms)).map(x => x.ms));
+    const inWindow = stamped.filter(x => isNaN(x.ms) || x.ms > latest - DAILY_SPEND_WINDOW_DAYS * _DAY_MS).map(x => x.t);
+    const total = inWindow.reduce((s,t) => s + Math.abs(t.amount), 0);
+    const dates = inWindow.map(t => new Date(t.date)).filter(d => !isNaN(d));
     const daySpan = dates.length > 1
       ? Math.max(1, Math.round((Math.max(...dates) - Math.min(...dates)) / (1000*60*60*24)))
       : 30;
-    const normalisedDays = Math.min(90, Math.max(14, daySpan));
+    const normalisedDays = Math.min(DAILY_SPEND_WINDOW_DAYS, Math.max(14, daySpan));
     return total / normalisedDays;
   },
 };

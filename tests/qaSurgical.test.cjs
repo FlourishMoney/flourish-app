@@ -44,7 +44,10 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const headline = (data) => safeToSpendView(SafeSpendEngine.calculate(data, VIEW)).headline;
 
   // ── Today's safe to spend does not move ───────────────────────────────────────────────────────
-  t.eq(headline(QA), 974, "0a the QA demo shows $974 safe to spend");
+  // Moved on purpose (audit of 2026-11-13, finding 3; tests/overdueBills.test.cjs): the QA demo was made Sep 4, so its
+  // $95 hydro bill fell due Sep 26 and its sample transactions hold no payment of it. On Sep 29 that bill is 3 days
+  // past due and not seen paid, so it is still counted: $974 less $95 is $879. Each $974 below moved with it.
+  t.eq(headline(QA), 879, "0a the QA demo shows $879 safe to spend (was $974 before an unpaid bill past its due date stayed counted)");
   t.eq(headline(FIXED), 1951, "0b the fixed-date demo shows $1,951");
 
   // ── 1. The Money Plan ─────────────────────────────────────────────────────────────────────────
@@ -52,7 +55,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     const ss = SafeSpendEngine.calculate(QA, VIEW);
     const plan = DE.AutopilotEngine.generate(QA, {}, VIEW);
     const due = ss.upcomingBills + ss.debtPayments;
-    t.eq(due, 1650 + 348, "1a (QA: the $1,650 rent and $348 of minimums are due before the next deposit)");
+    t.eq(due, 1650 + 95 + 348, "1a (QA: the $1,650 rent and $348 of minimums are due before the next deposit, and the $95 hydro due Sep 26 has not been seen paid)");
     // Prompt 3e: the plan no longer splits a surplus or shows a residual ("Left over" was net of the
     // split). What 1b/1c protected, a figure that ignored what is due first, cannot come back: there is
     // no residual and no split field at all.
@@ -92,10 +95,10 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
     // 2. One rule decides tight cash.
     const tight = (d) => (typeof DE.cashIsTight === "function" ? DE.cashIsTight(d, VIEW).tight : "no cashIsTight rule");
-    t.eq(tight(QA), true, "2a QA: $974 is under 15% of $6,714, so cash is tight");
+    t.eq(tight(QA), true, "2a QA: $879 is under 15% of $6,714, so cash is tight");
     t.eq(tight(FIXED), false, "2b fixed date: $1,951 is not");
     t.ok(/Cash is running tight/.test(qa), "2c QA: Decisions warns");
-    t.ok(/Your safe to spend \(\$974\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
+    t.ok(/Your safe to spend \(\$879\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
     t.ok(!/Your balance is below/.test(qa), "2e …not the $3,083 balance");
     // Prompt 3d: the savings and debt cards state facts ("$487 spare until your next deposit", "Visa card: $150 more a month").
     t.ok(!/\$\d+ spare until your next deposit/.test(qa) && !/: \$\d+ more a month/.test(qa), "2f …and shows neither the spare-for-savings card nor the extra-on-debt card");
@@ -120,7 +123,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     // 4. The daily card's wording.
     t.ok(/Today's pace: \$139 a day/.test(fixed) && /Today's pace is \$139 a day, rounded down so 14 days stay within \$1,951 safe to spend\. It's a pace, not a limit\./.test(fixed),
          "4a the daily card: $139 a day, rounded down so 14 days stay within safe to spend; a pace, not a limit");
-    t.ok(/14 days stay within \$974 safe to spend/.test(qa), "4b …$974 over 14 days in the QA demo");
+    t.ok(/14 days stay within \$879 safe to spend/.test(qa), "4b …$879 over 14 days in the QA demo");
     t.ok(!/Keeps you safe until/.test(qa + fixed), "4c …and it no longer claims to keep anyone safe until the next deposit");
 
     // 5. No invented rates.

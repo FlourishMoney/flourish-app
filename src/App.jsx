@@ -24,7 +24,7 @@ import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
-         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
+         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, needsOnFileStamp, stampOnFile, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
@@ -66,6 +66,7 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { wealthForecastView } from "./lib/wealthProjection.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
@@ -2891,27 +2892,21 @@ function WealthForecast({data}) {
   const tfsaMo    = toMonthly(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
   const pensionMo = toMonthly(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
   const monthlyContrib = rrspMo + tfsaMo + pensionMo;
-  const monthlyInvest = monthlyContrib + extra;
 
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const annualReturn = 0.07;
   const hasData = startingBal > 0 || monthlyContrib > 0;
 
-  const project = (monthly, years) => {
-    let val = startingBal;
-    for (let y = 0; y < years; y++) {
-      val = val * (1 + annualReturn) + monthly * 12;
-    }
-    return Math.max(0, Math.round(val));
-  };
-
+  // Every figure comes from lib/wealthProjection.js. The slider's extra is counted once, in the line under it:
+  // "Current Path" and the two fixed bars are worked out from today's contribution and do not move with the slider
+  // (audit of 2026-11-13, finding 13: the extra used to be in all three bars, and twice in the slider's line).
+  const wealth = wealthForecastView({ startingBal, monthlyContrib, extra, horizon });
   const scenarios = [
-    {label:"Current Path",        monthly:monthlyInvest,           color:C.teal,    icon:"📍"},
-    {label:"+$200/mo saved",       monthly:monthlyInvest+200,       color:C.green,   icon:"📈"},
-    {label:"+$500/mo invested",    monthly:monthlyInvest+500,       color:C.purple,  icon:"🚀"},
+    {label:"Current Path",        color:C.teal,    icon:"📍"},
+    {label:"+$200/mo saved",       color:C.green,   icon:"📈"},
+    {label:"+$500/mo invested",    color:C.purple,  icon:"🚀"},
   ];
 
-  const vals = scenarios.map(s => project(s.monthly, horizon));
+  const vals = wealth.scenarios.map(s => s.value);
   const maxVal = Math.max(...vals, 1);
 
   const fmt = n => { const v=n||0; return v >= 1000000 ? `$${(v/1000000).toFixed(2)}M` : `$${(v/1000).toFixed(0)}k`; };
@@ -2988,7 +2983,7 @@ function WealthForecast({data}) {
           {extra > 0 && (
             <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
               <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-                +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
+                +${extra}/mo → {fmt(wealth.withExtra)} in {horizon} years vs {fmt(wealth.now)} now
               </span>
             </div>
           )}
@@ -17771,6 +17766,17 @@ export default function FlourishApp(){
     const needs = (b) => b && !b.nextDueDate && b.type !== "one_off" && (b.freq || "monthly") !== "monthly" && !!computeNextDueDate(b);
     if (!bs.some(needs)) return;
     setAppData(d => ({ ...d, bills: (d.bills || []).map(b => needs(b) ? { ...b, nextDueDate: computeNextDueDate(b) } : b) }));
+  }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Audit of 2026-11-13, finding 3: a recurring bill with no sign of when it was put on file (onboarding's bills, older
+  // ones) is stamped the first time the app sees it. From then on, a due date of its that passes with no payment seen
+  // is known to be overdue and stays counted for a few days (forecastEdits.js OVERDUE_GRACE_DAYS); a due date before
+  // the stamp was never missed. Idempotent: a bill is stamped once, and a bill added by hand or found from the bank
+  // already carries its own sign.
+  useEffect(() => {
+    const bs = appData?.bills;
+    if (!Array.isArray(bs) || !bs.length) return;
+    if (!bs.some(needsOnFileStamp)) return;
+    setAppData(d => ({ ...d, bills: stampOnFile(d.bills) }));
   }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
   // Every debt needs a stable link key so a bill can say which debt it pays (billPaysDebt). Debts added
   // before ids existed, onboarding debts and the demo's are given an id here, once.

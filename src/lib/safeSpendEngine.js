@@ -4,7 +4,8 @@
 //
 // "What is truly safe to spend right now?"
 //   safeAmount = balance − upcomingBills(H) − debtPayments − savingsBuffer(H) − safetyBuffer(H)
-//   where H = days until the next FUTURE deposit (dynamic horizon; item 3), 10 as a no-income fallback
+//   where H = days until the next MAIN payday (forecastEdits.js nextMainPaydayFor: the household's largest income,
+//   or one at least half its size; a smaller deposit never ends the window), 10 as a no-income fallback
 //
 // PURE: `todayDate` is injected (default = now preserves behavior; tests pass a frozen date).
 // Reads only cashFlow().monthlyIncome (override-independent, verified Group B), so it passes {}
@@ -21,7 +22,7 @@ import {
   accountCurrencyOf,
   debtMinimumDates,
 } from "./financialCalculations.js";
-import { daysToNextDepositFor, billOccurrences, billSrcKey, isoOf } from "./forecastEdits.js";
+import { daysToNextMainPaydayFor, billOccurrences, billSrcKey, isoOf } from "./forecastEdits.js";
 
 // ── Low-balance threshold — THE definition of "this balance is low" ──────────
 // The larger of a proportional band and an absolute floor. Proportional-only degrades to nonsense at
@@ -75,7 +76,10 @@ export const SafeSpendEngine = {
     // never set aside (payday 14 days out but only 10 reserved = 4 unfunded days). When no deposit can be
     // projected (no income), fall back to the historical 10-day window so income-less behaviour is unchanged.
     // Edit-aware (forecastEdits): a payday the household moved, skipped or stopped moves the horizon with it.
-    const _daysToDeposit = daysToNextDepositFor(data, todayDate);
+    // THE MAIN PAYDAY, not the next deposit of any size (audit of 2026-11-13, finding 2): a child benefit, a side job
+    // or a second earner's much smaller pay landing first used to end the window there, and the rent due between it
+    // and the paycheque was not counted. The rule is forecastEdits.js nextMainPaydayFor.
+    const _daysToDeposit = daysToNextMainPaydayFor(data, todayDate);
     const horizonDays = (_daysToDeposit != null && _daysToDeposit > 0) ? _daysToDeposit : 10;
 
     // A bill already paid is not reserved again. Which occurrence a payment paid is decided by ONE rule, the
@@ -99,7 +103,9 @@ export const SafeSpendEngine = {
       // An occurrence the household edited (moved, re-priced) stands on its own: it is reserved even when
       // the bill looks archived or already paid this month. A real payment of it is handled by the
       // forecastEdits arrival rule, which already removed it from the list.
-      const editedOnly = all.filter(o => o.edited);
+      // So does one that is overdue and not seen paid (forecastEdits.js OVERDUE_GRACE_DAYS): a one-time bill whose
+      // date passed two days ago is "archived", yet its money has not left.
+      const editedOnly = all.filter(o => o.edited || o.overdue);
       if (isBillArchived(b, todayDate)) return editedOnly;
       return all;
     };
@@ -153,7 +159,7 @@ export const SafeSpendEngine = {
       billsDueSoon: [...bills.flatMap(b => occurrencesFor(b).map(o => ({ name: b.name || "Bill", amount: num(o.amount), date: o.date,
                                                                         key: `${billSrcKey(b)}|${isoOf(o.date)}` }))),
                      ...expectedOut.map(o => ({ name: o.label, amount: num(o.amount), date: o.date, key: `${o.srcKey}|${isoOf(o.date)}`, _expected: true }))],
-      // The window those lists cover: to the next deposit when there is one, else 10 days.
+      // The window those lists cover: to the next main payday when there is one, else 10 days.
       dueSoonToDeposit: _daysToDeposit != null && _daysToDeposit > 0,
       // The debt minimums reserved above (debtPayments), one row each, for Today's "Due soon" list: the list
       // adds up to the reservation.

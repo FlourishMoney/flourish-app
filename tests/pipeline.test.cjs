@@ -211,6 +211,28 @@ const D = (iso) => new Date(iso + "T12:00:00");
       "normalizeAccountBalance #4: credit → negative current (amount owed; ignores available credit)");
     t.eq(NB({ type: "loan", subtype: "student", balance: { available: null, current: 15000 } }), -15000,
       "normalizeAccountBalance #5: loan → negative current");
+    // Audit of 2026-11-13, finding 11: an investment account is worth its holdings ("current"). Its "available" is only
+    // the cash in it that can be withdrawn, so an RRSP holding $50,000 with $120.55 in cash was stored, and counted in
+    // net worth, as $120.55. Cash accounts keep the rule above: available first.
+    t.eq(NB({ type: "investment", subtype: "rrsp", balance: { available: 120.55, current: 50000 } }), 50000,
+      "normalizeAccountBalance #6: investment → its value (current), not the cash in it (available) (was 120.55)");
+    t.eq(NB({ type: "investment", subtype: "tfsa", balance: { available: 0, current: 12480 } }), 12480,
+      "normalizeAccountBalance #7: investment with no cash in it → its value (was 0)");
+    t.eq(NB({ type: "investment", subtype: "401k", balance: { available: 300, current: null } }), 300,
+      "normalizeAccountBalance #8: investment with no value reported → what is available, rather than nothing");
+    t.eq(NB({ type: "brokerage", subtype: "brokerage", balance: { available: 50, current: 9000 } }), 9000,
+      "normalizeAccountBalance #9: the older \"brokerage\" type is an investment account too");
+    t.eq(NB({ type: "investment", subtype: "rrsp", balance: { available: null, current: null } }), 0,
+      "normalizeAccountBalance #10: investment with neither → 0");
+    {
+      // And the figure it feeds: net worth counts the account at its value.
+      const acct = (pa) => ({ id: pa.account_id, name: pa.name, type: pa.type, subtype: pa.subtype, balance: NB(pa), currency: "CAD" });
+      const nw = fc.FinancialCalcEngine.netWorth({ profile: { country: "CA" }, debts: [], accounts: [
+        acct({ account_id: "c", name: "Chequing", type: "depository", subtype: "checking", balance: { available: 900, current: 1000 } }),
+        acct({ account_id: "r", name: "RRSP", type: "investment", subtype: "rrsp", balance: { available: 120.55, current: 50000 } }),
+      ] });
+      t.eq(nw.netWorth, 50900, "normalizeAccountBalance #11: net worth is $900 of cash plus the $50,000 RRSP (was $1,020.55)");
+    }
   }
 
   return t.summary("pipeline.test");
