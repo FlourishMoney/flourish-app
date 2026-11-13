@@ -22,10 +22,20 @@ export const META_ON = "Eligible new subscribers get 14 days free, then the plan
 
 const TAG = /(<meta (?:name="description"|property="og:description") content="[^"]*?)Every feature free for 14 days\.(" \/>)/g;
 
-/** index.html as it ships: unchanged while the switch is off; the approved sentence in both descriptions while on. */
+/**
+ * index.html as it ships: unchanged while the switch is off; the approved sentence in both descriptions while on.
+ * On, it must change exactly the two tags. If index.html was reworded or reformatted so that it cannot, the build
+ * stops with an error (the deploy that would turn the switch on is refused, and the one before it stays live) rather
+ * than publish "Every feature free for 14 days." beside a switch that is on.
+ */
 export function trialFirstMeta(html, env = process.env) {
   if (typeof html !== "string" || trialPlanFirstSince(env) === null) return html;
-  return html.replace(TAG, (_, before, after) => `${before}${META_ON}${after}`);
+  let changed = 0;
+  const out = html.replace(TAG, (_, before, after) => { changed++; return `${before}${META_ON}${after}`; });
+  if (changed !== 2 || out.includes(META_OFF)) {
+    throw new Error(`trial-first-meta: TRIAL_PLAN_FIRST is on, but index.html's two descriptions could not be changed (${changed} of 2). See scripts/trial-first-meta.mjs.`);
+  }
+  return out;
 }
 
 /** The Vite plugin (vite.config.js). */

@@ -87,6 +87,36 @@ const ph = (id) => `[WORDS: ${id}]`;
       t.eq([offOut === INDEX, onOut && descriptions(onOut)], [true, [META_ON, META_ON]], "1h …and it reads the build's own environment each time: off, the file as it is; on, the approved sentence");
     }
 
+    {
+      // 1i-1k A REAL BUILD, twice: `vite build` with the switch off and on, into a folder of its own each time.
+      const os = require("os");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-meta-"));
+      const build = (name, env) => {
+        const out = path.join(dir, name);
+        const base = { ...process.env, VITE_SUPABASE_URL: "https://placeholder.invalid", VITE_SUPABASE_PUBLISHABLE_KEY: "placeholder" };
+        for (const k of ["TRIAL_PLAN_FIRST", "TRIAL_PLAN_FIRST_SINCE"]) delete base[k];
+        const r = spawnSync(process.execPath, [path.join(REPO, "node_modules", "vite", "bin", "vite.js"), "build", "--outDir", out, "--emptyOutDir", "--logLevel", "error"], { cwd: REPO, encoding: "utf8", env: { ...base, ...env } });
+        let html = null; try { html = fs.readFileSync(path.join(out, "index.html"), "utf8"); } catch { html = null; }
+        return { status: r.status, html };
+      };
+      const off = build("off", {}), on = build("on", ON_ENV), half = build("half", { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20" });
+      t.eq([off.status, off.html && descriptions(off.html)], [0, [META_OFF, META_OFF]], "1i a real build with the switch off: the published page's two descriptions are today's");
+      t.eq([on.status, on.html && descriptions(on.html), !!on.html && on.html.includes("Every feature free for 14 days.")], [0, [META_ON, META_ON], false], "1j a real build with the switch on: both are the approved sentence, and the old one is gone");
+      const same = (h) => String(h).replace(/assets\/[A-Za-z0-9_.-]+/g, "assets/X");
+      t.ok(!!off.html && !!half.html && same(half.html) === same(off.html) && same(strip(on.html)) === same(strip(off.html)), "1k a date with no time builds as off; and on, nothing but the two descriptions differs in the page");
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* a temp folder left behind */ }
+    }
+    {
+      // 1l-1m index.html reworded or reformatted so the step cannot change it: on, the build stops; off, nothing happens.
+      const reworded = INDEX.split("Every feature free for 14 days.").join("Every feature free for two weeks.");
+      const oneTag = INDEX.replace('<meta property="og:description" content="' + META_OFF + '" />', '<meta property="og:description" content="' + META_OFF + '">');
+      for (const [name, html] of [["reworded", reworded], ["one tag reformatted", oneTag]]) {
+        let err = null; try { META.trialFirstMeta(html, ON_ENV); } catch (e) { err = e; }
+        t.ok(err && /trial-first-meta: TRIAL_PLAN_FIRST is on/.test(err.message), `1l ${name}, the switch on: the build stops instead of publishing the old sentence`);
+        t.ok(META.trialFirstMeta(html, {}) === html, `1m ${name}, the switch off: untouched, and no error`);
+      }
+    }
+
     // ════ 2. THE EIGHT LINES ══════════════════════════════════════════════════════════════════════════
     t.eq(W.SWITCH_OFF_WORDS, TODAY, "2a today's lines are kept word for word");
     for (const id of Object.keys(TODAY)) {
@@ -111,7 +141,8 @@ const ph = (id) => `[WORDS: ${id}]`;
     const calls = Object.fromEntries(Object.keys(TODAY).map((id) => [id, (APP.match(new RegExp(`switchWords\\("${id}", (tpfOn|tpfOnNow)\\)`, "g")) || []).length]));
     t.eq(calls, { "trialfirst-checkout-done": 0, "trialfirst-signup-title": 1, "trialfirst-demo-meeting": 1, "trialfirst-demo-coach": 1, "trialfirst-demo-coach-button": 1, "trialfirst-meeting-locked": 1 },
       "3b each screen line is asked for once, with the switch (the checkout notice is asked for in lib/billingVisibility.js)");
-    t.ok(APP.includes("useEffect(()=>{ setTpfOn(tpfOn); },[tpfOn]);") && APP.includes("const tpfOn = !!tpfStatus || tpfPublic===true;")
+    t.ok(/^  useEffect\(\(\)=>\{ setTpfOn\(tpfOn\); \},\[tpfOn\]\);$/m.test(APP) && /^  const tpfOn = !!tpfStatus \|\| tpfPublic===true;$/m.test(APP)
+      && /^function useTpfOn\(\)\{ return useSyncExternalStore\(tpfSubscribe, tpfSnapshot, tpfSnapshot\); \}$/m.test(APP) && (APP.match(/^  const tpfOnNow = useTpfOn\(\);/gm) || []).length === 2
       && APP.includes("function setTpfOn(v){ const on = v === true;") && APP.includes("const TPF_STORE = { on: false, subs: new Set() };"),
       "3c the screens deep in the app hear the switch from the server's answers, and it is off until one says on");
 

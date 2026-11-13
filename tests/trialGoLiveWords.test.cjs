@@ -104,7 +104,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   // ── 4. index.html: at build time since 2026-11-13 (it was "by hand on the day") ─────────────────────
   const list = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-NO-CARD.md"), "utf8");
   const META = await import(path.join(REPO, "scripts", "trial-first-meta.mjs"));
-  t.ok(list.includes("\"Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.\"") && /index\.html[\s\S]{0,700}follows the switch at build time/.test(list)
+  t.ok(list.includes("\"Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.\"") && list.includes("Since 2026-11-13 it follows the switch at build time instead (`scripts/trial-first-meta.mjs`)") && /^1\. \*\*`index\.html`\*\* meta description and og:description/m.test(list)
     && META.META_ON === "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.",
     "4a the approved meta sentence is listed for index.html, and it is the one the build puts in while the switch is on");
 
