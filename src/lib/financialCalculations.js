@@ -806,7 +806,16 @@ export function billNextDue(bill, today = new Date()) {
   if (freq === "weekly" || freq === "biweekly") {
     const step = freq === "weekly" ? 7 : 14;
     let a = _isoToDate(bill.nextDueDate) || t; // no legacy anchor → today (phase unknown)
-    if (a < t) { const k = Math.ceil((t - a) / (step * _DAY_MS)); a = new Date(a.getTime() + k * step * _DAY_MS); }
+    // Whole CALENDAR days, never milliseconds (audit of 2026-11-13, finding 8). Noon to noon across the autumn clock
+    // change is a day and an hour, so counting steps in milliseconds came out a fraction over ON the due day and
+    // rounded up to the following cycle: from November to March a weekly or every-two-weeks bill was "next due" a
+    // cycle late on the very day it was due, in every zone that changes its clocks. The days are rounded (an hour
+    // either way is not a day) and the date is moved by the calendar (tests/billDst.test.cjs).
+    if (a < t) {
+      const daysBehind = Math.round((t - a) / _DAY_MS);
+      const k = Math.ceil(daysBehind / step);
+      a = new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * step, 12, 0, 0);
+    }
     return _atNoon(a);
   }
   if (freq === "semimonthly") {
