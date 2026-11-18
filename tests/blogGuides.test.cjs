@@ -5,6 +5,7 @@
 // pinned here by a fingerprint, so a changed word is a deliberate act: change the fingerprint with the approval.
 //   1  the three guides: published, with the approved titles, descriptions and addresses
 //   2  each page: its own title, og:type article, a real og:image, Article JSON-LD, the sample-data label on every screen
+//      (guide C has no screen: its figures are all FCAC's, and a screen of sample debt broke that promise)
 //   3  the index lists all three, newest first, and the sitemap has each
 //   4  nothing a guide must not carry: an em dash, a working note, a trial, price or plan line
 //   5  the website's menu and footer say "Blog" and go to /guides/
@@ -46,7 +47,7 @@ const GUIDES = [
     title: "What happens when you only pay the minimum on a Canadian credit card",
     seoTitle: "Paying only the minimum on a Canadian credit card",
     description: "How the minimum payment is set in Canada, what paying only the minimum does to time and interest, and the federal calculator that runs your numbers.",
-    words: "f620c8279a5c68aa32253348ed16d4ef8294f95b54cbd8165995ed9e92a77c31", screens: ["/guide-media/do-payoff.jpg"],
+    words: "f620c8279a5c68aa32253348ed16d4ef8294f95b54cbd8165995ed9e92a77c31", screens: [],
     says: ["1: only the minimum each month $2,000 $60 18% 3 years, 11 months $793 $2,793", "2: the minimum plus $100 each month $2,000 $160 18% 1 year, 2 months $231 $2,231", "since August 1, 2025, the credit card minimum payment for Quebec residents is 5%"] },
   { slug: "three-paycheque-month-biweekly-pay-canada",
     title: "How to plan a month with three paydays when you're paid every two weeks",
@@ -103,6 +104,8 @@ const GUIDES = [
     t.ok(!/trial|days left|upgrade|founding|per month|\/mo\b|\$\d+(\.\d\d)? a (month|year)|subscribe/i.test(text), `4c ${want.slug}: no trial, price, plan or upgrade line`);
     t.ok(!/Flourish/.test(text), `4d ${want.slug}: flourish is lowercase`);
     t.ok(!/noindex/.test(html), `4e ${want.slug}: indexable`);
+    // Amanda, 2026-11-18: guide C says every figure on it is FCAC's, so it shows no app screen (the sample debt came out).
+    if (want.slug === "minimum-payment-credit-card-canada") t.ok(!/<img|<figure|<figcaption|guide-media\/do-payoff/.test(html) && !text.includes("Example, sample data") && text.includes("Every figure below is FCAC's, not ours."), "4f guide C carries no image and no sample figure: every figure on it is FCAC's");
 
     // ── 3. listed ──────────────────────────────────────────────────────────────────────────────
     t.ok(index.includes(`<li><a href="/guides/${want.slug}/">`), `3a the index lists ${want.slug}`);

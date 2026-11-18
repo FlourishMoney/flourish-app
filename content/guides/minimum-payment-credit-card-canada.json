@@ -198,13 +198,6 @@
       ]
     },
     {
-      "type": "screen",
-      "src": "/guide-media/do-payoff.jpg",
-      "alt": "The flourish Do screen: a debt's payoff date with the extra payment slider, with sample figures",
-      "width": 680,
-      "height": 1472
-    },
-    {
       "type": "p",
       "html": "Not financial advice."
     }
