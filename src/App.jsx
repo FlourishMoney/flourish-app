@@ -16312,6 +16312,11 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
             .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:32px; color:#163a1c; letter-spacing:-0.3px; }
             .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.2); color:#52624f; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
+            /* The menu: Blog (the guides, a plain link to /guides/), then Log in. One row from 360 wide; on a narrower phone the pair drops under the name instead of being cut off. */
+            .fll-nav{ flex-wrap:wrap; gap:6px 12px; }
+            .fll-nav-links{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+            .fll-navlink{ display:inline-flex; align-items:center; min-height:44px; padding:0 4px; color:#52624f; font-size:13px; font-weight:600; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-navlink:hover{ color:#2E8B2E; }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
             .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "card" "form" "founding" "demo"; gap:${SPACE.xl}px; }
@@ -16496,7 +16501,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
               <FlourishMark size={52} />
               <span>flourish</span>
             </div>
-            <button className="fll-login" onClick={goLogin}>Log in</button>
+            <div className="fll-nav-links">
+              <a className="fll-navlink" href="/guides/">Blog</a>
+              <button className="fll-login" onClick={goLogin}>Log in</button>
+            </div>
           </div>
 
           {/* Hero. The trial-first landing, approved Oct 22. Phone, one column: H1, subline, the $1,944 card, the main
@@ -16644,6 +16652,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
                 <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
                 <a href="/newsletter/">Canadian money dates</a>
+                <a href="/guides/">Blog</a>
               </div>
             </div>
           </div>

@@ -21,6 +21,7 @@ export const LANDING_ONLY = [
   "email",            // images the emails load from the website (the wordmark, the store badges)
   "newsletter",       // the website's sign-up page (the app has its own form in Settings)
   "clarity",          // Microsoft Clarity's loader for /get and the guides (website only, 2026-11-06)
+  "guide-media",      // the guides' app screens and link-preview images (website only, 2026-11-18)
 ];
 
 // The landing's link-preview tags in index.html (between the LANDING-META markers): they name the website, and a
