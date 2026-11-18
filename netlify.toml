@@ -175,6 +175,20 @@
   to     = "/.netlify/functions/meeting"
   status = 200
 
+# Redirect: /blog is the guides' other name (2026-11-18). /blog, /blog/ and anything under it go to the guides' index,
+# permanently. These come before the SPA fallback, which would otherwise answer /blog with the app.
+[[redirects]]
+  from   = "/blog"
+  to     = "/guides/"
+  status = 301
+  force  = true
+
+[[redirects]]
+  from   = "/blog/*"
+  to     = "/guides/"
+  status = 301
+  force  = true
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

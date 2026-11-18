@@ -1,0 +1,197 @@
+{
+  "slug": "three-paycheque-month-biweekly-pay-canada",
+  "status": "published",
+  "title": "How to plan a month with three paydays when you're paid every two weeks",
+  "seoTitle": "How to plan a month with three paydays",
+  "description": "If you're paid every two weeks, most years have two months with three paydays. Find yours for 2027 in one table, and see how they line up with your bills.",
+  "publishedAt": "2026-11-18",
+  "updatedAt": "2026-11-18",
+  "image": "/guide-media/og-three-paycheque-month-biweekly-pay-canada.jpg",
+  "howWeChecked": "Written by the flourish team, with AI tools used to help draft it. The payday table is our own calendar count for 2027. The payroll and budgeting facts were read on November 12, 2026 on the Government of Canada pages linked in the text. No financial professional reviewed this page.",
+  "sources": [
+    {
+      "label": "Canada Revenue Agency, Payroll Deductions Formulas (T4127), 122nd edition",
+      "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html"
+    },
+    {
+      "label": "Financial Consumer Agency of Canada, Making a budget",
+      "url": "https://www.canada.ca/en/financial-consumer-agency/services/make-budget.html"
+    },
+    {
+      "label": "Financial Consumer Agency of Canada, Budget Planner",
+      "url": "https://itools-ioutils.fcac-acfc.gc.ca/BP-PB/budget-planner"
+    },
+    {
+      "label": "Government of Canada, Benefits payment dates",
+      "url": "https://www.canada.ca/en/services/benefits/calendar.html"
+    }
+  ],
+  "body": [
+    {
+      "type": "p",
+      "html": "If your employer pays you every two weeks, you usually have 26 paydays a year, rather than 24. Most months have two paydays, and usually two months have three. Some years have 27 paydays. This guide shows where the third one comes from, which months it lands in for 2027, and what a calendar can show you about it."
+    },
+    {
+      "type": "h2",
+      "text": "Where the third payday comes from"
+    },
+    {
+      "type": "p",
+      "html": "A year has 52 weeks and one day (two in a leap year). Every two weeks works out to 26 paydays. Twelve months with two paydays each is only 24. The other two have to go somewhere, so two months get a third."
+    },
+    {
+      "type": "p",
+      "html": "The Canada Revenue Agency's payroll formulas say the same thing from the employer's side: a biweekly year can have 26 or 27 pay periods, and employers are told to work out the number at the start of the year (<a href=\"https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html\">CRA, Payroll Deductions Formulas, 122nd edition, effective January 1, 2026</a>, last checked November 12, 2026). In 2027, a first payday on January 1 gives you 27 paydays. The other starting dates in the table give you 26."
+    },
+    {
+      "type": "h2",
+      "text": "Find your three-payday months for 2027"
+    },
+    {
+      "type": "p",
+      "html": "Look up the date of your first payday in January 2027. If you don't know it yet, count forward 14 days at a time from your last payday."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Your first payday of 2027",
+        "Months with three paydays"
+      ],
+      "rows": [
+        [
+          "Friday, January 1",
+          "January, July, December (27 paydays)"
+        ],
+        [
+          "Saturday, January 2",
+          "January, July"
+        ],
+        [
+          "Sunday, January 3",
+          "January, August"
+        ],
+        [
+          "Monday, January 4",
+          "March, August"
+        ],
+        [
+          "Tuesday, January 5",
+          "March, August"
+        ],
+        [
+          "Wednesday, January 6",
+          "March, September"
+        ],
+        [
+          "Thursday, January 7",
+          "April, September"
+        ],
+        [
+          "Friday, January 8",
+          "April, October"
+        ],
+        [
+          "Saturday, January 9",
+          "May, October"
+        ],
+        [
+          "Sunday, January 10",
+          "May, October"
+        ],
+        [
+          "Monday, January 11",
+          "May, November"
+        ],
+        [
+          "Tuesday, January 12",
+          "June, November"
+        ],
+        [
+          "Wednesday, January 13",
+          "June, December"
+        ],
+        [
+          "Thursday, January 14",
+          "July, December"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "html": "How this table was made: we counted forward 14 days at a time from each start date through December 31, 2027 and counted the paydays in each month. It is calendar arithmetic, with no estimate in it. It assumes your payday stays exactly 14 days apart. Some employers move a payday that lands on a holiday or a weekend, so check your own pay schedule."
+    },
+    {
+      "type": "p",
+      "html": "For the rest of 2026: December 2026 has three paydays only if your first December payday is the 1st, 2nd or 3rd."
+    },
+    {
+      "type": "h2",
+      "text": "Why the month still feels tight"
+    },
+    {
+      "type": "p",
+      "html": "A third payday doesn't arrive on top of the month. It arrives at the edge of it. In a three-payday month, the first payday is in the first few days and the third is in the last few days. Bills often have fixed monthly due dates, while biweekly paydays fall on different dates each month. The gap between a payday and a bill can change."
+    },
+    {
+      "type": "p",
+      "html": "That changing gap is the thing to watch. The stretch between a payday and the bills due before the next one can change from month to month, even when your pay and your bills are the same size."
+    },
+    {
+      "type": "h2",
+      "text": "What a three-payday calendar can show"
+    },
+    {
+      "type": "p",
+      "html": "The Financial Consumer Agency of Canada describes a budget as a plan for managing your money, and suggests comparing your budget to what you actually spend at the end of each month (<a href=\"https://www.canada.ca/en/financial-consumer-agency/services/make-budget.html\">FCAC, Making a budget</a>, last checked November 12, 2026)."
+    },
+    {
+      "type": "p",
+      "html": "A calendar with paydays, bill due dates and benefit payment dates shows how income and expenses line up. Government benefit dates move too. The Canada child benefit, for example, is issued on December 11, 2026 and then on January 20, 2027 (<a href=\"https://www.canada.ca/en/services/benefits/calendar.html\">Benefits payment dates, canada.ca</a>, last checked November 12, 2026)."
+    },
+    {
+      "type": "p",
+      "html": "Bills can be grouped by the last payday before their due date. In a three-payday month, bills can fall between three paydays. Some bills may also be due before the month's first payday. In some three-payday months, one group has fewer bills than the others. That is the \"extra\" paycheque people talk about. It isn't extra pay. It is the same pay with fewer bills attached to it."
+    },
+    {
+      "type": "p",
+      "html": "FCAC's budgeting page lists goals people commonly set, such as paying off a credit card, starting an emergency fund or paying down debts. It suggests an emergency fund of 3 to 6 months of living expenses, built by putting a small amount away regularly. Which goal fits is your call."
+    },
+    {
+      "type": "p",
+      "html": "FCAC also has a <a href=\"https://itools-ioutils.fcac-acfc.gc.ca/BP-PB/budget-planner\">Budget Planner</a> that lets you enter income and expenses and store your budget online (last checked November 12, 2026)."
+    },
+    {
+      "type": "h2",
+      "text": "Where flourish fits"
+    },
+    {
+      "type": "p",
+      "html": "flourish is built around paydays instead of calendar months, so a three-payday month needs no special setup."
+    },
+    {
+      "type": "ul",
+      "items": [
+        "<strong>Watch</strong> puts every bill and every payday on one dated list, with the day your balance is expected to be lowest before the next payday.",
+        "<strong>Today</strong> shows one number: what flourish calculates as safe to spend until your next payday, after the bills due before then. Tap it to see each amount that went into it."
+      ]
+    },
+    {
+      "type": "screen",
+      "src": "/guide-media/watch-list.jpg",
+      "alt": "The flourish Watch screen: every bill and payday on one dated list, with sample figures",
+      "width": 680,
+      "height": 1472
+    },
+    {
+      "type": "screen",
+      "src": "/guide-media/today.jpg",
+      "alt": "The flourish Today screen: one number, safe to spend until next payday, with sample figures",
+      "width": 680,
+      "height": 1472
+    },
+    {
+      "type": "p",
+      "html": "Not financial advice."
+    }
+  ]
+}

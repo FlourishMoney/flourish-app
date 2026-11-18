@@ -84,6 +84,19 @@ function fakeAdmin(tables = {}) {
     refuse({ body: [{ type: "p", html: "No source." }] }, "published with no source link");
     refuse({ updatedAt: "soon" }, "no real date");
     refuse({ slug: "Bad Slug" }, "a bad slug");
+    // 2026-11-18: lists, tables and a sources list, for the first three guides.
+    const rich = G.renderGuide(G.checkGuide({ ...good, sources: [{ label: "Government of Canada, A page", url: "https://www.canada.ca/a.html" }], body: [...good.body,
+      { type: "ul", items: ["<strong>One</strong> thing", "Another"] },
+      { type: "table", headers: ["Date", "Benefit"], rows: [["Friday, December 11", "Canada child benefit"]] },
+      { type: "table", headers: ["A", "B", "C", "D", "E"], rows: [["1", "2", "3", "4", "5"]] }] }));
+    t.ok(rich.includes("<ul>\n<li><strong>One</strong> thing</li>\n<li>Another</li>\n</ul>"), "1m2 a list");
+    t.ok(rich.includes('<table>\n<thead><tr><th scope="col">Date</th><th scope="col">Benefit</th></tr></thead>') && rich.includes('<td data-label="Benefit">Canada child benefit</td>'), "1m3 a table: column headers, and each cell names its column");
+    t.ok(rich.includes('<table class="stack">') && /@media \(max-width: 640px\) \{\s*table\.stack, table\.stack tbody, table\.stack tr, table\.stack td \{ display: block;/.test(rich) && rich.includes("table.stack td::before { content: attr(data-label);"),
+      "1m4 a table of five or more columns is one card per row on a phone, each value under its column's name");
+    t.ok(rich.includes('<p>Sources:</p>\n<ul>\n<li>Government of Canada, A page: <a href="https://www.canada.ca/a.html">https://www.canada.ca/a.html</a></li>\n</ul>') && rich.indexOf("<p>Sources:</p>") > rich.indexOf("How we checked this"), "1m5 the sources, under How we checked this");
+    refuse({ body: [...good.body, { type: "table", headers: ["A", "B"], rows: [["only one"]] }] }, "a table row short of a cell");
+    refuse({ body: [...good.body, { type: "ul", items: [] }] }, "an empty list");
+    refuse({ sources: [{ label: "A page", url: "http://not-secure.example/" }] }, "a source that is not an https link");
 
     const dist = tempDir("guides");
     fs.writeFileSync(path.join(dist, "index.html"), "<html><head><title>x</title></head><body></body></html>");
@@ -102,7 +115,8 @@ function fakeAdmin(tables = {}) {
     const robots = fs.readFileSync(path.join(dist, "robots.txt"), "utf8");
     t.ok(/^Allow: \/$/m.test(robots) && !/Disallow: \/guides/.test(robots) && robots.includes("Sitemap: https://flourishmoney.app/sitemap.xml"), "1r robots.txt allows the guides, so a draft's noindex can be read");
     const real = G.readGuides(path.join(ROOT, "content", "guides"));
-    t.eq(real.filter((g) => g.status === "published").length, 0, "1s no guide is published yet");
+    t.eq(real.filter((g) => g.status === "published").map((g) => g.slug), ["canadian-benefit-payment-dates-december-2026-january-2027", "minimum-payment-credit-card-canada", "three-paycheque-month-biweekly-pay-canada"],
+      "1s the three guides published on 2026-11-18, and no other (tests/blogGuides.test.cjs holds their words)");
     t.eq(real.filter((g) => g.status === "draft").length, 1, "1t one draft");
     t.ok(/"build": "vite build && node scripts\/build-guides\.mjs"/.test(read("package.json")), "1u the web build makes them");
     t.ok(!/build:native[^\n]*build-guides/.test(read("package.json")), "1v a store build does not");
