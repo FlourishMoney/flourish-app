@@ -1,0 +1,146 @@
+{
+  "id": "reel-01",
+  "week": "week-01",
+  "input": "flourish-reel-01-preview-silent-v3.mp4",
+  "output": "flourish-reel-01-v7.mp4",
+  "duration": 21.4,
+  "voiceEnd": 21.2,
+  "voice": {
+    "voiceId": "EXAVITQu4vr4xnSDxMaL",
+    "name": "Sarah",
+    "model": "eleven_multilingual_v2",
+    "settings": {
+      "stability": 0.55,
+      "similarity_boost": 0.75,
+      "style": 0,
+      "use_speaker_boost": true,
+      "speed": 1.0
+    },
+    "seed": 20260924
+  },
+  "align": {
+    "lead": 0.2,
+    "leadMin": 0.1,
+    "leadMax": 0.5,
+    "minPause": 0.15,
+    "crossfade": 0.02
+  },
+  "lines": [
+    {
+      "at": 0.0,
+      "text": "Still adding up bills by hand?"
+    },
+    {
+      "at": 2.2,
+      "text": "Flourish finds them for you."
+    },
+    {
+      "at": 4.7,
+      "text": "Every bill,"
+    },
+    {
+      "at": 7.2,
+      "text": "every payday,"
+    },
+    {
+      "at": 9.7,
+      "text": "the next ninety days, laid out."
+    },
+    {
+      "at": 14.1,
+      "text": "So rent never sneaks up on you."
+    },
+    {
+      "at": 16.6,
+      "text": "Your money, handled. Join the waitlist at Flourish Money dot app."
+    }
+  ],
+  "music": {
+    "prompt": "calm minimal modern electronic, soft felt piano, warm pads, light pulse, 92 bpm, premium fintech product film, gentle resolve at the end",
+    "lufs": -24,
+    "fadeIn": 0.3,
+    "fadeOut": 1.0
+  },
+  "master": {
+    "lufs": -14,
+    "truePeak": -1
+  },
+  "ticks": {
+    "cards": [
+      0.0,
+      0.12,
+      0.24
+    ],
+    "lifts": [
+      3.2,
+      5.7,
+      8.2,
+      15.2
+    ],
+    "peakDbfs": -30
+  },
+  "auditions": {
+    "A": {
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
+      "name": "Sarah",
+      "label": "sarah-steady",
+      "settings": {
+        "similarity_boost": 0.75,
+        "style": 0,
+        "use_speaker_boost": true,
+        "speed": 1.0,
+        "stability": 0.75
+      },
+      "note": "steadier than v7, to test whether the settings are the problem"
+    },
+    "B": {
+      "voiceId": "XrExE9yKIg1WjnnlVkGX",
+      "name": "Matilda",
+      "label": "matilda",
+      "settings": {
+        "similarity_boost": 0.75,
+        "style": 0,
+        "use_speaker_boost": true,
+        "speed": 1.0,
+        "stability": 0.55
+      }
+    },
+    "C": {
+      "voiceId": "cjVigY5qzO86Huf0OWal",
+      "name": "Eric",
+      "label": "eric",
+      "settings": {
+        "similarity_boost": 0.75,
+        "style": 0,
+        "use_speaker_boost": true,
+        "speed": 1.0,
+        "stability": 0.55
+      }
+    },
+    "D": {
+      "voiceId": "nPczCjzI2devNBz1zQrb",
+      "name": "Brian",
+      "label": "brian",
+      "settings": {
+        "similarity_boost": 0.75,
+        "style": 0,
+        "use_speaker_boost": true,
+        "speed": 1.0,
+        "stability": 0.55
+      }
+    }
+  },
+  "audition": {
+    "maxSpeed": 1.05,
+    "outputPattern": "reel-01-audition-{key}-{label}.mp4"
+  },
+  "final": {
+    "audition": "A",
+    "output": "flourish-reel-01-v9.mp4",
+    "pauseLufs": -20,
+    "duckLufs": -24,
+    "requireMusic": true,
+    "musicSeed": 20260924,
+    "musicDir": "out/week-01/music"
+  }
+}

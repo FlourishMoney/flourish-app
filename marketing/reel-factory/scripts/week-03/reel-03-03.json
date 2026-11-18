@@ -1,0 +1,45 @@
+{
+  "id": "reel-03-03",
+  "week": "week-03",
+  "pillar": "canadian-money-calendar",
+  "hook": "Some months you get paid three times. Do you know which ones?",
+  "voice": [
+    {
+      "text": "Some months you get paid three times.",
+      "screen": "watch-top"
+    },
+    {
+      "text": "Flourish lays out every payday for 90 days.",
+      "screen": "ninety-day-scroll"
+    },
+    {
+      "text": "So you can see it coming,",
+      "screen": "payday-deposit"
+    },
+    {
+      "text": "and what's already spoken for.",
+      "screen": "bills-card"
+    },
+    {
+      "text": "Your money, handled.",
+      "screen": "end-card"
+    }
+  ],
+  "captionLines": [
+    "Some months you get paid three times.",
+    "Flourish lays out every payday for 90 days.",
+    "So you can see it coming,",
+    "and what's already spoken for.",
+    "Your money, handled."
+  ],
+  "endCard": [
+    "Your money, handled.",
+    "Join the waitlist. First 50 households get the founding price.",
+    "Link in bio."
+  ],
+  "captions": {
+    "instagram": "Some months you get paid three times. Flourish's 90-day view lays out every payday with its date, so you can see the extra one coming. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "tiktok": "Some months you get paid three times. Flourish's 90-day view lays out every payday with its date, so you can see the extra one coming. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "facebook": "Some months you get paid three times. Flourish's 90-day view lays out every payday with its date, so you can see the extra one coming. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+  }
+}
