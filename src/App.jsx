@@ -16312,10 +16312,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
             .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:32px; color:#163a1c; letter-spacing:-0.3px; }
             .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.2); color:#52624f; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
-            /* The menu: Blog (the guides, a plain link to /guides/), then Log in. On a very narrow phone the pair drops under the name instead of being cut off. */
+            /* The menu: Blog (the guides, a plain link to /guides/), then Log in. One row from 360 wide; on a narrower phone the pair drops under the name instead of being cut off. */
             .fll-nav{ flex-wrap:wrap; gap:6px 12px; }
-            .fll-nav-links{ display:flex; align-items:center; gap:14px; margin-left:auto; }
-            .fll-navlink{ display:inline-flex; align-items:center; min-height:44px; padding:0 6px; color:#52624f; font-size:13px; font-weight:600; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-nav-links{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+            .fll-navlink{ display:inline-flex; align-items:center; min-height:44px; padding:0 4px; color:#52624f; font-size:13px; font-weight:600; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-navlink:hover{ color:#2E8B2E; }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }

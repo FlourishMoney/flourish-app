@@ -131,7 +131,9 @@ const GUIDES = [
   t.ok(/<a className="fll-navlink" href="\/guides\/">Blog<\/a>\s*<button className="fll-login" onClick=\{goLogin\}>Log in<\/button>/.test(nav), '5a the menu: "Blog" goes to /guides/, beside Log in');
   const foot = APP.slice(APP.indexOf('<div className="fll-foot">'), APP.indexOf('<div className="fll-foot">') + 900);
   t.ok(/<a href="\/newsletter\/">Canadian money dates<\/a>\s*<a href="\/guides\/">Blog<\/a>/.test(foot), '5b the footer: "Blog" goes to /guides/');
-  t.ok(/\.fll-nav\{ flex-wrap:wrap;/.test(APP) && /\.fll-navlink\{[^}]*min-height:44px;/.test(APP), "5c the menu wraps on a narrow phone instead of being cut off, and Blog is a full-size tap target");
+  t.ok(/\.fll-nav\{ flex-wrap:wrap;/.test(APP) && /\.fll-navlink\{[^}]*min-height:44px;/.test(APP), "5c the menu wraps on a very narrow phone instead of being cut off, and Blog is a full-size tap target");
+  // One row from 360 wide: the name (52 mark + 12 + the word, 179 in all), the nav's own 12 gap and 44 of padding leave 125 for the pair at 360.
+  t.ok(/\.fll-nav-links\{[^}]*gap:8px;/.test(APP) && /\.fll-navlink\{[^}]*padding:0 4px;/.test(APP), "5d the pair is narrow enough to sit beside the name on a 360-wide phone (measured 2026-11-18: one row at 360, wraps at 320)");
 
   // ── 6. /blog ─────────────────────────────────────────────────────────────────────────────────
   const toml = read("netlify.toml");
