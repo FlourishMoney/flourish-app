@@ -116,6 +116,7 @@ const STYLE = `<style>
   th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
   th { font-size: 14px; color: var(--muted); font-weight: 700; }
   tbody tr:last-child td { border-bottom: 0; }
+  @media (max-width: 360px) { table { font-size: 14px; } th, td { padding: 8px; } th { font-size: 13px; } }
   @media (max-width: 640px) {
     table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
     table.stack { border: 0; background: none; }
