@@ -177,7 +177,8 @@ export function renderGuide(g, tags = []) {
     datePublished: g.publishedAt,
     dateModified: g.updatedAt,
     author: { "@type": "Organization", name: AUTHOR },
-    publisher: { "@type": "Organization", name: "flourish", logo: { "@type": "ImageObject", url: `${SITE}/flourish-adult-app-icon-180.png` } },
+    // The same Organization as the home page's JSON-LD (scripts/build-seo.mjs), by its @id.
+    publisher: { "@type": "Organization", "@id": `${SITE}/#organization`, name: "flourish Money", logo: { "@type": "ImageObject", url: `${SITE}/flourish-adult-app-icon-180.png` } },
   };
   const head = [
     `<title>${esc(g.seoTitle)}</title>`,
@@ -237,6 +238,8 @@ export function renderIndex(published, tags = []) {
   return shell({ head, body: `<main>\n<h1>Guides</h1>\n${list}\n</main>`, tags });
 }
 
+export const SITEMAP_PAGES = ["/support", "/privacy", "/terms", "/newsletter/"];
+
 export function renderSitemap(published) {
   const newest = published.map((g) => g.updatedAt).sort().pop();
   const row = (loc, lastmod) => `  <url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`;
@@ -246,12 +249,21 @@ export function renderSitemap(published) {
     row(`${SITE}/`),
     row(`${SITE}/guides/`, newest),
     ...published.map((g) => row(guideUrl(g.slug), g.updatedAt)),
+    // The other public pages (2026-11-19). /get/ is left out: it is a redirect to the stores and says noindex.
+    ...SITEMAP_PAGES.map((p) => row(`${SITE}${p}`)),
     "</urlset>",
     "",
   ].join("\n");
 }
 
-export const ROBOTS = `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${SITE}/sitemap.xml\n`;
+// Every reader may read the public pages; /api/ is the functions, not pages. The search and AI crawlers are named too
+// (2026-11-19), each with the same two rules: a crawler that finds a group with its own name follows only that group.
+export const NAMED_CRAWLERS = ["Bingbot", "OAI-SearchBot", "GPTBot", "PerplexityBot", "Google-Extended"];
+export const ROBOTS = [
+  ...["*", ...NAMED_CRAWLERS].map((ua) => `User-agent: ${ua}\nAllow: /\nDisallow: /api/\n`),
+  `Sitemap: ${SITE}/sitemap.xml`,
+  "",
+].join("\n");
 
 export function readGuides(dir) {
   const guides = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => {
@@ -284,4 +296,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const r = buildGuides(path.join(root, "dist"), { contentDir: path.join(root, "content", "guides") });
   console.log(`  ✓ guides: ${r.guides} (${r.published} published), robots.txt, sitemap.xml, ${r.tags} verification tag${r.tags === 1 ? "" : "s"}`);
+  // The home page's and /support's words in their HTML, JSON-LD and /llms.txt (scripts/build-seo.mjs, 2026-11-19).
+  const { buildSeo } = await import("./build-seo.mjs");
+  const published = readGuides(path.join(root, "content", "guides")).filter((g) => g.status === "published").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const s = buildSeo(path.join(root, "dist"), { published });
+  console.log(`  ✓ seo: home ${s.homeChars} and /support ${s.supportChars} characters of text in the HTML (trial-plan-first ${s.tpfOn ? "on" : "off"}), ${s.faq} questions, llms.txt`);
 }

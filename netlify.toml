@@ -189,8 +189,10 @@
   status = 301
   force  = true
 
-# SPA fallback — all routes → index.html
+# SPA fallback — all routes → app.html, the app shell as vite writes it (2026-11-19). dist/index.html is the home page
+# with its words and JSON-LD in the HTML (scripts/build-seo.mjs) and is served at "/" only, so no other address carries
+# them. A real file (a guide, /support, /llms.txt, /get/) is served as itself, ahead of this.
 [[redirects]]
   from   = "/*"
-  to     = "/index.html"
+  to     = "/app.html"
   status = 200
