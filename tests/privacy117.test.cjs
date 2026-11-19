@@ -60,8 +60,8 @@ const APPLE = "Apple sign-in: If you sign in with Apple, we keep a refresh token
   // ── 4. The date ─────────────────────────────────────────────────────────────────────────────────
   const D = M.PRIVACY_117_DATE;
   t.ok(/^\d{4}-\d{2}-\d{2}$/.test(D) && !!policyDateLabel(D) && D >= "2026-11-19", "4a PRIVACY_117_DATE is a real date, no earlier than the words' approval");
-  t.eq([M.privacyDate(null), M.privacyDate(""), M.privacyDate("nope"), M.privacyDate("2026-11-07"), M.privacyDate("2099-01-01")], [D, D, D, D, "2099-01-01"],
-    "4b the later of the newsletter launch date and the 1.1.7 date; anything that is not a date gives the 1.1.7 date");
+  t.eq([M.privacyDate(null), M.privacyDate(""), M.privacyDate("nope"), M.privacyDate("2026-11-07"), M.privacyDate("2099-01-01"), M.privacyDate("2099-13-40"), M.privacyDate("2099-02-30")], [D, D, D, D, "2099-01-01", D, D],
+    "4b the later of the newsletter launch date and the 1.1.7 date; anything that is not a real date (shape or calendar) gives the 1.1.7 date");
   t.ok(L.PRIVACY_BASE_DATE === D && ["2026-11-07", null, "2099-01-01"].every((x) => L.privacyVersion(x) === M.privacyDate(x)),
     "4c Before you start records the date the page shows");
 

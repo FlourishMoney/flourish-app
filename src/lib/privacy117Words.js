@@ -20,7 +20,8 @@ export const PRIVACY_117_WORDS = Object.freeze({
 // The day this deploys (YYYY-MM-DD). Set it to the real deploy day before deploying.
 export const PRIVACY_117_DATE = "2026-11-19";
 
-const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+// A real calendar date only (as the server's record_consent checks), so the page never shows an empty "Last updated".
+const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
 
 /** The policy's date: the later of the newsletter launch's date and this change's. Same-shape dates compare as text. */
 export function privacyDate(policyDate) {
