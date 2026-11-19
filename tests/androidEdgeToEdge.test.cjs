@@ -45,18 +45,19 @@ const DEPRECATED = /setStatusBarColor|setNavigationBarColor|setNavigationBarDivi
   t.ok(/if\(window\.Capacitor\?\.getPlatform\?\.\(\)!=="android"\) return;\s*import\("@capacitor\/core"\)\.then\(\(\{ SystemBars \}\)=>SystemBars\?\.setStyle\?\.\(\{ style: theme==="dark" \? "DARK" : "LIGHT" \}\)\)/.test(APP),
     "a9 the status bar's icons follow the app's theme on Android (light icons on the dark theme), nowhere else");
 
-  // ── (c) The status bar's cover (2026-11-18): Android only, and in the page's own colour ──────────────
-  // What it does in the built app is tests/androidStatusBar.browser.test.cjs; here, that it can only ever be Android's.
+  // ── (c) The status bar's cover (2026-11-18): the store apps only, and in the page's own colour ────────
+  // What it does in the built apps is tests/statusBar.browser.test.cjs; here, that the website can never have it.
   {
     const S = await import(path.join(REPO, "src", "lib", "safeArea.js"));
     const cap = (name) => ({ Capacitor: { getPlatform: () => name } });
-    t.eq([S.isAndroidApp(cap("android")), S.isAndroidApp(cap("ios")), S.isAndroidApp(cap("web")), S.isAndroidApp({}), S.isAndroidApp(undefined), S.isAndroidApp({ Capacitor: {} }),
-      S.isAndroidApp({ Capacitor: { getPlatform: () => { throw new Error("x"); } } })], [true, false, false, false, false, false, false],
-      "c1 the Android app is the Android app: not the iPhone app, not the website, not a page with no Capacitor, and never a throw");
+    const D = S.drawsBehindStatusBar;
+    t.eq([D(cap("android")), D(cap("ios")), D(cap("web")), D({}), D(undefined), D({ Capacitor: {} }), D({ Capacitor: { getPlatform: () => { throw new Error("x"); } } })],
+      [true, true, false, false, false, false, false],
+      "c1 the page runs behind the status bar in the Android app and the iPhone app: not on the website, not on a page with no Capacitor, and never a throw");
     t.eq(S.statusBarCoverStyle("#F4F1EB"), { position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "#F4F1EB", zIndex: 1 },
       "c2 the cover: fixed to the top, the height of the status bar, the colour it is given, one layer up (so a dialog's backdrop, later in the page, is drawn over it)");
-    t.ok(/function StatusBarCover\(\{ bg \}\) \{\s*if \(!isAndroidApp\(\)\) return null;\s*return <div data-status-bar-cover="" aria-hidden="true" style=\{statusBarCoverStyle\(bg\)\}\/>;\s*\}/.test(APP),
-      "c3 in the app it is nothing at all unless this is the Android app, and a screen reader skips it");
+    t.ok(/function StatusBarCover\(\{ bg \}\) \{\s*if \(!drawsBehindStatusBar\(\)\) return null;\s*return <div data-status-bar-cover="" aria-hidden="true" style=\{statusBarCoverStyle\(bg\)\}\/>;\s*\}/.test(APP),
+      "c3 it is nothing at all unless this is a store app (so never on the website), and a screen reader skips it");
     const mounts = APP.match(/<StatusBarCover bg=\{[^}]+\}\/>/g) || [];
     t.eq([mounts.length, mounts.filter((m) => m === "<StatusBarCover bg={C.bg}/>").length, mounts.filter((m) => m === '<StatusBarCover bg={showAuth ? AUTH_C.page : "#FDF6EC"}/>').length], [7, 6, 1],
       "c4 it is on the seven screens that scroll with no header of their own: the sign-in screens (in their cream), onboarding, the first number, the AI notice, the legal pages and the two plans screens");

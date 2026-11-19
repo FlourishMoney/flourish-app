@@ -48,7 +48,7 @@ import { analyticsPage, setAnalyticsPage, track, EVENT } from "./lib/webAnalytic
 import { clarityPage, setClarityPage, setClarityAuthForm } from "./lib/webClarity.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
-import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea, isAndroidApp, statusBarCoverStyle } from "./lib/safeArea.js";
+import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea, drawsBehindStatusBar, statusBarCoverStyle } from "./lib/safeArea.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty, meetOpeningFor, applyMeetingAnswers } from "./lib/meetSnapshot.js";
 import { loadMeetingRecords, saveMeetingRecord, answersFor, withRecord, localDay } from "./lib/meetingMemory.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
@@ -16936,10 +16936,10 @@ function _showModal(cfg) {
     _modalListener({ ...cfg, _resolve: resolve });
   });
 }
-// Android only (lib/safeArea.js statusBarCoverStyle): a screen that scrolls, with no header of its own, puts this first
-// so its words pass behind the status bar, not under the clock. `bg` is that screen's own background.
+// The store apps only (lib/safeArea.js statusBarCoverStyle): a screen that scrolls, with no header of its own, puts
+// this first so its words pass behind the status bar, not under the clock. `bg` is that screen's own background.
 function StatusBarCover({ bg }) {
-  if (!isAndroidApp()) return null;
+  if (!drawsBehindStatusBar()) return null;
   return <div data-status-bar-cover="" aria-hidden="true" style={statusBarCoverStyle(bg)}/>;
 }
 
@@ -19722,7 +19722,7 @@ export default function FlourishApp(){
   // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
   // white — unreadable in dark theme. legalShell supplies the background the shell would have.
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",...safeX(16),fontFamily:"'Plus Jakarta Sans',sans-serif"};
-  // Android: these pages scroll and have no header of their own. They layer nothing (no dialog, no sheet), so the cover
+  // The store apps: these pages scroll and have no header of their own. They layer nothing (no dialog, no sheet), so the cover
   // can follow the page here; the page stays the shell's first child (tests/supportPage.test.cjs 1d).
   const legalCover=<StatusBarCover bg={C.bg}/>;
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
