@@ -88,7 +88,9 @@ function alertLines(f) {
     ...(f.others && f.others.length ? [``, `Also failed: ${f.others.join("; ")}`] : []),
     ...(f.passed && f.passed.length ? [``, `Passed: ${f.passed.join(", ")}`] : []),
     ``, `Pictures of every step are in this run's artifacts.`].join("\n") + "\n";
-  return { annotation, summary };
+  // GitHub's failure email shows job names, not annotation words: this becomes the name of a job of its own.
+  const jobName = `Broke at: ${flat(f.step)}, on ${flat(f.device)}`.slice(0, 200);
+  return { annotation, summary, jobName };
 }
 
 async function walk(browser, device) {
@@ -289,7 +291,8 @@ async function main() {
       others: failed.slice(1).map((r) => `${r.device.label}: ${r.step}`), passed: results.filter((r) => r.ok).map((r) => r.device.label) };
     fs.writeFileSync(path.join(OUT, "failure.json"), JSON.stringify(failure, null, 1));
     const alert = alertLines(failure);
-    if (process.env.GITHUB_ACTIONS === "true") { console.log(alert.annotation); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, alert.summary); }
+    if (process.env.GITHUB_ACTIONS === "true") { console.log(alert.annotation); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, alert.summary);
+      if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `broke=${alert.jobName}\n`); }
     console.log(`\n✗ NIGHTLY: ${failed.length} of ${results.length} devices failed. First: ${failed[0].device.label}, step "${failed[0].step}".`);
     process.exit(1);
   }

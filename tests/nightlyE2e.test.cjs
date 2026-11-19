@@ -74,6 +74,13 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.ok(drill.annotation.endsWith("::iPhone app failed at \"fire drill (a failure made on purpose, to test this alert)\". 100%25 on purpose: a, b"), "4b3 the message keeps them as they are, % escaped");
   t.ok(lines.summary.startsWith("## Nightly test broke at: connect a bank (Plaid sandbox)\n") && lines.summary.includes("| Android app | connect a bank (Plaid sandbox) |") && lines.summary.includes("Passed: iPhone app"), "4c the run's summary leads with the step that broke");
   t.ok(/if \(process\.env\.GITHUB_ACTIONS === "true"\) \{[^}]*console\.log\(alert\.annotation\)[^}]*GITHUB_STEP_SUMMARY/.test(run), "4d on GitHub, a failure writes both");
+  // GitHub's failure email lists each job by name and its annotation COUNT, not the annotation's words (seen
+  // 2026-11-19). So the step that broke becomes the name of a job of its own, which the email does show.
+  t.eq(lines.jobName, "Broke at: connect a bank (Plaid sandbox), on Android app", "4f the job name the email will show");
+  t.ok(/fs\.appendFileSync\(process\.env\.GITHUB_OUTPUT, `broke=\$\{alert\.jobName\}\\n`\)/.test(run), "4g the walk hands that name on as the job's output");
+  t.ok(/\n  alert:\n    name: "\$\{\{ needs\.walk\.outputs\.broke \|\| 'Broke at a step that did not report itself' \}\}"\n    needs: walk\n    if: failure\(\) && needs\.walk\.outputs\.broke != ''/.test(wf)
+    && /outputs:\n      broke: \$\{\{ steps\.walk\.outputs\.broke \}\}/.test(wf) && /- name: Walk it[^\n]*\n        id: walk/.test(wf) && /BROKE: \$\{\{ needs\.walk\.outputs\.broke \}\}\n        run: \|\n          echo "\$BROKE"\n          exit 1/.test(wf),
+    "4h a failed run adds a failed job named after the step that broke, so it is in GitHub's email");
   t.ok(!/[—–]/.test(lines.annotation + lines.summary), "4e no dash used as punctuation");
 
   // ── 5. The server is Netlify's stand-in, from netlify.toml itself ──────────────────────────────────
