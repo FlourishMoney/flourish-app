@@ -21,6 +21,20 @@ export const INSET = {
   left: "env(safe-area-inset-left, 0px)",
 };
 
+// The Android app (Capacitor's own platform name) and nothing else: not the website, not the iPhone app.
+export function isAndroidApp(win = typeof window === "undefined" ? undefined : window) {
+  try { return !!win && !!win.Capacitor && typeof win.Capacitor.getPlatform === "function" && win.Capacitor.getPlatform() === "android"; } catch { return false; }
+}
+
+// THE STATUS BAR'S COVER, ANDROID ONLY (found on the emulator, 2026-11-18). From Android 15 the app is drawn edge to
+// edge: the status bar is transparent and the page runs behind it. Every screen pads its top by the bar's height, but
+// that padding scrolls away with the page, so on a screen with no header of its own the words slid up under the clock
+// and the icons. The cover is a strip the height of the bar, fixed to the top, in the screen's own background: at rest
+// it sits over the screen's empty top padding, the same colour, and takes no room; scrolled, the words pass behind it.
+// z-index 1, and it goes FIRST in its screen, so anything the screen layers on purpose (a dialog's dimmed backdrop, a
+// sheet) is drawn over it, later in the page. Not on the iPhone or the website: null there, nothing in the page.
+export const statusBarCoverStyle = (bg) => ({ position: "fixed", top: 0, left: 0, right: 0, height: INSET.top, background: bg, zIndex: 1 });
+
 // One side's padding: the design's own `min` px, or the inset when that is larger.
 export const safeSide = (side, min = 0) => `max(${min}px, ${INSET[side]})`;
 

@@ -48,7 +48,7 @@ import { analyticsPage, setAnalyticsPage, track, EVENT } from "./lib/webAnalytic
 import { clarityPage, setClarityPage, setClarityAuthForm } from "./lib/webClarity.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
-import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
+import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea, isAndroidApp, statusBarCoverStyle } from "./lib/safeArea.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty, meetOpeningFor, applyMeetingAnswers } from "./lib/meetSnapshot.js";
 import { loadMeetingRecords, saveMeetingRecord, answersFor, withRecord, localDay } from "./lib/meetingMemory.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
@@ -5008,6 +5008,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
 
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
+      <StatusBarCover bg={C.bg}/>
       <div style={{width:"100%",maxWidth:430,minWidth:0,boxSizing:"border-box",padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
         {step>(after?3:0)&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
@@ -14889,6 +14890,7 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
     // Scrolls when the screen is shorter than its content (a Duo's outer screen in landscape is 466px tall): centred
     // by auto margins rather than justifyContent, so it never spills past the bottom safe-area padding into the strip.
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",overflowY:"auto",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
+      <StatusBarCover bg={C.bg}/>
       {/* Ambient glow */}
       <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
@@ -15016,6 +15018,7 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
   };
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px",...safeX(24)}}>
+      <StatusBarCover bg={C.bg}/>
       <div style={{maxWidth:480,width:"100%",minWidth:0}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🤖</div>
@@ -16306,6 +16309,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
 
   return (
     <div style={{ minHeight: "100dvh", background: showAuth ? AUTH_C.page : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)", ...safeX(0) }}>
+      <StatusBarCover bg={showAuth ? AUTH_C.page : "#FDF6EC"}/>
 
       {!showAuth ? (
 
@@ -16932,6 +16936,13 @@ function _showModal(cfg) {
     _modalListener({ ...cfg, _resolve: resolve });
   });
 }
+// Android only (lib/safeArea.js statusBarCoverStyle): a screen that scrolls, with no header of its own, puts this first
+// so its words pass behind the status bar, not under the clock. `bg` is that screen's own background.
+function StatusBarCover({ bg }) {
+  if (!isAndroidApp()) return null;
+  return <div data-status-bar-cover="" aria-hidden="true" style={statusBarCoverStyle(bg)}/>;
+}
+
 function confirmModal(opts = {}) { return _showModal({ kind: "confirm", ...opts }); }
 function alertModal(opts = {})   { return _showModal({ kind: "alert", ...opts }); }
 function promptModal(opts = {})  { return _showModal({ kind: "prompt", ...opts }); }
@@ -19698,6 +19709,7 @@ export default function FlourishApp(){
   };
   const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
     <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        <StatusBarCover bg={C.bg}/>
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
@@ -19710,10 +19722,13 @@ export default function FlourishApp(){
   // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
   // white — unreadable in dark theme. legalShell supplies the background the shell would have.
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",...safeX(16),fontFamily:"'Plus Jakarta Sans',sans-serif"};
-  if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
+  // Android: these pages scroll and have no header of their own. They layer nothing (no dialog, no sheet), so the cover
+  // can follow the page here; the page stays the shell's first child (tests/supportPage.test.cjs 1d).
+  const legalCover=<StatusBarCover bg={C.bg}/>;
+  if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/>{legalCover}</div>;
   // THE CONFIRMATION LINK (2026-10-23). Supabase confirms the address and lands here with the session in the
   // URL, which the auth client reads, so the person is signed in. A web signup goes straight on into the app (the
   // AI disclosure, then onboarding), with no second sign-in: the effect above moves to "/". A signup made in a
@@ -19791,6 +19806,7 @@ export default function FlourishApp(){
   if(plansRequired && firstVisitDone){
     if(storeBilling) return (
       <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        <StatusBarCover bg={C.bg}/>
         {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
           : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
           : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
