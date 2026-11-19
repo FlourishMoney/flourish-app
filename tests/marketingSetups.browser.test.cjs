@@ -32,7 +32,10 @@ const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.ap
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
     let p = decodeURIComponent(url.pathname);
-    if (p === "/api/attribution") { let b = ""; req.on("data", (d) => { b += d; }); req.on("end", () => { counted.push(JSON.parse(b)); res.writeHead(204); res.end(); }); return; }
+    // The page sends landing_visit then store_click as two sendBeacons, and nothing promises which ARRIVES first
+    // (MATH-LOCK failed on main twice when store_click won the race). So this server always records a landing_visit
+    // late: the reordered case happens on every run, and no check below may lean on arrival order.
+    if (p === "/api/attribution") { let b = ""; req.on("data", (d) => { b += d; }); req.on("end", () => { const c = JSON.parse(b); setTimeout(() => counted.push(c), c.event === "landing_visit" ? 150 : 0); res.writeHead(204); res.end(); }); return; }
     if (p === "/api/newsletter") {
       if (req.method === "POST") { let b = ""; req.on("data", (d) => { b += d; }); req.on("end", () => { posted.push(JSON.parse(b)); res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}'); }); return; }
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -60,7 +63,9 @@ const PLAY = "https://play.google.com/store/apps/details?id=com.flourishmoney.ap
     return { ctx, page };
   };
   const settle = async (page, n) => { for (let i = 0; i < 40 && counted.length < n; i++) await page.waitForTimeout(50); };
-  const ev = () => counted.map((c) => [c.event, c.src, c.cr]);
+  // Every event counted, in the order the page SENDS them (a visit, then a store click), whatever order they arrived in.
+  const SENT = ["landing_visit", "store_click"];
+  const ev = () => counted.map((c) => [c.event, c.src, c.cr]).sort((a, b) => SENT.indexOf(a[0]) - SENT.indexOf(b[0]));
   try {
     {
       const { ctx, page } = await open(UA.iphone);
