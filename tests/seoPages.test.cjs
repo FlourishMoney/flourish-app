@@ -132,8 +132,13 @@ function checkLd(blocks, visibleText) {
   t.ok(textOf(off.home).includes("Try flourish free for 14 days") && !textOf(off.home).includes("Choose a plan to get started."), "1j switch off: today's words (the same component, the other state)");
   t.ok(!/[—]/.test(homeText) || textOf(shell).includes("—"), "1k the copy adds no em dash of its own");
 
+  // Bing's site verification (Amanda, 2026-11-19: keep it forever). In the home page's <head>, in every web build.
+  const BING_TAG = '<meta name="msvalidate.01" content="8665BCCF8A22172D93F3B582F074EAA2" />';
+  t.ok(home.split("</head>")[0].includes(BING_TAG), "1l the home page's <head> carries Bing's verification tag");
+  t.ok(!read("index.html").includes("msvalidate") && !/msvalidate/.test(JSON.stringify(JSON.parse(read("package.json")).scripts)), "1m …added by the web build only: index.html, which a store app bundles, has none");
+
   // ── 2. Every other address: the app shell as vite wrote it ─────────────────────────────────────
-  t.eq(app, shellTagged, "2a dist/app.html is vite's index.html with only the verification tags (none here), nothing else");
+  t.eq(app, shellTagged, "2a dist/app.html is vite's index.html with only the verification tags (Bing's here), nothing else");
   t.ok(!app.includes("data-prerender") && !app.includes("application/ld+json"), "2b …with none of the landing's words and no JSON-LD");
   const toml = read("netlify.toml");
   const redirects = [...toml.matchAll(/\[\[redirects\]\]\s*\n\s*from\s*=\s*"([^"]+)"\s*\n\s*to\s*=\s*"([^"]+)"\s*\n\s*status\s*=\s*(\d+)/g)].map((m) => ({ from: m[1], to: m[2], status: +m[3] }));

@@ -48,6 +48,11 @@ export function verificationTags(env = process.env) {
   return tags;
 }
 
+// Bing's site verification for flourishmoney.app (Amanda, 2026-11-19: keep it forever). Fixed, not from the env: it goes in
+// the home page's <head> on every web build (and so in the pre-rendered page, scripts/build-seo.mjs). A store build never
+// runs this file, so a store app has no such tag.
+export const BING_VERIFY_TAG = '<meta name="msvalidate.01" content="8665BCCF8A22172D93F3B582F074EAA2" />';
+
 export function addTagsToHead(html, tags) {
   if (!tags.length) return html;
   if (!html.includes("</head>")) throw new Error("no </head> to add the verification tags to");
@@ -288,7 +293,7 @@ export function buildGuides(dist, { contentDir, env = process.env } = {}) {
   write("sitemap.xml", renderSitemap(published));
   write("robots.txt", ROBOTS);
   const index = path.join(dist, "index.html");
-  fs.writeFileSync(index, addTagsToHead(fs.readFileSync(index, "utf8"), tags));
+  fs.writeFileSync(index, addTagsToHead(fs.readFileSync(index, "utf8"), [BING_VERIFY_TAG, ...tags]));
   return { guides: guides.length, published: published.length, tags: tags.length };
 }
 
