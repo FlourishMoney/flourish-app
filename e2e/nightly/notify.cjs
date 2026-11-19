@@ -42,8 +42,11 @@ async function main() {
   if (!key) { console.error(`✗ NOT SENT: the repository secret NIGHTLY_RESEND_API_KEY is not set. The email would have been:\n  ${subject}`); process.exit(1); }
   const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({ from: FROM, to: [TO], subject, text }) });
-  if (!res.ok) { console.error(`✗ NOT SENT: Resend answered ${res.status}`); process.exit(1); }
-  console.log(`✓ one email sent to ${TO}: ${subject}`);
+  // Resend's answer carries no secret: its reason when it refuses (an unverified domain, say), or the email's id.
+  const sent = await res.json().catch(() => ({}));
+  const why = String((sent && (sent.message || sent.name)) || "no reason given").slice(0, 300);
+  if (!res.ok) { console.error(`✗ NOT SENT: Resend answered ${res.status}: ${why}`); process.exit(1); }
+  console.log(`✓ one email sent to ${TO} (Resend id ${sent.id || "not given"}): ${subject}`);
 }
 
 module.exports = { compose, TO };

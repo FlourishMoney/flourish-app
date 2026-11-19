@@ -10,6 +10,7 @@
 #
 # A failure: the run is red, every step's picture is kept as an artifact, and one email goes to hello@flourishmoney.app
 # naming the step (the nightly and hand-started runs only; a pull request's own run is red on the pull request).
+# The fire drill fails a run on purpose, to prove that email arrives: tick "drill" when running by hand.
 #
 # Secrets (repository secrets, names only): PLAID_CLIENT_ID, PLAID_SANDBOX_SECRET, NIGHTLY_RESEND_API_KEY.
 name: nightly end-to-end
@@ -24,7 +25,13 @@ on:
         type: choice
         options: [plaid, manual]
         default: plaid
+      drill:
+        description: "Fire drill: fail on purpose after the first step, to prove the alert email arrives."
+        type: boolean
+        default: false
   pull_request:
+    # "labeled": putting the label nightly-fire-drill on a pull request that changes the test runs the fire drill there.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "e2e/nightly/**"
       - ".github/workflows/nightly-e2e.yml"
@@ -41,6 +48,7 @@ jobs:
     name: ${{ matrix.bank == 'plaid' && 'nightly (Plaid sandbox)' || 'rehearsal (no bank)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.event.action != 'labeled' || github.event.label.name == 'nightly-fire-drill'
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +56,7 @@ jobs:
         bank: ${{ fromJSON(github.event_name == 'pull_request' && '["plaid","manual"]' || format('["{0}"]', github.event.inputs.bank || 'plaid')) }}
     env:
       E2E_BANK: ${{ matrix.bank }}
+      E2E_DRILL: ${{ matrix.bank == 'plaid' && (github.event.inputs.drill == 'true' || contains(github.event.pull_request.labels.*.name, 'nightly-fire-drill')) }}
       PLAID_ENV: sandbox
       # The rehearsal connects no bank; the Plaid function still wants the two names set before it will delete an account.
       PLAID_CLIENT_ID: ${{ matrix.bank == 'plaid' && secrets.PLAID_CLIENT_ID || 'rehearsal-no-plaid' }}
@@ -117,7 +126,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Email hello@flourishmoney.app (one email, naming the step)
-        if: failure() && matrix.bank == 'plaid' && github.event_name != 'pull_request'
+        if: failure() && matrix.bank == 'plaid' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'nightly-fire-drill'))
         env:
           NIGHTLY_RESEND_API_KEY: ${{ secrets.NIGHTLY_RESEND_API_KEY }}
           E2E_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

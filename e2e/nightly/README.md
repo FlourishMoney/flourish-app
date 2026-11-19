@@ -44,9 +44,11 @@ Without the two Plaid secrets the test fails at step 5 and says so. Without the 
 
 - Every night at 3:17 am Eastern, once the workflow is on `main`.
 - By hand: GitHub, Actions, "nightly end-to-end", Run workflow. Choosing `manual` runs a rehearsal that types the balance by hand at step 5 and connects no bank: it tells you whether a failure is Plaid's or ours.
+- Fire drill: tick `drill` when running by hand. The run fails on purpose after the first step and sends the email, so you can see the alert arrive. (On a pull request that changes the test, the label `nightly-fire-drill` does the same.)
 - On this Mac: `supabase start --workdir e2e/nightly`, `node e2e/nightly/setup-db.cjs`, build the two apps, `node e2e/nightly/server.cjs`, `node e2e/nightly/run.cjs` (the workflow file is the exact recipe).
 
 ## Known limits
 
 - It is a browser, not a phone: Apple's and Google's sign-in sheets, the stores' purchase sheets and the real status bar are not exercised.
+- The throwaway database is built from `supabase/migrations`. Production also has two pieces that no migration creates (the table `public.coach_usage` and the column `plaid_items.transactions_pending`); the functions log their absence and carry on, so those two are not exercised.
 - Plaid changes its sandbox screens from time to time. Step 5 reads what is on the screen and acts on it, and names what it saw when it cannot go on.

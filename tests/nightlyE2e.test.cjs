@@ -11,6 +11,8 @@
 //   3  the workflow runs nightly and by hand, uses only its three named secrets, keeps the pictures whatever happens,
 //      and sends the one email on a failure;
 //   4  the email names the device and the step, and goes to hello@flourishmoney.app;
+//   6  the fire drill: a run can be failed on purpose (by hand, or by a label on a pull request) to prove the email
+//      arrives, and it fails at a step whose name says it was on purpose;
 //   5  the server's routes and Content-Security-Policy are netlify.toml's own.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -61,7 +63,8 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.eq([...new Set([...wf.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort(), ["NIGHTLY_RESEND_API_KEY", "PLAID_CLIENT_ID", "PLAID_SANDBOX_SECRET"], "3b its secrets, by name: these three and no other");
   t.ok(/PLAID_ENV: sandbox/.test(wf) && !/PLAID_ENV: (?!sandbox)/.test(wf) && !wf.includes(S.PRODUCTION_SUPABASE_HOST) && !/SUPABASE_URL: /.test(wf), "3c Plaid's sandbox only, and no Supabase address but the one the run starts");
   t.ok(/- name: Keep the pictures\n\s+if: always\(\)\n\s+uses: actions\/upload-artifact@v4/.test(wf), "3d the pictures are kept whatever happens");
-  t.ok(/if: failure\(\) && matrix\.bank == 'plaid' && github\.event_name != 'pull_request'[\s\S]{0,300}run: node e2e\/nightly\/notify\.cjs/.test(wf), "3e a failed nightly or hand-started run sends the email");
+  t.ok(/if: failure\(\) && matrix\.bank == 'plaid' && \(github\.event_name != 'pull_request' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'nightly-fire-drill'\)\)[\s\S]{0,300}run: node e2e\/nightly\/notify\.cjs/.test(wf),
+    "3e a failed nightly or hand-started run sends the email; a pull request's run only when it carries the fire-drill label");
   t.ok(/permissions:\n  contents: read/.test(wf) && /timeout-minutes: \d+/.test(wf), "3f it can read the repo and nothing else, and cannot run for ever");
   t.ok(/NIGHTLY_RESEND_API_KEY: \$\{\{ secrets\.NIGHTLY_RESEND_API_KEY \}\}/.test(wf.slice(wf.indexOf("Email hello@"))) && !/RESEND/.test(wf.slice(wf.indexOf("jobs:"), wf.indexOf("Email hello@"))),
     "3g the email key is given to the email step alone (the server would refuse to start with it)");
@@ -84,6 +87,17 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   const csp = S.contentSecurityPolicy(toml, LOCAL);
   t.ok(!csp.includes(S.PRODUCTION_SUPABASE_HOST) && csp.includes("127.0.0.1:55321") && csp.includes("frame-src *.plaid.com") && csp.includes("script-src 'self' cdn.plaid.com"),
     "5c the website is served with the site's own Content-Security-Policy, Supabase's address swapped for the throwaway one");
+
+  // ── 6. The fire drill ────────────────────────────────────────────────────────────────────────
+  t.ok(/\n      drill:\n\s+description: "[^"]*on purpose[^"]*"\n\s+type: boolean\n\s+default: false/.test(wf), "6a by hand: a tick box that fails the run on purpose (off unless ticked)");
+  t.ok(/E2E_DRILL: \$\{\{ matrix\.bank == 'plaid' && \(github\.event\.inputs\.drill == 'true' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'nightly-fire-drill'\)\) \}\}/.test(wf),
+    "6b the drill is on only for the real job, when the box is ticked or the pull request carries the label nightly-fire-drill");
+  t.ok(/types: \[opened, synchronize, reopened, labeled\]/.test(wf) && /if: github\.event\.action != 'labeled' \|\| github\.event\.label\.name == 'nightly-fire-drill'/.test(wf), "6c adding that label starts a run; any other label starts none");
+  t.eq(typeof R.DRILL_STEP, "string", "6d the drill has a step name of its own");
+  t.ok(/on purpose/.test(R.DRILL_STEP || "") && !R.STEPS.includes(R.DRILL_STEP), "6e …that says it was on purpose, and is not one of the nine");
+  t.ok(/if \(DRILL\) await step\(DRILL_STEP, async \(\) => \{ throw new Error\(/.test(run) && /const DRILL = process\.env\.E2E_DRILL === "true";/.test(run), "6f only E2E_DRILL exactly \"true\" fails it, right after the fresh visit");
+  const notify = read("e2e", "nightly", "notify.cjs");
+  t.ok(/NOT SENT: Resend answered \$\{res\.status\}: \$\{why\}/.test(notify) && /sent to \$\{TO\}[^\n]*\$\{sent\.id/.test(notify), "6g the email step says why Resend refused, or the id Resend gave the email (never the key)");
 
   t.summary("nightlyE2e.test");
 })();

@@ -29,6 +29,9 @@ const BANK = process.env.E2E_BANK === "manual" ? "manual" : "plaid";
 const SUPABASE_URL = process.env.SUPABASE_URL || "", SERVICE_KEY = process.env.SUPABASE_SECRET_KEY || "";
 const INSTITUTION = process.env.E2E_PLAID_INSTITUTION || "Tartan";      // a sandbox bank with no OAuth, offered for Canada
 const RUN = String(Date.now()).slice(-8);
+// The fire drill: fail on purpose, at a step that says so, to prove the alert email arrives (the workflow's "drill").
+const DRILL = process.env.E2E_DRILL === "true";
+const DRILL_STEP = "fire drill (a failure made on purpose, to test this alert)";
 const WEB = `http://localhost:${WEB_PORT}`, STORE = `http://localhost:${STORE_PORT}`;
 
 const DEVICES = [
@@ -116,6 +119,7 @@ async function walk(browser, device) {
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 60000 });
       if (device.platform) await seen("Example, sample data");
     });
+    if (DRILL) await step(DRILL_STEP, async () => { throw new Error("Nothing is broken. Someone ran the fire drill to check that this email arrives."); });
     await step(STEPS[1], async () => {
       await tap("Get started");
       await page.getByRole("button", { name: "Create Account", exact: true }).waitFor();
@@ -271,5 +275,5 @@ async function main() {
   console.log(`\n✓ NIGHTLY: ${results.length} devices, ${STEPS.length} steps each, bank step: ${BANK === "plaid" ? "Plaid sandbox" : "typed by hand (rehearsal)"}.`);
 }
 
-module.exports = { verdict, STEPS, DEVICES };
+module.exports = { verdict, STEPS, DEVICES, DRILL_STEP };
 if (require.main === module) main().catch((e) => { console.error(`✗ the nightly test could not run: ${e && e.stack}`); process.exit(1); });
