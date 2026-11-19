@@ -7,12 +7,13 @@
 // fails is tried again on the next launch, with the same time and the same dates.
 // -----------------------------------------------------------------------------
 import { askTrialPlanFirst } from "./trialPlanFirst.js";
+import { PRIVACY_117_DATE, privacyDate } from "./privacy117Words.js";
 
 export const CONSENT_ID = "onboarding-2026-11-12";
 // The pages' own dates when nothing newer applies: the Terms' "Last updated October 14, 2026" and the Privacy Policy's
-// "October 26, 2026" (App.jsx; tests/legalConsent.test.cjs holds these equal to the pages).
+// 1.1.7 date (lib/privacy117Words.js; tests/legalConsent.test.cjs holds these equal to the pages).
 export const TERMS_BASE_DATE = "2026-10-14";
-export const PRIVACY_BASE_DATE = "2026-10-26";
+export const PRIVACY_BASE_DATE = PRIVACY_117_DATE;
 
 const key = (uid) => `flourish_consent_pending:${uid}`;
 const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -23,8 +24,8 @@ export function termsVersion(tpfSince, datedBySwitch) {
   const t = Date.parse(tpfSince || "");
   return datedBySwitch && Number.isFinite(t) ? localDate(new Date(t)) : TERMS_BASE_DATE;
 }
-/** The Privacy Policy's date as the page shows it: the newsletter launch's date once it exists, else the base date. */
-export function privacyVersion(policyDate) { return isDate(policyDate) ? policyDate : PRIVACY_BASE_DATE; }
+/** The Privacy Policy's date as the page shows it: the later of the newsletter launch's date and the 1.1.7 date. */
+export function privacyVersion(policyDate) { return privacyDate(policyDate); }
 
 /** Both, asked of the same places the pages ask. Never throws; an unanswered question gives the page's own fallback. */
 export async function currentLegalVersions({ fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false } = {}) {

@@ -93,6 +93,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitli
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { captureAttribution, signupAttribution, readInstallReferrerOnce, landingAttribution, countStoreClick } from "./lib/attribution.js";
 import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
+import { PRIVACY_117_WORDS as P117, privacyDate } from "./lib/privacy117Words.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -13904,7 +13905,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
   },[]);
   const launchLabel=policyDateLabel(launchDate||fetchedDate);
   const launched=!!launchLabel;
-  const last=launchLabel||"October 26, 2026";
+  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js); Before you start records the same.
+  const last=policyDateLabel(privacyDate(launchDate||fetchedDate));
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();
@@ -13931,6 +13933,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
       <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Waitlist:</strong> If you join the waitlist, we collect your email address and country, the page or link you joined from, and a record of what you agreed to receive and when.</div>
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Newsletter:</strong> {PW.newsletter}</div>}
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Testers:</strong> {PW.testers}</div>}
+      <div data-privacy-117="sign-in" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.signInLabel}</strong> {P117.signIn}</div>
+      <div data-privacy-117="agreement" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.agreementLabel}</strong> {P117.agreement}</div>
 
       <div style={h2}>2. How We Use Your Information</div>
       <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.{launched?` ${PW.use}`:""}</div>
@@ -13944,6 +13948,7 @@ function PrivacyPolicy({onBack,launchDate=null}){
       <div style={h2}>5. Data Storage & Security</div>
       <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies, no conversation history is stored server-side by Flourish.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe to spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API. You can turn the AI coach off in Settings. When it is off, no financial data is sent to Anthropic.</div>
+      <div data-privacy-117="apple" style={{...p,marginTop:10}}><strong style={{color:C.cream}}>{P117.appleLabel}</strong> {P117.apple}</div>
 
       <div style={h2}>6. Data Sharing</div>
       <div style={p}>We share data with the following service providers solely to operate the App:</div>

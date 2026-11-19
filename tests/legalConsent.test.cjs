@@ -49,6 +49,7 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
   const t = create();
   const { FIRST_RUN_WORDS: W } = await import(path.join(REPO, "src", "lib", "firstRunWords.js"));
   const C = await import(path.join(REPO, "src", "lib", "legalConsent.js"));
+  const { PRIVACY_117_DATE: P117, privacyDate } = await import(path.join(REPO, "src", "lib", "privacy117Words.js"));
   const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 
   // ── 1. The words ────────────────────────────────────────────────────────────────────────────
@@ -118,8 +119,8 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     const s = store(); const a = api({ status: 200 });
     const tap = Date.UTC(2026, 10, 12, 20, 0, 0);
     t.eq(await C.recordLegalConsent({ uid: USER, storage: s, getJwt: async () => "jwt", fetchImpl: a.fetchImpl, apiBase: "", now: tap }), "recorded", "4a Get started: recorded");
-    t.eq(a.sent, [{ action: "record_consent", consent_id: C.CONSENT_ID, shown_at: new Date(tap).toISOString(), terms_version: "2026-10-14", privacy_version: "2026-10-26" }],
-      "4b sent with the consent id, when, and the dates the pages show (today's: October 14 and October 26, 2026)");
+    t.eq(a.sent, [{ action: "record_consent", consent_id: C.CONSENT_ID, shown_at: new Date(tap).toISOString(), terms_version: "2026-10-14", privacy_version: P117 }],
+      "4b sent with the consent id, when, and the dates the pages show (today's: October 14, 2026 and the 1.1.7 date)");
     t.eq(s.m.has(KEY), false, "4c nothing left on the device once recorded");
   }
   {
@@ -130,7 +131,7 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     t.eq(await C.flushLegalConsent({ uid: USER, storage: s, getJwt: async () => "jwt", fetchImpl: off.fetchImpl }), "kept", "4e offline: still kept");
     const up = api({ status: 200, policyDate: "2026-12-01" });
     t.eq(await C.flushLegalConsent({ uid: USER, storage: s, getJwt: async () => "jwt", fetchImpl: up.fetchImpl }), "recorded", "4f the next launch: recorded");
-    t.eq([up.sent[0].shown_at, up.sent[0].privacy_version], [new Date(tap).toISOString(), "2026-10-26"], "4g …with the time Get started was tapped and the dates as they were then, not the newer policy");
+    t.eq([up.sent[0].shown_at, up.sent[0].privacy_version], [new Date(tap).toISOString(), P117], "4g …with the time Get started was tapped and the dates as they were then, not the newer policy");
     const bad = store(); bad.setItem(KEY, JSON.stringify({ consent_id: C.CONSENT_ID, shown_at: "x", terms_version: "2026-10-14", privacy_version: "2026-10-26" }));
     t.eq(await C.flushLegalConsent({ uid: USER, storage: bad, getJwt: async () => "jwt", fetchImpl: api({ status: 400 }).fetchImpl }), "dropped", "4h refused as malformed: dropped, not sent forever");
     t.eq(await C.flushLegalConsent({ uid: USER, storage: store(), getJwt: async () => "jwt", fetchImpl: api({ status: 200 }).fetchImpl }), "recorded", "4i nothing kept: nothing sent");
@@ -142,11 +143,11 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
   {
     const since = "2026-11-20T15:00:00.000Z";
     const local = new Date(since); const iso = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
-    t.eq(await C.currentLegalVersions({ fetchImpl: api({ tpf: since, policyDate: "2026-11-15" }).fetchImpl, termsDatedBySwitch: true }), { terms_version: iso, privacy_version: "2026-11-15" },
+    t.eq(await C.currentLegalVersions({ fetchImpl: api({ tpf: since, policyDate: "2026-12-15" }).fetchImpl, termsDatedBySwitch: true }), { terms_version: iso, privacy_version: "2026-12-15" },
       "4l with trial plan first on and the newsletter live: the Terms' section 7 date and the policy's new date, as the pages show");
-    t.eq(await C.currentLegalVersions({ fetchImpl: api({ tpf: since }).fetchImpl, termsDatedBySwitch: false }), { terms_version: "2026-10-14", privacy_version: "2026-10-26" },
+    t.eq(await C.currentLegalVersions({ fetchImpl: api({ tpf: since }).fetchImpl, termsDatedBySwitch: false }), { terms_version: "2026-10-14", privacy_version: P117 },
       "4m a store build that does not sell: the Terms keep their own date, as the page does");
-    t.eq(await C.currentLegalVersions({ fetchImpl: async () => { throw new Error("offline"); }, termsDatedBySwitch: true }), { terms_version: "2026-10-14", privacy_version: "2026-10-26" },
+    t.eq(await C.currentLegalVersions({ fetchImpl: async () => { throw new Error("offline"); }, termsDatedBySwitch: true }), { terms_version: "2026-10-14", privacy_version: P117 },
       "4n no answer: the pages' own fallback dates");
     t.ok(/termsDatedBySwitch: !isNativeApp\(\) \|\| storeBillingBuild\(\)/.test(APP) && /const tpfTerms = \(!isNativeApp\(\) \|\| storeBillingBuild\(\)\) \? trialFirstTermsSection7\(tpfSince\) : null;/.test(APP),
       "4o the record dates the Terms where the Terms page does");
@@ -156,8 +157,10 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
   {
     const { policyDateLabel } = await import(path.join(REPO, "src", "lib", "privacyLaunchWords.js"));
     const terms = (APP.match(/const last = tpfTerms \? chargeDateLabel\(new Date\(tpfSince\)\) : "([^"]+)";/) || [])[1];
-    const privacy = (APP.match(/const last=launchLabel\|\|"([^"]+)";/) || [])[1];
-    t.eq([policyDateLabel(C.TERMS_BASE_DATE), policyDateLabel(C.PRIVACY_BASE_DATE)], [terms, privacy], "5a the Terms' and the Privacy Policy's own dates are the ones recorded");
+    t.eq(policyDateLabel(C.TERMS_BASE_DATE), terms, "5a the Terms' own date is the one recorded");
+    t.ok(/const last=policyDateLabel\(privacyDate\(launchDate\|\|fetchedDate\)\);/.test(APP) && C.PRIVACY_BASE_DATE === P117 &&
+      [undefined, null, "", "x", "2026-11-07", P117, "2027-01-05"].every((d) => C.privacyVersion(d) === privacyDate(d)),
+      "5a the Privacy Policy's date is the one recorded: the page and the record both take privacyDate of the newsletter date");
   }
 
   t.summary("legalConsent.test");

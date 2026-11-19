@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // THE 2026-10-21 WORDING, WORD FOR WORD (ChatGPT AGREE and Grok AGREE), AND WHERE EACH LINE MAY SHOW.
 //
-//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (October 26, 2026, when the website-analytics line came in);
+//   A  the Privacy Policy: A1 to A6 exactly, A7 its Last updated date (the 1.1.7 date, lib/privacy117Words.js; a later newsletter launch date wins);
 //      in a store app, A2 from its Apple and Google sentence and no Stripe line (a store app never names the website);
 //   B  B1 (App Store) and B2 (Google Play) on a store app's Subscription card, only for an account that holds a
 //      founding spot while paying for a regular store plan: every case, both ways;
@@ -46,15 +46,18 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
     const pp = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {} }))).replace(/\s+/g, " ").replace(/ :/g, ":");
     for (const k of ["A1", "A2", "A3", "A4", "A5"]) t.ok(pp.includes(A[k]), `${k} word for word`);
     t.ok(A.A6.every((line) => pp.includes(line)), "A6 the five new lines in section 6");
-    t.ok(pp.includes("Last updated October 26, 2026"), "A7 Last updated October 26, 2026");
     // The approved newsletter words (2026-11-05): nowhere until the launch date, all there from it, on the website and in a store app.
     const WORDS = await import("../src/lib/privacyLaunchWords.js");
+    // Since 1.1.7 (lib/privacy117Words.js) the page's own date is the 1.1.7 date; a later newsletter launch date wins.
+    const { PRIVACY_117_DATE } = await import("../src/lib/privacy117Words.js");
+    const DATE_117 = WORDS.policyDateLabel(PRIVACY_117_DATE);
+    t.ok(!!DATE_117 && pp.includes(`Last updated ${DATE_117}`) && !pp.includes("October 26, 2026"), `A7 Last updated ${DATE_117}`);
     const W = WORDS.POLICY_WORDS;
     const NEW = [W.newsletter, W.cameFrom, W.testers, W.ipSentence, W.use, W.keep, W.resend, W.googlePlay, W.age, W.address];
     t.ok(NEW.every((x) => !pp.includes(x)) && !pp.includes(W.analytics), "A8 before the newsletter goes live, none of its words are in the policy");
-    const on = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {}, launchDate: "2026-11-12" }))).replace(/\s+/g, " ").replace(/ :/g, ":");
+    const on = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {}, launchDate: "2026-12-12" }))).replace(/\s+/g, " ").replace(/ :/g, ":");
     t.ok([...NEW, W.analytics].every((x) => on.includes(x)), "A9 from then, all of them, word for word");
-    t.ok(on.includes("Last updated November 12, 2026") && !on.includes("October 26, 2026"), "A10 with the new date");
+    t.ok(on.includes("Last updated December 12, 2026") && !on.includes("October 26, 2026") && !on.includes(`Last updated ${DATE_117}`), "A10 with the newsletter's later date");
     t.ok(on.includes(`Newsletter: ${W.newsletter}`) && on.includes(`Where you came from: ${W.cameFrom}`) && on.includes(`Testers: ${W.testers}`), "A11 under their labels");
     t.ok(on.indexOf("Where you came from:") > on.indexOf("Information collected automatically:") && on.indexOf("Where you came from:") < on.indexOf("Bank connection data") && on.indexOf("Newsletter:") > on.indexOf("Waitlist:") && on.indexOf("Testers:") < on.indexOf("2. How We Use"), "A12 in the places approved");
     t.ok(!on.includes("We use it briefly to limit repeated sign-up and coach requests") && !on.includes("sends account and waitlist emails"), "A13 the changed lines replace the old ones");
@@ -80,7 +83,7 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
       // Contact section's "Website:" line. The privacy@ address is an email address, not the website.
       const rest = nat.replace(A.A1, "").replace("Website: flourishmoney.app", "").replace(/privacy@flourishmoney\.app/g, "");
       t.ok(!/flourishmoney\.app/.test(rest), `A ${pl}: no other mention of flourishmoney.app in the store app's policy`);
-      t.ok(nat.includes("Last updated October 26, 2026") && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
+      t.ok(nat.includes(`Last updated ${DATE_117}`) && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
     }
   }
 
