@@ -1,0 +1,51 @@
+# THE NIGHTLY TEST'S OWN SUPABASE (e2e/nightly/README.md). A throwaway stack that `supabase start --workdir e2e/nightly`
+# runs on the machine doing the test, from the open-source parts Supabase itself is made of (Postgres, Auth, REST).
+# It is NOT production and cannot reach it: it has its own ports, its own keys and an empty database that
+# e2e/nightly/setup-db.cjs fills from this repo's migrations. Nothing here is a secret.
+project_id = "flourish-e2e"
+
+[api]
+enabled = true
+port = 55321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 17
+
+# The migrations are applied by setup-db.cjs, after the one table no migration creates (public.user_data).
+[db.migrations]
+enabled = false
+
+[db.seed]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://localhost:8888"
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[storage]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
