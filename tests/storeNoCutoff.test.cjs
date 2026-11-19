@@ -54,8 +54,9 @@ const BANNED = /\blearns?\b|\bremembers?\b|\bsmarter\b|better over time|\bsets? 
     t.eq([P.storePlan("trial", { paid: false }), P.storePlan("free", { paid: false }), P.storePlan("free", { paid: true })], ["trial", "free", "premium"],
       "2a the 14-day account trial counts in a selling build; after it the free plan, until the household subscribes");
     const comp = APP.slice(APP.indexOf("function StorePaywall("), APP.indexOf("function Paywall("));
-    // TRIAL_PLAN_FIRST (Amanda, 2026-11-10) adds trialFirst and onSignOut, both absent (null) unless the switch is on.
-    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
+    // TRIAL_PLAN_FIRST (Amanda, 2026-11-10) adds trialFirst and onSignOut, both absent (null) unless the switch is on;
+    // 2026-11-18 adds onDeleteAccount, given only to the screen that cannot be closed (App Store 5.1.1(v)).
+    t.ok(/function StorePaywall\(\{purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut, onDeleteAccount\}\)/.test(comp) && !/installed|existing|before1|legacy|history/i.test(comp.replace(/\/\/[^\n]*/g, "")),
       "2b one paywall: nothing on it depends on when the household installed or what it did before (inTrial is today's trial, 2026-10-29)");
     // TRIAL_PLAN_FIRST (Amanda, 2026-11-10): the store's 14-day trial, behind the switch only. The paywall asks the store
     // for eligibility only on the one line that requires trialFirst (the switch on), and its own words still promise nothing.

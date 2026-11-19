@@ -19,6 +19,7 @@
 //         confirming deletes on the server, signs out and leaves nothing of the account on the device
 //      6  the website: the same
 // Nothing reaches the network: Supabase and /api/* are answered here, and any other host is refused.
+// STORE_SIGNIN_SHOTS=<dir> also saves a picture of each plans screen and of the question.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -31,6 +32,7 @@ const MOCK = require("./_mockSupabase.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
+const SHOTS = process.env.STORE_SIGNIN_SHOTS || "";
 const FAILED_LINE = "That sign-in didn't finish. Try again, or use your email.";
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
@@ -199,6 +201,7 @@ function installNative([platform, appleToken, appleMode]) {
     await page.goto(base + "/", { waitUntil: "domcontentloaded" });
     return { ctx, page, st };
   };
+  const shot = async (page, name) => { if (!SHOTS) return; fs.mkdirSync(SHOTS, { recursive: true }); await page.waitForTimeout(500); await page.screenshot({ path: path.join(SHOTS, name), fullPage: true }); };
   const native = (page) => page.evaluate(() => { const n = window.__native; return { apple: n.apple, opened: n.opened, closed: n.closed }; });
   const toTheCard = async (page) => {
     await page.getByRole("button", { name: "Get started", exact: true }).first().click({ timeout: 40000 });
@@ -272,7 +275,11 @@ function installNative([platform, appleToken, appleMode]) {
       t.ok(held && await del.count() === 1 && (await del.innerText()).trim() === "Delete Account", `${n}b …and that screen has Delete Account, in the words Settings uses`);
       const ask = page.getByText("Delete your account?", { exact: true });
       if (held && await del.count() === 1) {
+        if (platform !== "web") await page.locator("[data-plan]").first().waitFor({ timeout: 10000 }).catch(() => {});
+        await shot(page, `${platform}-plans-delete-account.png`);
         await del.click();
+        await ask.waitFor({ timeout: 5000 }).catch(() => {});
+        await shot(page, `${platform}-plans-delete-question.png`);
         t.ok(await ask.waitFor({ timeout: 5000 }).then(() => true, () => false)
           && await page.getByText("This permanently erases your account and all associated data from our servers. This cannot be undone.", { exact: true }).count() === 1,
           `${n}c tapping it asks the question Settings asks, word for word`);
@@ -287,8 +294,10 @@ function installNative([platform, appleToken, appleMode]) {
         const out = await until(async () => await page.getByRole("heading", { name: "Choose your plan", exact: true }).count() === 0
           && await page.getByRole("button", { name: "Get started", exact: true }).count() > 0, 20000);
         t.ok(out, `${n}f …then the person is signed out, at the first screen`);
-        const left = await page.evaluate((key) => ({ session: localStorage.getItem(key), data: localStorage.getItem("flourish_v1") }), MOCK.storageKey(base));
-        t.eq(left, { session: null, data: null }, `${n}g nothing of the account is left on the device: no session, no saved finances`);
+        // After the reload the signed-out app keeps its own empty state under the same key: no household in it.
+        const left = await page.evaluate((key) => { let s = null; try { s = JSON.parse(localStorage.getItem("flourish_v1") || "null"); } catch (e) { s = "unreadable"; }
+          return { session: localStorage.getItem(key), finances: s && s.appData ? "kept" : null, onboarded: !!(s && s.onboarded), owner: (s && s.userId) || null }; }, MOCK.storageKey(base));
+        t.eq(left, { session: null, finances: null, onboarded: false, owner: null }, `${n}g nothing of the account is left on the device: no session, no saved finances`);
       } else {
         for (const c of ["c", "d", "e", "f", "g"]) t.ok(false, `${n}${c} (not reached: no Delete Account on the screen)`);
       }

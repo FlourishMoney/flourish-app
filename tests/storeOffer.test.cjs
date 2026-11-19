@@ -128,8 +128,10 @@ const US = /\b(color|center|favorite|behavior|honor|labor|canceled|canceling|tra
       && (comp.match(/storeDisclosure\(/g) || []).length === 1 && O.storeDisclosure("ios") === O.STORE_DISCLOSURE.ios && O.storeDisclosure("android") === O.STORE_DISCLOSURE.android,
       "6c on iOS \"Terms of Use\" opens Apple's standard EULA, on Android the app's Terms; the disclosure sits under the plans once");
     // TRIAL_PLAN_FIRST: the one screen that cannot be closed (no onClose) has a way out, sign out; every other has none.
-    t.ok(!/onDeleteAccount|<ModalHost\/>/.test(comp) && (comp.match(/onSignOut/g) || []).length === 3 && /\{!onClose&&onSignOut&&<button/.test(comp),
-      "6d no sign out or delete of its own (it can always be closed; Settings has both), except sign out where it cannot be closed, and no ModalHost of its own");
+    // 2026-11-18: and Delete Account, there only (held at the plans, Settings cannot be reached: App Store 5.1.1(v)).
+    t.ok(!/<ModalHost\/>/.test(comp) && (comp.match(/onSignOut/g) || []).length === 3 && /\{!onClose&&onSignOut&&<button/.test(comp)
+      && (comp.match(/onDeleteAccount/g) || []).length === 3 && /\{!onClose&&onDeleteAccount&&<button type="button" data-plans-delete="" onClick=\{onDeleteAccount\}/.test(comp),
+      "6d no sign out or delete of its own (it can always be closed; Settings has both), except sign out and Delete Account where it cannot be closed, and no ModalHost of its own");
     t.ok(/offerCopy\(\{ plan, priceString: p\.product\.priceString, platform \}\)/.test(comp), "6e every card's words come from the store's price");
     t.ok(/storeBuy\(deps, pkg\)/.test(comp) && /serverStatus: \(\)=>askStore\("store_status"\)/.test(comp) && /serverSync: \(\)=>askStore\("store_sync"\)/.test(comp), "6f a purchase goes through lib/storeBilling.js buy: the server is asked first and last");
     let A = null;

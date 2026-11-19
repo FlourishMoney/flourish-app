@@ -201,6 +201,16 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const req = gate.slice(gate.indexOf("if(plansRequired"));
     const reqStore = req.slice(req.indexOf("<StorePaywall"), req.indexOf("/>}", req.indexOf("<StorePaywall")));
     t.ok(reqStore.includes("trialFirst={tpfStatus} onSignOut={plansSignOut}") && !reqStore.includes("onClose="), "2z store: the first plans screen has no close, only sign out (and Restore)");
+    // 2026-11-18 (App Store 5.1.1(v)): held there, Settings cannot be reached, so its Delete Account is on that screen:
+    // the same deletion, with the dialog host its question needs (nothing else is mounted behind the plans).
+    const reqEnd = req.slice(0, req.indexOf("if(showUpgrade && billingUi.show)"));
+    t.ok(reqStore.includes("onDeleteAccount={deleteAllData}") && /onDeleteAccount=\{deleteAllData\}\/>\}\s*<ModalHost\/>\s*<\/div>/.test(reqEnd)
+      && /<UpgradeScreen [^;]*required\s+trialFirst=\{tpfStatus\} onSignOut=\{plansSignOut\} onDeleteAccount=\{deleteAllData\}[^;]*\/><ModalHost\/><\/>;/.test(reqEnd)
+      && (reqEnd.match(/<ModalHost\/>/g) || []).length === 2,
+      "2z2 …and Delete Account, in the store apps and on the website: the deletion Settings runs, with its question");
+    t.ok(APP.includes("async function deleteAllData(){") && !/const deleteAllData\b/.test(APP) && APP.indexOf("if(plansRequired && firstVisitDone){") < APP.indexOf("async function deleteAllData(){"),
+      "2z3 the deletion is a function declaration, so the plans screen, which returns before it, can call it");
+    t.ok(APP.includes('const PLANS_DELETE_LABEL = "Delete Account";') && APP.includes('<Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>'), "2z4 the label is Settings' own (no new words)");
   }
 
   // ── 3. PEOPLE ALREADY SIGNED UP ─────────────────────────────────────────────────────────────────
@@ -340,7 +350,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.ok(links.length > 100 && !/onClose/.test(links) && /PAYWALL_COPY\.terms/.test(links) && /onViewLegal\("privacy"\)/.test(links) && /onClick=\{doRestore\}/.test(links),
       "9a store apps: Terms, Privacy and Restore purchases are always on the plans screen, closable or not (Apple requires Restore)");
     t.ok(/\{onViewLegal&&<button type="button" data-plans-legal="terms" onClick=\{\(\)=>onViewLegal\("terms"\)\}/.test(web) && /data-plans-legal="privacy" onClick=\{\(\)=>onViewLegal\("privacy"\)\}/.test(web)
-      && APP.includes("onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;"), "9b the website's plans screen that cannot be closed links to the Terms and the Privacy Policy");
+      && APP.includes("onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/><ModalHost/></>;"), "9b the website's plans screen that cannot be closed links to the Terms and the Privacy Policy");
     // 9c before the purchase button, on every platform: price and how often, trial length, the automatic charge, the cancel steps.
     const NOWD = Date.parse("2026-11-13T17:00:00Z");
     for (const platform of ["ios", "android", "web"]) {
