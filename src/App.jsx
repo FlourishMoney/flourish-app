@@ -14357,7 +14357,7 @@ function TrialTerms({disclosure}){
   );
 }
 
-function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onDeleteAccount, onRecheck, onViewLegal}){
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14539,6 +14539,8 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
           {onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>}
           {onDeleteAccount&&<button type="button" data-plans-delete="" onClick={onDeleteAccount} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PLANS_DELETE_LABEL}</button>}
         </div>}
+        {/* Held at the plans, this screen is all that is mounted: the deletion's question needs the dialog host here. */}
+        {required&&onDeleteAccount&&<ModalHost/>}
       </div>
     </div>
   );
@@ -19797,8 +19799,8 @@ export default function FlourishApp(){
         <ModalHost/>
       </div>
     );
-    if(billingUi.show)return <><UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
-      trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/><ModalHost/></>;
+    if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
+      trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
   }
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
