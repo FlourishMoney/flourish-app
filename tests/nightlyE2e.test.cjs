@@ -66,8 +66,12 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   // ── 4. The alert: GitHub's own failure email, which carries the run's error annotations ─────────────
   t.ok(!fs.existsSync(path.join(REPO, "e2e", "nightly", "notify.cjs")) && !/RESEND|notify\.cjs|resend/i.test(wf), "4a no email of our own: GitHub's failure email is the alert (no Resend key, no notify step)");
   const lines = R.alertLines({ device: "Android app", step: "connect a bank (Plaid sandbox)", message: "Plaid's window stopped changing.\nsecond line", others: ["website: first number"], passed: ["iPhone app"] });
-  t.eq(lines.annotation, "::error title=Nightly test broke at: connect a bank (Plaid sandbox)::Android app failed at \"connect a bank (Plaid sandbox)\". Plaid's window stopped changing. second line Also failed: website: first number.",
+  t.eq(lines.annotation, "::error title=Nightly test broke at%3A connect a bank (Plaid sandbox)::Android app failed at \"connect a bank (Plaid sandbox)\". Plaid's window stopped changing. second line Also failed: website: first number.",
     "4b one error annotation names the step and the device (GitHub puts it in the failure email and on the run)");
+  const drill = R.alertLines({ device: "iPhone app", step: R.DRILL_STEP, message: "100% on purpose: a, b" });
+  t.eq(drill.annotation.split("::")[1], "error title=Nightly test broke at%3A fire drill (a failure made on purpose%2C to test this alert)",
+    "4b2 the title keeps its commas and colons (GitHub cuts a title at a bare comma)");
+  t.ok(drill.annotation.endsWith("::iPhone app failed at \"fire drill (a failure made on purpose, to test this alert)\". 100%25 on purpose: a, b"), "4b3 the message keeps them as they are, % escaped");
   t.ok(lines.summary.startsWith("## Nightly test broke at: connect a bank (Plaid sandbox)\n") && lines.summary.includes("| Android app | connect a bank (Plaid sandbox) |") && lines.summary.includes("Passed: iPhone app"), "4c the run's summary leads with the step that broke");
   t.ok(/if \(process\.env\.GITHUB_ACTIONS === "true"\) \{[^}]*console\.log\(alert\.annotation\)[^}]*GITHUB_STEP_SUMMARY/.test(run), "4d on GitHub, a failure writes both");
   t.ok(!/[—–]/.test(lines.annotation + lines.summary), "4e no dash used as punctuation");

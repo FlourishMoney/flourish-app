@@ -80,7 +80,9 @@ function alertLines(f) {
   const flat = (s) => String(s || "").replace(/\s+/g, " ").trim();
   const title = `Nightly test broke at: ${flat(f.step)}`;
   const also = f.others && f.others.length ? ` Also failed: ${f.others.join("; ")}.` : "";
-  const annotation = `::error title=${title}::${flat(f.device)} failed at "${flat(f.step)}". ${flat(f.message)}${also}`.replace(/%/g, "%25");
+  // GitHub's workflow command: a property (the title) escapes % : and , ; the message escapes %.
+  const prop = (s) => s.replace(/%/g, "%25").replace(/:/g, "%3A").replace(/,/g, "%2C");
+  const annotation = `::error title=${prop(title)}::${`${flat(f.device)} failed at "${flat(f.step)}". ${flat(f.message)}${also}`.replace(/%/g, "%25")}`;
   const summary = [`## ${title}`, ``, `| Device | Step that broke | What happened |`, `|---|---|---|`,
     `| ${flat(f.device)} | ${flat(f.step)} | ${flat(f.message).replace(/\|/g, "/").slice(0, 400)} |`,
     ...(f.others && f.others.length ? [``, `Also failed: ${f.others.join("; ")}`] : []),
