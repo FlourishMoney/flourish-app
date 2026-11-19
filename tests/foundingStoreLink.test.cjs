@@ -107,7 +107,8 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
   t.ok(LANDING_ONLY.includes("get") && LANDING_ONLY.includes("email"), "5a the native build leaves out the device link's page (and its Plausible script) and the emails' images");
   const toml = read("netlify.toml");
   const spa = toml.split("[[redirects]]").find((b) => /from\s*=\s*"\/\*"/.test(b)) || "";
-  t.ok(/to\s*=\s*"\/index\.html"/.test(spa) && !/force\s*=\s*true/.test(spa), "5b the SPA fallback is not forced, so /get is served from public/get/");
+  // The fallback serves app.html since 2026-11-19 (the app shell; index.html is the pre-rendered home page, scripts/build-seo.mjs).
+  t.ok(/to\s*=\s*"\/app\.html"/.test(spa) && !/force\s*=\s*true/.test(spa), "5b the SPA fallback is not forced, so /get is served from public/get/");
   t.ok(/script-src 'self'[^;]*https:\/\/plausible\.io/.test(toml) && /img-src 'self'/.test(toml), "5c the CSP allows the page's script, Plausible, and its own images");
 
   t.summary("foundingStoreLink");
