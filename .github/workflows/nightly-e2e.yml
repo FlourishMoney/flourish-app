@@ -8,11 +8,11 @@
 # bank is Plaid's SANDBOX; the server functions run on this runner; e2e/nightly/server.cjs refuses to start otherwise,
 # and e2e/nightly/run.cjs fails the run if the app so much as asks for a production address.
 #
-# A failure: the run is red, every step's picture is kept as an artifact, and one email goes to hello@flourishmoney.app
-# naming the step (the nightly and hand-started runs only; a pull request's own run is red on the pull request).
+# A failure: the run is red, every step's picture is kept as an artifact, and GitHub's own "Run failed" email goes out.
+# The step that broke is in that email (an error annotation) and at the top of the run's summary.
 # The fire drill fails a run on purpose, to prove that email arrives: tick "drill" when running by hand.
 #
-# Secrets (repository secrets, names only): PLAID_CLIENT_ID, PLAID_SANDBOX_SECRET, NIGHTLY_RESEND_API_KEY.
+# Secrets (repository secrets, names only): PLAID_CLIENT_ID, PLAID_SANDBOX_SECRET.
 name: nightly end-to-end
 
 on:
@@ -26,7 +26,7 @@ on:
         options: [plaid, manual]
         default: plaid
       drill:
-        description: "Fire drill: fail on purpose after the first step, to prove the alert email arrives."
+        description: "Fire drill: fail on purpose after the first step, to prove the failure email arrives."
         type: boolean
         default: false
   pull_request:
@@ -125,9 +125,3 @@ jobs:
           path: e2e/nightly/output
           if-no-files-found: warn
           retention-days: 30
-      - name: Email hello@flourishmoney.app (one email, naming the step)
-        if: failure() && matrix.bank == 'plaid' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'nightly-fire-drill'))
-        env:
-          NIGHTLY_RESEND_API_KEY: ${{ secrets.NIGHTLY_RESEND_API_KEY }}
-          E2E_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node e2e/nightly/notify.cjs "$E2E_OUT"

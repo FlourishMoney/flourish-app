@@ -16,7 +16,9 @@
 // Supabase is refused AND fails the run; every other host is refused.
 //
 // A step that fails: a picture is saved, the walk stops for that device, the others still run, and the process ends
-// 1 after writing <out>/failure.json (the first failure: device, step, what happened) for e2e/nightly/notify.cjs.
+// 1 after writing <out>/failure.json (the first failure: device, step, what happened). On GitHub it also writes an
+// error annotation and the run's summary, both naming the step: GitHub's own failure email shows the annotation, so the
+// email says what broke.
 // E2E_BANK=manual types the balance by hand at step 5 (a rehearsal of everything but Plaid; never the nightly).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -73,6 +75,20 @@ function installStoreApp(platform) {
 
 class StepFailed extends Error {}
 
+/** What a failure says on GitHub: one error annotation (shown in GitHub's failure email and on the run) and the summary. */
+function alertLines(f) {
+  const flat = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const title = `Nightly test broke at: ${flat(f.step)}`;
+  const also = f.others && f.others.length ? ` Also failed: ${f.others.join("; ")}.` : "";
+  const annotation = `::error title=${title}::${flat(f.device)} failed at "${flat(f.step)}". ${flat(f.message)}${also}`.replace(/%/g, "%25");
+  const summary = [`## ${title}`, ``, `| Device | Step that broke | What happened |`, `|---|---|---|`,
+    `| ${flat(f.device)} | ${flat(f.step)} | ${flat(f.message).replace(/\|/g, "/").slice(0, 400)} |`,
+    ...(f.others && f.others.length ? [``, `Also failed: ${f.others.join("; ")}`] : []),
+    ...(f.passed && f.passed.length ? [``, `Passed: ${f.passed.join(", ")}`] : []),
+    ``, `Pictures of every step are in this run's artifacts.`].join("\n") + "\n";
+  return { annotation, summary };
+}
+
 async function walk(browser, device) {
   const dir = path.join(OUT, device.key);
   fs.mkdirSync(dir, { recursive: true });
@@ -119,7 +135,7 @@ async function walk(browser, device) {
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 60000 });
       if (device.platform) await seen("Example, sample data");
     });
-    if (DRILL) await step(DRILL_STEP, async () => { throw new Error("Nothing is broken. Someone ran the fire drill to check that this email arrives."); });
+    if (DRILL) await step(DRILL_STEP, async () => { throw new Error("Nothing is broken. Someone ran the fire drill to check that the failure email arrives."); });
     await step(STEPS[1], async () => {
       await tap("Get started");
       await page.getByRole("button", { name: "Create Account", exact: true }).waitFor();
@@ -267,13 +283,16 @@ async function main() {
   const failed = results.filter((r) => !r.ok);
   fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify({ bank: BANK, results: results.map((r) => ({ device: r.device.label, ok: r.ok, step: r.step || null, done: r.done, message: r.message || null, blocked: r.blocked })) }, null, 1));
   if (failed.length) {
-    fs.writeFileSync(path.join(OUT, "failure.json"), JSON.stringify({ device: failed[0].device.label, step: failed[0].step, message: failed[0].message,
-      others: failed.slice(1).map((r) => `${r.device.label}: ${r.step}`), passed: results.filter((r) => r.ok).map((r) => r.device.label) }, null, 1));
+    const failure = { device: failed[0].device.label, step: failed[0].step, message: failed[0].message,
+      others: failed.slice(1).map((r) => `${r.device.label}: ${r.step}`), passed: results.filter((r) => r.ok).map((r) => r.device.label) };
+    fs.writeFileSync(path.join(OUT, "failure.json"), JSON.stringify(failure, null, 1));
+    const alert = alertLines(failure);
+    if (process.env.GITHUB_ACTIONS === "true") { console.log(alert.annotation); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, alert.summary); }
     console.log(`\n✗ NIGHTLY: ${failed.length} of ${results.length} devices failed. First: ${failed[0].device.label}, step "${failed[0].step}".`);
     process.exit(1);
   }
   console.log(`\n✓ NIGHTLY: ${results.length} devices, ${STEPS.length} steps each, bank step: ${BANK === "plaid" ? "Plaid sandbox" : "typed by hand (rehearsal)"}.`);
 }
 
-module.exports = { verdict, STEPS, DEVICES, DRILL_STEP };
+module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines };
 if (require.main === module) main().catch((e) => { console.error(`✗ the nightly test could not run: ${e && e.stack}`); process.exit(1); });

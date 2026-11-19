@@ -8,10 +8,9 @@
 //      but the sandbox, a key that can charge, email or bill);
 //   2  its browser lets through this machine, the throwaway Supabase and Plaid; answers the store build's API calls
 //      locally; treats any other production address as a failure; and blocks the rest;
-//   3  the workflow runs nightly and by hand, uses only its three named secrets, keeps the pictures whatever happens,
-//      and sends the one email on a failure;
-//   4  the email names the device and the step, and goes to hello@flourishmoney.app;
-//   6  the fire drill: a run can be failed on purpose (by hand, or by a label on a pull request) to prove the email
+//   3  the workflow runs nightly and by hand, uses only its two named secrets, and keeps the pictures whatever happens;
+//   4  a failure says which step broke where GitHub's own failure email will show it (an error annotation and the run's summary);
+//   6  the fire drill: a run can be failed on purpose (by hand, or by a label on a pull request) to prove the alert
 //      arrives, and it fails at a step whose name says it was on purpose;
 //   5  the server's routes and Content-Security-Policy are netlify.toml's own.
 // -----------------------------------------------------------------------------
@@ -27,8 +26,7 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   const t = create();
   const S = require(path.join(REPO, "e2e", "nightly", "server.cjs"));
   const R = require(path.join(REPO, "e2e", "nightly", "run.cjs"));
-  const N = require(path.join(REPO, "e2e", "nightly", "notify.cjs"));
-  const LOCAL = "http://127.0.0.1:55321";
+    const LOCAL = "http://127.0.0.1:55321";
 
   // ── 1. The server's refusals ─────────────────────────────────────────────────────────────────
   const ok = { SUPABASE_URL: LOCAL, PLAID_ENV: "sandbox" };
@@ -60,23 +58,19 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   // ── 3. The workflow ──────────────────────────────────────────────────────────────────────────
   const wf = read(".github", "workflows", "nightly-e2e.yml");
   t.ok(/\n  schedule:\n    - cron: "\d+ \d+ \* \* \*"/.test(wf) && /\n  workflow_dispatch:/.test(wf), "3a it runs every night, and by hand");
-  t.eq([...new Set([...wf.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort(), ["NIGHTLY_RESEND_API_KEY", "PLAID_CLIENT_ID", "PLAID_SANDBOX_SECRET"], "3b its secrets, by name: these three and no other");
+  t.eq([...new Set([...wf.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort(), ["PLAID_CLIENT_ID", "PLAID_SANDBOX_SECRET"], "3b its secrets, by name: these two and no other");
   t.ok(/PLAID_ENV: sandbox/.test(wf) && !/PLAID_ENV: (?!sandbox)/.test(wf) && !wf.includes(S.PRODUCTION_SUPABASE_HOST) && !/SUPABASE_URL: /.test(wf), "3c Plaid's sandbox only, and no Supabase address but the one the run starts");
   t.ok(/- name: Keep the pictures\n\s+if: always\(\)\n\s+uses: actions\/upload-artifact@v4/.test(wf), "3d the pictures are kept whatever happens");
-  t.ok(/if: failure\(\) && matrix\.bank == 'plaid' && \(github\.event_name != 'pull_request' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'nightly-fire-drill'\)\)[\s\S]{0,300}run: node e2e\/nightly\/notify\.cjs/.test(wf),
-    "3e a failed nightly or hand-started run sends the email; a pull request's run only when it carries the fire-drill label");
   t.ok(/permissions:\n  contents: read/.test(wf) && /timeout-minutes: \d+/.test(wf), "3f it can read the repo and nothing else, and cannot run for ever");
-  t.ok(/NIGHTLY_RESEND_API_KEY: \$\{\{ secrets\.NIGHTLY_RESEND_API_KEY \}\}/.test(wf.slice(wf.indexOf("Email hello@"))) && !/RESEND/.test(wf.slice(wf.indexOf("jobs:"), wf.indexOf("Email hello@"))),
-    "3g the email key is given to the email step alone (the server would refuse to start with it)");
 
-  // ── 4. The email ─────────────────────────────────────────────────────────────────────────────
-  const mail = N.compose({ device: "Android app", step: "connect a bank (Plaid sandbox)", message: "Plaid's window stopped changing.", others: ["website: first number"], passed: ["iPhone app"] }, "https://github.com/x/y/actions/runs/1");
-  t.eq(N.TO, "hello@flourishmoney.app", "4a it goes to hello@flourishmoney.app");
-  t.eq(mail.subject, "flourish nightly test FAILED: connect a bank (Plaid sandbox) (Android app)", "4b the subject names the step and the device");
-  t.ok(mail.text.includes("Step that broke: connect a bank (Plaid sandbox)") && mail.text.includes("On: Android app") && mail.text.includes("Also failed: website: first number") && mail.text.includes("Passed: iPhone app")
-    && mail.text.includes("https://github.com/x/y/actions/runs/1"), "4c the body says what broke, what else failed, what passed, and links the run");
-  t.ok(/did not get as far as its first step/.test(N.compose(null, "u").subject), "4d a run that dies before its first step still gets an email that says so");
-  t.ok(!/—|–/.test(mail.subject + mail.text), "4e no dash used as punctuation");
+  // ── 4. The alert: GitHub's own failure email, which carries the run's error annotations ─────────────
+  t.ok(!fs.existsSync(path.join(REPO, "e2e", "nightly", "notify.cjs")) && !/RESEND|notify\.cjs|resend/i.test(wf), "4a no email of our own: GitHub's failure email is the alert (no Resend key, no notify step)");
+  const lines = R.alertLines({ device: "Android app", step: "connect a bank (Plaid sandbox)", message: "Plaid's window stopped changing.\nsecond line", others: ["website: first number"], passed: ["iPhone app"] });
+  t.eq(lines.annotation, "::error title=Nightly test broke at: connect a bank (Plaid sandbox)::Android app failed at \"connect a bank (Plaid sandbox)\". Plaid's window stopped changing. second line Also failed: website: first number.",
+    "4b one error annotation names the step and the device (GitHub puts it in the failure email and on the run)");
+  t.ok(lines.summary.startsWith("## Nightly test broke at: connect a bank (Plaid sandbox)\n") && lines.summary.includes("| Android app | connect a bank (Plaid sandbox) |") && lines.summary.includes("Passed: iPhone app"), "4c the run's summary leads with the step that broke");
+  t.ok(/if \(process\.env\.GITHUB_ACTIONS === "true"\) \{[^}]*console\.log\(alert\.annotation\)[^}]*GITHUB_STEP_SUMMARY/.test(run), "4d on GitHub, a failure writes both");
+  t.ok(!/[—–]/.test(lines.annotation + lines.summary), "4e no dash used as punctuation");
 
   // ── 5. The server is Netlify's stand-in, from netlify.toml itself ──────────────────────────────────
   const toml = read("netlify.toml");
@@ -96,8 +90,6 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.eq(typeof R.DRILL_STEP, "string", "6d the drill has a step name of its own");
   t.ok(/on purpose/.test(R.DRILL_STEP || "") && !R.STEPS.includes(R.DRILL_STEP), "6e …that says it was on purpose, and is not one of the nine");
   t.ok(/if \(DRILL\) await step\(DRILL_STEP, async \(\) => \{ throw new Error\(/.test(run) && /const DRILL = process\.env\.E2E_DRILL === "true";/.test(run), "6f only E2E_DRILL exactly \"true\" fails it, right after the fresh visit");
-  const notify = read("e2e", "nightly", "notify.cjs");
-  t.ok(/NOT SENT: Resend answered \$\{res\.status\}: \$\{why\}/.test(notify) && /sent to \$\{TO\}[^\n]*\$\{sent\.id/.test(notify), "6g the email step says why Resend refused, or the id Resend gave the email (never the key)");
 
   t.summary("nightlyE2e.test");
 })();

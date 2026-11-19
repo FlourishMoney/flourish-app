@@ -28,7 +28,9 @@ On the iPhone app, the Android app and the website (the built app, in a browser 
 
 ## When it fails
 
-The run is red, a picture of every step is kept with the run (30 days), and one email goes to hello@flourishmoney.app naming the device and the step. A pull request's own run is red on the pull request and sends no email.
+The run is red, a picture of every step is kept with the run (30 days), and GitHub sends its own "Run failed" email. The step that broke is in that email (as an error annotation) and at the top of the run's summary.
+
+GitHub sends a scheduled run's email to the person who last changed the schedule line in the workflow file (here, the FlourishMoney account that merged it), if that account has Settings, Notifications, System, Actions set to email, failed workflows only.
 
 ## Secrets (repository secrets)
 
@@ -36,15 +38,14 @@ The run is red, a picture of every step is kept with the run (30 days), and one 
 |---|---|---|
 | `PLAID_CLIENT_ID` | The Plaid client id | step 5 |
 | `PLAID_SANDBOX_SECRET` | Plaid's **Sandbox** secret (never the Production one) | step 5 |
-| `NIGHTLY_RESEND_API_KEY` | A Resend key with sending access only | the failure email |
 
-Without the two Plaid secrets the test fails at step 5 and says so. Without the Resend key a failure is still red, with pictures, but no email goes out.
+Without them the test fails at step 5 and says so.
 
 ## Running it
 
 - Every night at 3:17 am Eastern, once the workflow is on `main`.
 - By hand: GitHub, Actions, "nightly end-to-end", Run workflow. Choosing `manual` runs a rehearsal that types the balance by hand at step 5 and connects no bank: it tells you whether a failure is Plaid's or ours.
-- Fire drill: tick `drill` when running by hand. The run fails on purpose after the first step and sends the email, so you can see the alert arrive. (On a pull request that changes the test, the label `nightly-fire-drill` does the same.)
+- Fire drill: tick `drill` when running by hand. The run fails on purpose after the first step and GitHub sends its failure email, so you can see the alert arrive. (On a pull request that changes the test, the label `nightly-fire-drill` does the same.)
 - On this Mac: `supabase start --workdir e2e/nightly`, `node e2e/nightly/setup-db.cjs`, build the two apps, `node e2e/nightly/server.cjs`, `node e2e/nightly/run.cjs` (the workflow file is the exact recipe).
 
 ## Known limits
