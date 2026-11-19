@@ -86,7 +86,7 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     t.eq([w.row.user_id, w.row.consent_id, w.row.words, w.row.terms_version, w.row.privacy_version, w.row.shown_at, w.row.platform],
       [USER, C.CONSENT_ID, { title: APPROVED_TITLE, line: APPROVED_LINE, button: "Get started" }, "2026-10-14", "2026-10-26", good.shown_at, "ios"],
       "3c against the account: the server's own words (never the app's), both documents' dates, when it was tapped, the platform");
-    t.ok(Math.abs(Date.parse(w.row.recorded_at) - Date.now()) < 5000, "3d …and when the server wrote it");
+    t.eq(w.row.recorded_at, good.shown_at, "3d …and, from an app that sends no agreed_at (before 1.1.7's policy), its shown_at as the tap");
     t.eq((await record(good, { origin: "https://localhost" })).writes[0].row.platform, "android", "3e Android");
     t.eq((await record(good, { origin: "https://flourishmoney.app" })).writes[0].row.platform, "web", "3f the website");
   }
@@ -205,6 +205,9 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     const stale = (await record({ ...good, agreed_at: "2020-01-01T00:00:00Z", shown_at: "2020-01-01T00:00:00Z" })).writes[0].row;
     t.ok(Math.abs(Date.parse(future.recorded_at) - Date.now()) < 5000 && Math.abs(Date.parse(stale.recorded_at) - Date.now()) < 5000, "6l a tap time in the future or from long ago is not taken: the server's time");
     t.ok([r1, late, oldApp, future, stale].every((w) => Date.parse(w.shown_at) <= Date.parse(w.recorded_at)), "6m every record: shown_at before or equal to recorded_at");
+    const retried = { ...good, shown_at: new Date(n - 3 * 86400 * 1000).toISOString() };
+    const kept = (await record(retried)).writes[0].row;
+    t.eq([kept.shown_at, kept.recorded_at], [retried.shown_at, retried.shown_at], "6n an older build's record sent days later: recorded_at is its tap, not the retry");
   }
 
   t.summary("legalConsent.test");

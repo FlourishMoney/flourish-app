@@ -11,7 +11,8 @@
 // A record: consent_id, the words, the date of the Terms and of the Privacy Policy the app showed (YYYY-MM-DD, the dates
 // on those pages), when the step was shown (shown_at) and when the person tapped Get started (recorded_at, from the app's
 // agreed_at), both the app's clock and kept only within the last 30 days, and the platform. An app that sends no agreed_at
-// (builds before Privacy Policy 1.1.7) gets the server's time as recorded_at. shown_at is never later than recorded_at.
+// (builds before Privacy Policy 1.1.7) sent the tap as shown_at, so that is both times; the server's time when neither is
+// usable. shown_at is never later than recorded_at.
 // One per account per consent: a retried send changes nothing.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -34,7 +35,7 @@ function consentRow(userId, body, platform, now = Date.now()) {
   if (!words) return { error: "unknown_consent" };
   if (!isDate(b.terms_version) || !isDate(b.privacy_version)) return { error: "bad_version" };
   const plausible = (v) => { const t = Date.parse(v); return Number.isFinite(t) && t <= now + 5 * 60 * 1000 && t >= now - 30 * DAY ? t : null; };
-  const agreedAt = plausible(b.agreed_at) ?? now;
+  const agreedAt = plausible(b.agreed_at) ?? (b.agreed_at == null ? plausible(b.shown_at) : null) ?? now;
   const shownAt = Math.min(plausible(b.shown_at) ?? agreedAt, agreedAt);
   return { row: {
     user_id: userId, consent_id: b.consent_id, words: { ...words },
