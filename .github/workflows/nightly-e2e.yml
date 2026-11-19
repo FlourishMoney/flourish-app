@@ -1,0 +1,124 @@
+# THE NIGHTLY END-TO-END TEST (e2e/nightly/README.md).
+#
+# Real people could not connect a bank from launch to 2026-11-11 and nobody noticed. This walks the first ten minutes of
+# a new household every night, on the iPhone app, the Android app and the website: fresh visit, sign up, the AI notice,
+# "Before you start", connect a bank, first number, "Choose your plan", Delete Account, and proof the account is gone.
+#
+# IT NEVER TOUCHES PRODUCTION. The database is a throwaway Supabase started inside this run and gone when it ends; the
+# bank is Plaid's SANDBOX; the server functions run on this runner; e2e/nightly/server.cjs refuses to start otherwise,
+# and e2e/nightly/run.cjs fails the run if the app so much as asks for a production address.
+#
+# A failure: the run is red, every step's picture is kept as an artifact, and one email goes to hello@flourishmoney.app
+# naming the step (the nightly and hand-started runs only; a pull request's own run is red on the pull request).
+#
+# Secrets (repository secrets, names only): PLAID_CLIENT_ID, PLAID_SANDBOX_SECRET, NIGHTLY_RESEND_API_KEY.
+name: nightly end-to-end
+
+on:
+  schedule:
+    - cron: "17 8 * * *"          # every night, 3:17 am Eastern (4:17 am in summer)
+  workflow_dispatch:
+    inputs:
+      bank:
+        description: "plaid = the real test (Plaid sandbox). manual = a rehearsal: the balance typed by hand, no bank."
+        type: choice
+        options: [plaid, manual]
+        default: plaid
+  pull_request:
+    paths:
+      - "e2e/nightly/**"
+      - ".github/workflows/nightly-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  walk:
+    name: ${{ matrix.bank == 'plaid' && 'nightly (Plaid sandbox)' || 'rehearsal (no bank)' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # A pull request that changes the test runs both; the nightly runs the real one; by hand, the one chosen.
+        bank: ${{ fromJSON(github.event_name == 'pull_request' && '["plaid","manual"]' || format('["{0}"]', github.event.inputs.bank || 'plaid')) }}
+    env:
+      E2E_BANK: ${{ matrix.bank }}
+      PLAID_ENV: sandbox
+      # The rehearsal connects no bank; the Plaid function still wants the two names set before it will delete an account.
+      PLAID_CLIENT_ID: ${{ matrix.bank == 'plaid' && secrets.PLAID_CLIENT_ID || 'rehearsal-no-plaid' }}
+      PLAID_SECRET: ${{ matrix.bank == 'plaid' && secrets.PLAID_SANDBOX_SECRET || 'rehearsal-no-plaid' }}
+      # The switches production runs with (none is a secret).
+      OPEN_SIGNUP: "true"
+      SIGNUP_INSTANT: "true"
+      TRIAL_PLAN_FIRST: "true"
+      TRIAL_PLAN_FIRST_SINCE: "2026-11-18T18:55:00Z"
+      IAP_ENABLED: "true"
+      BILLING_ENABLED: "true"
+      LIMITER_HASH_SECRET: nightly-e2e-local
+      APP_ORIGIN: http://localhost:8888
+      E2E_WEB_DIST: ${{ github.workspace }}/e2e/nightly/dist-web
+      E2E_STORE_DIST: ${{ github.workspace }}/e2e/nightly/dist-store
+      E2E_OUT: ${{ github.workspace }}/e2e/nightly/output
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+      - name: Start the throwaway Supabase
+        run: supabase start --workdir e2e/nightly -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,realtime,supavisor,mailpit,postgres-meta
+      - name: Build its database from the repo's migrations
+        run: node e2e/nightly/setup-db.cjs
+      - name: Point everything at the throwaway Supabase
+        # These are the local stack's own keys, the same for every local Supabase in the world: not secrets.
+        run: |
+          supabase status --workdir e2e/nightly -o env > "$RUNNER_TEMP/supabase.env"
+          # shellcheck disable=SC1091
+          source "$RUNNER_TEMP/supabase.env"
+          {
+            echo "SUPABASE_URL=$API_URL"
+            echo "SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SECRET_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+      - name: Build the website and the store app
+        run: |
+          VITE_SUPABASE_URL="$SUPABASE_URL" VITE_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_ANON_KEY" \
+            npx vite build --outDir "$E2E_WEB_DIST" --emptyOutDir --logLevel warn
+          VITE_SUPABASE_URL="$SUPABASE_URL" VITE_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_ANON_KEY" \
+            VITE_NATIVE_BUILD=true VITE_IAP_ENABLED=true VITE_REVENUECAT_IOS_KEY=appl_nightlytest0000 VITE_REVENUECAT_ANDROID_KEY=goog_nightlytest0000 \
+            npx vite build --outDir "$E2E_STORE_DIST" --emptyOutDir --logLevel warn
+      - name: Start the test's own server (the site and the real server functions)
+        run: |
+          mkdir -p "$E2E_OUT"
+          node e2e/nightly/server.cjs > "$E2E_OUT/server.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://localhost:8888/ && break; sleep 1; done
+          head -3 "$E2E_OUT/server.log"
+          curl -sf -o /dev/null http://localhost:8888/ || { echo "the server did not start"; cat "$E2E_OUT/server.log"; exit 1; }
+      - name: Walk it, on the iPhone app, the Android app and the website
+        run: node e2e/nightly/run.cjs
+      - name: Keep the pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.bank }}-pictures
+          path: e2e/nightly/output
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Email hello@flourishmoney.app (one email, naming the step)
+        if: failure() && matrix.bank == 'plaid' && github.event_name != 'pull_request'
+        env:
+          NIGHTLY_RESEND_API_KEY: ${{ secrets.NIGHTLY_RESEND_API_KEY }}
+          E2E_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node e2e/nightly/notify.cjs "$E2E_OUT"
