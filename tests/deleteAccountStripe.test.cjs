@@ -115,7 +115,7 @@ const stopped = (t, r, why) => {
   stopped(t, await run({ subs: [SUB()], key: false }), "2d there is a live subscription and no Stripe key to cancel it");
   {
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-    const del = app.slice(app.indexOf("const deleteAllData = async"), app.indexOf("const signOut = async"));
+    const del = app.slice(app.indexOf("async function deleteAllData(){"), app.indexOf("const signOut = async"));
     t.ok(/criticalErrors\.some\(e => e\.step === "billing_cancel"\)/.test(del)
       && del.includes("We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."),
       "2e the app says so plainly: try again, or email hello@flourishmoney.app");

@@ -79,7 +79,7 @@ import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
 import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
-import { SOCIAL_PROVIDERS, signInWithProvider } from "./lib/socialSignIn.js";
+import { SOCIAL_PROVIDERS, signInWithProvider, nativeSignInPlugins } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
@@ -14357,7 +14357,7 @@ function TrialTerms({disclosure}){
   );
 }
 
-function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal}){
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14533,11 +14533,14 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
         </div>
         {/* The plans screen that cannot be closed links to the Terms and the Privacy Policy (reviewers' check, 2026-11-10),
             with the approved labels the store paywall uses; each opens in place, and Back returns here. */}
-        {required&&(onViewLegal||onSignOut)&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.md}}>
+        {required&&(onViewLegal||onSignOut||onDeleteAccount)&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.md}}>
           {onViewLegal&&<button type="button" data-plans-legal="terms" onClick={()=>onViewLegal("terms")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.terms}</button>}
           {onViewLegal&&<button type="button" data-plans-legal="privacy" onClick={()=>onViewLegal("privacy")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.privacy}</button>}
           {onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>}
+          {onDeleteAccount&&<button type="button" data-plans-delete="" onClick={onDeleteAccount} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PLANS_DELETE_LABEL}</button>}
         </div>}
+        {/* Held at the plans, this screen is all that is mounted: the deletion's question needs the dialog host here. */}
+        {required&&onDeleteAccount&&<ModalHost/>}
       </div>
     </div>
   );
@@ -14554,7 +14557,7 @@ const STORE_ATTEMPT = { current: null };
 // approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
 // purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
 // whose one ModalHost sits above it.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut}){
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut, onDeleteAccount}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
   // TRIAL_PLAN_FIRST: the iPhone's eligibility answer from RevenueCat, per product id ({} until asked, and when asking
   // fails: then no plan claims a trial). Android's comes with each product (lib/trialPlanFirst.js storeTrialEligible).
@@ -14716,11 +14719,17 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
           {!onClose&&onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={link}>{trialWords("trialfirst-sign-out")}</button>}
+          {/* Held at the plans, Settings cannot be reached, so its Delete Account is here too (App Store 5.1.1(v)): Settings'
+              own label, and the same deletion with the same question (deleteAllData). */}
+          {!onClose&&onDeleteAccount&&<button type="button" data-plans-delete="" onClick={onDeleteAccount} style={link}>{PLANS_DELETE_LABEL}</button>}
         </div>
       </div>
     </div>
   );
 }
+
+// The plans screen that cannot be closed carries Settings' own "Delete Account" (no new words): see StorePaywall.
+const PLANS_DELETE_LABEL = "Delete Account";
 
 // THE FALLBACK (audit 2026-10-26, B4): shown only when the billing status could not be read (or billing is off).
 // It takes no payment, so it never offers a free trial (every account's trial starts at signup), never says plans
@@ -16876,11 +16885,12 @@ function SocialSignIn({ onFailed }) {
     let res = { ok: false };
     try {
       const native = isNativeApp();
-      const [appleSignIn, browser, appListener] = native ? await Promise.all([
-        platform === "ios" && provider === "apple" ? import("@capacitor-community/apple-sign-in").then(m => m.SignInWithApple) : null,
-        import("@capacitor/browser").then(m => m.Browser),
-        import("@capacitor/app").then(({ App: CapApp }) => (cb) => { let h = null; CapApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; }),
-      ]) : [null, null, null];
+      // The plugins, loaded as the button is tapped (lib/socialSignIn.js nativeSignInPlugins: a promise must never resolve
+      // to a Capacitor plugin itself, or it never settles and the button waits for good).
+      const { appleSignIn, browser, app: capApp } = native ? await nativeSignInPlugins({ platform, provider, load: {
+        apple: () => import("@capacitor-community/apple-sign-in"), browser: () => import("@capacitor/browser"), app: () => import("@capacitor/app") } })
+        : { appleSignIn: null, browser: null, app: null };
+      const appListener = capApp ? (cb) => { let h = null; capApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; } : null;
       res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage: appleGrantStorage() });
       // An Apple sign-in in the app: what deleting the account will need to revoke it at Apple (lib/appleGrant.js). Not waited for.
       if (res && res.ok && res.appleGrant) (async () => { try { const { data } = await supabase.auth.getSession(); await sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE }); } catch { /* nothing kept; deleting still deletes */ } })();
@@ -19785,11 +19795,12 @@ export default function FlourishApp(){
           : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
           : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
               onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} inTrial={false}
-              onManage={manageStoreSubscription} trialFirst={tpfStatus} onSignOut={plansSignOut}/>}
+              onManage={manageStoreSubscription} trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData}/>}
+        <ModalHost/>
       </div>
     );
     if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
-      trialFirst={tpfStatus} onSignOut={plansSignOut} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
+      trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
   }
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
@@ -19903,7 +19914,9 @@ export default function FlourishApp(){
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
   };
 
-  const deleteAllData = async ()=>{
+  // A function DECLARATION, so it exists for the whole render: the plans screen that cannot be closed returns before
+  // this line and offers the same deletion (5.1.1(v): an account held at the plans cannot reach Settings).
+  async function deleteAllData(){
     // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
     const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
       : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
@@ -19966,7 +19979,7 @@ export default function FlourishApp(){
     try { await cancelAllScheduled(); } catch {}
     await wipeDeletedAccount();
     window.location.reload();
-  };
+  }
 
   // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
   // family devices). Keeps the appData blob (STORAGE_KEY) so re-login restores the user's data,

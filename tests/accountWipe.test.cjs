@@ -141,7 +141,7 @@ function fakeIdb(names, { hang = false } = {}) {
   // ── 5. The app ──────────────────────────────────────────────────────────────────────────────
   {
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    const del = app.slice(app.indexOf("const deleteAllData = async"), app.indexOf("const signOut = async"));
+    const del = app.slice(app.indexOf("async function deleteAllData(){"), app.indexOf("const signOut = async"));
     const at = (s) => del.indexOf(s);
     t.ok(at("lockBrowserStorage();") > 0 && at("lockBrowserStorage();") < at('callPlaid("delete_account"'), "5a the storage is locked before the server is asked");
     const fails = del.split("return; // FAIL CLOSED").length - 1;

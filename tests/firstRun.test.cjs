@@ -182,6 +182,28 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     r = await S.signInWithProvider("google", { supabase: supa, native: true, platform: "android", browser: quitter, appListener: () => () => {} });
     t.ok(!r.ok && !calls.some(c => c[0] === "setSession") && Date.now() - t0 >= 1400, "3h closed without finishing: no session, after a moment for a late return");
     t.ok(APP.includes('<SocialSignIn onFailed={() => { setSuccess(""); setError(FIRST_RUN_WORDS.socialFailed); }} />'), "3i a sign-in that didn't finish says so on the card");
+    // The store apps load the plugins as the button is tapped. A Capacitor plugin answers EVERY property with a function,
+    // `then` included, so a promise that resolves to the plugin itself takes it for a thenable and never settles: the
+    // button waited for good, with no sheet (found 2026-11-18). These are Capacitor's own proxies, not stand-ins.
+    {
+      const { registerPlugin } = require("@capacitor/core");
+      const real = { SignInWithApple: registerPlugin("FirstRunTestApple"), Browser: registerPlugin("FirstRunTestBrowser"), App: registerPlugin("FirstRunTestApp") };
+      const asked = [];
+      const load = { apple: async () => { asked.push("apple"); return { SignInWithApple: real.SignInWithApple }; }, browser: async () => { asked.push("browser"); return { Browser: real.Browser }; }, app: async () => { asked.push("app"); return { App: real.App }; } };
+      const settle = (pr) => Promise.race([pr, new Promise((ok) => setTimeout(() => ok("never settled"), 1500))]);
+      const has = typeof S.nativeSignInPlugins === "function";
+      t.ok(typeof real.Browser.then === "function", "3j0 (why) Capacitor's plugin answers `then` with a function, so a promise must never resolve to one");
+      const a = has ? await settle(S.nativeSignInPlugins({ platform: "ios", provider: "apple", load })) : "no such function";
+      t.ok(!!a && a.appleSignIn === real.SignInWithApple && a.browser === real.Browser && a.app === real.App, "3j iPhone, Apple: the three plugins load and are handed back (the load settles)");
+      asked.length = 0;
+      const g = has ? await settle(S.nativeSignInPlugins({ platform: "ios", provider: "google", load })) : "no such function";
+      t.ok(!!g && g.appleSignIn === null && g.browser === real.Browser && g.app === real.App && !asked.includes("apple"), "3k iPhone, Google: the browser and the app, and Apple's plugin is not loaded");
+      asked.length = 0;
+      const d = has ? await settle(S.nativeSignInPlugins({ platform: "android", provider: "apple", load })) : "no such function";
+      t.ok(!!d && d.appleSignIn === null && d.browser === real.Browser && !asked.includes("apple"), "3l Android, Apple: the browser (there is no Apple sheet there)");
+      t.ok(/await nativeSignInPlugins\(\{ platform, provider, load: \{/.test(APP) && !/import\("@capacitor[^"]*"\)\.then\(\s*\(?\s*m\s*\)?\s*=>\s*m\.\w+\s*\)/.test(APP),
+        "3m the app loads them through it, and nowhere lets a promise resolve to a plugin");
+    }
   }
 
   // ── 4. The apps' setup ──────────────────────────────────────────────────────────────────────────

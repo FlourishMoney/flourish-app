@@ -55,6 +55,25 @@ export function sessionFromCallback(url) {
 }
 
 /**
+ * The store apps' plugins for a sign-in, loaded as the button is tapped: { appleSignIn, browser, app }. appleSignIn is
+ * Apple's own sheet, on an iPhone and for Apple only (null otherwise). load: { apple, browser, app }, each a function
+ * returning the plugin's module (a dynamic import).
+ *
+ * NEVER LET A PROMISE RESOLVE TO A CAPACITOR PLUGIN ITSELF. A plugin is a proxy that answers every property with a
+ * function, `then` included, so a promise takes it for a thenable, calls plugin.then(...) (which the native side does
+ * not have) and never settles. `import(...).then(m => m.Browser)` did exactly that: the button showed "…" for good,
+ * with no sheet and no error (1.1.7, found 2026-11-18 before any store build). So each plugin travels inside an object.
+ */
+export async function nativeSignInPlugins({ platform, provider, load }) {
+  const [apple, browser, app] = await Promise.all([
+    platform === "ios" && provider === "apple" ? load.apple().then((m) => ({ plugin: m.SignInWithApple })) : null,
+    load.browser().then((m) => ({ plugin: m.Browser })),
+    load.app().then((m) => ({ plugin: m.App })),
+  ]);
+  return { appleSignIn: apple ? apple.plugin : null, browser: browser.plugin, app: app.plugin };
+}
+
+/**
  * Start a sign-in. Resolves { ok: true } once the session is set (the app's auth listener takes it from there),
  * { ok: true, redirecting: true } on the website (the page is about to leave), { ok: false } on a failure or a cancel.
  *   deps: { supabase, native, platform ("ios" | "android" | "web"), origin, appleSignIn, browser, appListener }
