@@ -75,7 +75,7 @@ import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_H
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
-import { recordLegalConsent, flushLegalConsent } from "./lib/legalConsent.js";
+import { recordLegalConsent, flushLegalConsent, markConsentShown } from "./lib/legalConsent.js";
 import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
@@ -4261,6 +4261,8 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
   // Leaving a step forward counts it once per visit.
   const done=(name,next)=>{ count("onboarding_step_completed",name); setStep(next); };
+  // The consent step on screen: when it first appeared, for its record (lib/legalConsent.js, shown_at).
+  useEffect(()=>{ if(step===0&&!after) markConsentShown(userId); },[step,userId,after]);
   // profile.province holds CA province code when country=CA, US state code when country=US. Left unset ("")
   // here, as are status and kids: until Settings sets them, Flourish shows federal content only, no couple
   // framing and no child-benefit tips. The country is the device's (lib/deviceCountry.js: a Canadian time zone

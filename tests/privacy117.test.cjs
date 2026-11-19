@@ -65,5 +65,10 @@ const APPLE = "Apple sign-in: If you sign in with Apple, we keep a refresh token
   t.ok(L.PRIVACY_BASE_DATE === D && ["2026-11-07", null, "2099-01-01"].every((x) => L.privacyVersion(x) === M.privacyDate(x)),
     "4c Before you start records the date the page shows");
 
+  // ── 5. "an account ID ... and the email address": the iPhone's Apple sheet asks for the email only ──────────────────
+  const SS = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "socialSignIn.js"), "utf8");
+  t.ok(/appleSignIn\.authorize\(\{ clientId: IOS_BUNDLE_ID, [^}]*scopes: "email", nonce: hashed \}\)/.test(SS) && !/scopes: "[^"]*name/.test(SS),
+    "5a iPhone: Sign in with Apple asks for the email only, never the name");
+
   t.summary("privacy117.test");
 })();

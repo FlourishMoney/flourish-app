@@ -217,7 +217,7 @@ function installNative([platform, appleToken, appleMode]) {
       await toTheCard(page);
       await provider(page, "Apple").click();
       const asked = await until(async () => (await native(page)).apple.length > 0, 8000);
-      t.eq(asked ? (await native(page)).apple : [], [{ clientId: "app.flourishmoney", scopes: "email name", hasNonce: true }], "1a iPhone: Continue with Apple opens Apple's own sheet, once, for our app, asking for the name and the email, with a hashed nonce");
+      t.eq(asked ? (await native(page)).apple : [], [{ clientId: "app.flourishmoney", scopes: "email", hasNonce: true }], "1a iPhone: Continue with Apple opens Apple's own sheet, once, for our app, asking for the email only (never the name), with a hashed nonce");
       t.ok(await until(async () => !!st.idToken, 8000) && st.idToken.provider === "apple" && st.idToken.token === APPLE_TOKEN && st.idToken.nonce, "1b Supabase is given Apple's identity token and the unhashed nonce");
       t.ok(await signedIn(page), "1c …and the person is in: the app moves on from the sign-up card");
       t.ok(await until(async () => st.api.includes("beta:apple_grant"), 8000), "1d what deleting the account will need to revoke the sign-in at Apple is sent to our server");

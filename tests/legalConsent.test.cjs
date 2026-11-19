@@ -119,7 +119,7 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     const s = store(); const a = api({ status: 200 });
     const tap = Date.UTC(2026, 10, 12, 20, 0, 0);
     t.eq(await C.recordLegalConsent({ uid: USER, storage: s, getJwt: async () => "jwt", fetchImpl: a.fetchImpl, apiBase: "", now: tap }), "recorded", "4a Get started: recorded");
-    t.eq(a.sent, [{ action: "record_consent", consent_id: C.CONSENT_ID, shown_at: new Date(tap).toISOString(), terms_version: "2026-10-14", privacy_version: P117 }],
+    t.eq(a.sent, [{ action: "record_consent", consent_id: C.CONSENT_ID, shown_at: new Date(tap).toISOString(), agreed_at: new Date(tap).toISOString(), terms_version: "2026-10-14", privacy_version: P117 }],
       "4b sent with the consent id, when, and the dates the pages show (today's: October 14, 2026 and the 1.1.7 date)");
     t.eq(s.m.has(KEY), false, "4c nothing left on the device once recorded");
   }
@@ -161,6 +161,50 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     t.ok(/const last=policyDateLabel\(privacyDate\(launchDate\|\|fetchedDate\)\);/.test(APP) && C.PRIVACY_BASE_DATE === P117 &&
       [undefined, null, "", "x", "2026-11-07", P117, "2027-01-05"].every((d) => C.privacyVersion(d) === privacyDate(d)),
       "5a the Privacy Policy's date is the one recorded: the page and the record both take privacyDate of the newsletter date");
+  }
+
+  // ── 6. When the step was shown, and when Get started was tapped (Privacy Policy 1.1.7: "when those words were shown,
+  //       when your agreement was recorded") ────────────────────────────────────────────────────────────────────
+  {
+    const U2 = "00000000-0000-4000-8000-0000000000c2", K2 = `flourish_consent_pending:${U2}`;
+    const shown = Date.UTC(2026, 10, 20, 14, 0, 0), tap = shown + 95 * 1000;
+    t.eq(C.markConsentShown(U2, shown), new Date(shown).toISOString(), "6a the step on screen: its time is kept");
+    t.eq(C.markConsentShown(U2, shown + 30000), new Date(shown).toISOString(), "6b shown again in the same run (back from the Terms or the Privacy Policy): the first time stays");
+    const s = store(); const a = api({ status: 200 });
+    t.eq(await C.recordLegalConsent({ uid: U2, storage: s, getJwt: async () => "jwt", fetchImpl: a.fetchImpl, now: tap }), "recorded", "6c Get started: recorded");
+    t.eq([a.sent[0].shown_at, a.sent[0].agreed_at], [new Date(shown).toISOString(), new Date(tap).toISOString()], "6d sent: when the step appeared, and when Get started was tapped");
+    t.ok(Date.parse(a.sent[0].shown_at) <= Date.parse(a.sent[0].agreed_at), "6e shown_at is not after the tap");
+    // Closing the app ends the run: a fresh copy of the module (a new launch) knows no earlier time.
+    const C2 = await import(path.join(REPO, "src", "lib", "legalConsent.js") + "?run=2");
+    const again = shown + 86400 * 1000, tap2 = again + 20000;
+    C2.markConsentShown(U2, again);
+    const s2 = store(); const b = api({ status: 200 });
+    await C2.recordLegalConsent({ uid: U2, storage: s2, getJwt: async () => "jwt", fetchImpl: b.fetchImpl, now: tap2 });
+    t.eq([b.sent[0].shown_at, b.sent[0].agreed_at], [new Date(again).toISOString(), new Date(tap2).toISOString()], "6f the app was closed in between: the time the step was shown again");
+    const U3 = "00000000-0000-4000-8000-0000000000c3";
+    C.markConsentShown(U3, tap + 60000);
+    const c = api({ status: 200 });
+    await C.recordLegalConsent({ uid: U3, storage: store(), getJwt: async () => "jwt", fetchImpl: c.fetchImpl, now: tap });
+    t.eq(c.sent[0].shown_at, c.sent[0].agreed_at, "6g a clock that moved back: shown_at is the tap, never after it");
+    const d = api({ status: 503 }); const s3 = store();
+    C.markConsentShown(U2, shown); await C.recordLegalConsent({ uid: U2, storage: s3, getJwt: async () => "jwt", fetchImpl: d.fetchImpl, now: tap });
+    const kept = JSON.parse(s3.getItem(K2) || "{}");
+    t.eq([kept.shown_at, kept.agreed_at], [new Date(shown).toISOString(), new Date(tap).toISOString()], "6h not sent yet: both times kept on the device for the next launch");
+    t.ok(/const done=\(name,next\)=>\{[^\n]*\n[^\n]*\n  useEffect\(\(\)=>\{ if\(step===0&&!after\) markConsentShown\(userId\); \},\[step,userId,after\]\);/.test(APP),
+      "6i the consent step marks its time whenever it is on screen");
+  }
+  {
+    const n = Date.now();
+    const both = { ...good, shown_at: new Date(n - 120000).toISOString(), agreed_at: new Date(n - 60000).toISOString() };
+    const r1 = (await record(both)).writes[0].row;
+    t.eq([r1.shown_at, r1.recorded_at], [both.shown_at, both.agreed_at], "6j the server keeps both: shown_at, and recorded_at is the tap");
+    const late = (await record({ ...good, shown_at: new Date(n - 1000).toISOString(), agreed_at: new Date(n - 60000).toISOString() })).writes[0].row;
+    t.eq(late.shown_at, late.recorded_at, "6k a shown_at after the tap is taken as the tap");
+    const oldApp = (await record(good)).writes[0].row;
+    const future = (await record({ ...good, agreed_at: new Date(n + 3600 * 1000).toISOString() })).writes[0].row;
+    const stale = (await record({ ...good, agreed_at: "2020-01-01T00:00:00Z", shown_at: "2020-01-01T00:00:00Z" })).writes[0].row;
+    t.ok(Math.abs(Date.parse(future.recorded_at) - Date.now()) < 5000 && Math.abs(Date.parse(stale.recorded_at) - Date.now()) < 5000, "6l a tap time in the future or from long ago is not taken: the server's time");
+    t.ok([r1, late, oldApp, future, stale].every((w) => Date.parse(w.shown_at) <= Date.parse(w.recorded_at)), "6m every record: shown_at before or equal to recorded_at");
   }
 
   t.summary("legalConsent.test");
