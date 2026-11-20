@@ -261,24 +261,44 @@ async function buyGift(page, { plan, delivery, name, email, message, sendOn, sta
   }
   // Stripe's hosted Checkout, test mode: Stripe's published test card.
   await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30000 });
-  await page.waitForSelector("#cardNumber", { timeout: 30000 });
-  if (await page.locator('iframe[src*="hcaptcha"], iframe[title*="captcha" i]').count()) throw new Error("Stripe Checkout showed a CAPTCHA; stopped (it is never completed by a script)");
-  await shot(page, `${label}-2-stripe-checkout`);
-  await page.fill("#cardNumber", "4242 4242 4242 4242");
-  await page.fill("#cardExpiry", "12 / 34");
-  await page.fill("#cardCvc", "123");
-  await page.fill("#billingName", "Gift Test");
-  if (await page.locator("#billingCountry").count()) await page.selectOption("#billingCountry", "CA");
-  if (await page.locator("#billingAddressLine1").count()) {
-    await page.fill("#billingAddressLine1", "100 Test Street");
-    await page.fill("#billingLocality", "Belleville");
-    if (await page.locator("#billingAdministrativeArea").count()) await page.selectOption("#billingAdministrativeArea", "ON");
+  // Stripe's Checkout (2026) draws the card and the billing address in its own Elements frame.
+  let ef = null;
+  for (let k = 0; k < 30 && !ef; k++) {
+    for (const f of page.frames()) if (await f.$("#payment-numberInput").catch(() => null)) { ef = f; break; }
+    if (!ef) await page.waitForTimeout(1000);
   }
-  if (await page.locator("#billingPostalCode").count()) await page.fill("#billingPostalCode", "K8N 1A1");
-  const savePhone = page.locator("#enableStripePass");
-  if (await savePhone.count() && await savePhone.isChecked()) await savePhone.uncheck();
-  await page.click(".SubmitButton, button[type=submit]");
-  await page.waitForURL(/flourishmoney\.app\/gift\/\?bought=1/, { timeout: 60000 });
+  if (!ef) {
+    await shot(page, `${label}-STRIPE-PAGE`);
+    throw new Error(`no card field on Stripe's page; saved ${label}-STRIPE-PAGE.png`);
+  }
+  await shot(page, `${label}-2-stripe-checkout`);
+  await ef.fill("#payment-numberInput", "4242 4242 4242 4242");
+  await ef.fill("#payment-expiryInput", "12 / 34");
+  await ef.fill("#payment-cvcInput", "123");
+  await ef.fill("#billingAddress-nameInput", "Gift Test");
+  await ef.selectOption("#billingAddress-countryInput", "CA").catch(() => {});
+  await ef.fill("#billingAddress-addressLine1Input", "100 Test Street");
+  await page.keyboard.press("Escape").catch(() => {});        // closes the address suggestions, if any
+  // The rest of the address (city, province, postal code) opens a moment after the first line is typed.
+  await ef.waitForSelector("#billingAddress-localityInput", { state: "visible", timeout: 15000 });
+  await ef.fill("#billingAddress-localityInput", "Belleville");
+  await ef.selectOption("#billingAddress-administrativeAreaInput", "ON").catch(async () => { await ef.fill('input[autocomplete="billing address-level1"]', "ON"); });
+  await ef.fill("#billingAddress-postalCodeInput", "K8N 1A1");
+  await page.waitForTimeout(1500);                             // Stripe Tax works out the tax for the address
+  if ((await ef.$("#payment-linkOptInInput")) && (await ef.isChecked("#payment-linkOptInInput").catch(() => false))) await ef.uncheck("#payment-linkOptInInput");
+  await shot(page, `${label}-2b-stripe-filled`);
+  // Stripe's submit button lives in its frame. Clicked once Stripe has finished working out the tax (enabled again).
+  const submit = ef.locator('[data-testid="payment-form-submit-button"]');
+  await submit.waitFor({ state: "visible", timeout: 30000 });
+  await page.waitForTimeout(2500);
+  for (let k = 0; k < 20 && !(await submit.isEnabled().catch(() => false)); k++) await page.waitForTimeout(500);
+  await submit.click();
+  // Stripe's own bot check runs invisibly. A VISIBLE challenge is never answered by a script: the run stops and says so.
+  const paid = page.waitForURL(/flourishmoney\.app\/gift\/\?bought=1/, { timeout: 90000 }).then(() => true, () => false);
+  const challenge = page.waitForFunction(() => [...document.querySelectorAll('iframe[src*="hcaptcha"]')].some((f) => { const r = f.getBoundingClientRect(); return r.width > 200 && r.height > 200 && getComputedStyle(f).visibility !== "hidden"; }), null, { timeout: 90000 }).then(() => true, () => false);
+  const first = await Promise.race([paid.then((v) => (v ? "paid" : "nopay")), challenge.then((v) => (v ? "captcha" : "nocaptcha"))]);
+  if (first === "captcha") { await shot(page, `${label}-STRIPE-CAPTCHA`); throw new Error("Stripe showed a visible CAPTCHA; stopped without answering it"); }
+  if (first !== "paid" && !(await paid)) { await shot(page, `${label}-STRIPE-STUCK`); throw new Error(`Stripe did not send the buyer back after paying; saved ${label}-STRIPE-STUCK.png`); }
   await page.waitForSelector("#thanks:not([hidden])");
   await shot(page, `${label}-3-thank-you`);
   return sessionId;
