@@ -59,8 +59,8 @@ const DEPRECATED = /setStatusBarColor|setNavigationBarColor|setNavigationBarDivi
     t.ok(/function StatusBarCover\(\{ bg \}\) \{\s*if \(!drawsBehindStatusBar\(\)\) return null;\s*return <div data-status-bar-cover="" aria-hidden="true" style=\{statusBarCoverStyle\(bg\)\}\/>;\s*\}/.test(APP),
       "c3 it is nothing at all unless this is a store app (so never on the website), and a screen reader skips it");
     const mounts = APP.match(/<StatusBarCover bg=\{[^}]+\}\/>/g) || [];
-    t.eq([mounts.length, mounts.filter((m) => m === "<StatusBarCover bg={C.bg}/>").length, mounts.filter((m) => m === '<StatusBarCover bg={showAuth ? AUTH_C.page : "#FDF6EC"}/>').length], [7, 6, 1],
-      "c4 it is on the seven screens that scroll with no header of their own: the sign-in screens (in their cream), onboarding, the first number, the AI notice, the legal pages and the two plans screens");
+    t.eq([mounts.length, mounts.filter((m) => m === "<StatusBarCover bg={C.bg}/>").length, mounts.filter((m) => m === '<StatusBarCover bg={showAuth ? AUTH_C.page : "#FDF6EC"}/>').length], [8, 7, 1],
+      "c4 it is on the eight screens that scroll with no header of their own: the sign-in screens (in their cream), onboarding, the first number, the AI notice, the legal pages, the two plans screens and the flourish Plus screen (1.1.8)");
     t.ok(/background: showAuth \? AUTH_C\.page : "#FDF6EC",[^\n]*\n\s*<StatusBarCover bg=\{showAuth \? AUTH_C\.page : "#FDF6EC"\}\/>/.test(APP), "c5 …each in the colour of the screen it is on (the sign-in screens' is their own)");
   }
 

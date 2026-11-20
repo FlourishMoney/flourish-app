@@ -70,11 +70,14 @@ const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]
 // THE PLUS ADD-ON (2026-11-10, _lib/plusAddon.js, migration 0044). Behind PLUS_ENABLED, whatever BILLING_ENABLED
 // and IAP_ENABLED say; while it is off these answer 404 and read nothing. The website's checkout also needs
 // BILLING_ENABLED, and the store sync IAP_ENABLED. None of them reads or writes public.subscriptions.
-//   plus_status      { enabled, plus, covered_by }; a read that fails is 503 status_unavailable, never "no Plus"
+//   plus_status      { enabled, plus, covered_by, manage }; a read that fails is 503 status_unavailable, never "no Plus".
+//                    manage: where the caller's OWN Plus purchase is managed ("stripe", "app_store", "play_store"), or
+//                    null (no Plus, a partner's Plus, complimentary Plus). Never a price, a date or a customer id.
 //   plus_checkout    { plan_key: "plus_monthly" | "plus_annual" }, the website only: a Stripe checkout for Plus on the
 //                    buyer's own Plus customer, beside whatever plan the household has. No promotion codes: Plus has no
 //                    discount, the founding households' included (Amanda's decision).
-//   plus_store_sync  "I just bought Plus in the store; look now": from RevenueCat's server, never from the app.
+//   plus_store_sync  "I just bought Plus in the store; look now": from RevenueCat's server, never from the app. Adds
+//                    conflict: true when the store took a Plus purchase from a buyer whose Plus is already on the website.
 //   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's.
 const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_portal"]);
 
@@ -488,15 +491,20 @@ exports.handler = async (event) => {
 
     // ── THE PLUS ADD-ON ──────────────────────────────────────────────────────────────────────────────
     if (plusAction) {
-      const answer = (ent) => json(200, CORS, { enabled: true, plus: !!ent.plus, covered_by: ent.covered_by || null });
+      const answer = (ent, extra = {}) => json(200, CORS, { enabled: true, plus: !!ent.plus, covered_by: ent.covered_by || null,
+        manage: ent.plus && !ent.covered_by && plusAddon.MANAGED_PROVIDERS.includes(ent.provider) ? ent.provider : null, ...extra });
+      let synced = {};
       if (action === "plus_store_sync") {
         const user = await authUser(admin, user_id);
-        try { await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) }); }
+        try {
+          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) });
+          if (r && r.conflict === true) synced = { conflict: true };
+        }
         catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }
       }
       const ent = await plusAddon.getPlusEntitlement(admin, user_id);
       if (ent.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
-      if (action === "plus_status" || action === "plus_store_sync") return answer(ent);
+      if (action === "plus_status" || action === "plus_store_sync") return answer(ent, synced);
 
       // The Plus customer is the buyer's own, never the main plan's (so a main-plan refund, portal or check never sees it).
       const { data: plusRow, error: plusErr } = await admin.from(plusAddon.TABLE)

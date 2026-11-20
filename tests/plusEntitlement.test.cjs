@@ -239,6 +239,7 @@ function loadWith(db, sm, user = U) {
       const ps = await call(billing, { action: "plus_status" });
       const st = await call(billing, { action: "status" });
       t.eq([ps.body && ps.body.plus, st.body && st.body.paid], [true, true], "5e the household has Plus AND its monthly plan");
+      t.eq([ps.body && ps.body.manage, Object.keys(ps.body || {}).sort().join(",")], ["stripe", "covered_by,enabled,manage,plus"], "5e2 …and the answer says where the buyer's own Plus is managed (Stripe), and nothing else: no price, date or customer id");
       await send(hook, "customer.subscription.updated", plusSub("sub_P"));
       await send(hook, "customer.subscription.updated", { ...mainMonthly(), id: "sub_M", object: "subscription", customer: "cus_M", metadata: { user_id: U, plan_key: "monthly" }, items: { data: [{ price: { id: "price_m" }, current_period_end: now + 30 * DAY }] }, current_period_end: now + 30 * DAY });
       t.eq([(db.state.rows.subscriptions[0] || {}).provider_subscription_id, (db.state.rows.subscriptions[0] || {}).support_flag || null], ["sub_M", null], "5f later events for each go to their own row, and nothing is flagged");
@@ -247,6 +248,7 @@ function loadWith(db, sm, user = U) {
       await send(hook, "customer.subscription.deleted", plusSub("sub_P", "canceled"));
       const after = await call(billing, { action: "plus_status" });
       t.eq([after.body && after.body.plus, (db.state.rows.subscriptions[0] || {}).status], [false, "active"], "5h Plus ending ends Plus only: the monthly plan stays active");
+      t.eq(after.body && after.body.manage, null, "5h2 …and with no Plus there is nothing to manage");
       const fake = await send(hook, "checkout.session.completed", { customer: "cus_P", subscription: "sub_X", client_reference_id: U, metadata: { user_id: U, kind: "plus_addon" } });
       sm.stripe.subs.push({ ...plusSub("sub_Y"), items: { data: [{ price: { id: "price_m" } }] } });
       const wrongPrice = await send(hook, "checkout.session.completed", { customer: "cus_P", subscription: "sub_Y", client_reference_id: U, metadata: { user_id: U, kind: "plus_addon" } });
@@ -272,7 +274,13 @@ function loadWith(db, sm, user = U) {
       t.eq([null, undefined, { status: 200 }, { status: 200, body: { enabled: true } }, { status: 200, body: { enabled: true, plus: "yes" } }, { status: 500, body: {} }].map((r) => view.plusFeatureVisible(view.plusView(r))),
         [false, false, false, false, false, false], "6d no answer, a partial answer or an odd one: no Plus feature");
       const appSrc = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-      t.ok(!/plus_checkout|plus_status|plusAccess/.test(appSrc), "6e no screen calls a Plus action yet (the Plus screens are not built: see the spec), so none can be half open");
+      // 1.1.8 (2026-11-20): the Plus screen is built (src/PlusAddonScreen.jsx). It still cannot be half open: App.jsx sends
+      // no Plus action itself (lib/netWorthAccess.js askPlus does), and mounts the screen in one place, only for a signed-in
+      // account the server has answered, never in the demo and never while PLUS_ENABLED is off.
+      t.ok(!/plusAccess/.test(appSrc) && !/action:\s*"plus_/.test(appSrc)
+        && /if\(plusRoot\.buy && user\?\.id && !appData\?\.demo && plusRoot\.mode!=="today" && plusRoot\.mode!=="pending"\)return /.test(appSrc)
+        && (appSrc.match(/<PlusAddonScreen\b/g) || []).length === 1,
+        "6e the Plus screen is mounted in one place, only once the server has answered and never while PLUS_ENABLED is off, so none can be half open");
       const planSrc = fs.readFileSync(path.join(REPO, "src", "lib", "planFromProfile.js"), "utf8");
       t.ok(!/plusAccess|plus_addon/.test(planSrc), "6f the main plan's client rule never reads Plus");
     }

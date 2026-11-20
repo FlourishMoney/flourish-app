@@ -49,6 +49,8 @@ const PLUS_PRODUCTS = Object.freeze({
   "flourish_plus_addon:annual":          "plus_annual",
 });
 const STORE_PROVIDERS = Object.freeze(["app_store", "play_store"]);
+// Where a buyer manages their own Plus purchase: Stripe's portal, or the store it was bought in.
+const MANAGED_PROVIDERS = Object.freeze(["stripe", ...STORE_PROVIDERS]);
 // Is a store product id (as a RevenueCat event names it) one of the add-on's? Google's may come as the subscription
 // alone ("flourish_plus_addon") or with its base plan. The main plan's ids (app.flourishmoney.plus.*, flourish_plus)
 // are never the add-on's.
@@ -99,7 +101,10 @@ function isLivePlusRow(row, env = process.env, now = Date.now()) {
 }
 
 /**
- * The household's Plus answer: { enabled, plus, covered_by, status_unavailable }.
+ * The household's Plus answer: { enabled, plus, covered_by, status_unavailable, provider }.
+ *   provider             where the CALLER'S OWN live Plus purchase is ("stripe", "app_store", "play_store"), so the app
+ *                        can say where it is managed. null for a partner's Plus (theirs to manage), for complimentary
+ *                        Plus (nothing to manage) and for no Plus.
  *   enabled false        PLUS_ENABLED is off: nothing is read, nothing is offered, nothing changes.
  *   status_unavailable   a read failed (or 0044 is not applied): plus is false and the caller says so plainly
  *                        (503), never "you don't have Plus" and never a limit worked out from a guess.
@@ -128,7 +133,7 @@ async function getPlusEntitlement(admin, userId, { env = process.env, now = Date
         .select("provider, plan_key, status, product_id, current_period_end")
         .eq("user_id", id).maybeSingle();
       if (error) { console.error("[plus] read failed (status unavailable):", error.code || "error"); return unavailable; }
-      if (isLivePlusRow(data, env, now)) return { enabled: true, plus: true, covered_by: id === userId ? null : "partner", status_unavailable: false };
+      if (isLivePlusRow(data, env, now)) return { enabled: true, plus: true, covered_by: id === userId ? null : "partner", status_unavailable: false, provider: id === userId ? data.provider : null };
     }
     // No paid Plus in the household: complimentary Plus (0051) covers it the same way, the buyer's partner included.
     for (const id of [userId, ...peers]) {
@@ -268,7 +273,7 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
 }
 
 module.exports = {
-  TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS,
+  TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
   plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,
 };

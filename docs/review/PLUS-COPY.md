@@ -109,11 +109,9 @@ Notes:
 
 These are not in the 48. Each needs words before Plus can be sold.
 
-1. **The Plus purchase screen**, website and both store apps: the title, what Plus includes, the two prices ($4.99 a month, $49.99 a year, plus tax), the buy button, the store disclosure, Restore purchases, and "Manage" once bought. Not built.
+1. **The Plus purchase screen**, website and both store apps. Built 2026-11-20 (`src/PlusAddonScreen.jsx`); its 20 new lines are placeholders, listed for review in `docs/review/PLUS-BUY-COPY.md`.
 2. **Settings, the line for a household over its bank limit.** The words are line 4 above; the screen that shows them is not built.
 3. **Terms of Service: the fair use sentence** for Plus's 10 banks per household, and Plus in section 7 (price, renewal, cancelling, refunds).
 4. **Privacy Policy:** whether net worth entries and the per-account sharing choice need a sentence.
-5. **App Store Connect:** the group's display name, and each product's display name and description (Apple's fields are short; the form shows the limit).
-6. **Play Console:** the subscription's name, its benefits and its description.
-7. **Stripe:** the product name "flourish Plus" (shown on Checkout, receipts and the portal) and its description.
-8. **What's New for 1.1.8**, the App Review notes for the new subscriptions, and the store description's Plus section.
+5. **App Store Connect, Play Console and Stripe:** the names a buyer sees. Drafts are in `docs/review/PLUS-BUY-COPY.md`; where each is typed is in `docs/ops/PLUS-ADDON-CONSOLES.md`.
+6. **What's New for 1.1.8**, the App Review notes for the new subscriptions, and the store description's Plus section.

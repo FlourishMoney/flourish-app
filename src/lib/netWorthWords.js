@@ -3,8 +3,9 @@
 // THE WORDS FOR THE PLUS ADD-ON, BANK LOGIN LIMITS AND NET WORTH (2026-11-10). Every line the app shows for them.
 // docs/product/NET-WORTH-WORDS.md lists each id: where it shows, the facts it must state, the line and its limit.
 //
-// EVERY LINE IS WORD FOR WORD AS APPROVED 2026-11-20 (ChatGPT 100, Grok 100, Amanda): docs/review/
-// PLUS-COPY-APPROVED-2026-11-20.md. Do not reword one here. A line changed later goes back to a "[WORDS: …]"
+// EVERY LINE BUT THE LAST SECTION IS WORD FOR WORD AS APPROVED 2026-11-20 (ChatGPT 100, Grok 100, Amanda): docs/review/
+// PLUS-COPY-APPROVED-2026-11-20.md. Do not reword one here. The last section, BUYING FLOURISH PLUS (plus-buy-*), is
+// NOT approved: every line there is a placeholder, with its draft in docs/review/PLUS-BUY-COPY.md. A line changed later goes back to a "[WORDS: …]"
 // placeholder until it is approved again, and nothing ships with one: scripts/check-pending-words.mjs refuses the
 // production web build (netlify.toml) and every store build (npm run build:native), and tests/_pendingWords.cjs
 // allows a placeholder only here, only for an id the words doc lists with its own placeholder as its line.
@@ -74,6 +75,32 @@ export const NET_WORTH_WORDS = Object.freeze({
   "plan-terms-web-label": "flourish subscription:",
   "plan-terms-lifts-limits": "A flourish subscription lifts these limits.",
   "plan-household-extra-stripe": "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > flourish > Manage subscription.",
+
+  // BUYING FLOURISH PLUS (2026-11-20, 1.1.8): the purchase screen on the website (Stripe) and in the store apps (the
+  // store's own purchase), and Manage once bought (src/PlusAddonScreen.jsx, src/lib/plusBuy.js). NOT APPROVED: each is
+  // a placeholder until both reviewers approve it; docs/review/PLUS-BUY-COPY.md has a draft, the facts and a limit for
+  // each. The production web build and every store build refuse to build while one is left. A store app never names
+  // the website, so plus-buy-manage-elsewhere says only "where it was bought".
+  "plus-buy-open": "[WORDS: plus-buy-open]",
+  "plus-buy-title": "[WORDS: plus-buy-title]",
+  "plus-buy-lead": "[WORDS: plus-buy-lead]",
+  "plus-buy-includes-networth": "[WORDS: plus-buy-includes-networth]",
+  "plus-buy-includes-investments": "[WORDS: plus-buy-includes-investments]",
+  "plus-buy-includes-banks": "[WORDS: plus-buy-includes-banks]",
+  "plus-buy-separate": "[WORDS: plus-buy-separate]",
+  "plus-buy-web-note": "[WORDS: plus-buy-web-note]",
+  "plus-buy-not-available": "[WORDS: plus-buy-not-available]",
+  "plus-buy-already": "[WORDS: plus-buy-already]",
+  "plus-buy-pending": "[WORDS: plus-buy-pending]",
+  "plus-buy-web-failed": "[WORDS: plus-buy-web-failed]",
+  "plus-buy-started": "[WORDS: plus-buy-started]",
+  "plus-buy-web-cancelled": "[WORDS: plus-buy-web-cancelled]",
+  "plus-buy-charged-twice": "[WORDS: plus-buy-charged-twice]",
+  "plus-buy-have": "[WORDS: plus-buy-have]",
+  "plus-buy-have-partner": "[WORDS: plus-buy-have-partner]",
+  "plus-buy-manage-app-store": "[WORDS: plus-buy-manage-app-store]",
+  "plus-buy-manage-play": "[WORDS: plus-buy-manage-play]",
+  "plus-buy-manage-elsewhere": "[WORDS: plus-buy-manage-elsewhere]",
 });
 
 /** The words for an id. {used}, {limit} and {count} are filled in; a placeholder carries them after it. */

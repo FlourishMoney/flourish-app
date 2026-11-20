@@ -30,17 +30,23 @@ export function netWorthMode(res, lastMode = null) {
 export const showsNetWorth = (mode) => mode === "today" || mode === "plus";
 
 // ── the one store every screen reads ─────────────────────────────────────────────────────────────
-let state = { mode: "pending", holdings: [], list: undefined, owners: {} };
+// answer: the server's last plus_status answer as it came ({ status, body }, null for none, undefined before the first),
+// for the screens that offer or manage Plus (lib/plusBuy.js plusScreenView). buy / buyNotice: the Plus purchase screen
+// is open (and what it was opened for: a return from Stripe). Nothing here grants anything.
+let state = { mode: "pending", holdings: [], list: undefined, owners: {}, answer: undefined, buy: false, buyNotice: null };
 const subs = new Set();
 const emit = () => subs.forEach((f) => f());
 const read = (storage) => { try { return storage ? storage.getItem(NW_MODE_KEY) : null; } catch { return null; } };
 export function setPlusAnswer(res, storage = (typeof localStorage !== "undefined" ? localStorage : null)) {
   const mode = netWorthMode(res, read(storage));
   try { if (storage && KEEPABLE.includes(mode) && res && res.status) storage.setItem(NW_MODE_KEY, mode); if (storage && mode === "locked") storage.removeItem(NW_MODE_KEY); } catch { /* private window */ }
-  state = { ...state, mode, ...(mode === "plus" ? {} : { holdings: [], list: undefined, owners: {} }) };
+  state = { ...state, mode, answer: res, ...(mode === "plus" ? {} : { holdings: [], list: undefined, owners: {} }) };
   emit();
   return mode;
 }
+/** Open the flourish Plus screen (notice: "success" | "cancelled" | "portal_return" when Stripe sent the person back). */
+export function openPlusBuy(notice = null) { state = { ...state, buy: true, buyNotice: notice }; emit(); }
+export function closePlusBuy() { if (!state.buy && state.buyNotice === null) return; state = { ...state, buy: false, buyNotice: null }; emit(); }
 export function setPlusHoldings(holdings) { state = { ...state, holdings: Array.isArray(holdings) ? holdings : [] }; emit(); }
 export function setNetWorthList(list) { state = { ...state, list }; emit(); }
 // Which bank each account came from, and who linked it (list_items: linked_by "partner" for the other member's).
@@ -55,14 +61,16 @@ export const getNetWorthState = () => state;
 export function useNetWorthState() {
   return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => state);
 }
-export function _resetForTests() { state = { mode: "pending", holdings: [], list: undefined, owners: {} }; emit(); }
+export function _resetForTests() { state = { mode: "pending", holdings: [], list: undefined, owners: {}, answer: undefined, buy: false, buyNotice: null }; emit(); }
 
 // ── the calls ──────────────────────────────────────────────────────────────────────────────────
 /** The server's Plus answer as { status, body }, or null when there was no answer at all. */
-export async function askPlusStatus({ apiBase = "", jwt, fetchImpl = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
+export async function askPlusStatus(opts = {}) { return askPlus("plus_status", {}, opts); }
+/** Any of the server's Plus actions (billing.js PLUS_ACTIONS), the same way: { status, body } or null. */
+export async function askPlus(action, params = {}, { apiBase = "", jwt, fetchImpl = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
   if (!jwt || !fetchImpl) return null;
   try {
-    const res = await fetchImpl(`${apiBase}/api/billing`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action: "plus_status" }) });
+    const res = await fetchImpl(`${apiBase}/api/billing`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
     let body = null; try { body = await res.json(); } catch { body = null; }
     return { status: res.status, body };
   } catch { return null; }

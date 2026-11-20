@@ -21,9 +21,11 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, callNetWorth, getNetWorthState } from "./lib/netWorthAccess.js";
+import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
+import PlusAddonScreen from "./PlusAddonScreen.jsx";
+import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -5192,12 +5194,38 @@ function getNetWorthHistory() {
 
 // NET WORTH BEHIND PLUS (Amanda, 2026-11-10): where net worth was, a household without Plus sees this, never a blank or a
 // broken card, and never a figure. "unavailable" (the plan could not be read) says so plainly instead.
+// BUYING FLOURISH PLUS (lib/plusBuy.js): where this build runs and whether it may sell. A store build sells only with
+// in-app purchase on; the website always asks the server, which answers 404 while PLUS_ENABLED is off.
+const plusPlatform = () => !isNativeApp() ? "web" : (typeof window!=="undefined" && window.Capacitor?.getPlatform?.()==="android" ? "android" : "ios");
+const plusSelling = () => !isNativeApp() || storeBillingBuild();
+function usePlusView(){
+  const nw = useNetWorthState();
+  return plusScreenView(nw.answer, { platform: plusPlatform(), selling: plusSelling() });
+}
 function NetWorthLocked({ mode, C, label = null }){
+  const plusOffer = usePlusView().mode==="offer" && mode==="locked";
   return (
     <div data-networth-locked={mode}>
       {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>{label}</div>}
       <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
       {mode!=="unavailable" && mode!=="pending" && <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
+      {plusOffer && <button data-plus-open="" onClick={(e)=>{ e.stopPropagation(); openPlusBuy(); }} style={{marginTop:GAP.textToControl,minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purpleBright}`,borderRadius:12,padding:`${SPACE.sm}px ${SPACE.lg}px`,color:C.purpleBright,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("plus-buy-open")}</button>}
+    </div>
+  );
+}
+// SETTINGS: the flourish Plus card. Shown only when the server has answered about Plus and there is something true to
+// say: an offer (where this build may sell) or that the household has it. The button opens the Plus screen, where it is
+// bought or managed. No price here.
+function PlusSettingsCard({ C }){
+  const v = usePlusView();
+  if(v.mode!=="offer" && v.mode!=="have") return null;
+  return (
+    <div data-plus-settings={v.mode} style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs,overflowWrap:"anywhere"}}>{netWorthWords("plus-buy-title")}</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl,overflowWrap:"anywhere"}}>{v.line}</div>
+      {v.mode==="offer" && <Btn label={netWorthWords("plus-buy-open")} onClick={()=>openPlusBuy()} color={C.purpleBright} outline small/>}
+      {v.mode==="have" && v.manage && <Btn label="Manage subscription" onClick={()=>openPlusBuy()} color={C.mutedHi} outline small/>}
+      {v.mode==="have" && !v.manage && v.note && <div style={{color:C.muted,fontSize:13,overflowWrap:"anywhere"}}>{v.note}</div>}
     </div>
   );
 }
@@ -13093,6 +13121,8 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
       </div>
     )}
+    {/* ── flourish Plus, the add-on (1.1.8, behind PLUS_ENABLED): nothing unless the server has answered. Never in the demo. ── */}
+    {!data?.demo && <PlusSettingsCard C={C}/>}
     {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
     {storeSubscription&&(
       <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
@@ -18215,6 +18245,18 @@ export default function FlourishApp(){
   // 404 (PLUS_ENABLED off): everything as before. With Plus: this person's entries and share choices (/api/networth), and
   // which bank each person linked (list_items), for net worth that is private by default between partners. No answer at
   // all is asked again after 5, 20 and 60 seconds; until then nothing about net worth shows a figure.
+  // takePlusAnswer: the one place a plus_status (or plus_store_sync) answer is taken, at sign-in and after a purchase.
+  const takePlusAnswer = useCallback(async (res, isCancelled = ()=>false)=>{
+    const mode = setPlusAnswer(res);
+    if(mode === "plus"){
+      const jwt = await getJwt();
+      const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt });
+      if(!isCancelled() && l && l.status === 200) setNetWorthList(l.body);
+      const items = await getUserItems();
+      if(!isCancelled()) setItemOwners(items);
+    }
+    return mode;
+  },[]);
   useEffect(()=>{
     let cancelled = false, timer = null;
     if(!user?.id) return;
@@ -18222,18 +18264,33 @@ export default function FlourishApp(){
       const jwt = await getJwt();
       const res = await askPlusStatus({ apiBase: API_BASE, jwt });
       if(cancelled) return;
-      const mode = setPlusAnswer(res);
-      if(mode === "plus"){
-        const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt });
-        if(!cancelled && l && l.status === 200) setNetWorthList(l.body);
-        const items = await getUserItems();
-        if(!cancelled) setItemOwners(items);
-      }
+      await takePlusAnswer(res, ()=>cancelled);
       if(res === null){ const wait = [5000, 20000, 60000][attempt]; if(wait) timer = setTimeout(()=>ask(attempt + 1), wait); }
     };
     ask(0);
     return ()=>{ cancelled = true; if(timer) clearTimeout(timer); };
   },[user?.id]);
+  // BUYING FLOURISH PLUS (lib/plusBuy.js, PlusAddonScreen.jsx). The server's Plus actions, as this signed-in person.
+  const askPlusServer = useCallback(async (action, params = {})=>{
+    const jwt = await getJwt();
+    return askPlus(action, params, { apiBase: API_BASE, jwt });
+  },[]);
+  const plusRoot = useNetWorthState();
+  // Coming back from Stripe (?plus=success, cancelled or portal_return). THIS GRANTS NOTHING: it opens the Plus screen,
+  // which asks the server what is true, and the address is cleaned. Never in a store app.
+  useEffect(()=>{
+    if(!user?.id || nativeApp) return;
+    const notice = plusReturnNotice(typeof window==="undefined" ? "" : window.location.search);
+    if(!notice) return;
+    openPlusBuy(notice);
+    try{
+      const url = new URL(window.location.href);
+      PLUS_RETURN_PARAMS.forEach(k=>url.searchParams.delete(k));
+      window.history.replaceState({},"",url.pathname+url.search+url.hash);
+    }catch{}
+  },[user?.id]);
+  // Signed out, or PLUS_ENABLED off: the Plus screen is never left open.
+  useEffect(()=>{ if(!user?.id || plusRoot.mode==="today") closePlusBuy(); },[user?.id, plusRoot.mode]);
   const askStore = useCallback(async (action = "store_status", extra = {})=>{
     const jwt = await getJwt();
     if(!jwt) return null;
@@ -19930,6 +19987,13 @@ export default function FlourishApp(){
     if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
       trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
   }
+  // THE FLOURISH PLUS SCREEN (1.1.8, behind PLUS_ENABLED): only for a signed-in account the server has answered about
+  // Plus, never in the demo, and never while PLUS_ENABLED is off ("today").
+  if(plusRoot.buy && user?.id && !appData?.demo && plusRoot.mode!=="today" && plusRoot.mode!=="pending")return <div role="dialog" aria-modal="true" aria-label={netWorthWords("plus-buy-title")} style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+    <StatusBarCover bg={C.bg}/>
+    <PlusAddonScreen C={C} platform={plusPlatform()} selling={plusSelling()} answer={plusRoot.answer} purchases={storePurchases} ask={askPlusServer} onAnswer={takePlusAnswer}
+      returnNotice={plusRoot.buyNotice} onClose={closePlusBuy} onViewLegal={s=>{ closePlusBuy(); setScreen(s); }} onManageStore={manageStoreSubscription} buttonText={textOn(C.purple,C.purpleBright)}/>
+  </div>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 

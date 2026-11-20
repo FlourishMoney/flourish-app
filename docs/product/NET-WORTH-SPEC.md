@@ -135,6 +135,8 @@ The six cases found earlier now have these rules, and the Plus net worth screen 
   - **Older accounts.** One saved before banks were stamped on accounts (no `_item`) counts as the household's, as on every other screen.
 
 ## Products to create (item 5)
+**Superseded 2026-11-20 by `docs/ops/PLUS-ADDON-CONSOLES.md`:** the same products, one field per line, with the prices and the RevenueCat offering `plus_addon` the purchase screen reads. The list below is kept as the first draft.
+
 Prices are left blank for Amanda to type. Nothing for the add-on exists yet: the repo and the docs name no add-on product, no RevenueCat `plus_addon` entitlement and no Stripe Plus price. The consoles were not opened.
 
 **App Store Connect** (Apps > Flourish: Money, Handled > Monetization > Subscriptions):
