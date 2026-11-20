@@ -22,8 +22,11 @@
 // Words: the drafts in docs/review/GIFT-COPY.md are put in place of the placeholders, here only, so the screens read
 // as they would once approved. Output: docs/review/gift-e2e/ (screenshots, the captured emails, results.json).
 //
-//   node scripts/gift-e2e/run.mjs            everything (needs the Stripe test key)
-//   node scripts/gift-e2e/run.mjs --keep     leave the local Supabase running afterwards
+//   node scripts/gift-e2e/run.mjs                  everything (needs the Stripe test key)
+//   node scripts/gift-e2e/run.mjs --local-payment  everything but Stripe itself: the checkout's parameters, exactly as
+//                                                  the page sends them, become a paid Stripe-shaped session and event
+//                                                  here (no key needed; labelled as such in the results)
+//   node scripts/gift-e2e/run.mjs --keep           leave the local Supabase running afterwards
 // -----------------------------------------------------------------------------
 import fs from "node:fs";
 import os from "node:os";
@@ -42,6 +45,7 @@ const PORT = 8899;
 const LOCAL = `http://localhost:${PORT}`;
 const WEBHOOK_SECRET = `whsec_local_e2e_${crypto.randomBytes(8).toString("hex")}`;
 const KEEP = process.argv.includes("--keep");
+const LOCAL_PAY = process.argv.includes("--local-payment");
 const results = [];
 const check = (name, ok, detail = "") => { results.push({ name, ok: !!ok, detail }); console.log(`  ${ok ? "✓" : "✗"} ${name}${detail ? `  (${detail})` : ""}`); return !!ok; };
 const die = (msg) => { console.error(`\n  ✗ ${msg}\n`); process.exit(1); };
@@ -49,9 +53,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── the Stripe TEST key ───────────────────────────────────────────────────────────────────────────────
 const keyFile = path.join(os.homedir(), "keys", "flourish-stripe-test.env");
-if (!fs.existsSync(keyFile)) die(`no Stripe test key: run scripts/gift-e2e/set-stripe-test-key.sh first (${keyFile})`);
-const STRIPE_KEY = (/^STRIPE_SECRET_KEY=(.+)$/m.exec(fs.readFileSync(keyFile, "utf8")) || [])[1]?.trim() || "";
-if (!STRIPE_KEY.startsWith("sk_test_")) die("the saved key is not a Stripe TEST key; nothing was done");
+if (!LOCAL_PAY && !fs.existsSync(keyFile)) die(`no Stripe test key: run scripts/gift-e2e/set-stripe-test-key.sh first (${keyFile}), or use --local-payment`);
+const STRIPE_KEY = LOCAL_PAY ? "" : (/^STRIPE_SECRET_KEY=(.+)$/m.exec(fs.readFileSync(keyFile, "utf8")) || [])[1]?.trim() || "";
+if (!LOCAL_PAY && !STRIPE_KEY.startsWith("sk_test_")) die("the saved key is not a Stripe TEST key; nothing was done");
 const stripe = async (method, p, form = null) => {
   const res = await fetch(`https://api.stripe.com/v1${p}`, { method, headers: { Authorization: `Bearer ${STRIPE_KEY}`, ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) },
     body: form ? new URLSearchParams(form).toString() : undefined });
@@ -61,19 +65,25 @@ const stripe = async (method, p, form = null) => {
 };
 
 // ── preflight: where would Stripe send this test's events? ────────────────────────────────────────────
-console.log("0. Stripe test mode, read only");
-const acct = await stripe("GET", "/balance");
-if (acct.livemode !== false) die("that key is not in test mode");
-const hooks = (await stripe("GET", "/webhook_endpoints?limit=100")).data || [];
-const toProd = hooks.filter((h) => h.status === "enabled" && /flourishmoney\.app/.test(h.url) && !/--|deploy-preview/.test(h.url));
-check("test mode key", true);
 fs.mkdirSync(OUT, { recursive: true });
-fs.writeFileSync(path.join(OUT, "stripe-test-webhooks.json"), JSON.stringify(hooks.map((h) => ({ url: h.url, status: h.status, events: h.enabled_events })), null, 2));
-if (toProd.length) die(`a test-mode webhook endpoint points at the live site (${toProd.map((h) => h.url).join(", ")}): a test purchase would send events there. Stopped before buying anything.`);
-check("no test-mode webhook endpoint points at the live site", true, hooks.length ? `${hooks.length} endpoint(s), none on flourishmoney.app` : "none");
-const taxSettings = await stripe("GET", "/tax/settings").catch(() => null);
-const TAX_ON = taxSettings && taxSettings.status === "active";
-check("Stripe Tax settings in test mode", true, TAX_ON ? "active: checkout adds tax" : `status ${taxSettings ? taxSettings.status : "unreadable"}: run with tax off`);
+let TAX_ON = true;
+if (LOCAL_PAY) {
+  console.log("0. --local-payment: Stripe is not called; each paid session is built here from the checkout's own parameters");
+  check("payment simulated locally (no Stripe key on this Mac yet)", true, "Stripe Checkout and Stripe's own events are NOT exercised in this run");
+} else {
+  console.log("0. Stripe test mode, read only");
+  const acct = await stripe("GET", "/balance");
+  if (acct.livemode !== false) die("that key is not in test mode");
+  const hooks = (await stripe("GET", "/webhook_endpoints?limit=100")).data || [];
+  const toProd = hooks.filter((h) => h.status === "enabled" && /flourishmoney\.app/.test(h.url) && !/--|deploy-preview/.test(h.url));
+  check("test mode key", true);
+  fs.writeFileSync(path.join(OUT, "stripe-test-webhooks.json"), JSON.stringify(hooks.map((h) => ({ url: h.url, status: h.status, events: h.enabled_events })), null, 2));
+  if (toProd.length) die(`a test-mode webhook endpoint points at the live site (${toProd.map((h) => h.url).join(", ")}): a test purchase would send events there. Stopped before buying anything.`);
+  check("no test-mode webhook endpoint points at the live site", true, hooks.length ? `${hooks.length} endpoint(s), none on flourishmoney.app` : "none");
+  const taxSettings = await stripe("GET", "/tax/settings").catch(() => null);
+  TAX_ON = !!taxSettings && taxSettings.status === "active";
+  check("Stripe Tax settings in test mode", true, TAX_ON ? "active: checkout adds tax" : `status ${taxSettings ? taxSettings.status : "unreadable"}: run with tax off`);
+}
 
 // ── 1. a throwaway local Supabase ─────────────────────────────────────────────────────────────────────
 console.log("1. local Supabase (flourish-gift-e2e)");
@@ -137,6 +147,25 @@ global.fetch = async (url, init) => {
   }
   return realFetch(url, init);
 };
+// --local-payment: what Stripe would hold. The checkout's parameters are kept as gift.js sent them, and "paying" turns
+// them into a paid session (13% HST on top, as Stripe Tax charges in Ontario) and its event.
+const localSessions = new Map();
+let localN = 0;
+const localStripePost = async (p, params) => {
+  if (p !== "/checkout/sessions") throw new Error(`local payment: unexpected ${p}`);
+  const id = `cs_test_local_${Date.now()}_${++localN}`;
+  localSessions.set(id, params);
+  return { id, url: `${LOCAL}/local-checkout/${id}` };
+};
+function localPaidSession(id) {
+  const prm = localSessions.get(id), item = prm.line_items[0].price_data;
+  const tax = Math.round(item.unit_amount * 0.13);
+  return { id, object: "checkout.session", mode: prm.mode, payment_status: "paid", livemode: false, payment_intent: `pi_local_${id.slice(-12)}`,
+    amount_subtotal: item.unit_amount, amount_total: item.unit_amount + tax, total_details: { amount_tax: tax }, currency: item.currency,
+    customer_details: { email: prm.customer_email }, customer_email: prm.customer_email, metadata: prm.metadata,
+    allow_promotion_codes: prm.allow_promotion_codes, automatic_tax: prm.automatic_tax, subscription: null };
+}
+const localEvent = (type, object) => ({ id: `evt_local_${crypto.randomBytes(6).toString("hex")}`, object: "event", type, livemode: false, created: Math.floor(Date.now() / 1000), data: { object } });
 const memStore = () => { const m = new Map(); return { get: async (k) => m.get(k) || null, setJSON: async (k, v) => { m.set(k, v); } }; };
 const attempts = memStore();
 
@@ -147,7 +176,13 @@ const server = http.createServer(async (req, res) => {
   const event = { httpMethod: req.method, headers: Object.fromEntries(Object.entries(req.headers)), body: raw, isBase64Encoded: false, queryStringParameters: Object.fromEntries(u.searchParams) };
   const reply = (r) => { res.writeHead(r.statusCode, r.headers || {}); res.end(r.body || ""); };
   try {
-    if (u.pathname === "/api/gift") return reply(await giftFn.run(event, { store: attempts }));
+    if (u.pathname === "/api/gift") return reply(await giftFn.run(event, { store: attempts, ...(LOCAL_PAY ? { stripePost: localStripePost } : {}) }));
+    if (LOCAL_PAY && u.pathname.startsWith("/local-checkout/")) {
+      // Stands in for Stripe's page: shows what would be charged, then sends the buyer back as Stripe would.
+      const prm = localSessions.get(u.pathname.split("/").pop());
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(`<!doctype html><meta name=viewport content="width=device-width"><body style="font-family:system-ui;padding:24px"><h1>Local stand-in for Stripe Checkout</h1><p>Not Stripe. Mode: ${prm.mode}. Item: ${prm.line_items[0].price_data.product_data.name}, ${(prm.line_items[0].price_data.unit_amount / 100).toFixed(2)} ${prm.currency || prm.line_items[0].price_data.currency.toUpperCase()} plus tax. Promotion codes: ${prm.allow_promotion_codes}. Automatic tax: ${prm.automatic_tax.enabled}.</p><a id=pay href="${prm.success_url}">Pay (simulated)</a></body>`);
+    }
     if (u.pathname === "/api/billing") return reply(await billingFn.handler(event));
     if (u.pathname.startsWith("/api/")) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"not_found"}'); }
     let file = path.join(dist, decodeURIComponent(u.pathname));
@@ -210,8 +245,17 @@ async function buyGift(page, { plan, delivery, name, email, message, sendOn, sta
   const resp = page.waitForResponse((r) => r.url().endsWith("/api/gift") && r.request().method() === "POST");
   await page.click("#submit");
   const j = await (await resp).json();
-  const sessionId = (/(cs_test_[A-Za-z0-9]+)/.exec(j.url || "") || [])[1];
+  const sessionId = (/(cs_test_[A-Za-z0-9_]+)/.exec(j.url || "") || [])[1];
   if (!sessionId) throw new Error(`no checkout: ${JSON.stringify(j)}`);
+  if (LOCAL_PAY) {
+    await page.waitForURL(/local-checkout/);
+    await shot(page, `${label}-2-checkout-stand-in`);
+    await page.click("#pay");
+    await page.waitForURL(/flourishmoney\.app\/gift\/\?bought=1/, { timeout: 30000 });
+    await page.waitForSelector("#thanks:not([hidden])");
+    await shot(page, `${label}-3-thank-you`);
+    return sessionId;
+  }
   // Stripe's hosted Checkout, test mode: Stripe's published test card.
   await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30000 });
   await page.waitForSelector("#cardNumber", { timeout: 30000 });
@@ -245,12 +289,12 @@ try {
   console.log("3. buy a year of flourish (Stripe test mode)");
   const page = await newPage();
   const s1 = await buyGift(page, { plan: "flourish", delivery: "email", name: "Sam Tester", email: "gift-e2e-recipient@example.com", message: "Merry Christmas, Sam. Enjoy the year.", sendOn: torontoToday }, "gift1");
-  const sess1 = await stripe("GET", `/checkout/sessions/${s1}`);
-  check("gift 1 paid in Stripe test mode, one-time (payment mode)", sess1.payment_status === "paid" && sess1.mode === "payment" && !sess1.subscription,
+  const sess1 = LOCAL_PAY ? localPaidSession(s1) : await stripe("GET", `/checkout/sessions/${s1}`);
+  check(`gift 1 paid${LOCAL_PAY ? " (simulated)" : " in Stripe test mode"}, one-time (payment mode)`, sess1.payment_status === "paid" && sess1.mode === "payment" && !sess1.subscription,
     `total ${sess1.amount_total} ${sess1.currency}, tax ${sess1.total_details?.amount_tax ?? 0}`);
   check("no promotion codes, and Stripe Tax as set", sess1.allow_promotion_codes !== true && !!sess1.automatic_tax?.enabled === !!TAX_ON);
-  const e1 = await stripeEvent("checkout.session.completed", (o) => o.id === s1);
-  check("Stripe's checkout.session.completed event found", !!e1, e1 ? e1.id : "not found");
+  const e1 = LOCAL_PAY ? localEvent("checkout.session.completed", sess1) : await stripeEvent("checkout.session.completed", (o) => o.id === s1);
+  check(LOCAL_PAY ? "checkout.session.completed event (built locally)" : "Stripe's checkout.session.completed event found", !!e1, e1 ? e1.id : "not found");
   const d1 = await deliver(e1);
   const row1 = await giftRow(s1);
   check("webhook (signature verified): 200 and one code", d1.statusCode === 200 && !!row1, row1 ? `${row1.plan}, ${row1.delivery}, send on ${row1.send_on}` : d1.body);
@@ -337,14 +381,16 @@ try {
   // ── gift 2: with Plus, printed, refunded ────────────────────────────────────────────────────────────
   console.log("7. buy a year of flourish with Plus, then refund it");
   const s2 = await buyGift(await newPage(), { plan: "flourish_plus", delivery: "print", name: "Robin", message: "For you", startOn: tomorrow }, "gift2");
-  const e2 = await stripeEvent("checkout.session.completed", (o) => o.id === s2);
+  const e2 = LOCAL_PAY ? localEvent("checkout.session.completed", localPaidSession(s2)) : await stripeEvent("checkout.session.completed", (o) => o.id === s2);
   await deliver(e2);
   const row2 = await giftRow(s2);
   check("gift 2 (with Plus, printed card, starting tomorrow): one code", !!row2 && row2.plan === "flourish_plus" && row2.delivery === "print" && row2.start_on === tomorrow);
-  const sess2 = await stripe("GET", `/checkout/sessions/${s2}`);
-  await stripe("POST", "/refunds", { payment_intent: sess2.payment_intent });
-  const r2 = await stripeEvent("charge.refunded", (o) => o.payment_intent === sess2.payment_intent);
-  check("Stripe's charge.refunded event found", !!r2, r2 ? r2.id : "not found");
+  const sess2 = LOCAL_PAY ? localPaidSession(s2) : await stripe("GET", `/checkout/sessions/${s2}`);
+  if (!LOCAL_PAY) await stripe("POST", "/refunds", { payment_intent: sess2.payment_intent });
+  const r2 = LOCAL_PAY
+    ? localEvent("charge.refunded", { id: `ch_local_${s2.slice(-8)}`, object: "charge", payment_intent: sess2.payment_intent, refunded: true, amount_refunded: sess2.amount_total, amount: sess2.amount_total })
+    : await stripeEvent("charge.refunded", (o) => o.payment_intent === sess2.payment_intent);
+  check(LOCAL_PAY ? "charge.refunded event (built locally)" : "Stripe's charge.refunded event found", !!r2, r2 ? r2.id : "not found");
   const dr = await deliver(r2);
   const row2b = await giftRow(s2);
   check("refunded while unused: the code is void", dr.statusCode === 200 && !!row2b.voided_at && row2b.status === "void");
@@ -372,7 +418,7 @@ try {
 } finally {
   await browser.close();
   server.close();
-  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ at: new Date().toISOString(), stripe_tax: TAX_ON, results }, null, 2));
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ at: new Date().toISOString(), payment: LOCAL_PAY ? "simulated locally (no Stripe)" : "Stripe test mode", stripe_tax: TAX_ON, results }, null, 2));
   fs.rmSync(dist, { recursive: true, force: true });
   if (!KEEP) sb(["stop", "--no-backup"]);
 }
