@@ -12,46 +12,46 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const IDS = Object.freeze([
+// Written out in full, so scripts/check-pending-words.mjs sees every placeholder in this file.
+const GIFT_WORDS = Object.freeze({
   // What Stripe Checkout shows for each gift (the line item), and under it.
-  "gift-stripe-name-flourish",
-  "gift-stripe-name-plus",
-  "gift-stripe-description",
+  "gift-stripe-name-flourish": "[WORDS: gift-stripe-name-flourish]",
+  "gift-stripe-name-plus": "[WORDS: gift-stripe-name-plus]",
+  "gift-stripe-description": "[WORDS: gift-stripe-description]",
   // The plan's name inside a sentence ({plan}).
-  "gift-plan-flourish",
-  "gift-plan-plus",
+  "gift-plan-flourish": "[WORDS: gift-plan-flourish]",
+  "gift-plan-plus": "[WORDS: gift-plan-plus]",
   // Email 1, to the buyer, right away.
-  "gift-email1-subject",
-  "gift-email1-intro",
-  "gift-email1-delivery-email",
-  "gift-email1-delivery-print",
-  "gift-email1-code-label",
-  "gift-email1-card-line",
-  "gift-email1-card-button",
-  "gift-email1-how",
-  "gift-email1-start-now",
-  "gift-email1-start-on",
-  "gift-email1-onetime",
-  "gift-email1-refund",
-  "gift-email1-receipt",
+  "gift-email1-subject": "[WORDS: gift-email1-subject]",
+  "gift-email1-intro": "[WORDS: gift-email1-intro]",
+  "gift-email1-delivery-email": "[WORDS: gift-email1-delivery-email]",
+  "gift-email1-delivery-print": "[WORDS: gift-email1-delivery-print]",
+  "gift-email1-code-label": "[WORDS: gift-email1-code-label]",
+  "gift-email1-card-line": "[WORDS: gift-email1-card-line]",
+  "gift-email1-card-button": "[WORDS: gift-email1-card-button]",
+  "gift-email1-how": "[WORDS: gift-email1-how]",
+  "gift-email1-start-now": "[WORDS: gift-email1-start-now]",
+  "gift-email1-start-on": "[WORDS: gift-email1-start-on]",
+  "gift-email1-onetime": "[WORDS: gift-email1-onetime]",
+  "gift-email1-refund": "[WORDS: gift-email1-refund]",
+  "gift-email1-receipt": "[WORDS: gift-email1-receipt]",
   // Email 2, to the recipient, at 7 a.m. Eastern on the day the buyer chose.
-  "gift-email2-subject",
-  "gift-email2-hello-name",
-  "gift-email2-hello",
-  "gift-email2-intro",
-  "gift-email2-message-label",
-  "gift-email2-code-label",
-  "gift-email2-how",
-  "gift-email2-button",
-  "gift-email2-start-now",
-  "gift-email2-start-on",
-  "gift-email2-apps",
-  "gift-email2-onetime",
+  "gift-email2-subject": "[WORDS: gift-email2-subject]",
+  "gift-email2-hello-name": "[WORDS: gift-email2-hello-name]",
+  "gift-email2-hello": "[WORDS: gift-email2-hello]",
+  "gift-email2-intro": "[WORDS: gift-email2-intro]",
+  "gift-email2-message-label": "[WORDS: gift-email2-message-label]",
+  "gift-email2-code-label": "[WORDS: gift-email2-code-label]",
+  "gift-email2-how": "[WORDS: gift-email2-how]",
+  "gift-email2-button": "[WORDS: gift-email2-button]",
+  "gift-email2-start-now": "[WORDS: gift-email2-start-now]",
+  "gift-email2-start-on": "[WORDS: gift-email2-start-on]",
+  "gift-email2-apps": "[WORDS: gift-email2-apps]",
+  "gift-email2-onetime": "[WORDS: gift-email2-onetime]",
   // Both emails, at the bottom.
-  "gift-email-footer",
-]);
-
-const GIFT_WORDS = Object.freeze(Object.fromEntries(IDS.map((id) => [id, `[WORDS: ${id}]`])));
+  "gift-email-footer": "[WORDS: gift-email-footer]",
+});
+const IDS = Object.freeze(Object.keys(GIFT_WORDS));
 
 /** The words for an id, with any {key} filled from vars. Throws on an unknown id. */
 function giftWords(id, vars = {}, words = GIFT_WORDS) {
