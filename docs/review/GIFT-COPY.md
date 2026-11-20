@@ -225,10 +225,8 @@ section 1 after the 1.1.7 entries, as a bold label then the paragraph (`GIFT_PRI
 build compiles it away). On the website, the Terms and the Privacy Policy are both dated `GIFT_LEGAL_DATE` (the deploy day)
 unless their own date is later; a store app's dates do not move.
 
-Still to approve (not in code): a gift sentence for section 6's Resend line, drafted in
-`docs/review/GIFT-PRIVACY-RESEND-DRAFT.md`.
-
 | id | where | draft | status |
 |---|---|---|---|
 | `gift-privacy-label` | Label | Gifts: | approved |
 | `gift-privacy` | Paragraph | If you buy a flourish gift on our website, we keep your name and email, the name and email you give us for the person receiving it, your optional message, the dates you choose for sending and starting, and the gift's code and status. Stripe processes the payment, and we never receive your card number. We use the recipient's email only to send that gift on the date you chose, and the email shows your name. When a gift is redeemed, we record which flourish account redeemed it and when. If you give us someone else's name and email, please make sure they would be comfortable getting a gift email from flourish. We keep gift information only as long as we need it to send, redeem, refund or support the gift, or to meet our legal record-keeping requirements. | approved |
+| `gift-privacy-resend` | Section 6, after the Resend line (approved 2026-11-20, `docs/review/GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md`) | It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it. | approved |

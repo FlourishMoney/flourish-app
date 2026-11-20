@@ -14,6 +14,8 @@
 //      empties; the Terms' Gifts section shows on the website only
 //   7  the Privacy Policy's Gifts entry (docs/review/PLUS-COPY-APPROVED-2026-11-20.md, last section), word for word, on
 //      the website's policy only, in the 1.1.7 entries' style
+//   8  the Privacy Policy's Resend line, its gift sentence (docs/review/GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md), word
+//      for word, website only
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -134,5 +136,16 @@ const sec1 = APP.indexOf('data-privacy-117="agreement"'), sec2 = APP.indexOf("2.
 t.ok(sec1 > 0 && APP.indexOf("{GIFT_PRIVACY && !native") > sec1 && APP.indexOf("{GIFT_PRIVACY && !native") < sec2, "7e …in section 1, after the 1.1.7 entries");
 const privRules = [PRIV.label, PRIV.paragraph].join(" ");
 t.ok(!BANNED.some((rx) => rx.test(privRules)) && !/Flourish/.test(privRules) && !/—/.test(privRules), "7f it keeps the rules: none of the banned words, flourish in lowercase, no em dash");
+
+// ── 8. the Privacy Policy's Resend line, its gift sentence (approved 2026-11-20) ───────────────────
+const RESEND_SHEET = read("docs", "review", "GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md");
+const RESEND = (/^- `gift-privacy-resend`: (.+)$/m.exec(RESEND_SHEET) || [])[1];
+t.ok(/APPROVED 2026-11-20/.test(RESEND_SHEET) && RESEND === "It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it.",
+  "8a the approved sheet holds the sentence as Amanda approved it (Option A, with her change)");
+t.eq(literal("GIFT_RESEND_LINE"), RESEND, "8b lib/giftReturn.js GIFT_RESEND_LINE holds it word for word, empty in a native build");
+t.eq(ROWS["gift-privacy-resend"], { text: RESEND, status: "approved" }, "8c GIFT-COPY.md lists it, approved");
+t.ok(APP.includes('<strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}{GIFT_RESEND_LINE && !native ? `. ${GIFT_RESEND_LINE}` : ""}</div>'),
+  "8d the policy shows it after the Resend line, before and after the newsletter launch, on the website only");
+t.ok(!BANNED.some((rx) => rx.test(RESEND)) && !sentences(RESEND).some((y) => /^(save|spend|pay|invest)/i.test(y)) && !/Flourish|—/.test(RESEND), "8e it keeps the rules");
 
 t.summary("giftWords.test");

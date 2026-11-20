@@ -48,6 +48,10 @@ export const GIFT_PRIVACY = NATIVE_BUILD ? null : Object.freeze({
   paragraph: "If you buy a flourish gift on our website, we keep your name and email, the name and email you give us for the person receiving it, your optional message, the dates you choose for sending and starting, and the gift's code and status. Stripe processes the payment, and we never receive your card number. We use the recipient's email only to send that gift on the date you chose, and the email shows your name. When a gift is redeemed, we record which flourish account redeemed it and when. If you give us someone else's name and email, please make sure they would be comfortable getting a gift email from flourish. We keep gift information only as long as we need it to send, redeem, refund or support the gift, or to meet our legal record-keeping requirements.",
 });
 
+// The Privacy Policy's section 6 Resend line, its gift sentence (approved 2026-11-20, docs/review/GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md):
+// on the WEBSITE's policy only, after the Resend line (before and after the newsletter launch alike). Empty in a native build.
+export const GIFT_RESEND_LINE = NATIVE_BUILD ? "" : "It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it.";
+
 // The day the Terms' Gifts section and the Privacy Policy's Gifts entry go live on the website (YYYY-MM-DD): the day this
 // deploys. SET IT TO THE REAL DEPLOY DAY BEFORE DEPLOYING (docs/ops/GIFT-GO-LIVE.md, step 1). On the website both pages'
 // "Last updated" is the later of their own date and this one, and the Before you start record keeps the same dates

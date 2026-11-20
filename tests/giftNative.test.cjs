@@ -63,7 +63,7 @@ const hits = (dir) => textFiles(dir).flatMap((f) => { const s = fs.readFileSync(
   t.ok(pages.every((f) => fs.readFileSync(path.join(web, "dist", "gift", f)).equals(fs.readFileSync(path.join(ROOT, "public", "gift", f)))), "3a the website serves every gift page and the QR code, byte for byte");
   const webJs = textFiles(path.join(web, "dist", "assets")).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(f, "utf8")).join("\n");
   t.ok(webJs.includes("/gift/redeem") && webJs.includes("flourish_gift_return_at"), "3b the website's app knows the way back to the redeem page after signing in");
-  t.ok(webJs.includes("If you buy a flourish gift on our website") && webJs.includes("You can buy a year of flourish as a gift"), "3c the website's Privacy Policy and Terms carry their Gifts words");
+  t.ok(webJs.includes("If you buy a flourish gift on our website") && webJs.includes("You can buy a year of flourish as a gift") && webJs.includes("It also sends gift emails: the gift code and printable card to the buyer"), "3c the website's Privacy Policy (its Gifts entry and Resend sentence) and Terms carry their Gifts words");
 
   // ── 4. nothing in the app calls the gift endpoint ───────────────────────────────────────────────
   const src = files(path.join(ROOT, "src")).filter((f) => /\.(js|jsx)$/.test(f)).map((f) => fs.readFileSync(f, "utf8")).join("\n");

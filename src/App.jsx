@@ -36,7 +36,7 @@ import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSp
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 // Gifts, website only (lib/giftReturn.js): back to /gift/redeem after signing in, and the Settings plan line. Empty in a native build.
-import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, GIFT_PRIVACY, GIFT_LEGAL_DATE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
+import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, GIFT_PRIVACY, GIFT_RESEND_LINE, GIFT_LEGAL_DATE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
@@ -13971,7 +13971,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
       {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Apple and Google</strong>: payments for subscriptions bought in the iPhone or Android app</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
-      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}</div>
+      {/* The Resend line's gift sentence (lib/giftReturn.js GIFT_RESEND_LINE, approved 2026-11-20): the website's policy only. */}
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}{GIFT_RESEND_LINE && !native ? `. ${GIFT_RESEND_LINE}` : ""}</div>
       {launched&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Google Play</strong>: {PW.googlePlay}</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}

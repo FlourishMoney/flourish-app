@@ -1,6 +1,17 @@
-# Privacy Policy, Resend line: a gift draft (PENDING, not in code)
+# Privacy Policy, Resend line: the gift sentence (APPROVED 2026-11-20)
 
-Drafted 2026-11-20 on branch `gift-purchase`. Nothing here is in the code yet. Once approved, it goes in word for word.
+Amanda approved Option A on 2026-11-20, with one change. In the code word for word, after the Resend line, on the website's
+policy only (`GIFT_RESEND_LINE` in `src/lib/giftReturn.js`; tests/giftWords.test.cjs holds it to this file).
+
+Approved sentence:
+
+- `gift-privacy-resend`: It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it.
+
+How it reads on the website:
+- Before the newsletter launch: **Resend:** sends account and waitlist emails. It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it.
+- From the launch: **Resend:** sends account emails, waitlist emails, and the weekly newsletter, including its confirmation and unsubscribe links. It also sends gift emails: the gift code and printable card to the buyer and, if the buyer chose email delivery, the gift to the person receiving it.
+
+The draft as it was reviewed follows.
 
 ## Why
 
@@ -42,6 +53,6 @@ Shorter, but it changes the newsletter line approved on 2026-11-05, so that line
 - No em dash. The word flourish is not used.
 - Nothing sends anyone to the website instead of the app, and the store apps do not show it.
 
-## Once approved
+## Once approved (done 2026-11-20)
 
 CC puts the chosen option in word for word, on the website's policy only (like `GIFT_PRIVACY` in `src/lib/giftReturn.js`), with a test that holds it to the approved file. It goes out in the gift deploy if it is approved before then (`docs/ops/GIFT-GO-LIVE.md`, step 1). It does not change the policy's date beyond the gift date.
