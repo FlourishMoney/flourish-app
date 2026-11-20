@@ -434,6 +434,10 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > Flourish Plus > Manage subscription.",
       "If you share a joint account, only one of you should link it, or it will be counted twice.",
       "Too many tries. Wait an hour, then try again.",
+      // Gifts (words approved by ChatGPT + Grok, 2026-11-20, used word for word): the website's Terms, Gifts section, last
+      // paragraph (src/lib/giftReturn.js GIFT_TERMS). Legal text: "Keep the code private" is about guarding a gift code,
+      // not about the household's money.
+      "A gift has no cash value and can't be exchanged for money or credit. Keep the code private until you give it: anyone who has the code can redeem it.",
     ]);
     // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
     const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;
