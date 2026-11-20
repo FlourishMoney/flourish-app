@@ -21,6 +21,8 @@
 - **39** `plan-adds-title`: was "What a subscription adds"
 - **40** `plan-adds-lead`: was "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If."
 
+- **49** (not one of the 48 placeholders): the website plans screen's headline, `UPGRADE_COPY.headline` in `src/lib/upgradeFlow.js`, was "All of flourish, in one subscription" and is now "flourish, in one subscription" (approved 2026-11-20, ChatGPT 100, Grok 100), for the same reason as line 40.
+
 The other 37 lines were approved as first drafted. Line 31 is the entry form's button: "Done", not "Save".
 
 ## Every line: where it shows, what it must say, the approved line and its limit

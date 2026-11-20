@@ -53,7 +53,9 @@ export function trialEndLabel(endsAtMs, { trialActive = false } = {}) {
 // where it shows. Do not reword them here. Reused approved labels: "Close", "← Back", "Opening checkout…", the plan
 // rows' own lines (offeredPlans), the founding note, and "Upgrade →" and trialChip on the countdown.
 export const UPGRADE_COPY = Object.freeze({
-  headline: "All of flourish, in one subscription",
+  // 2026-11-20 (ChatGPT 100, Grok 100, Amanda), for 1.1.8: it said "All of flourish", which is not true once the
+  // flourish Plus add-on is sold. Line 49 of docs/review/PLUS-COPY-APPROVED-2026-11-20.md, word for word.
+  headline: "flourish, in one subscription",
   bullets: Object.freeze(["The coach, with no weekly limit", "What-If as often as you like", "More than one bank, all in one place"]),
   continue: "Review my plan",
   reviewHeading: "Check your plan",

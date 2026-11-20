@@ -103,12 +103,17 @@ const REPO = path.join(__dirname, "..");
     // THE 48 LINES, APPROVED 2026-11-20 (ChatGPT 100, Grok 100, Amanda). The record is docs/review/PLUS-COPY-APPROVED-2026-11-20.md,
     // numbered 1 to 48 in the order the code holds them: the app's 45 (src/lib/netWorthWords.js), then the server's 3
     // (netlify/functions/_lib/planWords.js). The code, the record and the words doc say the same thing, word for word.
+    // Line 49, approved the same day, is the website plans screen's headline (src/lib/upgradeFlow.js UPGRADE_COPY.headline).
     const fsW = require("fs"), pathW = require("path");
     const record = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "review", "PLUS-COPY-APPROVED-2026-11-20.md"), "utf8");
-    const approved = [...record.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => [Number(m[1]), m[2]]);
+    const numbered = [...record.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => [Number(m[1]), m[2]]);
+    const approved = numbered.slice(0, 48);
     const SRV = require("../netlify/functions/_lib/planWords.js");
     const inCode = [...Object.entries(W.NET_WORTH_WORDS), ...Object.entries(SRV.PLAN_WORDS)];
-    t.eq([approved.length, approved.map(([n]) => n).join(",") === Array.from({ length: 48 }, (_, i) => i + 1).join(","), inCode.length], [48, true, 48], "7g the record numbers 48 lines, and the code holds 48 (45 in the app, 3 on the server)");
+    t.eq([numbered.length, numbered.map(([n]) => n).join(",") === Array.from({ length: 49 }, (_, i) => i + 1).join(","), inCode.length], [49, true, 48], "7g the record numbers 49 lines, 1 to 49; the first 48 are the words files' (45 in the app, 3 on the server)");
+    const { UPGRADE_COPY: UC } = await import("../src/lib/upgradeFlow.js");
+    t.eq([UC.headline, numbered[48] && numbered[48][1], /all of flourish/i.test(UC.headline)], ["flourish, in one subscription", "flourish, in one subscription", false],
+      "7g2 line 49 is the website plans screen's headline, word for word, and it no longer says \"All of flourish\"");
     t.eq(inCode.filter(([, w], i) => w !== approved[i][1]).map(([id]) => id), [], "7h every line in the code is its approved line in the record, word for word, in the record's order");
     const wordsDoc = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
     const docRows = Object.fromEntries([...wordsDoc.matchAll(/^\| `([a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+) \| (\d+) \|$/gm)].map((m) => [m[1], [m[2].trim(), Number(m[3])]]));
