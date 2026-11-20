@@ -122,7 +122,7 @@ function formatDay(v) {
 // ── THE BUYER'S FORM ─────────────────────────────────────────────────────────────────────────────────
 const clean = (v, max) => String(v == null ? "" : v)
   .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, " ")
-  // Square brackets become round ones, so nothing a buyer types can look like a "[WORDS: id]" placeholder (review,
+  // Square brackets become round ones, so nothing a buyer types can look like a words placeholder (review,
   // 2026-11-20: a name or message holding one would otherwise have stopped the emails).
   .replace(/\[/g, "(").replace(/\]/g, ")")
   .replace(/\s+/g, " ").trim().slice(0, max);
