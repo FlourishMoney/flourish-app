@@ -29,3 +29,9 @@ scripts/seed-screenshot-account.mjs
 # Claude Code local session files — never commit.
 .claude/
 Claude outputs/
+
+# The gift end-to-end run's output (screenshots and captured emails of test data; scripts/gift-e2e/run.mjs).
+docs/review/gift-e2e/
+# The throwaway local Supabase the gift end-to-end run starts.
+scripts/gift-e2e/supabase/.temp/
+scripts/gift-e2e/supabase/.branches/
