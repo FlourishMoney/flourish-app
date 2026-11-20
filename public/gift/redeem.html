@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  public/gift/redeem.html: REDEEM A GIFT, flourishmoney.app/gift/redeem (the card's QR code opens this page).
+  Website only: the iPhone and Android apps have no code box and no way here (Apple 3.1.1), and /api/gift refuses their
+  origins. Signed in (the website's own session), the person enters the code once; the plan turns on for 12 months
+  (netlify/functions/_lib/gifts.js redeemGift). Signed out, "Sign in or create an account" opens the website's own
+  sign-in (/?gift=redeem, src/lib/giftReturn.js), which brings them back here. Words: docs/review/GIFT-COPY.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>[WORDS: gift-redeem-title]</title>
+<link rel="icon" href="/flourish-adult-favicon-32.png">
+<link rel="stylesheet" href="/gift/gift.css">
+<script src="/gift/redeem.js" defer></script>
+</head>
+<body>
+<main>
+  <section class="card">
+    <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
+    <h1>[WORDS: gift-redeem-heading]</h1>
+    <p>[WORDS: gift-redeem-intro]</p>
+    <p class="onetime">[WORDS: gift-redeem-onetime]</p>
+  </section>
+
+  <section class="card" id="signed-out" hidden>
+    <p>[WORDS: gift-redeem-signin-body]</p>
+    <p><a class="btn" id="signin" href="/?gift=redeem">[WORDS: gift-redeem-signin-button]</a></p>
+  </section>
+
+  <form class="card" id="redeem-form" novalidate hidden>
+    <p class="muted"><span id="signed-in-as"></span> <button class="link" id="switch" type="button">[WORDS: gift-redeem-switch]</button></p>
+    <div class="field">
+      <label for="code">[WORDS: gift-redeem-code-label]</label>
+      <input class="code-input" id="code" name="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" inputmode="text">
+      <span class="help">[WORDS: gift-redeem-code-help]</span>
+    </div>
+    <p><button class="btn" id="submit" type="submit">[WORDS: gift-redeem-submit]</button></p>
+    <div class="notice bad" id="result-error" role="alert" hidden></div>
+  </form>
+
+  <section class="card" id="done" hidden>
+    <div class="notice" id="result-ok" role="status"></div>
+    <p id="paid-note" hidden></p>
+    <p id="renew-note" hidden></p>
+    <p>[WORDS: gift-redeem-next]</p>
+    <div class="badges">
+      <a id="app-store" href="https://apps.apple.com/ca/app/flourish-money-handled/id6792967778"><img src="/store-badges/download-on-the-app-store.svg" width="120" height="40" alt="Download on the App Store"></a>
+      <a id="google-play" href="https://play.google.com/store/apps/details?id=com.flourishmoney.app"><img src="/store-badges/GetItOnGooglePlay_Badge_Web_color_English.svg" width="135" height="40" alt="Get it on Google Play"></a>
+    </div>
+  </section>
+</main>
+<template id="words">
+  <span data-id="gift-redeem-signed-in">[WORDS: gift-redeem-signed-in]</span>
+  <span data-id="gift-redeem-working">[WORDS: gift-redeem-working]</span>
+  <span data-id="gift-redeem-empty">[WORDS: gift-redeem-empty]</span>
+  <span data-id="gift-redeem-ok">[WORDS: gift-redeem-ok]</span>
+  <span data-id="gift-redeem-ok-later">[WORDS: gift-redeem-ok-later]</span>
+  <span data-id="gift-redeem-paid-note">[WORDS: gift-redeem-paid-note]</span>
+  <span data-id="gift-redeem-renew-app-store">[WORDS: gift-redeem-renew-app-store]</span>
+  <span data-id="gift-redeem-renew-play-store">[WORDS: gift-redeem-renew-play-store]</span>
+  <span data-id="gift-redeem-renew-stripe">[WORDS: gift-redeem-renew-stripe]</span>
+  <span data-id="gift-redeem-used">[WORDS: gift-redeem-used]</span>
+  <span data-id="gift-redeem-mine">[WORDS: gift-redeem-mine]</span>
+  <span data-id="gift-redeem-invalid">[WORDS: gift-redeem-invalid]</span>
+  <span data-id="gift-redeem-void">[WORDS: gift-redeem-void]</span>
+  <span data-id="gift-redeem-limited">[WORDS: gift-redeem-limited]</span>
+  <span data-id="gift-redeem-signin-again">[WORDS: gift-redeem-signin-again]</span>
+  <span data-id="gift-redeem-error">[WORDS: gift-redeem-error]</span>
+  <span data-id="gift-plan-flourish">[WORDS: gift-plan-flourish]</span>
+  <span data-id="gift-plan-plus">[WORDS: gift-plan-plus]</span>
+</template>
+</body>
+</html>

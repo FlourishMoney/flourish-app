@@ -23,7 +23,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
 (async () => {
   const t = create();
   const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
-  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter", "clarity", "guide-media"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images, Clarity's loader, the guides' screens and link-preview images");
+  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter", "clarity", "guide-media", "gift"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images, Clarity's loader, the guides' screens and link-preview images, the gift pages");
 
   // ── 1. the web build keeps every landing file ───────────────────────────────────────────────
   const web = tempDir("landing-media-web");

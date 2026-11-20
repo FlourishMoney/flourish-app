@@ -35,6 +35,8 @@ import { getPricing, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
+// Gifts, website only (lib/giftReturn.js): back to /gift/redeem after signing in, and the Settings plan line. Empty in a native build.
+import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
@@ -12692,7 +12694,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
   </div>;
 }
 
-function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
+function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false,giftLine=null}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   // Couple mode: a link's invite opens Settings straight on Household (HouseholdSection).
   const [activeSection,setActiveSection]=useState(()=>household?.linkToken && household?.info?.enabled ? "household" : null);
@@ -13011,12 +13013,13 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {coveredByPartner ? HOUSEHOLD_WORDS.coveredByPartner
+            : giftLine ? giftLine
             : billingUi.mode==="manage"
             ? "Change your card or cancel."
             : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
         </div>
         {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
-        {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
+        {!coveredByPartner&&!giftLine&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
       </div>
     )}
     {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
@@ -17989,6 +17992,25 @@ export default function FlourishApp(){
       return foundingLinkPending(localStorage);
     }catch{ return false; }
   });
+  // A GIFT (lib/giftReturn.js, website only): /?gift=redeem, or one asked for on this device in the last 7 days. Signed out,
+  // the sign-in card opens with one line; signed in, the person goes back to the gift's redeem page. Never in a store app.
+  const [giftReturn,setGiftReturn]=useState(()=>{
+    if(isNativeApp() || !GIFT_REDEEM_PATH) return false;
+    try{
+      if(giftReturnInUrl(window.location.search)){
+        rememberGiftReturn(localStorage);
+        window.history.replaceState({},"",window.location.pathname+withoutGiftReturn(window.location.search)+window.location.hash);
+        return true;
+      }
+      return giftReturnPending(localStorage);
+    }catch{ return false; }
+  });
+  useEffect(()=>{
+    if(!giftReturn || !user?.id || !GIFT_REDEEM_PATH || isNativeApp()) return;
+    forgetGiftReturn(localStorage);
+    setGiftReturn(false);
+    window.location.assign(GIFT_REDEEM_PATH);
+  },[giftReturn,user?.id]);
   // The store apps (iOS, Android) sell nothing: no paywall, no upgrade button, no Plus pitch, no price
   // (billingUiState, PremiumGate). Their plan follows the web's rules since 2026-10-20 (lib/featureAccess.js).
   // ── Plaid reconnect state ─────────────────────────────────────
@@ -19754,7 +19776,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : (giftReturn && GIFT_SIGN_IN_NOTE ? GIFT_SIGN_IN_NOTE : null)} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -20049,7 +20071,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} giftLine={giftSettingsLine(billingStatus)} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;

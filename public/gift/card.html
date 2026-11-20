@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  public/gift/card.html: THE PRINTABLE GIFT CARD, linked from Email 1 (netlify/functions/_lib/gifts.js giftCardUrl).
+  Everything it shows comes from the link's FRAGMENT (#c=CODE&p=PLAN&to=NAME&m=MESSAGE&s=START), which the browser never
+  sends to a server, so the code reaches no log. noindex, no referrer, nothing loaded from elsewhere. The QR code is a
+  fixed file (public/gift/redeem-qr.svg, scripts/gift-qr.mjs) that opens flourishmoney.app/gift/redeem; the code is printed
+  beside it, never inside it. Website only. Words: docs/review/GIFT-COPY.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>[WORDS: gift-card-title]</title>
+<link rel="icon" href="/flourish-adult-favicon-32.png">
+<link rel="stylesheet" href="/gift/gift.css">
+<link rel="stylesheet" href="/gift/card.css">
+<script src="/gift/card.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="no-print"><button class="btn" id="print" type="button">[WORDS: gift-card-print-button]</button></p>
+  <p class="card notice bad" id="missing" hidden>[WORDS: gift-card-missing]</p>
+  <article class="giftcard" id="giftcard" hidden>
+    <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
+    <h1 id="plan-name"></h1>
+    <p class="for" id="for" hidden></p>
+    <blockquote id="message" hidden></blockquote>
+    <div class="redeem">
+      <img class="qr" src="/gift/redeem-qr.svg" width="132" height="132" alt="">
+      <div>
+        <p class="label">[WORDS: gift-card-code-label]</p>
+        <p class="code" id="code"></p>
+        <p>[WORDS: gift-card-redeem-at]</p>
+        <p class="muted">[WORDS: gift-card-scan]</p>
+      </div>
+    </div>
+    <p id="start"></p>
+    <p class="onetime">[WORDS: gift-card-onetime]</p>
+  </article>
+</main>
+<template id="words">
+  <span data-id="gift-plan-flourish-name">[WORDS: gift-plan-flourish-name]</span>
+  <span data-id="gift-plan-plus-name">[WORDS: gift-plan-plus-name]</span>
+  <span data-id="gift-card-for">[WORDS: gift-card-for]</span>
+  <span data-id="gift-card-start-on">[WORDS: gift-card-start-on]</span>
+  <span data-id="gift-card-start-now">[WORDS: gift-card-start-now]</span>
+</template>
+</body>
+</html>

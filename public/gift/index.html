@@ -1,0 +1,122 @@
+<!doctype html>
+<!--
+  public/gift/index.html: THE GIFT PAGE, flourishmoney.app/gift/ (Christmas 2026). Website only, English only.
+  Two one-time gifts. The prices come from /api/gift (netlify/functions/_lib/gifts.js GIFT_PRICES, the one value), never
+  from this page. Continue opens Stripe Checkout (payment mode, tax added at checkout, no promotion codes).
+  The native build removes public/gift (scripts/strip-landing-media.mjs) and refuses a build that mentions it
+  (scripts/check-native-build.mjs). Every line is a placeholder until Amanda approves docs/review/GIFT-COPY.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>[WORDS: gift-page-title]</title>
+<meta name="description" content="[WORDS: gift-page-description]">
+<link rel="icon" href="/flourish-adult-favicon-32.png">
+<link rel="stylesheet" href="/gift/gift.css">
+<script src="/gift/gift.js" defer></script>
+</head>
+<body>
+<main>
+  <section class="card" id="intro">
+    <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
+    <h1>[WORDS: gift-page-heading]</h1>
+    <p>[WORDS: gift-page-intro]</p>
+    <p class="onetime">[WORDS: gift-page-onetime]</p>
+  </section>
+
+  <section class="card" id="thanks" hidden>
+    <h2>[WORDS: gift-thanks-heading]</h2>
+    <p>[WORDS: gift-thanks-body]</p>
+    <p class="onetime">[WORDS: gift-page-onetime]</p>
+  </section>
+
+  <p class="card notice bad" id="unavailable" hidden>[WORDS: gift-error-unavailable]</p>
+
+  <form class="card" id="gift-form" novalidate>
+    <fieldset>
+      <legend>[WORDS: gift-form-plan-legend]</legend>
+      <div class="plans">
+        <label class="plan"><input type="radio" name="plan" value="flourish" checked>
+          <span><span class="plan-name">[WORDS: gift-plan-flourish-name]</span><br>
+            <span class="plan-price" data-price="flourish"></span> <span class="muted">[WORDS: gift-price-plus-tax]</span><br>
+            <span class="muted">[WORDS: gift-plan-flourish-detail]</span></span></label>
+        <label class="plan"><input type="radio" name="plan" value="flourish_plus">
+          <span><span class="plan-name">[WORDS: gift-plan-plus-name]</span><br>
+            <span class="plan-price" data-price="flourish_plus"></span> <span class="muted">[WORDS: gift-price-plus-tax]</span><br>
+            <span class="muted">[WORDS: gift-plan-plus-detail]</span></span></label>
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label for="buyer_email">[WORDS: gift-form-buyer-email]</label>
+      <input id="buyer_email" name="buyer_email" type="email" autocomplete="email" maxlength="254" required>
+      <span class="help">[WORDS: gift-form-buyer-email-help]</span>
+      <p class="error" data-error="buyer_email" hidden>[WORDS: gift-error-buyer-email]</p>
+    </div>
+
+    <fieldset>
+      <legend>[WORDS: gift-form-delivery-legend]</legend>
+      <label class="choice"><input type="radio" name="delivery" value="email" checked> [WORDS: gift-form-delivery-email]</label>
+      <label class="choice"><input type="radio" name="delivery" value="print"> [WORDS: gift-form-delivery-print]</label>
+    </fieldset>
+
+    <div class="field">
+      <label for="recipient_name">[WORDS: gift-form-recipient-name]</label>
+      <input id="recipient_name" name="recipient_name" type="text" autocomplete="off" maxlength="60">
+      <span class="help" data-when="print">[WORDS: gift-form-optional-print]</span>
+      <p class="error" data-error="recipient_name" hidden>[WORDS: gift-error-recipient-name]</p>
+    </div>
+
+    <div class="field" data-when="email">
+      <label for="recipient_email">[WORDS: gift-form-recipient-email]</label>
+      <input id="recipient_email" name="recipient_email" type="email" autocomplete="off" maxlength="254">
+      <span class="help">[WORDS: gift-form-recipient-email-help]</span>
+      <p class="error" data-error="recipient_email" hidden>[WORDS: gift-error-recipient-email]</p>
+    </div>
+
+    <div class="field" data-when="email">
+      <label for="send_on">[WORDS: gift-form-send-on]</label>
+      <input id="send_on" name="send_on" type="date">
+      <span class="help">[WORDS: gift-form-send-on-help]</span>
+      <p class="error" data-error="send_on" hidden>[WORDS: gift-error-send-on]</p>
+    </div>
+
+    <div class="field">
+      <label for="message">[WORDS: gift-form-message]</label>
+      <textarea id="message" name="message" maxlength="200"></textarea>
+      <span class="help">[WORDS: gift-form-message-help]</span>
+      <p class="error" data-error="message" hidden>[WORDS: gift-error-message]</p>
+    </div>
+
+    <div class="field">
+      <label for="start_on">[WORDS: gift-form-start-on]</label>
+      <input id="start_on" name="start_on" type="date">
+      <span class="help">[WORDS: gift-form-start-on-help]</span>
+      <p class="error" data-error="start_on" hidden>[WORDS: gift-error-start-on]</p>
+    </div>
+
+    <p class="onetime">[WORDS: gift-page-onetime]</p>
+    <p><button class="btn" id="submit" type="submit">[WORDS: gift-form-submit]</button></p>
+    <p class="error" id="form-error" hidden></p>
+    <p class="muted">[WORDS: gift-form-stripe-note]</p>
+  </form>
+
+  <section class="card">
+    <h2>[WORDS: gift-how-heading]</h2>
+    <ol>
+      <li>[WORDS: gift-how-1]</li>
+      <li>[WORDS: gift-how-2]</li>
+      <li>[WORDS: gift-how-3]</li>
+    </ol>
+    <p class="muted">[WORDS: gift-page-refund]</p>
+  </section>
+</main>
+<template id="words">
+  <span data-id="gift-error-limited">[WORDS: gift-error-limited]</span>
+  <span data-id="gift-error-generic">[WORDS: gift-error-generic]</span>
+  <span data-id="gift-form-sending">[WORDS: gift-form-sending]</span>
+</template>
+</body>
+</html>
