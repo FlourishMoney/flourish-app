@@ -173,7 +173,8 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, LOCAL);
   let raw = ""; for await (const c of req) raw += c;
-  const event = { httpMethod: req.method, headers: Object.fromEntries(Object.entries(req.headers)), body: raw, isBase64Encoded: false, queryStringParameters: Object.fromEntries(u.searchParams) };
+  // As Netlify does: the client's address in x-nf-client-connection-ip.
+  const event = { httpMethod: req.method, headers: { ...Object.fromEntries(Object.entries(req.headers)), "x-nf-client-connection-ip": req.socket.remoteAddress || "127.0.0.1" }, body: raw, isBase64Encoded: false, queryStringParameters: Object.fromEntries(u.searchParams) };
   const reply = (r) => { res.writeHead(r.statusCode, r.headers || {}); res.end(r.body || ""); };
   try {
     if (u.pathname === "/api/gift") return reply(await giftFn.run(event, { store: attempts, ...(LOCAL_PAY ? { stripePost: localStripePost } : {}) }));
@@ -242,11 +243,13 @@ async function buyGift(page, { plan, delivery, name, email, message, sendOn, sta
   if (delivery === "email") { await page.fill("#recipient_email", email); await page.fill("#send_on", sendOn); }
   if (message) await page.fill("#message", message);
   if (startOn) await page.fill("#start_on", startOn);
-  const resp = page.waitForResponse((r) => r.url().endsWith("/api/gift") && r.request().method() === "POST");
   await page.click("#submit");
-  const j = await (await resp).json();
-  const sessionId = (/(cs_test_[A-Za-z0-9_]+)/.exec(j.url || "") || [])[1];
-  if (!sessionId) throw new Error(`no checkout: ${JSON.stringify(j)}`);
+  // The session id is in the checkout's own address (Stripe's /c/pay/cs_test_..., or the local stand-in's).
+  await page.waitForURL(/checkout\.stripe\.com|local-checkout/, { timeout: 30000 }).catch(async () => {
+    throw new Error(`no checkout: ${await page.textContent("#form-error").catch(() => "")} ${await page.evaluate(() => [...document.querySelectorAll("[data-error]:not([hidden])")].map((e) => e.dataset.error).join(","))}`);
+  });
+  const sessionId = (/(cs_test_[A-Za-z0-9_]+)/.exec(page.url()) || [])[1];
+  if (!sessionId) throw new Error(`no session id in ${page.url().split("#")[0]}`);
   if (LOCAL_PAY) {
     await page.waitForURL(/local-checkout/);
     await shot(page, `${label}-2-checkout-stand-in`);
@@ -286,7 +289,7 @@ const tomorrow = gifts.addDays(torontoToday, 1);
 let ok1 = false;
 try {
   // ── buy gift 1: a year of flourish, emailed today ───────────────────────────────────────────────────
-  console.log("3. buy a year of flourish (Stripe test mode)");
+  console.log(`3. buy a year of flourish (${LOCAL_PAY ? "payment simulated locally" : "Stripe test mode"})`);
   const page = await newPage();
   const s1 = await buyGift(page, { plan: "flourish", delivery: "email", name: "Sam Tester", email: "gift-e2e-recipient@example.com", message: "Merry Christmas, Sam. Enjoy the year.", sendOn: torontoToday }, "gift1");
   const sess1 = LOCAL_PAY ? localPaidSession(s1) : await stripe("GET", `/checkout/sessions/${s1}`);
@@ -315,7 +318,7 @@ try {
   check("the printable card shows the code, and its QR opens the redeem page", cardCode === gifts.formatGiftCode(row1.code) && qr.stdout.trim() === "https://flourishmoney.app/gift/redeem", `QR reads ${qr.stdout.trim() || qr.stderr.trim()}`);
 
   // ── Email 2 ─────────────────────────────────────────────────────────────────────────────────────────
-  console.log("4. the recipient's email (the 15-minute job)");
+  console.log("4. the recipient's email (the 5-minute job)");
   const before = emails.length;
   const sweep1 = JSON.parse((await sweepFn.handler({}, {})).body);
   const recip = emails.slice(before).filter((m) => m.key === `gift-recipient/${row1.code}`);
@@ -347,8 +350,12 @@ try {
   check("signing in on the website brings them back to the redeem page", (await rp.textContent("#signed-in-as")).includes(A.email));
   await rp.fill("#code", gifts.formatGiftCode(row1.code).toLowerCase());
   await shot(rp, "redeem-3-code-entered");
+  const redeemReply = rp.waitForResponse((r) => r.url().endsWith("/api/gift") && r.request().method() === "POST");
   await rp.click("#submit");
-  await rp.waitForSelector("#done:not([hidden])", { timeout: 20000 });
+  const rr = await redeemReply;
+  const rrBody = await rr.text().catch(() => "");
+  await rp.waitForSelector("#done:not([hidden]), #result-error:not([hidden])", { timeout: 20000 });
+  if (!(await rp.isVisible("#done"))) { await shot(rp, "redeem-4-FAILED"); throw new Error(`redeem showed: ${await rp.textContent("#result-error")} (HTTP ${rr.status()} ${rrBody.slice(0, 200)})`); }
   await shot(rp, "redeem-4-redeemed");
   const after1 = await giftRow(s1);
   const months = (Date.parse(after1.ends_at) - Date.parse(after1.starts_at)) / 86400e3;
@@ -362,8 +369,13 @@ try {
   check("the entitlement: paid on the website, the iPhone and Android", webS.paid === true && iosS.paid === true && andS.paid === true, `web covered_by ${webS.covered_by}, ends ${webS.period_end}`);
   check("…and the store apps are never told the word gift", !/gift/i.test(JSON.stringify(iosS) + JSON.stringify(andS)));
   const { getUserPlan } = require(path.join(FN, "_lib", "auth.js"));
+  const planTrial = await getUserPlan(A.id);
+  // A new account is on its 14-day trial (already unlimited, so the gift is not even asked). End the trial, as day 15
+  // would, and the gift alone carries the plan.
+  psql(`begin; select set_config('request.jwt.claims', '{"role":"service_role"}', true); update public.profiles set trial_started_at = now() - interval '20 days', trial_ends_at = now() - interval '6 days' where user_id = '${A.id}'; commit;`);
   const planA = await getUserPlan(A.id);
-  check("getUserPlan (the coach, What-If and banks): premium", planA.entitlement === "premium" && planA.unlimited === true, `${planA.entitlement}, ${planA.covered_by}`);
+  check("getUserPlan (the coach, What-If and banks): after the trial, the gift makes it premium", planTrial.unlimited === true && planA.entitlement === "premium" && planA.unlimited === true && planA.covered_by === "gift",
+    `during the trial ${planTrial.entitlement}; after it ${planA.entitlement}, from ${planA.covered_by}`);
 
   // ── a second account, the same code ─────────────────────────────────────────────────────────────────
   console.log("6. the same code on a second account");

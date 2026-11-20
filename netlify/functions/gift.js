@@ -117,8 +117,11 @@ async function run(event, deps = {}) {
   }
 
   if (body.action === "redeem") {
-    // Counted before anything else, signed in or not, so a stream of guesses is slow from its first try.
-    if (await overLimit(store, "gift-redeem-ip", ip, LIMITS.redeemIp, { failClosed: true })) {
+    // Counted before anything else, signed in or not, so a stream of guesses is slow from its first try. Netlify always
+    // gives the client's address; without one this count is skipped (and logged), and the per-account limit below,
+    // which needs no address, still holds every try.
+    if (!ip) console.error("[gift] redeem: no client address; only the per-account limit applies");
+    else if (await overLimit(store, "gift-redeem-ip", ip, LIMITS.redeemIp, { failClosed: true })) {
       return json(429, H, { ok: false, result: "limited" }, { "Retry-After": "3600" });
     }
     const who = deps.getUser ? await deps.getUser(event) : await getUserFromRequest(event);

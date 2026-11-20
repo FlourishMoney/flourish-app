@@ -205,6 +205,10 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const ipStore = memStore(); let ipLast;
       for (let i = 0; i < 21; i++) ipLast = await mod(P.gift).run(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), { store: ipStore, getUser: async () => ({ user_id: `u-${i}` }), admin: fake.client });
       t.eq(ipLast.statusCode, 429, "5k …and 20 an hour per IP address, however many accounts try");
+      const noIp = { httpMethod: "POST", headers: { origin: "https://flourishmoney.app" }, body: JSON.stringify({ action: "redeem", code: "ZZZZZZZZZZZZ" }) };
+      const noIpStore = memStore(); const noIpAnswers = [];
+      for (let i = 0; i < 9; i++) { const r = await mod(P.gift).run(noIp, { store: noIpStore, getUser: async () => ({ user_id: "user-no-ip" }), admin: fake.client }); noIpAnswers.push(r.statusCode); }
+      t.eq([noIpAnswers[0], noIpAnswers[8]], [200, 429], "5k2 no client address (never on Netlify): the address count is skipped, and the per-account limit still stops the 9th try");
       const closed = await mod(P.gift).run(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), { store: null, getUser: user, admin: fake.client });
       t.eq(closed.statusCode, 429, "5l with no way to count, a redeem is refused (a guesser never gets unlimited tries)");
     }
