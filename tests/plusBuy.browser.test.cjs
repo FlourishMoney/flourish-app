@@ -19,6 +19,8 @@
 //   S3  the store refuses with "product not available", or the person closes the sheet: a calm line, or nothing
 //   S4  Android: Google Play's disclosure and Google's product id
 //   S5  a store app never reads a return address, never shows our price and never asks Stripe for anything
+//   S6  ONE PLUS PURCHASE AT A TIME: the server is asked to hold the household before the sheet opens; when the other
+//       partner is already buying, the sheet never opens and one line says so
 // PLUS_BUY_SHOTS=<dir> also saves screenshots there.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -165,7 +167,7 @@ function installStore([platform, uid, opts]) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, timezoneId: "America/Toronto", colorScheme: "dark", extraHTTPHeaders: { "x-test-dist": "store" } });
     await ctx.addInitScript(installStore, [platform, MOCK.USER_ID, { addon, refuse }]);
     await seed(ctx);
-    const asked = [], errors = [], outside = [];
+    const asked = [], errors = [], outside = [], holds = [];
     let statusCalls = 0;
     await ctx.route((url) => !url.href.startsWith(base), (r) => {
       const u = new URL(r.request().url());
@@ -176,6 +178,7 @@ function installStore([platform, uid, opts]) {
         if (b.action === "store_status" || b.action === "store_sync") return send({ status: 200, body: mainStore(platform) });
         if (b.action === "status") return send({ status: 200, body: { enabled: true, paid: true } });
         if (b.action === "plus_status") return send(scenario.plusStatus(statusCalls++));
+        if (b.action === "plus_store_hold") { holds.push(b); return send(scenario.hold ? scenario.hold(b) : { status: 200, body: { held: true } }); }
         if (b.action === "plus_store_sync") return send(scenario.sync ? scenario.sync() : plus({}));
         return send({ status: 404, body: {} });
       }
@@ -190,7 +193,7 @@ function installStore([platform, uid, opts]) {
       await page.goto(base + "/" + search, { waitUntil: "domcontentloaded" });
       await page.getByText("safe to spend", { exact: false }).first().waitFor({ timeout: 40000 }).catch(() => {});
     };
-    return { ctx, page, asked, errors, outside, go };
+    return { ctx, page, asked, errors, outside, holds, go };
   };
 
   try {
@@ -328,7 +331,8 @@ function installStore([platform, uid, opts]) {
       const have = page.locator('[data-plus-screen="have"]');
       t.ok(await until(async () => (await have.count()) === 1, 15000), "S2e the server confirms it and the screen shows Plus");
       const after = asked.slice(before);
-      t.ok(after.indexOf("plus_status") === 0 && after.includes("plus_store_sync") && after.indexOf("plus_status") < after.indexOf("plus_store_sync"), "S2f the server was asked before the sheet opened, and asked to look at the store after it");
+      t.eq(after.filter((a) => a === "plus_status" || a === "plus_store_hold" || a === "plus_store_sync").slice(0, 3), ["plus_status", "plus_store_hold", "plus_store_sync"],
+        "S2f the server was asked, then asked to hold the household for this purchase, before the sheet opened; and asked to look at the store after it");
       await have.locator('[data-plus-manage="store"]').click();
       t.ok(await until(() => page.evaluate(() => window.__store.managed === 1), 5000) && errors.length === 0, "S2g Manage subscription opens the store's own subscriptions screen");
       await shot(page, "ios-have.png");
@@ -379,6 +383,37 @@ function installStore([platform, uid, opts]) {
       await page.waitForTimeout(1500);
       t.eq([await page.locator(SCREEN).count(), asked.includes("plus_checkout"), asked.includes("plus_portal"), outside.filter((u) => /stripe/i.test(u)).length], [0, false, false, 0],
         "S5 a ?plus=success address opens nothing in a store app, and Stripe is never asked for anything");
+      await ctx.close();
+    }
+    // ── S6. One Plus purchase at a time ────────────────────────────────────────────────────────────────
+    {
+      const scenario = { plusStatus: () => plus({}), hold: () => ({ status: 200, body: { held: false, plus: false, reason: "purchase_in_progress", mine: false } }) };
+      const { ctx, page, asked, errors, holds, go } = await phone({ addon: true, scenario });
+      await go();
+      await until(() => asked.includes("plus_status"));
+      await openPlusFromSettings(page);
+      const screen = page.locator('[data-plus-screen="offer"]');
+      await screen.locator('[data-plus-buy="plus_monthly"]').click();
+      await page.locator('[data-plus-outcome="in_progress_partner"]').waitFor({ timeout: 10000 });
+      const said = await page.locator('[data-plus-outcome="in_progress_partner"]').innerText();
+      t.eq([await page.evaluate(() => window.__store.purchases.length), said, errors.length, asked.includes("plus_store_sync")], [0, "Your partner has a purchase in progress. Try again once it's finished.", 0, false],
+        "S6a the other partner is already buying Plus: the store's sheet never opens, one approved line says so, and nothing breaks");
+      t.ok(holds.length === 1 && /^plus-[A-Za-z0-9_-]{8,95}$/.test(holds[0].attempt_id) && holds[0].platform === "ios" && holds[0].state === undefined, "S6b the hold was asked for this attempt, with an id of the app's own making, before anything was sold");
+      await ctx.close();
+    }
+    {
+      // A closed sheet, then another tap: the same attempt again, so a person never waits on their own hold.
+      const { ctx, page, asked, holds, go } = await phone({ addon: true, refuse: "1", scenario: { plusStatus: () => plus({}) } });
+      await go();
+      await until(() => asked.includes("plus_status"));
+      await openPlusFromSettings(page);
+      const screen = page.locator('[data-plus-screen="offer"]');
+      await screen.locator('[data-plus-buy="plus_monthly"]').click();
+      await until(() => page.evaluate(() => window.__store.purchases.length === 1), 8000);
+      await page.waitForTimeout(500);
+      await screen.locator('[data-plus-buy="plus_annual"]').click();
+      await until(() => page.evaluate(() => window.__store.purchases.length === 2), 8000);
+      t.ok(holds.length === 2 && holds[0].attempt_id === holds[1].attempt_id, "S6c a tap after a closed sheet asks for the same attempt again");
       await ctx.close();
     }
   } catch (e) {

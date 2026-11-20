@@ -161,8 +161,8 @@ Until steps 23 and 24 are done the website's button answers "not available yet".
 
 Listed so nothing is forgotten. None of this is done by creating the products.
 
-1. Supabase SQL editor: run `0044`, then `0045`, then `0051`, each with its own check
+1. Supabase SQL editor: run `0044`, then `0045`, then `0051`, then `0052`, each with its own check. Without `0052` the server sells no Plus at all: it holds a household to one Plus purchase at a time, and will not sell without that hold.
 2. Every store app in use is the 1.1.8 build (older builds write holdings where a partner can read them)
-3. The 20 purchase lines are approved and in the code (the builds refuse until then)
+3. The 20 purchase lines are approved and in the code (done 2026-11-20)
 4. Netlify → `PLUS_ENABLED` = `true` on Production, then a deploy
 5. One real purchase in each store and one on the website, each refunded afterwards

@@ -5,11 +5,12 @@
 //   2  only the add-on's own offering and products are ever offered as Plus
 //   3  THE PRODUCTS DO NOT EXIST YET: every such answer from the store is one calm state, never a throw
 //   4  what the screen may show, from the server's answer alone (offer, have, manage, unavailable, hidden)
-//   5  a store purchase: nothing is sold on a guess, nothing twice, and every way it can end has an outcome
+//   5  a store purchase: nothing is sold on a guess, nothing twice, ONE AT A TIME per household (the server's hold),
+//      and every way it can end has an outcome
 //   6  the website: Stripe's own address only; every server answer has an outcome
 //   7  coming back from Stripe grants nothing
 //   8  every outcome has a line or none, and none throws
-//   9  the words: 20 placeholders, each listed with its facts and limit, each with a draft that fits
+//   9  the words: 20 approved lines, word for word as the record has them, each listed with its facts and limit
 //  10  the screen, rendered: the website shows our price and never Restore; a store app shows no price of ours, no
 //      Stripe and no website, and has Restore purchases, Terms of Use and Privacy Policy
 //  11  the app: the screen is behind the server's answer; a store app ignores a return address
@@ -120,37 +121,63 @@ const rcError = (code) => Object.assign(new Error("store"), { code });
   // ── 5. A store purchase ───────────────────────────────────────────────────────────────────────
   {
     const P = pkg("app.flourishmoney.plusaddon.monthly", "$4.99");
-    const run = async ({ status = ok200({ plus: false }), purchase = async () => ({}), sync = [ok200({ plus: true, manage: "app_store" })], item = P } = {}) => {
-      const log = []; let n = 0;
+    const HELD = { status: 200, body: { held: true } };
+    const run = async ({ status = ok200({ plus: false }), hold = HELD, purchase = async () => ({}), sync = [ok200({ plus: true, manage: "app_store" })], item = P, attempt = { current: null }, noHold = false } = {}) => {
+      const log = []; let n = 0; const holds = [];
       const deps = {
+        attempt, newAttemptId: () => "plus-test-attempt-1", now: () => 1000,
         serverStatus: async () => { log.push("status"); if (status instanceof Error) throw status; return status; },
+        serverHold: async (id, state) => { log.push(state ? `hold:${state}` : "hold"); holds.push([id, state || null]); const h = typeof hold === "function" ? hold(id, state) : hold; if (h instanceof Error) throw h; return h; },
         purchasePackage: async (x) => { log.push("purchase"); return purchase(x); },
         serverSync: async () => { log.push("sync"); const r = sync[Math.min(n, sync.length - 1)]; n++; if (r instanceof Error) throw r; return r; },
         sleep: async () => {},
       };
+      if (noHold) delete deps.serverHold;
       const r = await B.buyPlusInStore(deps, item);
       return [r.outcome, log.join(",")];
     };
-    t.eq(await run(), ["plus", "status,purchase,sync"], "5a the server is asked first, the store's sheet opens, the server confirms: Plus");
+    t.eq(await run(), ["plus", "status,hold,purchase,sync"], "5a the server is asked first, then holds the household for this attempt, the store's sheet opens, the server confirms: Plus");
     t.eq([await run({ status: null }), await run({ status: new Error("offline") }), await run({ status: { status: 503, body: { error: "status_unavailable" } } }), await run({ status: { status: 404, body: {} } })],
       Array(4).fill(["status_unavailable", "status"]), "5b no answer, a failed read, or PLUS_ENABLED off: nothing is sold on a guess (the sheet never opens)");
     t.eq(await run({ status: ok200({ plus: true, manage: "stripe" }) }), ["already_plus", "status"], "5c the household already has Plus (its own or a partner's): nothing is sold");
     t.eq(await run({ status: ok200({ plus: true, covered_by: "partner" }) }), ["already_plus", "status"], "5c2 …a partner's Plus included");
     t.eq(await run({ item: null }), ["not_available", "status"], "5d no product to sell: not available, and the sheet never opens");
-    t.eq([await run({ purchase: async () => { throw rcError("5"); } }), await run({ purchase: async () => { throw rcError("23"); } })], Array(2).fill(["not_available", "status,purchase"]),
+    t.eq([await run({ purchase: async () => { throw rcError("5"); } }), await run({ purchase: async () => { throw rcError("23"); } })], Array(2).fill(["not_available", "status,hold,purchase"]),
       "5e the store says the product is not there (RevenueCat 5 or 23): not available, calmly");
-    t.eq([await run({ purchase: async () => { throw rcError("1"); } }), await run({ purchase: async () => { throw Object.assign(new Error("x"), { userCancelled: true }); } })], Array(2).fill(["cancelled", "status,purchase"]), "5f the person closed the sheet: cancelled, and nothing is said");
-    t.eq(await run({ purchase: async () => { throw rcError("20"); } }), ["pending", "status,purchase"], "5g Ask to Buy or a slow payment: pending");
+    t.eq([await run({ purchase: async () => { throw rcError("1"); } }), await run({ purchase: async () => { throw Object.assign(new Error("x"), { userCancelled: true }); } })], Array(2).fill(["cancelled", "status,hold,purchase"]), "5f the person closed the sheet: cancelled, nothing is said, and the server is told nothing (the app never ends a hold)");
+    t.eq(await run({ purchase: async () => { throw rcError("20"); }, hold: (id, state) => (state ? { status: 200, body: { pending: true } } : HELD) }), ["pending", "status,hold,purchase,hold:pending"], "5g Ask to Buy or a slow payment: pending, and the server is told, so the hold lasts its 7 days");
+    t.eq(await run({ purchase: async () => { throw rcError("20"); }, hold: (id, state) => (state ? null : HELD) }), ["pending", "status,hold,purchase,hold:pending,hold:pending,hold:pending"], "5g2 …told up to three times when the answer does not come, and the person is never kept waiting on it");
     t.eq([await run({ purchase: async () => { throw rcError("3"); } }), await run({ purchase: async () => { throw rcError("6"); } }), await run({ purchase: async () => { throw new Error("boom"); } }), await run({ purchase: async () => { throw null; } })],
-      Array(4).fill(["failed", "status,purchase"]), "5h any other refusal: failed, never a throw");
-    t.eq(await run({ sync: [null, new Error("x"), ok200({ plus: false }), ok200({ plus: true })] }), ["plus", "status,purchase,sync,sync,sync,sync"], "5i the server is asked again while the store's confirmation lags");
-    t.eq(await run({ sync: [ok200({ plus: false })] }), ["unconfirmed", "status,purchase,sync,sync,sync,sync,sync"], "5j never confirmed: unconfirmed after five tries, not Plus");
-    t.eq(await run({ sync: [ok200({ plus: true, manage: "stripe", conflict: true })] }), ["charged_twice", "status,purchase,sync"], "5k the store took it although Plus was already on the website: said plainly");
+      Array(4).fill(["failed", "status,hold,purchase"]), "5h any other refusal: failed, never a throw");
+    t.eq(await run({ sync: [null, new Error("x"), ok200({ plus: false }), ok200({ plus: true })] }), ["plus", "status,hold,purchase,sync,sync,sync,sync"], "5i the server is asked again while the store's confirmation lags");
+    t.eq(await run({ sync: [ok200({ plus: false })] }), ["unconfirmed", "status,hold,purchase,sync,sync,sync,sync,sync"], "5j never confirmed: unconfirmed after five tries, not Plus");
+    t.eq(await run({ sync: [ok200({ plus: true, manage: "stripe", conflict: true })] }), ["charged_twice", "status,hold,purchase,sync"], "5k the store took it although Plus was already on the website: said plainly");
     const restore = async (sync, restorePurchases = async () => ({})) => (await B.restorePlus({ restorePurchases, serverSync: async () => sync, sleep: async () => {} })).outcome;
     t.eq([await restore(ok200({ plus: true })), await restore(ok200({ plus: false })), await restore(null), await restore(ok200({ plus: true }), async () => { throw new Error("x"); })],
       ["plus", "nothing_to_restore", "nothing_to_restore", "failed"], "5l Restore purchases: Plus when the server finds it, 'nothing to restore' when it does not, failed when the store refuses");
     const lib = read("src", "lib", "plusBuy.js");
     t.ok(!/customerInfo|entitlements\.active/.test(lib), "5m the store SDK's own customer record is never read as Plus: only the server's answer is");
+
+    // ONE PLUS PURCHASE AT A TIME: the sheet opens only on the server's { held: true }.
+    const refuse = (body) => ({ status: 200, body });
+    t.eq(await run({ hold: refuse({ held: false, plus: false, reason: "purchase_in_progress", mine: false }) }), ["in_progress_partner", "status,hold"], "5n the other partner is buying Plus right now: nothing is sold, and the sheet never opens");
+    t.eq(await run({ hold: refuse({ held: false, plus: false, reason: "purchase_in_progress", mine: true }) }), ["in_progress_mine", "status,hold"], "5o this person's own other attempt is still live: nothing is sold");
+    t.eq(await run({ hold: refuse({ held: false, plus: true, covered_by: "partner" }) }), ["already_plus", "status,hold"], "5p the household got Plus in the meantime: nothing is sold");
+    t.eq([await run({ hold: null }), await run({ hold: new Error("offline") }), await run({ hold: { status: 503, body: { error: "unavailable" } } }), await run({ hold: { status: 200, body: {} } }), await run({ hold: { status: 200, body: { held: "yes" } } }), await run({ hold: { status: 404, body: {} } }), await run({ noHold: true })],
+      [...Array(6).fill(["status_unavailable", "status,hold"]), ["status_unavailable", "status"]], "5q no answer to the hold, a failed one, or one that makes no sense is never a yes: the sheet stays shut");
+    // One attempt id across taps; a confirmed purchase starts afresh.
+    const kept = { current: null }; const ids = [];
+    const tap = (purchase, at) => B.buyPlusInStore({ attempt: kept, now: () => at, newAttemptId: () => `plus-test-${ids.length + 1}xxxx`, serverStatus: async () => ok200({ plus: false }),
+      serverHold: async (id) => { ids.push(id); return HELD; }, purchasePackage: purchase, serverSync: async () => ok200({ plus: true }), sleep: async () => {} }, P);
+    await tap(async () => { throw rcError("1"); }, 0);
+    await tap(async () => { throw rcError("1"); }, 19 * 60000);
+    await tap(async () => ({}), 20 * 60000 + 1);
+    const afterPaid = kept.current;
+    t.eq([ids, afterPaid], [["plus-test-1xxxx", "plus-test-1xxxx", "plus-test-3xxxx"], null], "5r a tap after a closed sheet is the same attempt again (so a person never waits on their own hold) for 20 minutes; a confirmed purchase starts afresh");
+    t.ok(SRV.isAttemptId("plus-" + "a".repeat(36)) && !SRV.isAttemptId("plus") && !SRV.isAttemptId("has space-12345") && !SRV.isAttemptId(null), "5s the server accepts only an attempt id of the right shape");
+    let made = null;
+    await B.buyPlusInStore({ attempt: { current: null }, serverStatus: async () => ok200({ plus: false }), serverHold: async (id) => { made = id; return null; } }, P);
+    t.ok(typeof made === "string" && /^plus-/.test(made) && SRV.isAttemptId(made), `5t …and the id the app makes by itself is one of them (${String(made).length} characters)`);
   }
 
   // ── 6. The website ───────────────────────────────────────────────────────────────────────────
@@ -160,6 +187,8 @@ const rcError = (code) => Object.assign(new Error("store"), { code });
     t.eq([await co({ status: 200, body: { url: "https://evil.example/pay" } }), await co({ status: 200, body: { url: "https://stripe.com.evil.example/pay" } }), await co({ status: 200, body: { url: "http://checkout.stripe.com/x" } }), await co({ status: 200, body: {} }), await co({ status: 200, body: { url: 7 } })],
       Array(5).fill(["web_failed", null, 1]), "6b an address that is not Stripe's own, over https, is never followed");
     t.eq(await co({ status: 409, body: { error: "already_plus" } }), ["already_plus", null, 1], "6c already has Plus: nothing is sold twice");
+    t.eq([await co({ status: 409, body: { error: "purchase_in_progress", mine: false } }), await co({ status: 409, body: { error: "purchase_in_progress", mine: true } })], [["in_progress_partner", null, 1], ["in_progress_mine", null, 1]],
+      "6c2 another Plus purchase is open in the household (the partner's, or this person's own in a store app): nothing is sold");
     t.eq([await co({ status: 500, body: { error: "price_not_configured" } }), await co({ status: 404, body: { error: "not_found" } }), await co({ status: 400, body: { error: "unknown_plan" } })], Array(3).fill(["not_available", null, 1]),
       "6d no Plus price in Stripe yet, or Plus or billing switched off: not available, calmly");
     t.eq(await co({ status: 200, body: { url: "https://checkout.stripe.com/x" } }, "monthly"), ["not_available", null, 0], "6e a plan key that is not Plus's (the main plan's monthly) is never sent");
@@ -185,35 +214,41 @@ const rcError = (code) => Object.assign(new Error("store"), { code });
 
   // ── 8. Every outcome has a line, or none ───────────────────────────────────────────────────────────
   {
-    const all = ["plus", "cancelled", "already_plus", "not_available", "status_unavailable", "pending", "charged_twice", "web_failed", "started", "web_cancelled", "failed", "unconfirmed", "nothing_to_restore", "store_unavailable", "something_new", null, undefined];
+    const all = ["plus", "cancelled", "already_plus", "not_available", "status_unavailable", "pending", "charged_twice", "web_failed", "started", "web_cancelled", "failed", "unconfirmed", "nothing_to_restore", "store_unavailable", "in_progress_mine", "in_progress_partner", "something_new", null, undefined];
     const lines = all.map((o) => B.plusOutcomeLine(o));
-    t.eq(lines.map((l) => (l === null ? 0 : typeof l === "string" && l.length > 0 ? 1 : -1)), [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0], "8a a line for each outcome that needs one; nothing for Plus confirmed, a closed sheet, or anything unknown");
+    t.eq(lines.map((l) => (l === null ? 0 : typeof l === "string" && l.length > 0 ? 1 : -1)), [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0], "8a a line for each outcome that needs one; nothing for Plus confirmed, a closed sheet, or anything unknown");
     t.eq([B.plusOutcomeLine("failed"), B.plusOutcomeLine("unconfirmed"), B.plusOutcomeLine("nothing_to_restore"), B.plusOutcomeLine("store_unavailable")],
       [SO.PAYWALL_COPY.outcomes.failed, SO.PAYWALL_COPY.outcomes.unconfirmed, SO.PAYWALL_COPY.outcomes.nothing_to_restore, SO.PAYWALL_COPY.storeUnavailable], "8b four are the store paywall's approved lines, reused exactly");
     t.eq(B.plusOutcomeLine("status_unavailable"), "We couldn't check your plan just now. Nothing has changed. Please try again.", "8c …and the plan that could not be read is the approved line");
     t.ok(!/full access/i.test(String(B.plusOutcomeLine("pending"))), "8d the pending line is Plus's own: it does not promise 'full access'");
+    t.eq([B.plusOutcomeLine("in_progress_mine"), B.plusOutcomeLine("in_progress_partner")], ["A purchase you started isn't finished yet. Finish or cancel it, then try again.", "Your partner has a purchase in progress. Try again once it's finished."],
+      "8e a purchase already open says so with couple mode's approved lines, reused exactly (neither names a store or the website)");
   }
 
   // ── 9. The words ───────────────────────────────────────────────────────────────────────────
   {
     const ids = Object.keys(W.NET_WORTH_WORDS).filter((id) => id.startsWith("plus-buy-"));
-    t.eq([ids.length, ids.filter((id) => W.NET_WORTH_WORDS[id] !== `[WORDS: ${id}]`)], [20, []], "9a twenty new lines, every one a [WORDS: id] placeholder in the code");
+    // APPROVED 2026-11-20 (ChatGPT 100, Grok 100, Amanda): docs/review/PLUS-BUY-COPY-APPROVED-2026-11-20.md, numbered 1 to 20
+    // in the order the code holds them.
+    const record = [...read("docs", "review", "PLUS-BUY-COPY-APPROVED-2026-11-20.md").matchAll(/^(\d+)\. (.*)$/gm)].map((m) => [Number(m[1]), m[2]]);
+    t.eq([ids.length, record.map(([n]) => n).join(","), ids.filter((id, i) => !record[i] || W.NET_WORTH_WORDS[id] !== record[i][1])], [20, Array.from({ length: 20 }, (_, i) => i + 1).join(","), []],
+      "9a twenty lines, each its approved line in the record, word for word and in the record's order; no placeholder is left");
     const doc = read("docs", "product", "NET-WORTH-WORDS.md");
-    const rows = Object.fromEntries([...doc.matchAll(/^\| `(plus-buy-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| \[WORDS: (plus-buy-[a-z0-9-]+)\] \| (\d+) \|$/gm)].filter((m) => m[1] === m[4]).map((m) => [m[1], { where: m[2].trim(), facts: m[3].trim(), limit: Number(m[5]) }]));
-    t.eq(ids.filter((id) => !rows[id] || rows[id].where.length < 20 || rows[id].facts.length < 8 || !(rows[id].limit >= 20)), [], "9b each is in the words doc with where it shows, the facts it must say and a limit");
+    const rows = Object.fromEntries([...doc.matchAll(/^\| `(plus-buy-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)].map((m) => [m[1], { where: m[2].trim(), facts: m[3].trim(), line: m[4].trim(), limit: Number(m[5]) }]));
+    t.eq(ids.filter((id) => !rows[id] || rows[id].where.length < 20 || rows[id].facts.length < 8 || !(rows[id].limit >= 20) || rows[id].line !== W.NET_WORTH_WORDS[id]), [], "9b each is in the words doc with where it shows, the facts it must say, the approved line and a limit");
     const review = read("docs", "review", "PLUS-BUY-COPY.md");
     const drafts = Object.fromEntries([...review.matchAll(/^\| (\d+) \| `(plus-buy-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \/ (\d+) \|$/gm)].map((m) => [m[2], { n: Number(m[1]), where: m[3].trim(), facts: m[4].trim(), draft: m[5].trim(), len: Number(m[6]), limit: Number(m[7]) }]));
     t.eq([Object.keys(drafts).sort().join(","), Object.values(drafts).map((d) => d.n).sort((a, b) => a - b).join(",")], [ids.slice().sort().join(","), Array.from({ length: 20 }, (_, i) => i + 1).join(",")],
       "9c docs/review/PLUS-BUY-COPY.md lists the same twenty, numbered 1 to 20");
     const longest = (s) => [...s.replace("{limit}", "10")].length;
-    t.eq(ids.filter((id) => { const d = drafts[id]; return !d || d.limit !== rows[id].limit || d.where !== rows[id].where || d.facts !== rows[id].facts || longest(d.draft) !== d.len || d.len > d.limit; }), [],
-      "9d each draft has the same place, facts and limit as the words doc, and fits its limit");
+    t.eq(ids.filter((id) => { const d = drafts[id]; return !d || d.limit !== rows[id].limit || d.where !== rows[id].where || d.facts !== rows[id].facts || d.draft !== W.NET_WORTH_WORDS[id] || longest(d.draft) !== d.len || d.len > d.limit; }), [],
+      "9d each line there is the approved line, with the same place, facts and limit as the words doc, and fits its limit");
     const BANNED = /sets aside|holds back|\blearns\b|\bremembers\b|smarter|\bcovered\b|\bcovers\b|web app|never invents|—|–|Flourish/;
     t.eq(ids.filter((id) => BANNED.test(drafts[id].draft) || /(^|[.!?] )(Save|Spend|Pay|Invest)\b/.test(drafts[id].draft) || /\$\d/.test(drafts[id].draft)), [],
-      "9e no draft uses a banned word, a dash, a capital-F Flourish, a price, or a sentence that starts with Save, Spend, Pay or Invest");
+      "9e no line uses a banned word, a dash, a capital-F Flourish, a price, or a sentence that starts with Save, Spend, Pay or Invest");
     t.eq(["plus-buy-manage-elsewhere", "plus-buy-not-available", "plus-buy-pending", "plus-buy-charged-twice", "plus-buy-already", "plus-buy-have", "plus-buy-have-partner", "plus-buy-open", "plus-buy-title", "plus-buy-lead", "plus-buy-includes-networth", "plus-buy-includes-investments", "plus-buy-includes-banks", "plus-buy-separate"]
-      .filter((id) => /website|stripe|flourishmoney\.app|checkout/i.test(drafts[id].draft)), [], "9f no draft a store app can show names the website, Stripe or a checkout");
-    t.ok(W.netWorthWords("plus-buy-includes-banks", { limit: 10 }) === "[WORDS: plus-buy-includes-banks] [limit 10]", "9g the fair use number goes into its line (shown after the placeholder until the words exist)");
+      .filter((id) => /website|stripe|flourishmoney\.app|checkout/i.test(W.NET_WORTH_WORDS[id])), [], "9f no line a store app can show names the website, Stripe or a checkout");
+    t.eq(W.netWorthWords("plus-buy-includes-banks", { limit: 10 }), "Up to 10 connected banks for your household (fair use limit)", "9g the fair use number goes into its line");
   }
 
   // ── 10. The screen, rendered ───────────────────────────────────────────────────────────────────
@@ -226,7 +261,8 @@ const rcError = (code) => Object.assign(new Error("store"), { code });
       const web = textOf(screen({ platform: "web", selling: true, answer: none }));
       t.ok(web.includes("$4.99 a month") && web.includes("$49.99 a year") && (web.match(/CAD plus tax/g) || []).length === 2 && (web.match(/Go to secure checkout/g) || []).length === 2,
         "10a the website: both plans, our price, CAD plus tax, and a button each");
-      t.ok(web.includes("[WORDS: plus-buy-title]") && web.includes("[WORDS: plus-buy-lead]") && web.includes("[WORDS: plus-buy-includes-banks] [limit 10]") && web.includes("[WORDS: plus-buy-separate]") && web.includes("[WORDS: plus-buy-web-note]"),
+      const L = (id) => W.NET_WORTH_WORDS[id];
+      t.ok(web.includes(L("plus-buy-title")) && web.includes(L("plus-buy-lead")) && web.includes("Up to 10 connected banks for your household (fair use limit)") && web.includes(L("plus-buy-separate")) && web.includes(L("plus-buy-web-note")),
         "10b …with what Plus includes, that it is billed by itself, and the note about Stripe");
       t.ok(!/Restore purchases|Terms of Use|Apple Account|Google Play/.test(web), "10c …and nothing that belongs to a store app");
       for (const platform of ["ios", "android"]) {
@@ -237,15 +273,15 @@ const rcError = (code) => Object.assign(new Error("store"), { code });
         t.eq(/href="https:\/\/www\.apple\.com\/legal\/internet-services\/itunes\/dev\/stdeula\/"/.test(html), platform === "ios", `10f ${platform}: Terms of Use opens Apple's standard licence on an iPhone only`);
       }
       const closed = textOf(screen({ platform: "ios", selling: false, answer: none }));
-      t.ok(!/Restore purchases|Subscribe for|\$\d/.test(closed) && !closed.includes("[WORDS: plus-buy-lead]"), "10g a store build that does not sell: no offer, no Restore, no price");
+      t.ok(!/Restore purchases|Subscribe for|\$\d/.test(closed) && !closed.includes(L("plus-buy-lead")), "10g a store build that does not sell: no offer, no Restore, no price");
       const mine = screen({ platform: "web", selling: true, answer: ok200({ plus: true, manage: "stripe" }) });
-      t.ok(textOf(mine).includes("[WORDS: plus-buy-have]") && /data-plus-manage="portal"/.test(mine) && textOf(mine).includes("Manage subscription") && !/\$\d|Go to secure checkout/.test(textOf(mine)), "10h once bought on the website: it says so, with Manage subscription and nothing to buy");
+      t.ok(textOf(mine).includes(L("plus-buy-have")) && /data-plus-manage="portal"/.test(mine) && textOf(mine).includes("Manage subscription") && !/\$\d|Go to secure checkout/.test(textOf(mine)), "10h once bought on the website: it says so, with Manage subscription and nothing to buy");
       const ios = screen({ platform: "ios", selling: true, answer: ok200({ plus: true, manage: "app_store" }), purchases: {} });
       t.ok(/data-plus-manage="store"/.test(ios) && !/Subscribe for/.test(textOf(ios)), "10i once bought in the App Store, on an iPhone: Manage subscription opens the store's own screen");
       const partner = screen({ platform: "web", selling: true, answer: ok200({ plus: true, covered_by: "partner", manage: null }) });
-      t.ok(textOf(partner).includes("[WORDS: plus-buy-have-partner]") && !/data-plus-manage=/.test(partner) && !/Go to secure checkout/.test(textOf(partner)), "10j a partner's Plus: said so, nothing to buy and nothing to manage");
+      t.ok(textOf(partner).includes(L("plus-buy-have-partner")) && !/data-plus-manage=/.test(partner) && !/Go to secure checkout/.test(textOf(partner)), "10j a partner's Plus: said so, nothing to buy and nothing to manage");
       const elsewhere = textOf(screen({ platform: "android", selling: true, answer: ok200({ plus: true, manage: "stripe" }), purchases: {} }));
-      t.ok(elsewhere.includes("[WORDS: plus-buy-manage-elsewhere]") && !/stripe|website/i.test(elsewhere.replace(/\[WORDS: [a-z-]+\]/g, "")), "10k Plus bought on the website, seen in a store app: one line that names no website");
+      t.ok(elsewhere.includes(L("plus-buy-manage-elsewhere")) && !/stripe|website/i.test(elsewhere), "10k Plus bought on the website, seen in a store app: one line that names no website");
       const down = screen({ platform: "web", selling: true, answer: null });
       t.ok(textOf(down).includes("We couldn't check your plan just now. Nothing has changed. Please try again.") && /data-plus-check=""/.test(down) && !/\$\d/.test(textOf(down)), "10l the plan could not be read: the plain line and Check again, never an offer");
       t.ok(typeof screen({ platform: "web", selling: true, answer: undefined }) === "string" && typeof screen({ platform: "ios", selling: true, answer: { status: 404, body: {} } }) === "string", "10m an answer not in yet, or Plus switched off: it still renders (the heading and Close), never a throw");

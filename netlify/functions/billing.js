@@ -79,8 +79,15 @@ const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]
 //                    discount, the founding households' included (Amanda's decision).
 //   plus_store_sync  "I just bought Plus in the store; look now": from RevenueCat's server, never from the app. Adds
 //                    conflict: true when the store took a Plus purchase from a buyer whose Plus is already on the website.
+//   plus_store_hold  ONE PLUS PURCHASE AT A TIME (migration 0052, _lib/plusAddon.js holdPlusPurchase), as store_hold is
+//                    for the main plan: { attempt_id, platform, state }. Without state: "about to open the store's
+//                    sheet for this attempt". { held: true } lets the sheet open; anything else sells nothing: the
+//                    household already has Plus ({ held: false, plus: true }), or another attempt is live, this
+//                    person's own or the other member's ({ held: false, reason: "purchase_in_progress", mine }).
+//                    state "pending": the store said pending; the attempt keeps its 7 days. No other state is heard:
+//                    the app never ends a hold. plus_checkout records the website's attempt the same way.
 //   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's.
-const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_portal"]);
+const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_store_hold", "plus_portal"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -151,7 +158,7 @@ exports.handler = async (event) => {
   if (plusAction) {
     if (!plusAddon.plusEnabled()) return json(404, CORS, { error: "not_found" });
     if ((body.action === "plus_checkout" || body.action === "plus_portal") && !billingEnabled()) return json(404, CORS, { error: "not_found" });
-    if (body.action === "plus_store_sync" && !iapEnabled()) return json(404, CORS, { error: "not_found" });
+    if ((body.action === "plus_store_sync" || body.action === "plus_store_hold") && !iapEnabled()) return json(404, CORS, { error: "not_found" });
   } else if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
 
   // Auth first, every time. Nothing below runs for an anonymous caller.
@@ -519,6 +526,31 @@ exports.handler = async (event) => {
         }
         catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }
       }
+      // The store app asks this just before it opens the purchase sheet. A bad attempt id or state is refused before
+      // anything is read; a read or a hold that fails sells nothing (503).
+      if (action === "plus_store_hold") {
+        const attempt = body.attempt_id;
+        if (!plusAddon.isAttemptId(attempt)) return json(400, CORS, { error: "attempt_required" });
+        if (body.state !== undefined && body.state !== "pending") return json(400, CORS, { error: "invalid_state" });
+        if (body.state === "pending") {
+          try { return json(200, CORS, { pending: await plusAddon.holdPlusPending(admin, user_id, attempt) }); }
+          catch (e) { console.error("[billing] plus pending:", e.message); return json(503, CORS, { error: "unavailable" }); }
+        }
+        const before = await plusAddon.getPlusEntitlement(admin, user_id);
+        if (before.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+        if (before.plus) return json(200, CORS, { held: false, plus: true, covered_by: before.covered_by || null });
+        let hold;
+        try { hold = await plusAddon.holdPlusPurchase(admin, user_id, body.platform === "android" ? "play_store" : "app_store", attempt); }   // which store: a label only
+        catch (e) { console.error("[billing] plus hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+        if (!hold.held) return json(200, CORS, { held: false, plus: false, reason: "purchase_in_progress", mine: hold.mine === true });
+        // The household's Plus again, now the attempt is recorded: a purchase that landed between the read above and
+        // the attempt is seen here, and no sheet opens for a household that has Plus.
+        const after = await plusAddon.getPlusEntitlement(admin, user_id);
+        if (after.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+        if (after.plus) return json(200, CORS, { held: false, plus: true, covered_by: after.covered_by || null });
+        return json(200, CORS, { held: true });
+      }
+
       const ent = await plusAddon.getPlusEntitlement(admin, user_id);
       if (ent.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
       if (action === "plus_status" || action === "plus_store_sync") return answer(ent, synced);
@@ -562,6 +594,17 @@ exports.handler = async (event) => {
         console.error("[billing] plus live check:", e && e.statusCode ? e.statusCode : "no_status");
         return json(503, CORS, { error: "unavailable" });
       }
+      // ONE PLUS PURCHASE AT A TIME (0052): the website's attempt is recorded before the checkout exists, so the other
+      // member's purchase (in a store app or here) is refused while it is open, and this one is refused while theirs
+      // is. This person's own earlier checkout was expired just above, so its attempt is replaced. A hold that cannot
+      // be recorded sells nothing.
+      let webHold;
+      try { webHold = await plusAddon.holdPlusPurchase(admin, user_id, "stripe", `plusweb-${crypto.randomUUID()}`); }
+      catch (e) { console.error("[billing] plus hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      if (!webHold.held) return json(409, CORS, { error: "purchase_in_progress", mine: webHold.mine === true });
+      const held = await plusAddon.getPlusEntitlement(admin, user_id);
+      if (held.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (held.plus) return json(409, CORS, { error: "already_plus", covered_by: held.covered_by || null });
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",
         customer: customerId,

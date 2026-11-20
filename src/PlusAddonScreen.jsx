@@ -95,6 +95,8 @@ export default function PlusAddonScreen({ C, platform = "web", selling = false, 
   };
   const storeDeps = {
     serverStatus,
+    // One Plus purchase at a time: the server holds this person and their household for the attempt (lib/plusBuy.js).
+    serverHold: (attempt_id, state) => ask("plus_store_hold", { platform, attempt_id, ...(state ? { state } : {}) }),
     serverSync: () => ask("plus_store_sync", {}),
     purchasePackage: (pkg) => purchases.purchasePackage({ aPackage: pkg }),
     restorePurchases: () => purchases.restorePurchases(),

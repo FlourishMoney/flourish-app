@@ -109,8 +109,8 @@ const REPO = path.join(__dirname, "..");
     const numbered = [...record.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => [Number(m[1]), m[2]]);
     const approved = numbered.slice(0, 48);
     const SRV = require("../netlify/functions/_lib/planWords.js");
-    // BUYING FLOURISH PLUS (plus-buy-*, 2026-11-20) is a later section and is NOT approved: its lines are placeholders, held
-    // by 7l and 7m below. The 48 approved lines are every other one.
+    // BUYING FLOURISH PLUS (plus-buy-*, 2026-11-20) is a later section with a record of its own (approved the same day):
+    // 7l and 7m below hold it. The 48 lines of this record are every other one.
     const isBuy = ([id]) => id.startsWith("plus-buy-");
     const inCode = [...Object.entries(W.NET_WORTH_WORDS).filter((e) => !isBuy(e)), ...Object.entries(SRV.PLAN_WORDS)];
     const buying = Object.entries(W.NET_WORTH_WORDS).filter(isBuy);
@@ -125,11 +125,14 @@ const REPO = path.join(__dirname, "..");
     t.eq([Object.keys(docRows).filter((id) => !id.startsWith("plus-buy-")).length, inCode.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1]).map(([id]) => id)], [48, []],
       "7i the words doc lists the same 48, each word for word and within its limit");
     const PWORDS = require("./_pendingWords.cjs");
-    t.eq([PWORDS.pendingNetWorthWordIds().filter((id) => !id.startsWith("plus-buy-")), inCode.filter(([, w]) => /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id)], [[], []],
-      "7j none of the 48 is still to come, none holds a dash, and flourish is lowercase in every one");
-    t.eq([buying.length > 0, buying.filter(([id, w]) => w !== `[WORDS: ${id}]`).map(([id]) => id), buying.map(([id]) => id).sort().join(",") === PWORDS.pendingNetWorthWordIds().sort().join(",")], [true, [], true],
-      "7l the buying lines are placeholders, every one, and each is listed in the words doc as still to come (so no build ships them)");
-    t.eq(buying.filter(([id]) => !docRows[id] || !(docRows[id][1] >= 20)).map(([id]) => id), [], "7m …each with where it shows, the facts it must say and a limit");
+    t.eq([PWORDS.pendingNetWorthWordIds(), inCode.filter(([, w]) => /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id)], [[], []],
+      "7j no line is still to come (the buying lines included), none of the 48 holds a dash, and flourish is lowercase in every one");
+    const buyRecord = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "review", "PLUS-BUY-COPY-APPROVED-2026-11-20.md"), "utf8");
+    const buyApproved = [...buyRecord.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => m[2]);
+    t.eq([buying.length, buyApproved.length, buying.filter(([, w], i) => w !== buyApproved[i]).map(([id]) => id)], [20, 20, []],
+      "7l the 20 buying lines are their approved lines (docs/review/PLUS-BUY-COPY-APPROVED-2026-11-20.md), word for word, in the record's order");
+    t.eq(buying.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1] || /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id), [],
+      "7m …and the words doc lists each one, word for word and within its limit, with no dash and a lowercase flourish");
     t.eq([W.netWorthWords("banks-limit-person", { used: 2, limit: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).startsWith("You've used your 2 free coach messages this week.")], [false, false, true],
       "7k the numbers go into the lines: no brace is left on screen");
   }

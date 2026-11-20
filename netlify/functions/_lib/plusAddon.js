@@ -28,7 +28,7 @@
 "use strict";
 
 const { isPaidSubscription } = require("./planRules");
-const { peerIdsOf, isMissing } = require("./household");
+const { peerIdsOf, isMissing, isAttemptId, HOLD_MINUTES, PENDING_BACKSTOP_DAYS } = require("./household");
 const { PRICE_ENV: MAIN_PRICE_ENV } = require("./billingPlans");
 
 const plusEnabled = (env = process.env) => env.PLUS_ENABLED === "true";
@@ -272,7 +272,33 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
   return { plus: isLivePlusRow(next, env, now), conflict: false };
 }
 
+// ── ONE PLUS PURCHASE AT A TIME (migration 0052) ─────────────────────────────────────────────────────────
+// Every Plus purchase is one ATTEMPT (a Stripe checkout the server is about to open, or one tap in a store app). A
+// person has at most one live attempt, and while one member of a household has one the other member's is refused, so
+// two partners can never each buy Plus at the same moment. The same design, the same 32 minutes and the same 7 days
+// once the store says "pending" as the main plan's hold (_lib/household.js holdPurchase), in a table of its own, so a
+// household that has just bought the main plan can add Plus straight away.
+//   holdPlusPurchase   { held: true } | { held: false, mine }   (mine: this person's own other attempt)
+// THROWS on anything else (the call failed, or 0052 is not applied): the caller sells nothing rather than risk two
+// purchases. There is no "legacy" yes here: no attempt recorded, no Plus sold.
+async function holdPlusPurchase(admin, userId, provider, attemptId) {
+  const { data, error } = await admin.rpc("plus_purchase_attempt_begin", { p_user: userId, p_provider: provider, p_attempt: attemptId, p_ttl: `${HOLD_MINUTES} minutes` });
+  if (error) throw new Error(`plus hold: ${error.code || "error"}`);
+  const r = (data && data.result) || "";
+  if (r === "held") return { held: true };
+  if (r === "held_elsewhere") return { held: false, mine: data.mine === true };
+  throw new Error(`plus hold: ${r || "no_answer"}`);
+}
+// The store said the purchase is pending: the attempt lasts PENDING_BACKSTOP_DAYS from its start. true when it was
+// this person's live store attempt.
+async function holdPlusPending(admin, userId, attemptId) {
+  const { data, error } = await admin.rpc("plus_purchase_attempt_pending", { p_user: userId, p_attempt: attemptId, p_backstop: `${PENDING_BACKSTOP_DAYS} days` });
+  if (error) throw new Error(`plus pending: ${error.code || "error"}`);
+  return !!data && data.result === "pending";
+}
+
 module.exports = {
+  isAttemptId, holdPlusPurchase, holdPlusPending,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
   plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,

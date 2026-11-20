@@ -32,7 +32,7 @@ const P = "22222222-2222-4222-8222-222222222222";
 const DAY = 86400;
 
 function makeDb({ failPlusRead = false, missingPlus = false } = {}) {
-  const state = { rows: { subscriptions: [], billing_events: [], plaid_items: [], plus_addon_subscriptions: [], household_members: [], profiles: [] }, writes: [], reads: [] };
+  const state = { rows: { subscriptions: [], billing_events: [], plaid_items: [], plus_addon_subscriptions: [], household_members: [], profiles: [] }, writes: [], reads: [], rpcs: [], attempts: {}, rpcHook: null };
   const api = (table) => {
     const q = {
       f: {},
@@ -67,7 +67,33 @@ function makeDb({ failPlusRead = false, missingPlus = false } = {}) {
   };
   const admin = {
     from: api,
-    rpc: async (fn) => (fn === "purchase_attempt_begin" ? { data: { result: "held" }, error: null } : { data: null, error: null }),
+    // The two Plus attempt functions answer as migration 0052 does (tests/plusPurchaseHold.sql.test.cjs holds the real
+    // ones in a real Postgres): one live attempt per person, and per household.
+    rpc: async (fn, a = {}) => {
+      state.rpcs.push([fn, a]);
+      if (state.rpcHook) { const r = await state.rpcHook(fn, a); if (r) return r; }
+      const held = { data: { result: "held" }, error: null };
+      if (fn === "purchase_attempt_begin") return held;
+      if (fn === "plus_purchase_attempt_begin") {
+        const hh = (u) => (state.rows.household_members.find((m) => m.user_id === u) || {}).household_id || null;
+        const mine = state.attempts[a.p_user];
+        if (mine) {
+          if (mine.attempt === a.p_attempt && mine.provider === a.p_provider && !mine.pending) return held;
+          if (!(mine.provider === "stripe" && a.p_provider === "stripe" && !mine.pending)) return { data: { result: "held_elsewhere", mine: true, provider: mine.provider, pending: mine.pending }, error: null };
+        }
+        const h = hh(a.p_user);
+        const other = h && Object.keys(state.attempts).find((u) => u !== a.p_user && hh(u) === h);
+        if (other) return { data: { result: "held_elsewhere", mine: false, provider: state.attempts[other].provider, pending: state.attempts[other].pending }, error: null };
+        state.attempts[a.p_user] = { attempt: a.p_attempt, provider: a.p_provider, pending: false };
+        return held;
+      }
+      if (fn === "plus_purchase_attempt_pending") {
+        const m = state.attempts[a.p_user];
+        if (m && m.attempt === a.p_attempt && m.provider !== "stripe") { m.pending = true; return { data: { result: "pending" }, error: null }; }
+        return { data: { result: "not_held" }, error: null };
+      }
+      return { data: null, error: null };
+    },
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "x@example.invalid", email_confirmed_at: "2026-10-01T00:00:00Z" } } }), deleteUser: async () => ({ error: null }) } },
   };
   return { state, admin };
@@ -346,6 +372,116 @@ function loadWith(db, sm, user = U) {
       const { plaid } = loadWith(db, sm);
       await plaid.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" }, body: JSON.stringify({ action: "delete_account" }) });
       t.ok(sm.log.includes("DELETE /subscriptions/sub_P"), "9a delete_account cancels the Plus subscription at Stripe, on its own customer, before erasing anything");
+    }
+
+    // ── 10. ONE PLUS PURCHASE AT A TIME (migration 0052): two partners are held apart, as for the main plan ───────────
+    {
+      const NATIVE = "capacitor://localhost";
+      const couple = (db) => db.state.rows.household_members.push({ user_id: U, household_id: "h1", role: "owner" }, { user_id: P, household_id: "h1", role: "partner" });
+      const A1 = "plus-aaaaaaaa-1111", A2 = "plus-aaaaaaaa-2222", B1 = "plus-bbbbbbbb-1111";
+      const hold = (billing, attempt_id, extra = {}) => call(billing, { action: "plus_store_hold", platform: "ios", attempt_id, ...extra }, NATIVE);
+      process.env.PLUS_ENABLED = "true"; process.env.IAP_ENABLED = "true";
+
+      // Switched off, or asked badly: nothing is read and nothing is held.
+      {
+        const db = makeDb(); const { billing } = loadWith(db, makeStripe());
+        delete process.env.IAP_ENABLED;
+        const noIap = await hold(billing, A1);
+        process.env.IAP_ENABLED = "true"; delete process.env.PLUS_ENABLED;
+        const noPlus = await hold(billing, A1);
+        process.env.PLUS_ENABLED = "true";
+        const bad = [await hold(billing, "short"), await hold(billing, undefined), await hold(billing, A1, { state: "cancelled" }), await hold(billing, A1, { state: "done" })];
+        t.eq([noIap.status, noPlus.status, bad.map((r) => [r.status, r.body && r.body.error]), db.state.rpcs.length, db.state.reads.length],
+          [404, 404, [[400, "attempt_required"], [400, "attempt_required"], [400, "invalid_state"], [400, "invalid_state"]], 0, 0],
+          "10a in-app purchase or Plus switched off: 404. A bad attempt id, or any state but 'pending' (the app can never end a hold): 400. Nothing is read or held");
+      }
+      // A person alone.
+      {
+        const db = makeDb(); const { billing } = loadWith(db, makeStripe());
+        const ios = await hold(billing, A1);
+        const begin = db.state.rpcs.find(([fn]) => fn === "plus_purchase_attempt_begin");
+        t.eq([ios.status, ios.body, begin && begin[1]], [200, { held: true }, { p_user: U, p_provider: "app_store", p_attempt: A1, p_ttl: "32 minutes" }],
+          "10b one tap in the iPhone app: the attempt is recorded for 32 minutes, as the main plan's is, and the sheet may open");
+        const again = await hold(billing, A1);
+        const other = await hold(billing, A2);
+        t.eq([again.body, other.status, other.body], [{ held: true }, 200, { held: false, plus: false, reason: "purchase_in_progress", mine: true }],
+          "10c the same attempt again is still held (a tap after a closed sheet); a second attempt of this person's own is refused while the first lives");
+        const android = makeDb(); const b2 = loadWith(android, makeStripe()).billing;
+        await call(b2, { action: "plus_store_hold", platform: "android", attempt_id: A1 }, NATIVE);
+        t.eq((android.state.rpcs.find(([fn]) => fn === "plus_purchase_attempt_begin") || [])[1].p_provider, "play_store", "10d Android's attempt is labelled Google Play's");
+        t.ok(!db.state.rpcs.some(([fn]) => fn === "purchase_attempt_begin") && !db.state.writes.includes("subscriptions"), "10e the main plan's own attempt and its row are never touched: a household that just bought the main plan can add Plus straight away");
+      }
+      // Two partners, in the store, at the same moment.
+      {
+        const db = makeDb(); couple(db); const sm = makeStripe();
+        const first = await hold(loadWith(db, sm, U).billing, A1);
+        const second = await hold(loadWith(db, sm, P).billing, B1);
+        t.eq([first.body, second.status, second.body], [{ held: true }, 200, { held: false, plus: false, reason: "purchase_in_progress", mine: false }],
+          "10f two partners tap Buy at the same moment: the first is held, the second is refused and no sheet opens for them");
+        const web = await call(loadWith(db, sm, P).billing, { action: "plus_checkout", plan_key: "plus_monthly" });
+        t.eq([web.status, web.body, sm.stripe.sessions.length], [409, { error: "purchase_in_progress", mine: false }, 0], "10g …and the second partner cannot buy it on the website either: no Stripe checkout is created");
+        const firstAgain = await hold(loadWith(db, sm, U).billing, A1);
+        t.eq(firstAgain.body, { held: true }, "10h the first partner's own attempt is still theirs");
+      }
+      // One on the website, the other in the store.
+      {
+        const db = makeDb(); couple(db); const sm = makeStripe();
+        const web = await call(loadWith(db, sm, U).billing, { action: "plus_checkout", plan_key: "plus_annual" });
+        const begin = db.state.rpcs.find(([fn]) => fn === "plus_purchase_attempt_begin");
+        t.ok(web.status === 200 && sm.stripe.sessions.length === 1 && begin && begin[1].p_provider === "stripe" && /^plusweb-[0-9a-f-]{36}$/.test(begin[1].p_attempt)
+          && db.state.rpcs.findIndex(([fn]) => fn === "plus_purchase_attempt_begin") >= 0 && sm.log.indexOf("POST /checkout/sessions") === sm.log.lastIndexOf("POST /checkout/sessions"),
+          "10i a website checkout records its attempt before the checkout is created");
+        const store = await hold(loadWith(db, sm, P).billing, B1);
+        t.eq(store.body, { held: false, plus: false, reason: "purchase_in_progress", mine: false }, "10j …so the other partner's store purchase is refused while that checkout is open");
+        const reopen = await call(loadWith(db, sm, U).billing, { action: "plus_checkout", plan_key: "plus_monthly" });
+        t.eq([reopen.status, sm.stripe.sessions.length], [200, 2], "10k the buyer can open the website checkout again (their earlier one is expired first, and its attempt replaced)");
+        const ownStore = await hold(loadWith(db, sm, U).billing, A1);
+        t.eq(ownStore.body, { held: false, plus: false, reason: "purchase_in_progress", mine: true }, "10l …but not buy it in the store while their own checkout is open");
+      }
+      // The household already has Plus.
+      {
+        const db = makeDb(); couple(db);
+        db.state.rows.plus_addon_subscriptions.push({ user_id: P, provider: "app_store", plan_key: "plus_monthly", status: "active", product_id: "app.flourishmoney.plusaddon.monthly", current_period_end: future });
+        const r = await hold(loadWith(db, makeStripe(), U).billing, A1);
+        t.eq([r.status, r.body, db.state.rpcs.length], [200, { held: false, plus: true, covered_by: "partner" }, 0], "10m a household that has Plus (the partner's) is sold none: no attempt is even recorded");
+      }
+      // The partner's purchase lands between the read and the hold.
+      {
+        const db = makeDb(); couple(db);
+        db.state.rpcHook = async (fn) => { if (fn === "plus_purchase_attempt_begin") db.state.rows.plus_addon_subscriptions.push({ user_id: P, provider: "play_store", plan_key: "plus_annual", status: "active", product_id: "flourish_plus_addon:annual", current_period_end: future }); return null; };
+        const r = await hold(loadWith(db, makeStripe(), U).billing, A1);
+        t.eq(r.body, { held: false, plus: true, covered_by: "partner" }, "10n Plus that landed between the first read and the hold is seen after it: still no sheet");
+      }
+      // The hold cannot be recorded (0052 not applied, or the database is down): nothing is sold.
+      {
+        const db = makeDb(); const sm = makeStripe();
+        db.state.rpcHook = async (fn) => (/^plus_purchase_attempt_/.test(fn) ? { data: null, error: { code: "PGRST202", message: "function not found" } } : null);
+        const { billing } = loadWith(db, sm);
+        const store = await hold(billing, A1);
+        const web = await call(billing, { action: "plus_checkout", plan_key: "plus_monthly" });
+        const pend = await hold(billing, A1, { state: "pending" });
+        t.eq([store.status, store.body, web.status, web.body, sm.stripe.sessions.length, pend.status], [503, { error: "unavailable" }, 503, { error: "unavailable" }, 0, 503],
+          "10o an attempt that cannot be recorded sells nothing, in the store or on the website (no 'yes' without it)");
+        db.state.rpcHook = async (fn) => (fn === "plus_purchase_attempt_begin" ? { data: { result: "something_else" }, error: null } : null);
+        t.eq((await hold(billing, A2)).status, 503, "10p …and neither does an answer that is not one of the two it knows");
+      }
+      // Pending.
+      {
+        const db = makeDb(); const { billing } = loadWith(db, makeStripe());
+        await hold(billing, A1);
+        const pend = await hold(billing, A1, { state: "pending" });
+        const args = (db.state.rpcs.find(([fn]) => fn === "plus_purchase_attempt_pending") || [])[1];
+        const notMine = await hold(billing, A2, { state: "pending" });
+        t.eq([pend.body, args, notMine.body], [{ pending: true }, { p_user: U, p_attempt: A1, p_backstop: "7 days" }, { pending: false }],
+          "10q the store says pending: this attempt keeps 7 days, as the main plan's does; an attempt that is not this person's live one is not");
+      }
+      // The answer tells the app nothing it should not know.
+      {
+        const src = fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8");
+        const blk = src.slice(src.indexOf('if (action === "plus_store_hold") {'), src.indexOf("const ent = await plusAddon.getPlusEntitlement(admin, user_id);"));
+        t.ok(blk.length > 500 && !/attempt_id:|expires_at|provider:/.test(blk.replace(/body\.attempt_id|body\.platform/g, "")), "10r a refusal never names the other attempt's id, its store or when it ends");
+      }
+      delete process.env.IAP_ENABLED;
     }
   } finally {
     console.error = quiet.e; console.warn = quiet.w; global.fetch = realFetch;

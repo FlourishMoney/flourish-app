@@ -27,6 +27,8 @@
 // -----------------------------------------------------------------------------
 import { netWorthWords } from "./netWorthWords.js";
 import { PAYWALL_COPY, offerCopy } from "./storeOffer.js";
+import { attemptFor } from "./storeBilling.js";
+import { HOUSEHOLD_WORDS } from "./householdWords.js";
 import { UPGRADE_COPY } from "./upgradeFlow.js";
 import { PLUS_ADDON_PRICING, formatPrice } from "./pricing.js";
 
@@ -67,6 +69,18 @@ const CANCELLED = "1";            // PURCHASE_CANCELLED_ERROR
 const NOT_AVAILABLE = ["5", "23"]; // PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR, CONFIGURATION_ERROR (no product in the store)
 const PENDING = "20";             // PAYMENT_PENDING_ERROR (Ask to Buy, a slow payment)
 const sleepFor = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ONE PLUS PURCHASE AT A TIME (server: billing.js plus_store_hold, migration 0052), as the main plan's store_hold.
+// Each purchase is one ATTEMPT with an id of its own. Just before the store's sheet opens the server is asked to hold
+// this person, and their household, for that attempt: only { held: true } opens the sheet. The app never ENDS a hold:
+// a cancelled or failed sheet tells the server nothing, and its hold lapses on its own (32 minutes). So one attempt id
+// is kept across taps (lib/storeBilling.js attemptFor, 20 minutes): a tap after a closed sheet is the same attempt
+// again, and the person is not kept waiting on their own hold. A confirmed purchase starts afresh.
+export const PLUS_ATTEMPT = { current: null };
+const newPlusAttemptId = () => {
+  try { if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") return `plus-${globalThis.crypto.randomUUID()}`; } catch { /* fall through */ }
+  return `plus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+};
 
 /**
  * What the store has to sell: { state: "ready", packages } | { state: "not_available" } | { state: "store_unavailable" }.
@@ -176,7 +190,10 @@ export async function confirmPlusWithServer(deps, { tries = 5, delayMs = 1500 } 
  *   failed              the store refused it
  *   unconfirmed         the store took it; the server has not confirmed yet ("Check again", Restore purchases)
  *   charged_twice       the store took it although this person's Plus was already live on the website
- * deps: serverStatus(), purchasePackage(pkg), serverSync(), sleep(ms)
+ *   in_progress_mine    another Plus purchase this person started is not finished: nothing is sold
+ *   in_progress_partner the other member of the household is buying Plus right now: nothing is sold
+ * deps: serverStatus(), serverHold(attemptId, state?), purchasePackage(pkg), serverSync(), sleep(ms), and optionally
+ *       attempt (a { current } holder), newAttemptId(), now()
  */
 export async function buyPlusInStore(deps, pkg) {
   let status = null;
@@ -185,16 +202,31 @@ export async function buyPlusInStore(deps, pkg) {
   if (!b) return { outcome: "status_unavailable" };
   if (b.plus === true) return { outcome: "already_plus", answer: status };
   if (!pkg) return { outcome: "not_available" };
+  // The hold. No answer, or one that makes no sense, is not a yes: the sheet opens only on { held: true }.
+  if (typeof deps.serverHold !== "function") return { outcome: "status_unavailable" };
+  const holder = deps.attempt || PLUS_ATTEMPT;
+  const attempt = attemptFor(holder, deps.now ? deps.now() : Date.now(), deps.newAttemptId || newPlusAttemptId);
+  let hold = null;
+  try { hold = await deps.serverHold(attempt); } catch { hold = null; }
+  const h = hold && hold.status === 200 && hold.body && typeof hold.body.held === "boolean" ? hold.body : null;
+  if (!h) return { outcome: "status_unavailable" };
+  if (!h.held) return h.plus === true ? { outcome: "already_plus" } : { outcome: h.mine === true ? "in_progress_mine" : "in_progress_partner" };
+  // "Pending", told to the server for this attempt (it then lasts its 7 days); never holds up what the person sees.
+  const tellPending = async () => {
+    for (let i = 0; i < 3; i++) { try { const r = await deps.serverHold(attempt, "pending"); if (r && r.status === 200 && r.body && r.body.pending === true) return; } catch { /* try again */ } }
+  };
   try {
     await deps.purchasePackage(pkg);
   } catch (e) {
     const code = errorCode(e);
     if (code === CANCELLED || (e && e.userCancelled === true)) return { outcome: "cancelled" };
-    if (code === PENDING) return { outcome: "pending" };
+    if (code === PENDING) { await tellPending(); return { outcome: "pending" }; }
     if (NOT_AVAILABLE.includes(code)) return { outcome: "not_available" };
     return { outcome: "failed" };
   }
-  return confirmPlusWithServer(deps);
+  const done = await confirmPlusWithServer(deps);
+  if (done.outcome === "plus") holder.current = null;
+  return done;
 }
 
 /** Restore: the store re-reports this Apple or Google account's purchases, then the server is asked. */
@@ -209,7 +241,8 @@ const stripeUrl = (u) => (typeof u === "string" && /^https:\/\/[a-z0-9.-]+\.stri
 
 /**
  * Ask the server for a Stripe Checkout for Plus. deps.ask(action, params) returns { status, body } or null.
- * Resolves { outcome: "redirect", url } or { outcome: "already_plus" | "not_available" | "status_unavailable" | "web_failed" }.
+ * Resolves { outcome: "redirect", url } or { outcome: "already_plus" | "not_available" | "status_unavailable" | "web_failed"
+ * | "in_progress_mine" | "in_progress_partner" } (the last two: another Plus purchase is open in this household).
  * A url that is not Stripe's own is never followed.
  */
 export async function startPlusCheckout(deps, planKey) {
@@ -220,6 +253,7 @@ export async function startPlusCheckout(deps, planKey) {
   const err = r.body && r.body.error;
   if (r.status === 200) { const url = stripeUrl(r.body && r.body.url); return url ? { outcome: "redirect", url } : { outcome: "web_failed" }; }
   if (r.status === 409 && err === "already_plus") return { outcome: "already_plus" };
+  if (r.status === 409 && err === "purchase_in_progress") return { outcome: r.body.mine === true ? "in_progress_mine" : "in_progress_partner" };
   if (r.status === 404 || err === "price_not_configured" || err === "unknown_plan") return { outcome: "not_available" };
   if (r.status === 503 && err === "status_unavailable") return { outcome: "status_unavailable" };
   return { outcome: "web_failed" };
@@ -269,6 +303,9 @@ export function plusOutcomeLine(outcome) {
     case "web_failed": return netWorthWords("plus-buy-web-failed");
     case "started": return netWorthWords("plus-buy-started");
     case "web_cancelled": return netWorthWords("plus-buy-web-cancelled");
+    // Approved 2026-10-29 for couple mode (lib/householdWords.js), reused exactly: a purchase is already open.
+    case "in_progress_mine": return HOUSEHOLD_WORDS.errors.purchase_in_progress;
+    case "in_progress_partner": return HOUSEHOLD_WORDS.errors.partner_purchase_in_progress;
     // Approved 2026-10-20 for the store paywall, reused exactly: each is true of any store purchase.
     case "failed": return PAYWALL_COPY.outcomes.failed;
     case "unconfirmed": return PAYWALL_COPY.outcomes.unconfirmed;
