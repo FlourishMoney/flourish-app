@@ -83,7 +83,9 @@ create index if not exists gift_codes_buyer_idx on public.gift_codes (lower(buye
 alter table public.gift_codes enable row level security;
 -- No policy, and nothing granted to the browser roles: no client may read or write a row.
 revoke all on table public.gift_codes from anon, authenticated;
--- No DELETE: a used code stays used, and a refunded one is voided, never removed.
+-- No DELETE, even for the server: a used code stays used, and a refunded one is voided, never removed. Anything a default
+-- privilege granted is taken back first.
+revoke all on table public.gift_codes from service_role;
 grant select, insert, update on table public.gift_codes to service_role;
 
 -- ── the paid checkout: one row per Stripe session ────────────────────────────────────────────────────
