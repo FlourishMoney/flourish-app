@@ -9,8 +9,11 @@
 // the app's (src/lib/firstRunWords.js).
 //
 // A record: consent_id, the words, the date of the Terms and of the Privacy Policy the app showed (YYYY-MM-DD, the dates
-// on those pages), when the person tapped Get started (shown_at, the app's clock, kept within the last 30 days), when the
-// server wrote it (recorded_at), and the platform. One per account per consent: a retried send changes nothing.
+// on those pages), when the step was shown (shown_at) and when the person tapped Get started (recorded_at, from the app's
+// agreed_at), both the app's clock and kept only within the last 30 days, and the platform. An app that sends no agreed_at
+// (builds before Privacy Policy 1.1.7) sent the tap as shown_at, so that is both times; the server's time when neither is
+// usable. shown_at is never later than recorded_at.
+// One per account per consent: a retried send changes nothing.
 // -----------------------------------------------------------------------------
 "use strict";
 
@@ -31,12 +34,13 @@ function consentRow(userId, body, platform, now = Date.now()) {
   const words = CONSENTS[b.consent_id];
   if (!words) return { error: "unknown_consent" };
   if (!isDate(b.terms_version) || !isDate(b.privacy_version)) return { error: "bad_version" };
-  const t = Date.parse(b.shown_at);
-  const shownAt = Number.isFinite(t) && t <= now + 5 * 60 * 1000 && t >= now - 30 * DAY ? new Date(t) : new Date(now);
+  const plausible = (v) => { const t = Date.parse(v); return Number.isFinite(t) && t <= now + 5 * 60 * 1000 && t >= now - 30 * DAY ? t : null; };
+  const agreedAt = plausible(b.agreed_at) ?? (b.agreed_at == null ? plausible(b.shown_at) : null) ?? now;
+  const shownAt = Math.min(plausible(b.shown_at) ?? agreedAt, agreedAt);
   return { row: {
     user_id: userId, consent_id: b.consent_id, words: { ...words },
     terms_version: b.terms_version, privacy_version: b.privacy_version,
-    shown_at: shownAt.toISOString(), recorded_at: new Date(now).toISOString(),
+    shown_at: new Date(shownAt).toISOString(), recorded_at: new Date(agreedAt).toISOString(),
     platform: ["web", "ios", "android"].includes(platform) ? platform : "web",
   } };
 }

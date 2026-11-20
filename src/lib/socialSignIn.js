@@ -7,6 +7,7 @@
 //                     supabase-js reads the session from the address (detectSessionInUrl).
 //   iPhone, Apple     Apple's own sheet (Face ID), through @capacitor-community/apple-sign-in; Supabase checks Apple's
 //                     identity token with signInWithIdToken. The nonce Apple signs is the SHA-256 of the one Supabase gets.
+//                     It asks Apple for the email only, never the name (Privacy Policy 1.1.7, lib/privacy117Words.js).
 //   everything else   (Google on iPhone and Android, Apple on Android) the provider's page in the system's in-app browser
 //   in the apps       (@capacitor/browser: SFSafariViewController, a Custom Tab), which returns to
 //                     flourishmoney://auth-callback; the app reads the session from that address (sessionFromCallback).
@@ -90,7 +91,7 @@ export async function signInWithProvider(provider, deps) {
     }
     if (provider === "apple" && platform === "ios" && appleSignIn) {
       const { raw, hashed } = await nonces();
-      const res = await appleSignIn.authorize({ clientId: IOS_BUNDLE_ID, redirectURI: origin || "https://flourishmoney.app", scopes: "email name", nonce: hashed });
+      const res = await appleSignIn.authorize({ clientId: IOS_BUNDLE_ID, redirectURI: origin || "https://flourishmoney.app", scopes: "email", nonce: hashed });
       const token = res && res.response && res.response.identityToken;
       if (!token) return { ok: false };
       const { error } = await supabase.auth.signInWithIdToken({ provider: "apple", token, nonce: raw });
