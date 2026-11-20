@@ -1,18 +1,20 @@
 <!doctype html>
 <!--
   public/gift/index.html: THE GIFT PAGE, flourishmoney.app/gift/ (Christmas 2026). Website only, English only.
-  Two one-time gifts. The prices come from /api/gift (netlify/functions/_lib/gifts.js GIFT_PRICES, the one value), never
-  from this page. Continue opens Stripe Checkout (payment mode, tax added at checkout, no promotion codes).
-  The native build removes public/gift (scripts/strip-landing-media.mjs) and refuses a build that mentions it
-  (scripts/check-native-build.mjs). Every line is a placeholder until Amanda approves docs/review/GIFT-COPY.md.
+  One gift on sale, "a year of flourish" (the Plus gift waits for Plus). Its price comes from /api/gift
+  (netlify/functions/_lib/gifts.js GIFT_PRICES, the one value), never from this page. Continue opens Stripe Checkout
+  (payment mode, tax added at checkout, no promotion codes). The native build removes public/gift
+  (scripts/strip-landing-media.mjs) and refuses a build that mentions it (scripts/check-native-build.mjs).
+  Words approved 2026-11-20 (docs/review/GIFT-COPY.md): each carries its id in data-words, and tests/giftWords.test.cjs
+  holds every one to the approved sheet, word for word.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>[WORDS: gift-page-title]</title>
-<meta name="description" content="[WORDS: gift-page-description]">
+<title data-words="gift-page-title">Give a year of flourish</title>
+<meta name="description" data-words="gift-page-description" content="Give someone a year of flourish. One-time gift, nothing renews.">
 <link rel="icon" href="/flourish-adult-favicon-32.png">
 <link rel="stylesheet" href="/gift/gift.css">
 <script src="/gift/gift.js" defer></script>
@@ -21,102 +23,105 @@
 <main>
   <section class="card" id="intro">
     <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
-    <h1>[WORDS: gift-page-heading]</h1>
-    <p>[WORDS: gift-page-intro]</p>
-    <p class="onetime">[WORDS: gift-page-onetime]</p>
+    <h1 data-words="gift-page-heading">Give a year of flourish</h1>
+    <p data-words="gift-page-intro">A gift for someone who wants to see their money more clearly. They get 12 months of flourish from a one-time gift that doesn&#x27;t renew.</p>
+    <p class="onetime" data-words="gift-page-onetime">One-time gift, nothing renews.</p>
   </section>
 
   <section class="card" id="thanks" hidden>
-    <h2>[WORDS: gift-thanks-heading]</h2>
-    <p>[WORDS: gift-thanks-body]</p>
-    <p class="onetime">[WORDS: gift-page-onetime]</p>
+    <h2 data-words="gift-thanks-heading">Thank you. Your gift is ready.</h2>
+    <p data-words="gift-thanks-body">We&#x27;ve emailed you the gift code and a printable card. If you don&#x27;t see it, check your spam folder or write to hello@flourishmoney.app.</p>
+    <p class="onetime" data-words="gift-page-onetime">One-time gift, nothing renews.</p>
   </section>
 
-  <p class="card notice bad" id="unavailable" hidden>[WORDS: gift-error-unavailable]</p>
+  <p class="card notice bad" id="unavailable" data-words="gift-error-unavailable" hidden>Gifts aren&#x27;t available right now. Please check back soon.</p>
 
   <form class="card" id="gift-form" novalidate>
     <fieldset>
-      <legend>[WORDS: gift-form-plan-legend]</legend>
+      <legend data-words="gift-form-plan-legend">Choose a gift</legend>
       <div class="plans">
         <label class="plan"><input type="radio" name="plan" value="flourish" checked>
-          <span><span class="plan-name">[WORDS: gift-plan-flourish-name]</span><br>
-            <span class="plan-price" data-price="flourish"></span> <span class="muted">[WORDS: gift-price-plus-tax]</span><br>
-            <span class="muted">[WORDS: gift-plan-flourish-detail]</span></span></label>
-        <label class="plan"><input type="radio" name="plan" value="flourish_plus">
-          <span><span class="plan-name">[WORDS: gift-plan-plus-name]</span><br>
-            <span class="plan-price" data-price="flourish_plus"></span> <span class="muted">[WORDS: gift-price-plus-tax]</span><br>
-            <span class="muted">[WORDS: gift-plan-plus-detail]</span></span></label>
+          <span><span class="plan-name" data-words="gift-plan-flourish-name">A year of flourish</span><br>
+            <span class="plan-price" data-price="flourish"></span> <span class="muted" data-words="gift-price-plus-tax">plus tax</span><br>
+            <span class="muted" data-words="gift-plan-flourish-detail">12 months of the flourish plan, with no limits on the coach or What-If.</span></span></label>
       </div>
     </fieldset>
 
     <div class="field">
-      <label for="buyer_email">[WORDS: gift-form-buyer-email]</label>
+      <label for="buyer_email" data-words="gift-form-buyer-email">Your email</label>
       <input id="buyer_email" name="buyer_email" type="email" autocomplete="email" maxlength="254" required>
-      <span class="help">[WORDS: gift-form-buyer-email-help]</span>
-      <p class="error" data-error="buyer_email" hidden>[WORDS: gift-error-buyer-email]</p>
+      <span class="help" data-words="gift-form-buyer-email-help">We send the gift code and the printable card here. Stripe sends your receipt here too.</span>
+      <p class="error" data-error="buyer_email" data-words="gift-error-buyer-email" hidden>Enter your email address.</p>
+    </div>
+
+    <div class="field">
+      <label for="buyer_name" data-words="gift-form-buyer-name">Your name</label>
+      <input id="buyer_name" name="buyer_name" type="text" autocomplete="name" maxlength="60" required>
+      <span class="help" data-words="gift-form-buyer-name-help">Shown to them in the email and on the card, so they know who it is from.</span>
+      <p class="error" data-error="buyer_name" data-words="gift-error-buyer-name" hidden>Enter your name.</p>
     </div>
 
     <fieldset>
-      <legend>[WORDS: gift-form-delivery-legend]</legend>
-      <label class="choice"><input type="radio" name="delivery" value="email" checked> [WORDS: gift-form-delivery-email]</label>
-      <label class="choice"><input type="radio" name="delivery" value="print"> [WORDS: gift-form-delivery-print]</label>
+      <legend data-words="gift-form-delivery-legend">How should the gift arrive?</legend>
+      <label class="choice"><input type="radio" name="delivery" value="email" checked> <span data-words="gift-form-delivery-email">Email it to them on a date I choose</span></label>
+      <label class="choice"><input type="radio" name="delivery" value="print"> <span data-words="gift-form-delivery-print">I&#x27;ll print the card and give it myself</span></label>
     </fieldset>
 
     <div class="field">
-      <label for="recipient_name">[WORDS: gift-form-recipient-name]</label>
+      <label for="recipient_name" data-words="gift-form-recipient-name">Their name</label>
       <input id="recipient_name" name="recipient_name" type="text" autocomplete="off" maxlength="60">
-      <span class="help" data-when="print">[WORDS: gift-form-optional-print]</span>
-      <p class="error" data-error="recipient_name" hidden>[WORDS: gift-error-recipient-name]</p>
+      <span class="help" data-when="print" data-words="gift-form-optional-print">Optional when you print the card.</span>
+      <p class="error" data-error="recipient_name" data-words="gift-error-recipient-name" hidden>Enter their name.</p>
     </div>
 
     <div class="field" data-when="email">
-      <label for="recipient_email">[WORDS: gift-form-recipient-email]</label>
+      <label for="recipient_email" data-words="gift-form-recipient-email">Their email</label>
       <input id="recipient_email" name="recipient_email" type="email" autocomplete="off" maxlength="254">
-      <span class="help">[WORDS: gift-form-recipient-email-help]</span>
-      <p class="error" data-error="recipient_email" hidden>[WORDS: gift-error-recipient-email]</p>
+      <span class="help" data-words="gift-form-recipient-email-help">Used only to send this gift.</span>
+      <p class="error" data-error="recipient_email" data-words="gift-error-recipient-email" hidden>Enter their email address, or choose to print the card.</p>
     </div>
 
     <div class="field" data-when="email">
-      <label for="send_on">[WORDS: gift-form-send-on]</label>
+      <label for="send_on" data-words="gift-form-send-on">Date to email it</label>
       <input id="send_on" name="send_on" type="date">
-      <span class="help">[WORDS: gift-form-send-on-help]</span>
-      <p class="error" data-error="send_on" hidden>[WORDS: gift-error-send-on]</p>
+      <span class="help" data-words="gift-form-send-on-help">It arrives at 7 a.m. Eastern time on that day.</span>
+      <p class="error" data-error="send_on" data-words="gift-error-send-on" hidden>Choose a date from today to one year from today.</p>
     </div>
 
     <div class="field">
-      <label for="message">[WORDS: gift-form-message]</label>
+      <label for="message" data-words="gift-form-message">A short message (optional)</label>
       <textarea id="message" name="message" maxlength="200"></textarea>
-      <span class="help">[WORDS: gift-form-message-help]</span>
-      <p class="error" data-error="message" hidden>[WORDS: gift-error-message]</p>
+      <span class="help" data-words="gift-form-message-help">Up to 200 characters. It appears on the card and in their email.</span>
+      <p class="error" data-error="message" data-words="gift-error-message" hidden>Keep the message to 200 characters.</p>
     </div>
 
     <div class="field">
-      <label for="start_on">[WORDS: gift-form-start-on]</label>
+      <label for="start_on" data-words="gift-form-start-on">Start the 12 months on a later date (optional)</label>
       <input id="start_on" name="start_on" type="date">
-      <span class="help">[WORDS: gift-form-start-on-help]</span>
-      <p class="error" data-error="start_on" hidden>[WORDS: gift-error-start-on]</p>
+      <span class="help" data-words="gift-form-start-on-help">Their 12 months start on the latest of this date, the day they redeem the code, or the end of any paid period they already have.</span>
+      <p class="error" data-error="start_on" data-words="gift-error-start-on" hidden>Choose a start date from today to one year from today, or leave it blank.</p>
     </div>
 
-    <p class="onetime">[WORDS: gift-page-onetime]</p>
-    <p><button class="btn" id="submit" type="submit">[WORDS: gift-form-submit]</button></p>
+    <p class="onetime" data-words="gift-page-onetime">One-time gift, nothing renews.</p>
+    <p><button class="btn" id="submit" type="submit" data-words="gift-form-submit">Continue to checkout</button></p>
     <p class="error" id="form-error" hidden></p>
-    <p class="muted">[WORDS: gift-form-stripe-note]</p>
+    <p class="muted" data-words="gift-form-stripe-note">Checkout is run by Stripe. Sales tax is added there.</p>
   </form>
 
   <section class="card">
-    <h2>[WORDS: gift-how-heading]</h2>
+    <h2 data-words="gift-how-heading">How it works</h2>
     <ol>
-      <li>[WORDS: gift-how-1]</li>
-      <li>[WORDS: gift-how-2]</li>
-      <li>[WORDS: gift-how-3]</li>
+      <li data-words="gift-how-1">You buy the gift. We email you the gift code and a printable card right away.</li>
+      <li data-words="gift-how-2">They go to flourishmoney.app/gift/redeem, sign in or create an account, and enter the code once.</li>
+      <li data-words="gift-how-3">Then they get the flourish app on the App Store or Google Play and sign in. Their 12 months start on the latest of the day they redeem the code, the start date you chose, or the end of any paid period they already have.</li>
     </ol>
-    <p class="muted">[WORDS: gift-page-refund]</p>
+    <p class="muted" data-words="gift-page-refund">Changed your mind? A gift that hasn&#x27;t been redeemed can be refunded within 30 days of purchase. Write to hello@flourishmoney.app.</p>
   </section>
 </main>
 <template id="words">
-  <span data-id="gift-error-limited">[WORDS: gift-error-limited]</span>
-  <span data-id="gift-error-generic">[WORDS: gift-error-generic]</span>
-  <span data-id="gift-form-sending">[WORDS: gift-form-sending]</span>
+  <span data-id="gift-error-limited">Too many tries from here. Wait an hour, then try again.</span>
+  <span data-id="gift-error-generic">Something went wrong and nothing was charged. Please try again.</span>
+  <span data-id="gift-form-sending">Opening checkout…</span>
 </template>
 </body>
 </html>

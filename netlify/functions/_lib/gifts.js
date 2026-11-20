@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // GIFTS: every rule in one place (Christmas 2026; the pattern GrowSmart's gift subscriptions proved).
 //
-// Two one-time gifts, sold on flourishmoney.app/gift only: "a year of flourish" and "a year of flourish with Plus".
+// One-time gifts, sold on flourishmoney.app/gift only: "a year of flourish" (and, once Plus is live, a Plus gift).
 //   checkout     netlify/functions/gift.js action "checkout": Stripe Checkout in PAYMENT mode (one charge, nothing renews),
 //                Stripe Tax as the website's subscriptions have it (STRIPE_TAX_ENABLED), no promotion codes (so no creator
 //                codes). The buyer's form travels in the session's metadata.
@@ -24,8 +24,11 @@
 // The pages live in public/gift/, which a native build removes (scripts/strip-landing-media.mjs), and
 // scripts/check-native-build.mjs refuses a native build that mentions them. gift.js refuses a store app's origin.
 //
-// WORDS. Every line a person reads comes from _lib/giftWords.js, all placeholders until Amanda approves
-// docs/review/GIFT-COPY.md. An email still holding a placeholder is never sent.
+// WORDS. Every line a person reads comes from _lib/giftWords.js, approved 2026-11-20 (docs/review/GIFT-COPY.md). An
+// email whose words were ever a placeholder again is never sent.
+//
+// THE PLUS GIFT IS NOT SOLD until Plus is live (Amanda, 2026-11-20: its lines are not approved). PLUS_GIFT_ON_SALE keeps
+// it off the page and refused at checkout; the table and the entitlement still know the plan, for when it is.
 //
 // Never log a code, an address, a name or a message.
 // -----------------------------------------------------------------------------
@@ -41,7 +44,9 @@ const { GIFT_WORDS, giftWords } = require("./giftWords");
 // In cents, CAD, BEFORE tax ("plus tax": Stripe Tax adds GST/HST at checkout). Amanda will confirm the real prices;
 // changing a price is this one line. The gift page reads them from gift.js ("prices"), never its own copy.
 const GIFT_PRICES = Object.freeze({ currency: "cad", flourish: 9999, flourish_plus: 14998 });
-const GIFT_PLANS = Object.freeze(["flourish", "flourish_plus"]);
+const GIFT_PLANS = Object.freeze(["flourish", "flourish_plus"]);   // what the table knows
+const PLUS_GIFT_ON_SALE = false;                                     // what is sold: "a year of flourish" only, for now
+const SOLD_PLANS = Object.freeze(PLUS_GIFT_ON_SALE ? [...GIFT_PLANS] : ["flourish"]);
 const GIFT_MONTHS = 12;
 
 const ORIGIN = (env = process.env) => (env.APP_ORIGIN || "https://flourishmoney.app").trim().replace(/\/+$/, "");
@@ -132,8 +137,9 @@ const MESSAGE_MAX = 200;
 /**
  * The gift page's form, checked. Only these fields are read; a price, an amount or a code in the body is ignored.
  * { ok: true, form } | { ok: false, errors: ["buyer_email", ...] }
- *   plan            "flourish" | "flourish_plus"
+ *   plan            "flourish" (and "flourish_plus" once PLUS_GIFT_ON_SALE)
  *   buyer_email     where Email 1 and Stripe's receipt go
+ *   buyer_name      required: "From ..." in Email 2 and on the card
  *   delivery        "email" (on a day the buyer picks) | "print" (the buyer prints the card)
  *   recipient_name  required for "email", optional for "print"
  *   recipient_email required for "email", not kept for "print"
@@ -144,10 +150,12 @@ const MESSAGE_MAX = 200;
 function checkGiftForm(body, now = new Date()) {
   const b = body && typeof body === "object" ? body : {};
   const errors = [];
-  const plan = GIFT_PLANS.includes(b.plan) ? b.plan : null;
+  const plan = SOLD_PLANS.includes(b.plan) ? b.plan : null;
   if (!plan) errors.push("plan");
   const buyer = cleanEmail(clean(b.buyer_email, 254));
   if (!isEmail(buyer)) errors.push("buyer_email");
+  const from = clean(b.buyer_name, NAME_MAX);
+  if (!from) errors.push("buyer_name");
   const delivery = b.delivery === "email" || b.delivery === "print" ? b.delivery : null;
   if (!delivery) errors.push("delivery");
   const name = clean(b.recipient_name, NAME_MAX);
@@ -166,7 +174,7 @@ function checkGiftForm(body, now = new Date()) {
   const st = pickDay(b.start_on, now);
   if (st.invalid) errors.push("start_on");
   if (errors.length) return { ok: false, errors };
-  return { ok: true, form: { plan, buyer_email: buyer, delivery, recipient_name: name || null,
+  return { ok: true, form: { plan, buyer_email: buyer, buyer_name: from, delivery, recipient_name: name || null,
     recipient_email: delivery === "email" ? recipientEmail : null, message: message || null, send_on: sendOn, start_on: st.value } };
 }
 
@@ -184,6 +192,7 @@ function checkoutParams(form, { env = process.env, words = GIFT_WORDS, now = new
     gift_plan: form.plan,
     delivery: form.delivery,
     buyer_email: form.buyer_email,
+    buyer_name: form.buyer_name,
     recipient_name: form.recipient_name || undefined,
     recipient_email: form.recipient_email || undefined,
     gift_message: form.message || undefined,
@@ -201,7 +210,8 @@ function checkoutParams(form, { env = process.env, words = GIFT_WORDS, now = new
         unit_amount: GIFT_PRICES[form.plan],
         tax_behavior: "exclusive",
         product_data: {
-          name: giftWords(form.plan === "flourish_plus" ? "gift-stripe-name-plus" : "gift-stripe-name-flourish", {}, words),
+          // Only "a year of flourish" is sold until Plus is live (its Stripe name is not approved yet).
+          name: giftWords("gift-stripe-name-flourish", {}, words),
           description: giftWords("gift-stripe-description", {}, words),
           metadata: { kind: "gift", gift_plan: form.plan },
         },
@@ -235,6 +245,7 @@ function giftFromSession(s) {
   return {
     session_id: s.id, payment_intent: pi, livemode: s.livemode === true, paid: s.payment_status === "paid",
     plan, delivery, buyer_email: isEmail(buyer) ? buyer : null,
+    buyer_name: clean(m.buyer_name, NAME_MAX) || null,
     recipient_name: clean(m.recipient_name, NAME_MAX) || null,
     recipient_email: recipientEmail,
     message: clean(m.gift_message, MESSAGE_MAX) || null,
@@ -251,9 +262,10 @@ function giftFromSession(s) {
  * The printable card. Everything is in the URL FRAGMENT, never the query: a fragment is not sent to the server, so
  * the code never reaches a log or a Referer. The page is noindex, sends no referrer and loads nothing from elsewhere.
  */
-function giftCardUrl({ code, plan, recipientName = "", message = "", startOn = null }, env = process.env) {
+function giftCardUrl({ code, plan, recipientName = "", buyerName = "", message = "", startOn = null }, env = process.env) {
   const parts = [`c=${encodeURIComponent(code)}`, `p=${encodeURIComponent(plan)}`];
   if (recipientName) parts.push(`to=${encodeURIComponent(recipientName)}`);
+  if (buyerName) parts.push(`f=${encodeURIComponent(buyerName)}`);
   if (message) parts.push(`m=${encodeURIComponent(message)}`);
   if (startOn) parts.push(`s=${encodeURIComponent(startOn)}`);
   return `${ORIGIN(env)}/gift/card#${parts.join("&")}`;
@@ -268,14 +280,15 @@ const STORE_BADGES = Object.freeze([
 ]);
 
 // ── THE EMAILS ───────────────────────────────────────────────────────────────────────────────────────
-const planWords = (plan, words) => giftWords(plan === "flourish_plus" ? "gift-plan-plus" : "gift-plan-flourish", {}, words);
+// The Plus gift's own name is not approved yet and the Plus gift is not sold; until it is, there is no line for it.
+const planWords = (plan, words) => giftWords(plan === "flourish_plus" && typeof words["gift-plan-plus"] === "string" ? "gift-plan-plus" : "gift-plan-flourish", {}, words);
 const textOf = (paragraphs) => paragraphs.filter((p) => typeof p === "string");
 
 /** Email 1, to the buyer, right after payment: the code, the printable card, how it is redeemed, and the terms. */
 function buyerEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}) {
   const w = (id, vars) => giftWords(id, vars, words);
   const plan = planWords(g.plan, words);
-  const card = giftCardUrl({ code: g.code, plan: g.plan, recipientName: g.recipient_name || "", message: g.message || "", startOn: g.start_on }, env);
+  const card = giftCardUrl({ code: g.code, plan: g.plan, recipientName: g.recipient_name || "", buyerName: g.buyer_name || "", message: g.message || "", startOn: g.start_on }, env);
   const cardLine = `${w("gift-email1-card-line")} ${card}`;
   const paragraphs = [
     w("gift-email1-intro", { plan }),
@@ -290,7 +303,7 @@ function buyerEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}) {
     w("gift-email1-refund"),
     w("gift-email1-receipt"),
   ];
-  const footer = [w("gift-email-footer")];
+  const footer = [w("gift-email1-footer")];                    // Email 1 keeps the household invite's footer
   const subject = w("gift-email1-subject", { plan });
   return {
     from: FROM, reply_to: SUPPORT, to: [g.buyer_email], subject,
@@ -300,15 +313,16 @@ function buyerEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}) {
   };
 }
 
-/** Email 2, to the recipient, on the day: who it is from is not named (we only hold the buyer's address). */
+/** Email 2, to the recipient, on the day, from the buyer by name ({from}). */
 function recipientEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}) {
   const w = (id, vars) => giftWords(id, vars, words);
   const plan = planWords(g.plan, words);
+  const from = g.buyer_name || "";
   const url = redeemUrl(env);
   const linkLine = `${w("gift-email2-button")} ${url}`;
   const paragraphs = [
     g.recipient_name ? w("gift-email2-hello-name", { name: g.recipient_name }) : w("gift-email2-hello"),
-    w("gift-email2-intro", { plan }),
+    w("gift-email2-intro", { plan, from }),
     ...(g.message ? [`${w("gift-email2-message-label")} "${g.message}"`] : []),
     `${w("gift-email2-code-label")} ${formatGiftCode(g.code)}`,
     w("gift-email2-how"),
@@ -318,8 +332,9 @@ function recipientEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}
     { badges: STORE_BADGES },
     w("gift-email2-onetime"),
   ];
-  const footer = [w("gift-email-footer")];
-  const subject = w("gift-email2-subject", { plan });
+  // Email 2's own footer, three lines (" / " in the approved sheet marks the breaks).
+  const footer = w("gift-email-footer", { from }).split(" / ");
+  const subject = w("gift-email2-subject", { plan, from });
   return {
     from: FROM, reply_to: SUPPORT, to: [g.recipient_email], subject,
     text: [...textOf(paragraphs), ...footer].join("\n\n"),
@@ -332,10 +347,10 @@ const holdsPlaceholder = (payload) => /\[WORDS:/.test(JSON.stringify(payload || 
 
 // The lines each email is made of. Whether an email may go is asked of THESE (the words), never of the finished email,
 // which also holds what the buyer typed.
-const EMAIL1_IDS = Object.freeze(["gift-plan-flourish", "gift-plan-plus", "gift-email1-subject", "gift-email1-intro", "gift-email1-delivery-email",
+const EMAIL1_IDS = Object.freeze(["gift-plan-flourish", "gift-email1-subject", "gift-email1-intro", "gift-email1-delivery-email",
   "gift-email1-delivery-print", "gift-email1-code-label", "gift-email1-card-line", "gift-email1-card-button", "gift-email1-how",
-  "gift-email1-start-now", "gift-email1-start-on", "gift-email1-onetime", "gift-email1-refund", "gift-email1-receipt", "gift-email-footer"]);
-const EMAIL2_IDS = Object.freeze(["gift-plan-flourish", "gift-plan-plus", "gift-email2-subject", "gift-email2-hello-name", "gift-email2-hello",
+  "gift-email1-start-now", "gift-email1-start-on", "gift-email1-onetime", "gift-email1-refund", "gift-email1-receipt", "gift-email1-footer"]);
+const EMAIL2_IDS = Object.freeze(["gift-plan-flourish", "gift-email2-subject", "gift-email2-hello-name", "gift-email2-hello",
   "gift-email2-intro", "gift-email2-message-label", "gift-email2-code-label", "gift-email2-how", "gift-email2-button", "gift-email2-start-now",
   "gift-email2-start-on", "gift-email2-apps", "gift-email2-onetime", "gift-email-footer"]);
 /** Is any line of this email still a placeholder (not approved yet)? */
@@ -392,7 +407,7 @@ async function fulfilGift({ admin, session, now = new Date(), env = process.env,
   const g = giftFromSession(session);
   if (!g) return { ok: false, reason: "not_gift" };
   if (!g.paid) return { ok: true, unpaid: true };
-  if (!g.plan || !g.delivery || !g.buyer_email || !g.session_id) return { ok: false, reason: "bad_session" };
+  if (!g.plan || !g.delivery || !g.buyer_email || !g.buyer_name || !g.session_id) return { ok: false, reason: "bad_session" };
   if (g.delivery === "email" && !g.recipient_email) return { ok: false, reason: "bad_session" };
   const sendOn = g.delivery === "email" ? (g.send_on || torontoToday(now)) : null;
 
@@ -402,7 +417,7 @@ async function fulfilGift({ admin, session, now = new Date(), env = process.env,
       p_code: makeCode(), p_plan: g.plan, p_session: g.session_id, p_payment_intent: g.payment_intent, p_livemode: g.livemode,
       p_buyer_email: g.buyer_email, p_delivery: g.delivery, p_recipient_name: g.recipient_name,
       p_recipient_email: g.recipient_email, p_message: g.message, p_send_on: sendOn, p_start_on: g.start_on,
-      p_subtotal: g.subtotal, p_tax: g.tax, p_total: g.total, p_currency: g.currency,
+      p_subtotal: g.subtotal, p_tax: g.tax, p_total: g.total, p_currency: g.currency, p_buyer_name: g.buyer_name,
     });
     if (r && r.code) row = r;                  // made now, or by an earlier delivery of this session
   }
@@ -417,7 +432,7 @@ async function fulfilGift({ admin, session, now = new Date(), env = process.env,
     return { ...out, skipped: "placeholder" };
   }
   const mail = buyerEmailPayload({
-    code: row.code, plan: row.plan, delivery: row.delivery, buyer_email: row.buyer_email,
+    code: row.code, plan: row.plan, delivery: row.delivery, buyer_email: row.buyer_email, buyer_name: row.buyer_name,
     recipient_name: row.recipient_name, recipient_email: row.recipient_email, message: row.gift_message,
     send_on: row.send_on, start_on: row.start_on,
   }, { env, words });
@@ -530,7 +545,7 @@ async function runSendSweep({ admin, now = () => new Date(), env = process.env, 
     if (!Array.isArray(batch) || !batch.length) break;
     for (let i = 0; i < batch.length; i++) {
       const g = batch[i];
-      const mail = recipientEmailPayload({ code: g.code, plan: g.plan, recipient_email: g.recipient_email,
+      const mail = recipientEmailPayload({ code: g.code, plan: g.plan, recipient_email: g.recipient_email, buyer_name: g.buyer_name,
         recipient_name: g.recipient_name, message: g.gift_message, start_on: g.start_on }, { env, words });
       let r;
       try { r = await send(mail, `gift-recipient/${g.code}`, { env }); }
@@ -564,7 +579,7 @@ async function runSendSweep({ admin, now = () => new Date(), env = process.env, 
 }
 
 module.exports = {
-  GIFT_PRICES, GIFT_PLANS, GIFT_MONTHS, ORIGIN, SUPPORT, giftsEnabled, taxEnabled,
+  GIFT_PRICES, GIFT_PLANS, SOLD_PLANS, PLUS_GIFT_ON_SALE, GIFT_MONTHS, ORIGIN, SUPPORT, giftsEnabled, taxEnabled,
   ALPHABET, CODE_RE, makeGiftCode, normaliseGiftCode, isGiftCode, formatGiftCode,
   TZ, SEND_HOUR, MAX_DAYS_AHEAD, torontoToday, isDay, addDays, torontoInstant, sendInstant, pickDay, formatDay,
   NAME_MAX, MESSAGE_MAX, checkGiftForm, checkoutParams, isGiftSession, giftFromSession,

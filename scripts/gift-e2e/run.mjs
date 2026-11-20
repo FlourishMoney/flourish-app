@@ -17,10 +17,10 @@
 //   5  redeem on the website, signing in through the website's own sign-in screen: the plan turns on for 12 months, and
 //      the website, iPhone and Android status calls all say paid
 //   6  a second account redeeming the same code is told it was already redeemed
-//   7  buy "a year of flourish with Plus", refund it through Stripe's test API, post the real charge.refunded event: the
-//      unused code is void, and redeeming it says so
-// Words: the drafts in docs/review/GIFT-COPY.md are put in place of the placeholders, here only, so the screens read
-// as they would once approved. Output: docs/review/gift-e2e/ (screenshots, the captured emails, results.json).
+//   7  buy a second "a year of flourish" (printed card, starting tomorrow), refund it through Stripe's test API, post the
+//      real charge.refunded event: the unused code is void, and redeeming it says so (the Plus gift is not sold yet)
+// Words: the approved words, as the code holds them (2026-11-20). Output: docs/review/gift-e2e/ (screenshots, the
+// captured emails, results.json).
 //
 //   node scripts/gift-e2e/run.mjs                  everything (needs the Stripe test key)
 //   node scripts/gift-e2e/run.mjs --local-payment  everything but Stripe itself: the checkout's parameters, exactly as
@@ -114,9 +114,9 @@ console.log("2. build the website against the local Supabase");
 const dist = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-gift-e2e-"));
 execFileSync("npx", ["vite", "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: REPO, stdio: ["ignore", "ignore", "inherit"],
   env: { ...process.env, VITE_SUPABASE_URL: SB_URL, VITE_SUPABASE_PUBLISHABLE_KEY: SB_ANON } });
-const DRAFTS = {};
-for (const m of fs.readFileSync(path.join(REPO, "docs", "review", "GIFT-COPY.md"), "utf8").matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| ([^|]+) \| (pending|approved) \|$/gm)) DRAFTS[m[1]] = m[2].trim();
-const withDrafts = (s) => s.replace(/\[WORDS: (gift-[a-z0-9-]+)\]/g, (x, id) => DRAFTS[id] ?? x);
+// The approved lines (docs/review/GIFT-COPY.md), to check what the screens and emails say. The pages are served exactly as built.
+const WORDS = {};
+for (const m of fs.readFileSync(path.join(REPO, "docs", "review", "GIFT-COPY.md"), "utf8").matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| ([^|]+) \| approved \|$/gm)) WORDS[m[1]] = m[2].trim();
 
 Object.assign(process.env, {
   GIFTS_ENABLED: "true", BILLING_ENABLED: "true", IAP_ENABLED: "true", SUPABASE_URL: SB_URL, SUPABASE_SECRET_KEY: SB_SERVICE,
@@ -124,10 +124,7 @@ Object.assign(process.env, {
   RESEND_API_KEY: "re_e2e_captured_not_sent", LIMITER_HASH_SECRET: "e2e-local",
 });
 const FN = path.join(REPO, "netlify", "functions");
-const wordsPath = require.resolve(path.join(FN, "_lib", "giftWords.js"));
-const realWords = require(wordsPath);
-require.cache[wordsPath].exports = { ...realWords, GIFT_WORDS: Object.freeze({ ...realWords.GIFT_WORDS, ...DRAFTS }),
-  giftWords: (id, vars, w) => realWords.giftWords(id, vars, w || { ...realWords.GIFT_WORDS, ...DRAFTS }) };
+const realWords = require(path.join(FN, "_lib", "giftWords.js"));   // the approved words, unchanged
 const giftFn = require(path.join(FN, "gift.js"));
 const hookFn = require(path.join(FN, "stripe-webhook.js"));
 const billingFn = require(path.join(FN, "billing.js"));
@@ -192,8 +189,7 @@ const server = http.createServer(async (req, res) => {
     else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(dist, u.pathname === "/" ? "index.html" : "app.html");
     if (!fs.existsSync(file)) file = path.join(dist, "index.html");
     const ext = path.extname(file);
-    let body = fs.readFileSync(file);
-    if ([".html", ".js"].includes(ext)) body = Buffer.from(withDrafts(body.toString("utf8")));
+    const body = fs.readFileSync(file);
     res.writeHead(200, { "Content-Type": TYPES[ext] || "application/octet-stream", "Cache-Control": "no-store" });
     res.end(body);
   } catch (e) { res.writeHead(500); res.end(String(e.message)); }
@@ -237,7 +233,9 @@ async function buyGift(page, { plan, delivery, name, email, message, sendOn, sta
   await page.waitForSelector('[data-price="flourish"]:not(:empty)');
   await shot(page, `${label}-1-gift-page`);
   await page.check(`input[name="plan"][value="${plan}"]`);
+  check(`${label}: only "a year of flourish" is offered`, (await page.locator('input[name="plan"]').count()) === 1 && (await page.locator('[data-price="flourish_plus"]').count()) === 0);
   await page.fill("#buyer_email", "gift-e2e-buyer@example.com");
+  await page.fill("#buyer_name", "Pat Tester");
   await page.check(`input[name="delivery"][value="${delivery}"]`);
   if (name) await page.fill("#recipient_name", name);
   if (delivery === "email") { await page.fill("#recipient_email", email); await page.fill("#send_on", sendOn); }
@@ -327,12 +325,13 @@ try {
   check("the same event delivered again: still one code, still one Email 1", count1 === 1 && buyerMails.length === 1, `${count1} code, ${buyerMails.length} email`);
   const m1 = buyerMails[0];
   fs.writeFileSync(path.join(OUT, "email1-buyer.html"), m1.html); fs.writeFileSync(path.join(OUT, "email1-buyer.txt"), `Subject: ${m1.subject}\nTo: ${m1.to}\n\n${m1.text}`);
-  check("Email 1: 'Your gift is ready', the code, the card, one-time", m1.subject === DRAFTS["gift-email1-subject"] && m1.text.includes(gifts.formatGiftCode(row1.code)) && /gift\/card#c=/.test(m1.text) && /One-time gift, nothing renews/.test(m1.text));
+  check("Email 1: 'Your gift is ready', the code, the card, one-time", m1.subject === WORDS["gift-email1-subject"] && m1.text.includes(gifts.formatGiftCode(row1.code)) && /gift\/card#c=/.test(m1.text) && /One-time gift, nothing renews/.test(m1.text));
   const p1 = await newPage();
   await p1.setContent(m1.html); await shot(p1, "gift1-4-email1");
   const cardUrl = /https:\/\/flourishmoney\.app\/gift\/card#\S+/.exec(m1.text)[0];
   await p1.goto(cardUrl); await p1.waitForSelector("#giftcard:not([hidden])"); await shot(p1, "gift1-5-printable-card");
   const cardCode = await p1.textContent("#code");
+  check("the card says who it is from", (await p1.textContent("#from")) === "From Pat Tester");
   await p1.locator(".qr").screenshot({ path: path.join(OUT, "card-qr.png") });
   const qr = spawnSync("swift", [path.join(HERE, "qr-decode.swift"), path.join(OUT, "card-qr.png")], { encoding: "utf8" });
   check("the printable card shows the code, and its QR opens the redeem page", cardCode === gifts.formatGiftCode(row1.code) && qr.stdout.trim() === "https://flourishmoney.app/gift/redeem", `QR reads ${qr.stdout.trim() || qr.stderr.trim()}`);
@@ -350,6 +349,7 @@ try {
     fs.writeFileSync(path.join(OUT, "email2-recipient.html"), recip[0].html); fs.writeFileSync(path.join(OUT, "email2-recipient.txt"), `Subject: ${recip[0].subject}\nTo: ${recip[0].to}\n\n${recip[0].text}`);
     await p1.setContent(recip[0].html); await shot(p1, "gift1-6-email2");
     check("Email 2: to the recipient, the code, the redeem button, one-time", recip[0].to[0] === "gift-e2e-recipient@example.com" && recip[0].text.includes(gifts.formatGiftCode(row1.code)) && recip[0].html.includes("https://flourishmoney.app/gift/redeem") && /One-time gift, nothing renews/.test(recip[0].text));
+    check("Email 2: from the buyer by name, with its own footer", recip[0].subject === "Pat Tester has given you a year of flourish" && recip[0].text.includes("This email was sent because Pat Tester asked us to send you a flourish gift.") && recip[0].text.includes("Reply to this email and we'll stop sending them."), recip[0].subject);
   }
 
   // ── redeem on the website ───────────────────────────────────────────────────────────────────────────
@@ -408,15 +408,15 @@ try {
   await rb.waitForSelector("#result-error:not([hidden])");
   const usedMsg = await rb.textContent("#result-error");
   await shot(rb, "redeem-5-already-redeemed");
-  check("a used code says it was already redeemed on an account, and to sign in", usedMsg === DRAFTS["gift-redeem-used"] && !/inactive/i.test(usedMsg), usedMsg);
+  check("a used code says it was already redeemed on an account, and to sign in", usedMsg === WORDS["gift-redeem-used"] && !/inactive/i.test(usedMsg), usedMsg);
 
   // ── gift 2: with Plus, printed, refunded ────────────────────────────────────────────────────────────
-  console.log("7. buy a year of flourish with Plus, then refund it");
-  const s2 = await buyGift(await newPage(), { plan: "flourish_plus", delivery: "print", name: "Robin", message: "For you", startOn: tomorrow }, "gift2");
+  console.log("7. buy a second year of flourish (printed card, starting tomorrow), then refund it");
+  const s2 = await buyGift(await newPage(), { plan: "flourish", delivery: "print", name: "Robin", message: "For you", startOn: tomorrow }, "gift2");
   const e2 = LOCAL_PAY ? localEvent("checkout.session.completed", localPaidSession(s2)) : await stripeEvent("checkout.session.completed", (o) => o.id === s2);
   await deliver(e2);
   const row2 = await giftRow(s2);
-  check("gift 2 (with Plus, printed card, starting tomorrow): one code", !!row2 && row2.plan === "flourish_plus" && row2.delivery === "print" && row2.start_on === tomorrow);
+  check("gift 2 (printed card, starting tomorrow): one code", !!row2 && row2.plan === "flourish" && row2.delivery === "print" && row2.start_on === tomorrow);
   const sess2 = LOCAL_PAY ? localPaidSession(s2) : await stripe("GET", `/checkout/sessions/${s2}`);
   if (!LOCAL_PAY) await stripe("POST", "/refunds", { payment_intent: sess2.payment_intent });
   const r2 = LOCAL_PAY
@@ -427,7 +427,7 @@ try {
   const row2b = await giftRow(s2);
   check("refunded while unused: the code is void", dr.statusCode === 200 && !!row2b.voided_at && row2b.status === "void");
   await rb.fill("#code", gifts.formatGiftCode(row2.code)); await rb.click("#submit");
-  await rb.waitForFunction((t) => document.querySelector("#result-error").textContent === t, DRAFTS["gift-redeem-void"]);
+  await rb.waitForFunction((t) => document.querySelector("#result-error").textContent === t, WORDS["gift-redeem-void"]);
   await shot(rb, "redeem-6-refunded-code");
   check("redeeming the refunded code says it was refunded (never 'inactive')", true, await rb.textContent("#result-error"));
 
@@ -435,9 +435,9 @@ try {
   console.log("8. a gift for a later day");
   await admin.rpc("gift_create", { p_code: gifts.makeGiftCode(), p_plan: "flourish", p_session: `cs_e2e_later_${stamp}`, p_payment_intent: null, p_livemode: false,
     p_buyer_email: "gift-e2e-buyer@example.com", p_delivery: "email", p_recipient_name: "Later", p_recipient_email: "gift-e2e-later@example.com", p_message: null,
-    p_send_on: tomorrow, p_start_on: null, p_subtotal: 9999, p_tax: 0, p_total: 9999, p_currency: "cad" });
+    p_send_on: tomorrow, p_start_on: null, p_subtotal: 9999, p_tax: 0, p_total: 9999, p_currency: "cad", p_buyer_name: "Pat Tester" });
   const n0 = emails.length;
-  const words = { ...realWords.GIFT_WORDS, ...DRAFTS };
+  const words = realWords.GIFT_WORDS;
   await gifts.runSendSweep({ admin, words, pauseMs: 0, now: () => new Date(gifts.sendInstant(tomorrow).getTime() - 60e3) });
   const early = emails.length - n0;
   await gifts.runSendSweep({ admin, words, pauseMs: 0, now: () => gifts.sendInstant(tomorrow) });

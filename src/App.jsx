@@ -36,7 +36,7 @@ import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSp
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 // Gifts, website only (lib/giftReturn.js): back to /gift/redeem after signing in, and the Settings plan line. Empty in a native build.
-import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
+import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
@@ -14225,6 +14225,13 @@ function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
 
       <div style={h2}>{tpfTerms ? TRIAL_FIRST_TERMS_7_HEADING : isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
       <div style={p}>{tpfTerms && tpfTerms.map((x,i)=><span key={i} data-terms7-tpf="">{i>0&&<><br/><br/></>}{x}</span>)}{!tpfTerms && <>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</>}</div>
+
+      {/* Gifts (lib/giftReturn.js, approved 2026-11-20): the website's Terms only. A store app shows nothing about gifts or
+          buying on the web, and a native build compiles GIFT_TERMS to null. */}
+      {GIFT_TERMS && !isNativeApp() && <>
+        <div style={h2}>{GIFT_TERMS.heading}</div>
+        {GIFT_TERMS.paragraphs.map((x,i)=><div key={i} style={p} data-terms-gifts="">{x}</div>)}
+      </>}
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>

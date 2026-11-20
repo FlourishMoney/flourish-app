@@ -86,7 +86,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
   const account = (email) => sql(`insert into auth.users (email, email_confirmed_at) values (${lit(email)}, now()) returning id`);
   const create_ = (o) => j(`select public.gift_create(${lit(o.code)}, ${lit(o.plan || "flourish")}, ${lit(o.session)}, ${lit(o.pi || null)}, false,
       ${lit(o.buyer || "buyer@example.ca")}, ${lit(o.delivery || "print")}, ${lit(o.name || null)}, ${lit(o.email || null)}, ${lit(o.message || null)},
-      ${lit(o.sendOn || null)}, ${lit(o.startOn || null)}, 9999, 1300, 11299, 'cad')`);
+      ${lit(o.sendOn || null)}, ${lit(o.startOn || null)}, 9999, 1300, 11299, 'cad', ${lit(o.from === undefined ? "Pat" : o.from)})`);
   const redeem = (code, user, notBefore, now) => j(`select public.gift_redeem(${lit(code)}, ${lit(user)}::uuid, ${notBefore ? lit(notBefore) + "::timestamptz" : "null"}, ${lit(now)}::timestamptz)`);
   const cover = (user, now) => j(`select public.gift_cover(${lit(user)}::uuid, ${lit(now)}::timestamptz)`);
   const claim = (now, limit = 5) => sql(`select string_agg(code, ',' order by code) from public.gift_claim_due_sends(${lit(now)}::timestamptz, ${limit})`);
@@ -112,7 +112,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(sql("select count(*) from pg_policies where tablename = 'gift_codes'"), "0", "1b …with no policy");
     t.eq(sql("select string_agg(grantee || ':' || privilege_type, ',' order by grantee, privilege_type) from information_schema.role_table_grants where table_schema = 'public' and table_name = 'gift_codes' and grantee in ('anon','authenticated','service_role')"),
       "service_role:INSERT,service_role:SELECT,service_role:UPDATE", "1c only the server reads and writes it, and nobody deletes a row");
-    const FNS = ["gift_create(text,text,text,text,boolean,text,text,text,text,text,date,date,integer,integer,integer,text)", "gift_mark_buyer_emailed(text,timestamp with time zone)",
+    const FNS = ["gift_create(text,text,text,text,boolean,text,text,text,text,text,date,date,integer,integer,integer,text,text)", "gift_mark_buyer_emailed(text,timestamp with time zone)",
       "gift_refund(text,boolean,timestamp with time zone)", "gift_redeem(text,uuid,timestamp with time zone,timestamp with time zone)", "gift_cover(uuid,timestamp with time zone)",
       "gift_claim_due_sends(timestamp with time zone,integer)", "gift_mark_sent(text,timestamp with time zone)", "gift_mark_send_failed(text,text)", "gift_release_send(text,text)"];
     const can = (role, fn) => sql(`select has_function_privilege('${role}', 'public.${fn}', 'execute')`);
@@ -121,13 +121,14 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
 
     // ── 2. one code per Stripe session ───────────────────────────────────────────────────────────────
     const first = create_({ code: "ABCDEFGHJKMN", session: "cs_test_1", pi: "pi_1", delivery: "email", name: "Sam", email: "sam@example.ca", message: "Merry Christmas", sendOn: "2026-12-25" });
-    t.eq([first.created, first.collision, first.code, first.status, first.send_on], [true, false, "ABCDEFGHJKMN", "unused", "2026-12-25"], "2a a paid session makes its code");
+    t.eq([first.created, first.collision, first.code, first.status, first.send_on, first.buyer_name], [true, false, "ABCDEFGHJKMN", "unused", "2026-12-25", "Pat"], "2a a paid session makes its code, with the buyer's name for Email 2");
     const again = create_({ code: "ZZZZZZZZZZZZ", session: "cs_test_1", pi: "pi_1", delivery: "email", name: "Sam", email: "sam@example.ca", sendOn: "2026-12-25" });
     t.eq([again.created, again.code], [false, "ABCDEFGHJKMN"], "2b the same session again (a repeated webhook) answers the same code and makes none");
     t.eq(sql("select count(*) from public.gift_codes where stripe_session_id = 'cs_test_1'"), "1", "2c …one row");
     const clash = create_({ code: "ABCDEFGHJKMN", session: "cs_test_2", pi: "pi_2" });
     t.eq([clash.created, clash.collision], [false, true], "2d a code already taken is a collision, and the server tries another");
     t.ok(/check constraint/.test(fails("select public.gift_create('abc', 'flourish', 'cs_x', null, false, 'b@x.ca', 'print', null, null, null, null, null, null, null, null, null)") || ""), "2e a code of the wrong shape is refused");
+    t.ok(/gift_codes_buyer_name_check/.test(fails(`select public.gift_create('WWWWWWWWWWWW', 'flourish', 'cs_long', null, false, 'b@x.ca', 'print', null, null, null, null, null, null, null, null, null, '${"x".repeat(61)}')`) || ""), "2e2 the buyer's name is 60 characters at most");
     t.ok(/gift_codes_email_delivery/.test(fails("select public.gift_create('BBBBBBBBBBBB', 'flourish', 'cs_y', null, false, 'b@x.ca', 'email', 'Al', null, null, null, null, null, null, null, null)") || ""), "2f an emailed gift needs an address and a day");
     t.ok(/check constraint/.test(fails("select public.gift_create('CCCCCCCCCCCC', 'pro', 'cs_z', null, false, 'b@x.ca', 'print', null, null, null, null, null, null, null, null, null)") || ""), "2g only the two gift plans exist");
 
@@ -147,6 +148,15 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     create_({ code: "GGGGGGGGGGGG", session: "cs_3d" });
     const paid = redeem("GGGGGGGGGGGG", U4, "2027-03-10T12:00:00Z", "2026-12-20T15:00:00Z");
     t.eq([iso(paid.starts_at), iso(paid.ends_at)], ["2027-03-10T12:00:00.000Z", "2028-03-10T12:00:00.000Z"], "3f an account that already pays: from the end of its paid period");
+    // THE START RULE (Amanda, 2026-11-20): the LATEST of the day it is redeemed, the buyer's start date, and the end of a
+    // paid period already on the account. Both orders of the last two:
+    const U8 = account("eight@example.ca"), U9 = account("nine@example.ca");
+    create_({ code: "UUUUUUUUUUUU", session: "cs_3f2", startOn: "2027-05-01" });
+    const later = redeem("UUUUUUUUUUUU", U8, "2027-03-10T12:00:00Z", "2026-12-20T15:00:00Z");
+    t.eq(iso(later.starts_at), "2027-05-01T04:00:00.000Z", "3f2 the buyer's start date after the paid period's end: the start date (00:00 Eastern, summer time)");
+    create_({ code: "VVVVVVVVVVVV", session: "cs_3f3", startOn: "2027-01-15" });
+    const paidLater = redeem("VVVVVVVVVVVV", U9, "2027-03-10T12:00:00Z", "2026-12-20T15:00:00Z");
+    t.eq(iso(paidLater.starts_at), "2027-03-10T12:00:00.000Z", "3f3 the paid period's end after the buyer's start date: the paid period's end");
     create_({ code: "HHHHHHHHHHHH", session: "cs_3e" });
     const stacked = redeem("HHHHHHHHHHHH", U1, null, "2027-02-01T15:00:00Z");
     t.eq([iso(stacked.starts_at), iso(stacked.ends_at)], ["2027-12-26T15:00:00.000Z", "2028-12-26T15:00:00.000Z"], "3g a second gift on one account: it starts when the first one ends");
@@ -208,7 +218,7 @@ const freePort = () => new Promise((ok) => { const s = net.createServer(); s.lis
     t.eq(sql("select public.gift_mark_sent('PPPPPPPPPPPP', '2026-12-25T12:31:05Z')"), "t", "7e the send is recorded");
     t.eq(sql("select public.gift_mark_sent('PPPPPPPPPPPP', '2026-12-25T12:32:00Z')"), "f", "7f …once");
     t.eq(claim("2026-12-26T12:00:00Z"), "", "7g once sent, never claimed again");
-    t.eq(sql("select coalesce(recipient_name, '-') || coalesce(gift_message, '-') from public.gift_codes where code = 'PPPPPPPPPPPP'"), "--", "7h …and its name and message are gone");
+    t.eq(sql("select coalesce(buyer_name, '-') || coalesce(recipient_name, '-') || coalesce(gift_message, '-') from public.gift_codes where code = 'PPPPPPPPPPPP'"), "---", "7h …and the buyer's name, the recipient's name and the message are gone");
     t.eq(claim("2027-07-01T10:59:00Z"), "", "7i summer time: nothing at 06:59 Eastern");
     t.eq(claim("2027-07-01T11:00:00Z"), "QQQQQQQQQQQQ", "7j …claimed at 07:00 Eastern (11:00 UTC)");
     sql("select public.gift_release_send('QQQQQQQQQQQQ', 'email_no_key')");

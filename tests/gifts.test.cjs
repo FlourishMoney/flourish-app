@@ -19,7 +19,7 @@
 const { create } = require("./_runner.cjs");
 const path = require("path");
 const crypto = require("crypto");
-const { makeFake, draftWords } = require("./_giftFake.cjs");
+const { makeFake } = require("./_giftFake.cjs");
 
 const FN = path.join(__dirname, "..", "netlify", "functions");
 const P = {
@@ -34,16 +34,17 @@ const P = {
   billing: require.resolve(path.join(FN, "billing.js")),
 };
 const SUPA = require.resolve("@supabase/supabase-js", { paths: [FN] });
-const DRAFTS = draftWords();
+const W = require(path.join(FN, "_lib", "giftWords.js")).GIFT_WORDS;   // the approved words, as the code holds them
 
-/** Load the functions fresh, with the drafted words (as approved) or the real placeholders, and a fake database. */
-function load({ fake, words = "drafts", user = null } = {}) {
+/** Load the functions fresh, with the approved words (as the code holds them) or placeholders in their place (words not
+ *  approved: nothing may be sent), and a fake database. */
+function load({ fake, words = "approved", user = null } = {}) {
   for (const p of Object.values(P)) delete require.cache[p];
   delete require.cache[SUPA];
-  if (words === "drafts") {
+  if (words === "placeholders") {
     const real = require(P.words);
-    require.cache[P.words].exports = { ...real, GIFT_WORDS: Object.freeze({ ...real.GIFT_WORDS, ...DRAFTS }),
-      giftWords: (id, vars, w) => real.giftWords(id, vars, w || { ...real.GIFT_WORDS, ...DRAFTS }) };
+    const ph = Object.freeze(Object.fromEntries(real.GIFT_WORD_IDS.map((id) => [id, "[WORDS: " + id + "]"])));
+    require.cache[P.words].exports = { ...real, GIFT_WORDS: ph, giftWords: (id, vars, w) => real.giftWords(id, vars, w || ph) };
   }
   require.cache[SUPA] = { id: SUPA, filename: SUPA, loaded: true, exports: { createClient: () => fake.client } };
   const auth = require(P.auth);
@@ -76,7 +77,7 @@ function session(over = {}, meta = {}) {
   return { id: "cs_test_gift1", object: "checkout.session", mode: "payment", payment_status: "paid", livemode: false,
     payment_intent: "pi_test_gift1", amount_subtotal: 9999, amount_total: 11299, total_details: { amount_tax: 1300 }, currency: "cad",
     customer_details: { email: "buyer@example.ca" },
-    metadata: { kind: "gift", gift_plan: "flourish", delivery: "email", buyer_email: "buyer@example.ca", recipient_name: "Sam",
+    metadata: { kind: "gift", gift_plan: "flourish", delivery: "email", buyer_email: "buyer@example.ca", buyer_name: "Pat", recipient_name: "Sam",
       recipient_email: "sam@example.ca", gift_message: "Merry Christmas, Sam", send_on: "2026-12-25", start_on: "2027-01-01", ...meta }, ...over };
 }
 const evt = (id, type, object) => ({ id, type, created: Math.floor(Date.now() / 1000), livemode: false, data: { object } });
@@ -127,30 +128,34 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
     {
       const { gifts: G } = load({ fake: makeFake() });
       const now = new Date("2026-11-20T16:00:00Z");
-      const ok = G.checkGiftForm({ plan: "flourish_plus", buyer_email: " Buyer@Example.CA ", delivery: "email", recipient_name: " Sam\u0007 Lee ",
+      const ok = G.checkGiftForm({ plan: "flourish", buyer_email: " Buyer@Example.CA ", buyer_name: "  Pat  Smith ", delivery: "email", recipient_name: " Sam\u0007 Lee ",
         recipient_email: "sam@example.ca", send_on: "2026-12-25", message: "Merry\nChristmas", start_on: "2027-01-01", price: 1, amount: 1, code: "ABCDEFGHJKMN" }, now);
-      t.eq(ok.form, { plan: "flourish_plus", buyer_email: "buyer@example.ca", delivery: "email", recipient_name: "Sam Lee", recipient_email: "sam@example.ca",
+      t.eq(ok.form, { plan: "flourish", buyer_email: "buyer@example.ca", buyer_name: "Pat Smith", delivery: "email", recipient_name: "Sam Lee", recipient_email: "sam@example.ca",
         message: "Merry Christmas", send_on: "2026-12-25", start_on: "2027-01-01" }, "3a an emailed gift: every field, cleaned; a price, an amount or a code in the body is ignored");
-      const print = G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", delivery: "print", recipient_email: "x@example.ca", send_on: "2026-12-25" }, now);
+      const print = G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print", recipient_email: "x@example.ca", send_on: "2026-12-25" }, now);
       t.eq([print.ok, print.form.recipient_email, print.form.send_on, print.form.recipient_name], [true, null, null, null], "3b a printed card needs no name, address or day, and keeps none");
-      t.eq(G.checkGiftForm({ plan: "flourish", delivery: "email" }, now).errors, ["buyer_email", "recipient_email", "recipient_name", "send_on"], "3c an emailed gift needs the buyer's address, the recipient's name and address, and a day");
-      t.eq(G.checkGiftForm({ plan: "pro", buyer_email: "b@example.ca", delivery: "fax" }, now).errors, ["plan", "delivery"], "3d only the two gifts and the two deliveries");
-      t.eq(G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", delivery: "print", message: "x".repeat(201) }, now).errors, ["message"], "3e a message over 200 characters is refused, not cut");
-      t.eq(G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", delivery: "print", start_on: "2025-01-01" }, now).errors, ["start_on"], "3f a start day in the past is refused");
+      t.eq(G.checkGiftForm({ plan: "flourish", delivery: "email" }, now).errors, ["buyer_email", "buyer_name", "recipient_email", "recipient_name", "send_on"], "3c an emailed gift needs the buyer's address and name, the recipient's name and address, and a day");
+      t.eq(G.checkGiftForm({ plan: "pro", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "fax" }, now).errors, ["plan", "delivery"], "3d only the gift on sale and the two deliveries");
+      t.eq(G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print", message: "x".repeat(201) }, now).errors, ["message"], "3e a message over 200 characters is refused, not cut");
+      t.eq(G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print", start_on: "2025-01-01" }, now).errors, ["start_on"], "3f a start day in the past is refused");
+      t.eq(G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "  ", delivery: "print" }, now).errors, ["buyer_name"], "3g the buyer's name is required (it is \"From ...\" in Email 2 and on the card)");
+      t.eq([G.PLUS_GIFT_ON_SALE, G.SOLD_PLANS, G.checkGiftForm({ plan: "flourish_plus", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }, now).errors],
+        [false, ["flourish"], ["plan"]], "3h the Plus gift is not sold until Plus is live: a checkout for it is refused");
     }
 
     // ── 4. Stripe Checkout ───────────────────────────────────────────────────────────────────────────
     {
       const { gifts: G } = load({ fake: makeFake() });
       t.eq(G.GIFT_PRICES, { currency: "cad", flourish: 9999, flourish_plus: 14998 }, "4a the prices are one value: $99.99 and $149.98 CAD, before tax");
-      const form = G.checkGiftForm({ plan: "flourish_plus", buyer_email: "b@example.ca", delivery: "print" }).form;
+      const form = G.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }).form;
       process.env.STRIPE_TAX_ENABLED = "true";
       const p = G.checkoutParams(form);
       t.eq([p.mode, p.line_items.length, p.line_items[0].price_data.unit_amount, p.line_items[0].price_data.currency, p.line_items[0].price_data.tax_behavior, p.line_items[0].price_data.recurring],
-        ["payment", 1, 14998, "cad", "exclusive", undefined], "4b one charge, nothing recurring, the price from that one value, tax on top");
+        ["payment", 1, 9999, "cad", "exclusive", undefined], "4b one charge, nothing recurring, the price from that one value, tax on top");
       t.eq([p.automatic_tax.enabled, p.billing_address_collection, p.customer_update, p.customer], [true, "required", undefined, undefined], "4c Stripe Tax as the website's sales have it, with no customer to update");
       t.eq([p.allow_promotion_codes, p.subscription_data, p.discounts], [false, undefined, undefined], "4d no promotion codes (so no creator codes), and no subscription");
-      t.eq([p.metadata.kind, p.metadata.gift_plan, p.metadata.buyer_email, p.payment_intent_data.metadata.kind], ["gift", "flourish_plus", "b@example.ca", "gift"], "4e the webhook can tell it is a gift, and which");
+      t.eq([p.metadata.kind, p.metadata.gift_plan, p.metadata.buyer_email, p.payment_intent_data.metadata.kind], ["gift", "flourish", "b@example.ca", "gift"], "4e the webhook can tell it is a gift, and which");
+      t.eq([p.metadata.buyer_name, p.line_items[0].price_data.product_data.name], ["Pat", W["gift-stripe-name-flourish"]], "4e2 …with the buyer's name, and Stripe shows the approved line item");
       t.eq([p.success_url, p.cancel_url, p.payment_method_types], ["https://flourishmoney.app/gift/?bought=1", "https://flourishmoney.app/gift/", ["card"]], "4f back to the gift page; card only, so paid means paid");
       process.env.STRIPE_TAX_ENABLED = "";
       t.eq(G.checkoutParams(form).automatic_tax.enabled, false, "4g STRIPE_TAX_ENABLED off: no tax, as billing.js does");
@@ -166,7 +171,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       delete process.env.GIFTS_ENABLED;
       let fn = mod(P.gift);
       const shut = [(await fn.run({ httpMethod: "GET", headers: {} })).statusCode,
-        (await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore() })).statusCode,
+        (await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }), { store: memStore() })).statusCode,
         (await fn.run(web({ action: "redeem", code: "ABCDEFGHJKMN" }), { store: memStore(), getUser: async () => ({ user_id: null, error: "missing Authorization header" }) })).statusCode];
       t.eq(shut, [404, 404, 401], "5a GIFTS_ENABLED unset: no prices and no checkout, but redeeming still answers (codes never strand)");
       process.env.GIFTS_ENABLED = "true";
@@ -176,18 +181,18 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
         t.eq([r.statusCode, JSON.parse(r.body).error], [403, "web_only"], `5b a store app (${origin}) is refused: redeeming is website only`);
       }
       const prices = await fn.run({ httpMethod: "GET", headers: { origin: "https://flourishmoney.app" } }, { store: memStore() });
-      t.eq(JSON.parse(prices.body), { enabled: true, currency: "cad", prices: { flourish: 9999, flourish_plus: 14998 } }, "5c the page reads the prices from the one value");
+      t.eq(JSON.parse(prices.body), { enabled: true, currency: "cad", prices: { flourish: 9999 } }, "5c the page reads the price from the one value, and only the gift on sale");
       let sent = null;
       const stripePost = async (p2, params) => { sent = { p2, params }; return { id: "cs_x", url: "https://checkout.stripe.com/c/pay/cs_x" }; };
       const bad = await fn.run(web({ action: "checkout", plan: "flourish", delivery: "email" }), { store: memStore(), stripePost });
-      t.eq([bad.statusCode, JSON.parse(bad.body).fields, sent], [400, ["buyer_email", "recipient_email", "recipient_name", "send_on"], null], "5d a form with gaps: 400 with the fields, and Stripe is not asked");
-      const good = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore(), stripePost });
+      t.eq([bad.statusCode, JSON.parse(bad.body).fields, sent], [400, ["buyer_email", "buyer_name", "recipient_email", "recipient_name", "send_on"], null], "5d a form with gaps: 400 with the fields, and Stripe is not asked");
+      const good = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }), { store: memStore(), stripePost });
       t.eq([good.statusCode, JSON.parse(good.body).url, sent.p2, sent.params.mode], [200, "https://checkout.stripe.com/c/pay/cs_x", "/checkout/sessions", "payment"], "5e a whole form: a Checkout Session, and its address");
-      const down = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore(), stripePost: async () => { const e = new Error("No such price: acct_secret_detail"); e.statusCode = 400; throw e; } });
+      const down = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }), { store: memStore(), stripePost: async () => { const e = new Error("No such price: acct_secret_detail"); e.statusCode = 400; throw e; } });
       t.eq([down.statusCode, /acct_secret/.test(down.body)], [502, false], "5f Stripe refusing: 502, and its message stays on the server");
       const st = memStore();
       let last;
-      for (let i = 0; i < 21; i++) last = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: st, stripePost });
+      for (let i = 0; i < 21; i++) last = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", buyer_name: "Pat", delivery: "print" }), { store: st, stripePost });
       t.eq(last.statusCode, 429, "5g 20 checkouts an hour from one address, then 429");
       t.ok([...st.m.keys()].every((k) => !k.includes("203.0.113.7")), "5h …counted under a keyed hash, never the address itself");
       // redeem
@@ -226,7 +231,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const g = fake.state.gifts[0];
       t.eq([g.plan, g.delivery, g.recipient_email, g.send_on, g.start_on, g.livemode, g.amount_total_cents, g.stripe_payment_intent],
         ["flourish", "email", "sam@example.ca", "2026-12-25", "2027-01-01", false, 11299, "pi_test_gift1"], "6c …saving the plan, the recipient, the delivery day, the start day and the payment");
-      t.eq([mail.length, mail[0].key, mail[0].body.to, mail[0].body.subject], [1, "gift-buyer/cs_test_gift1", ["buyer@example.ca"], DRAFTS["gift-email1-subject"]], "6d Email 1 goes to the buyer at once, keyed to the session");
+      t.eq([mail.length, mail[0].key, mail[0].body.to, mail[0].body.subject], [1, "gift-buyer/cs_test_gift1", ["buyer@example.ca"], W["gift-email1-subject"]], "6d Email 1 goes to the buyer at once, keyed to the session");
       t.ok(!!g.buyer_emailed_at, "6e …and is recorded");
       await hook.handler(signed(evt("evt_g1", "checkout.session.completed", session())));
       await hook.handler(signed(evt("evt_g1_again", "checkout.session.completed", session())));
@@ -257,7 +262,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const fake3 = makeFake(); load({ fake: fake3 }); fakeResend();
       await mod(P.hook).handler(signed(evt("evt_u", "checkout.session.completed", session({ id: "cs_unpaid", payment_status: "unpaid" }))));
       t.eq(fake3.state.gifts.length, 0, "6k a checkout not paid makes no code");
-      const fake4 = makeFake(); load({ fake: fake4, words: "real" }); const m4 = fakeResend();
+      const fake4 = makeFake(); load({ fake: fake4, words: "placeholders" }); const m4 = fakeResend();
       const w4 = await mod(P.hook).handler(signed(evt("evt_w", "checkout.session.completed", session({ id: "cs_words" }))));
       t.eq([w4.statusCode, fake4.state.gifts.length, m4.length, fake4.state.rows.billing_events[0].error], [200, 1, 0, "gift: buyer email placeholder"], "6l words not approved yet: the code is made, the email is never sent with a placeholder, and the event says so");
       // refunds
@@ -353,14 +358,14 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
     {
       const fake = makeFake();
       const { gifts: G } = load({ fake });
-      fake.GIFT.gift_create({ p_code: "GGGGGGGGGGGG", p_plan: "flourish", p_session: "cs_9a", p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: "Pat", p_recipient_email: "pat@example.ca", p_message: "For you", p_send_on: "2026-12-25" });
+      fake.GIFT.gift_create({ p_code: "GGGGGGGGGGGG", p_plan: "flourish", p_session: "cs_9a", p_delivery: "email", p_buyer_email: "b@example.ca", p_buyer_name: "Robin", p_recipient_name: "Pat", p_recipient_email: "pat@example.ca", p_message: "For you", p_send_on: "2026-12-25" });
       fake.GIFT.gift_create({ p_code: "HHHHHHHHHHHH", p_plan: "flourish", p_session: "cs_9b", p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: "Quinn", p_recipient_email: "quinn@example.ca", p_send_on: "2026-12-26" });
       const sends = [];
       const send = async (payload, key) => { sends.push({ key, to: payload.to[0], subject: payload.subject, text: payload.text }); return { sent: true }; };
       const at = (s) => () => new Date(s);
       t.eq(await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T11:45:00Z"), send, pauseMs: 0 }), { sent: 0, failed: 0, skipped: 0, unavailable: false, wordsPending: false }, "9a 6:45 a.m. Eastern on its day: nothing yet");
       const r1 = await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T12:00:00Z"), send, pauseMs: 0 });
-      t.eq([r1.sent, sends.map((s) => [s.key, s.to])], [1, [["gift-recipient/GGGGGGGGGGGG", "pat@example.ca"]]], "9b 7:00 a.m. Eastern: Email 2 to that day's recipient, keyed to the code");
+      t.eq([r1.sent, sends.map((s) => [s.key, s.to, s.subject])], [1, [["gift-recipient/GGGGGGGGGGGG", "pat@example.ca", "Robin has given you a year of flourish"]]], "9b 7:00 a.m. Eastern: Email 2 to that day's recipient, from the buyer by name, keyed to the code");
       await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T12:15:00Z"), send, pauseMs: 0 });
       await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T13:00:00Z"), send, pauseMs: 0 });
       t.eq(sends.length, 1, "9c run again, and again: never sent twice");
@@ -375,7 +380,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       await G.runSendSweep({ admin: fake.client, now: at("2026-12-26T12:31:00Z"), send: flaky, pauseMs: 0 });
       t.eq(sends.map((s) => s.to), ["pat@example.ca", "quinn@example.ca"], "9g then it goes, once");
       // email switched off, and the words not approved
-      const off = makeFake(); const { gifts: Go } = load({ fake: off, words: "real" });
+      const off = makeFake(); const { gifts: Go } = load({ fake: off, words: "placeholders" });
       off.GIFT.gift_create({ p_code: "JJJJJJJJJJJJ", p_plan: "flourish", p_session: "cs_9c", p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: "Jo", p_recipient_email: "jo@example.ca", p_send_on: "2026-12-25" });
       const r3 = await Go.runSendSweep({ admin: off.client, now: at("2026-12-25T12:00:00Z"), pauseMs: 0, log: { error() {} } });
       t.eq([r3.sent, r3.wordsPending, off.state.gifts[0].recipient_send_attempts, off.state.gifts[0].recipient_send_claimed_at, off.state.rpcCalls.length], [0, true, 0, null, 0], "9h words not approved: nothing is claimed, nothing goes, no attempt is used up");
@@ -388,9 +393,9 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       // A buyer's text that looks like a placeholder (review, 2026-11-20): cleaned at the door, and one refused email
       // never holds up the others.
       const { gifts: Gb } = load({ fake: makeFake() });
-      const form = Gb.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", delivery: "email", recipient_name: "[WORDS: gift-x] Sam",
+      const form = Gb.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", buyer_name: "[Pat]", delivery: "email", recipient_name: "[WORDS: gift-x] Sam",
         recipient_email: "s@example.ca", send_on: Gb.torontoToday(), message: "Hi [WORDS: y]" }).form;
-      t.eq([form.recipient_name, form.message], ["(WORDS: gift-x) Sam", "Hi (WORDS: y)"], "9n a name or message can never hold a placeholder: square brackets become round");
+      t.eq([form.buyer_name, form.recipient_name, form.message], ["(Pat)", "(WORDS: gift-x) Sam", "Hi (WORDS: y)"], "9n a name or message can never hold a placeholder: square brackets become round");
       t.ok(!Gb.holdsPlaceholder(Gb.recipientEmailPayload({ code: "ABCDEFGHJKMN", plan: "flourish", recipient_email: "s@example.ca", recipient_name: form.recipient_name, message: form.message })), "9o …so the email built from it can go");
       const meta = Gb.giftFromSession(session({ id: "cs_br" }, { recipient_name: "[WORDS: z]", gift_message: "[x]" }));
       t.eq([meta.recipient_name, meta.message], ["(WORDS: z)", "(x)"], "9p …and the same at the webhook, whatever reached Stripe's metadata");
@@ -411,27 +416,33 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       t.eq([await Gs.sendGiftEmail({ to: ["a@b.ca"], subject: "x", text: "y" }, "k2", { env: { RESEND_API_KEY: "re" }, fetchImpl: okFetch }), hdrs[0]["Idempotency-Key"]], [{ sent: true }, "k2"], "9m sent through Resend with its idempotency key");
     }
 
-    // ── 10. the emails, with the drafts ──────────────────────────────────────────────────────────────
+    // ── 10. the emails, in their approved words ──────────────────────────────────────────────────────────────
     {
       const { gifts: G } = load({ fake: makeFake() });
-      const g = { code: "ABCDEFGHJKMN", plan: "flourish", delivery: "email", buyer_email: "buyer@example.ca", recipient_name: "Sam", recipient_email: "sam@example.ca", message: "Merry Christmas", send_on: "2026-12-25", start_on: "2027-01-01" };
+      const g = { code: "ABCDEFGHJKMN", plan: "flourish", delivery: "email", buyer_email: "buyer@example.ca", buyer_name: "Pat", recipient_name: "Sam", recipient_email: "sam@example.ca", message: "Merry Christmas", send_on: "2026-12-25", start_on: "2027-01-01" };
       const e1 = G.buyerEmailPayload(g);
       t.ok(e1.text.includes("ABCD-EFGH-JKMN") && e1.html.includes("ABCD-EFGH-JKMN"), "10a Email 1 carries the code");
-      t.ok(e1.text.includes("https://flourishmoney.app/gift/card#c=ABCDEFGHJKMN&p=flourish&to=Sam&m=Merry%20Christmas&s=2027-01-01"), "10b …and the printable card, everything in the link's fragment");
+      t.ok(e1.text.includes("https://flourishmoney.app/gift/card#c=ABCDEFGHJKMN&p=flourish&to=Sam&f=Pat&m=Merry%20Christmas&s=2027-01-01"), "10b …and the printable card (with \"From Pat\"), everything in the link's fragment");
       t.ok(!/\?[^#\s]*ABCDEFGHJKMN/.test(e1.text + e1.html), "10c the code is never in a query string a server would log");
-      t.ok(e1.text.includes(DRAFTS["gift-email1-onetime"]) && /One-time gift, nothing renews/.test(e1.text), "10d \"One-time gift, nothing renews\" is in Email 1");
+      t.ok(e1.text.includes(W["gift-email1-onetime"]) && /One-time gift, nothing renews/.test(e1.text), "10d \"One-time gift, nothing renews\" is in Email 1");
       t.ok(e1.text.includes("We'll email it to Sam at sam@example.ca on December 25, 2026, at 7 a.m. Eastern time."), "10e …with the day the recipient's email goes");
       t.ok(!/\[WORDS:/.test(JSON.stringify(e1)), "10f …and no placeholder once the words are approved");
       const pr = G.buyerEmailPayload({ ...g, delivery: "print", recipient_email: null, send_on: null, start_on: null });
-      t.ok(pr.text.includes(DRAFTS["gift-email1-delivery-print"]) && pr.text.includes(DRAFTS["gift-email1-start-now"]), "10g a printed card: the print line, and the 12 months start when it is redeemed");
+      t.ok(pr.text.includes(W["gift-email1-delivery-print"]) && pr.text.includes(W["gift-email1-start-now"]), "10g a printed card: the print line, and the 12 months start when it is redeemed");
       const e2 = G.recipientEmailPayload(g);
-      t.eq([e2.to, e2.subject], [["sam@example.ca"], "You've been given a year of flourish"], "10h Email 2 goes to the recipient");
+      t.eq([e2.to, e2.subject], [["sam@example.ca"], "Pat has given you a year of flourish"], "10h Email 2 goes to the recipient, from the buyer by name");
+      t.ok(e2.text.includes("Pat has given you a year of flourish as a gift."), "10h2 …and says who it is from");
       t.ok(e2.text.includes("Hi Sam,") && e2.text.includes('"Merry Christmas"') && e2.text.includes("ABCD-EFGH-JKMN"), "10i …with their name, the message and the code");
       t.ok(e2.html.includes('href="https://flourishmoney.app/gift/redeem"') && e2.html.includes("apps.apple.com") && e2.html.includes("play.google.com"), "10j …the redeem button, and both store badges (no app link to the website)");
       t.ok(/One-time gift, nothing renews/.test(e2.text), "10k \"One-time gift, nothing renews\" is in Email 2");
       t.ok(!/\[WORDS:/.test(JSON.stringify(e2)), "10l …and no placeholder");
-      const { gifts: Gr } = load({ fake: makeFake(), words: "real" });
-      t.ok(Gr.holdsPlaceholder(Gr.buyerEmailPayload(g)) && Gr.holdsPlaceholder(Gr.recipientEmailPayload(g)), "10m with today's placeholders both emails hold one, so neither can be sent");
+      const foot2 = ["This email was sent because Pat asked us to send you a flourish gift.",
+        "flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. Questions? hello@flourishmoney.app",
+        "Rather not get gift emails like this from us? Reply to this email and we'll stop sending them."];
+      t.ok(e2.text.endsWith(foot2.join("\n\n")) && foot2.every((l) => e2.html.includes(l.replace(/'/g, "'"))), "10n Email 2's own footer: its three lines, the buyer named in the first");
+      t.ok(e1.text.endsWith("\n\nflourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. Questions? hello@flourishmoney.app") && !e1.text.includes("asked us to send you"), "10o Email 1 keeps the old footer");
+      const { gifts: Gr } = load({ fake: makeFake(), words: "placeholders" });
+      t.ok(Gr.holdsPlaceholder(Gr.buyerEmailPayload(g)) && Gr.holdsPlaceholder(Gr.recipientEmailPayload(g)), "10m with words not approved (placeholders), both emails hold one, so neither can be sent");
     }
   } finally {
     process.env = savedEnv;

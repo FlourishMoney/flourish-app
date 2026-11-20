@@ -59,6 +59,7 @@
       action: "checkout",
       plan: (form.querySelector('input[name="plan"]:checked') || {}).value,
       buyer_email: $("#buyer_email").value,
+      buyer_name: $("#buyer_name").value,
       delivery: d,
       recipient_name: $("#recipient_name").value,
       recipient_email: d === "email" ? $("#recipient_email").value : "",

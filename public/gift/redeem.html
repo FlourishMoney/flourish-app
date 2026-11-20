@@ -4,7 +4,7 @@
   Website only: the iPhone and Android apps have no code box and no way here (Apple 3.1.1), and /api/gift refuses their
   origins. Signed in (the website's own session), the person enters the code once; the plan turns on for 12 months
   (netlify/functions/_lib/gifts.js redeemGift). Signed out, "Sign in or create an account" opens the website's own
-  sign-in (/?gift=redeem, src/lib/giftReturn.js), which brings them back here. Words: docs/review/GIFT-COPY.md.
+  sign-in (/?gift=redeem, src/lib/giftReturn.js), which brings them back here. Words approved 2026-11-20 (docs/review/GIFT-COPY.md), held by tests/giftWords.test.cjs.
 -->
 <html lang="en">
 <head>
@@ -12,7 +12,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<title>[WORDS: gift-redeem-title]</title>
+<title data-words="gift-redeem-title">Redeem a flourish gift</title>
 <link rel="icon" href="/flourish-adult-favicon-32.png">
 <link rel="stylesheet" href="/gift/gift.css">
 <script src="/gift/redeem.js" defer></script>
@@ -21,24 +21,24 @@
 <main>
   <section class="card">
     <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
-    <h1>[WORDS: gift-redeem-heading]</h1>
-    <p>[WORDS: gift-redeem-intro]</p>
-    <p class="onetime">[WORDS: gift-redeem-onetime]</p>
+    <h1 data-words="gift-redeem-heading">Redeem your gift</h1>
+    <p data-words="gift-redeem-intro">Enter the code from your card or email. You only need to do this once.</p>
+    <p class="onetime" data-words="gift-redeem-onetime">One-time gift, nothing renews. No card needed.</p>
   </section>
 
   <section class="card" id="signed-out" hidden>
-    <p>[WORDS: gift-redeem-signin-body]</p>
-    <p><a class="btn" id="signin" href="/?gift=redeem">[WORDS: gift-redeem-signin-button]</a></p>
+    <p data-words="gift-redeem-signin-body">Sign in or create an account first, so the gift goes to the right account.</p>
+    <p><a class="btn" id="signin" href="/?gift=redeem" data-words="gift-redeem-signin-button">Sign in or create an account</a></p>
   </section>
 
   <form class="card" id="redeem-form" novalidate hidden>
-    <p class="muted"><span id="signed-in-as"></span> <button class="link" id="switch" type="button">[WORDS: gift-redeem-switch]</button></p>
+    <p class="muted"><span id="signed-in-as"></span> <button class="link" id="switch" type="button" data-words="gift-redeem-switch">Use a different account</button></p>
     <div class="field">
-      <label for="code">[WORDS: gift-redeem-code-label]</label>
+      <label for="code" data-words="gift-redeem-code-label">Gift code</label>
       <input class="code-input" id="code" name="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" inputmode="text">
-      <span class="help">[WORDS: gift-redeem-code-help]</span>
+      <span class="help" data-words="gift-redeem-code-help">12 letters and numbers, like ABCD-EFGH-JKMN. Dashes and spaces are fine.</span>
     </div>
-    <p><button class="btn" id="submit" type="submit">[WORDS: gift-redeem-submit]</button></p>
+    <p><button class="btn" id="submit" type="submit" data-words="gift-redeem-submit">Redeem</button></p>
     <div class="notice bad" id="result-error" role="alert" hidden></div>
   </form>
 
@@ -46,7 +46,7 @@
     <div class="notice" id="result-ok" role="status"></div>
     <p id="paid-note" hidden></p>
     <p id="renew-note" hidden></p>
-    <p>[WORDS: gift-redeem-next]</p>
+    <p data-words="gift-redeem-next">Now get the flourish app and sign in with this account:</p>
     <div class="badges">
       <a id="app-store" href="https://apps.apple.com/ca/app/flourish-money-handled/id6792967778"><img src="/store-badges/download-on-the-app-store.svg" width="120" height="40" alt="Download on the App Store"></a>
       <a id="google-play" href="https://play.google.com/store/apps/details?id=com.flourishmoney.app"><img src="/store-badges/GetItOnGooglePlay_Badge_Web_color_English.svg" width="135" height="40" alt="Get it on Google Play"></a>
@@ -54,24 +54,23 @@
   </section>
 </main>
 <template id="words">
-  <span data-id="gift-redeem-signed-in">[WORDS: gift-redeem-signed-in]</span>
-  <span data-id="gift-redeem-working">[WORDS: gift-redeem-working]</span>
-  <span data-id="gift-redeem-empty">[WORDS: gift-redeem-empty]</span>
-  <span data-id="gift-redeem-ok">[WORDS: gift-redeem-ok]</span>
-  <span data-id="gift-redeem-ok-later">[WORDS: gift-redeem-ok-later]</span>
-  <span data-id="gift-redeem-paid-note">[WORDS: gift-redeem-paid-note]</span>
-  <span data-id="gift-redeem-renew-app-store">[WORDS: gift-redeem-renew-app-store]</span>
-  <span data-id="gift-redeem-renew-play-store">[WORDS: gift-redeem-renew-play-store]</span>
-  <span data-id="gift-redeem-renew-stripe">[WORDS: gift-redeem-renew-stripe]</span>
-  <span data-id="gift-redeem-used">[WORDS: gift-redeem-used]</span>
-  <span data-id="gift-redeem-mine">[WORDS: gift-redeem-mine]</span>
-  <span data-id="gift-redeem-invalid">[WORDS: gift-redeem-invalid]</span>
-  <span data-id="gift-redeem-void">[WORDS: gift-redeem-void]</span>
-  <span data-id="gift-redeem-limited">[WORDS: gift-redeem-limited]</span>
-  <span data-id="gift-redeem-signin-again">[WORDS: gift-redeem-signin-again]</span>
-  <span data-id="gift-redeem-error">[WORDS: gift-redeem-error]</span>
-  <span data-id="gift-plan-flourish">[WORDS: gift-plan-flourish]</span>
-  <span data-id="gift-plan-plus">[WORDS: gift-plan-plus]</span>
+  <span data-id="gift-redeem-signed-in">Signed in as {email}.</span>
+  <span data-id="gift-redeem-working">Checking…</span>
+  <span data-id="gift-redeem-empty">Enter the code from your card or email.</span>
+  <span data-id="gift-redeem-ok">Your gift is redeemed: {plan}, from {start} to {end}.</span>
+  <span data-id="gift-redeem-ok-later">Your gift is redeemed. Your 12 months start on {start} and run to {end}.</span>
+  <span data-id="gift-redeem-paid-note">You already have a paid plan that runs to {date}. Your gift starts after that paid period ends, or on the gift&#x27;s chosen start date if that is later.</span>
+  <span data-id="gift-redeem-renew-app-store">To avoid being charged again, turn off auto-renew in your Apple Account settings, under Subscriptions.</span>
+  <span data-id="gift-redeem-renew-play-store">To avoid being charged again, turn off auto-renew in Google Play, under Payments and subscriptions.</span>
+  <span data-id="gift-redeem-renew-stripe">To avoid being charged again, turn off auto-renew on our website: open Settings, choose Manage subscription, and cancel. You keep your plan until its paid period ends.</span>
+  <span data-id="gift-redeem-used">This code has already been redeemed on a flourish account. If that was you, sign in to that account to use your gift.</span>
+  <span data-id="gift-redeem-mine">You&#x27;ve already redeemed this code on this account. Your gift runs to {end}.</span>
+  <span data-id="gift-redeem-invalid">That code doesn&#x27;t match a gift. Check it and try again.</span>
+  <span data-id="gift-redeem-void">This gift was refunded, so its code can&#x27;t be redeemed. Questions? Write to hello@flourishmoney.app.</span>
+  <span data-id="gift-redeem-limited">Too many tries. Wait an hour, then try again.</span>
+  <span data-id="gift-redeem-signin-again">Please sign in again, then enter your code.</span>
+  <span data-id="gift-redeem-error">Something went wrong and your code wasn&#x27;t used. Please try again.</span>
+  <span data-id="gift-plan-flourish">a year of flourish</span>
 </template>
 </body>
 </html>

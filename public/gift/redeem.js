@@ -73,7 +73,8 @@
         if (res.status === 429) { fail("gift-redeem-limited"); return; }
         if (j.ok && j.result === "ok") {
           try { sessionStorage.removeItem(CODE_KEY); } catch (e2) { /* none */ }
-          var plan = words(j.plan === "flourish_plus" ? "gift-plan-plus" : "gift-plan-flourish");
+          // The Plus gift is not sold yet and its name is not approved: until it is, the flourish line stands.
+          var plan = words(j.plan === "flourish_plus" && words("gift-plan-plus") ? "gift-plan-plus" : "gift-plan-flourish");
           $("#result-ok").textContent = words(j.pending ? "gift-redeem-ok-later" : "gift-redeem-ok", { plan: plan, start: day(j.starts_at), end: day(j.ends_at) });
           if (j.already_paid) {
             $("#paid-note").textContent = words("gift-redeem-paid-note", { date: day(j.already_paid.period_end) });

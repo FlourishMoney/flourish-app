@@ -21,9 +21,25 @@ export const GIFT_REDEEM_PATH = NATIVE_BUILD ? "" : "/gift/redeem";
 export const GIFT_RETURN_KEY = NATIVE_BUILD ? "" : "flourish_gift_return_at";
 export const GIFT_RETURN_TTL_MS = 7 * 86400000;
 
-// Words (docs/review/GIFT-COPY.md), placeholders until approved. Empty in a native build.
-export const GIFT_SIGN_IN_NOTE = NATIVE_BUILD ? "" : "[WORDS: gift-signin-note]";
-export const GIFT_SETTINGS_LINE = NATIVE_BUILD ? "" : "[WORDS: gift-settings-line]";
+// Words approved 2026-11-20 (docs/review/GIFT-COPY.md; tests/giftWords.test.cjs holds them word for word). Empty in a
+// native build.
+export const GIFT_SIGN_IN_NOTE = NATIVE_BUILD ? "" : "Sign in or create an account to redeem your gift. You'll come back to the code page after.";
+export const GIFT_SETTINGS_LINE = NATIVE_BUILD ? "" : "Your plan is a gift and runs to {date}. Nothing renews.";
+
+// The Terms of Service's "Gifts" section, on the WEBSITE's Terms only (src/App.jsx, after section 7). Never in a store
+// app: the apps say nothing about gifts or buying on the web (Apple 3.1.1), so a native build compiles this to null.
+export const GIFT_TERMS = NATIVE_BUILD ? null : Object.freeze({
+  heading: "Gifts",
+  paragraphs: Object.freeze([
+    "You can buy a year of flourish as a gift at flourishmoney.app/gift. A gift is a one-time purchase: nothing renews, and redeeming it does not require payment details.",
+    "The price is shown on the gift page in Canadian dollars. Sales tax is added at checkout. Stripe processes the payment.",
+    "Each gift has one code. A code can be redeemed once, on one flourish account, on our website; it can't be redeemed in the iPhone or Android app. The code doesn't expire.",
+    "The 12 months start on the latest of the day the code is redeemed, any start date the buyer chose, or the end of any paid period already on the account. To avoid being charged again, turn off auto-renew where that paid plan was bought: the App Store, Google Play, or Stripe through our website.",
+    "If the buyer chose email delivery, we email the gift to the address they gave at 7 a.m. Eastern time on the date they chose. We use that address only to send the gift.",
+    "A gift that hasn't been redeemed can be refunded within 30 days of purchase. Write to hello@flourishmoney.app. A refund cancels the code. Once a code is redeemed, the gift can't be refunded or moved to another account.",
+    "A gift has no cash value and can't be exchanged for money or credit. Keep the code private until you give it: anyone who has the code can redeem it.",
+  ]),
+});
 
 /** Does this query string ask to come back to the redeem page? */
 export function giftReturnInUrl(search) {

@@ -4,7 +4,7 @@
 // what 0050's do (tests/gifts.sql.test.cjs runs the real ones in Postgres); everything else is a small table store:
 // from(table) with select/eq/maybeSingle, insert(...).select(), update(...).eq() and upsert, enough for
 // stripe-webhook.js, billing.js and _lib/auth.js getUserPlan. Any other chained call answers an empty result.
-// Also: draftWords(), the drafts in docs/review/GIFT-COPY.md as a words map, so an email can be read as it would be sent.
+// Also: draftWords(), the lines of docs/review/GIFT-COPY.md (approved, and the hidden Plus ones) as a words map.
 // -----------------------------------------------------------------------------
 "use strict";
 const fs = require("fs");
@@ -15,7 +15,7 @@ const DOC = path.join(__dirname, "..", "docs", "review", "GIFT-COPY.md");
 function draftWords() {
   const doc = fs.readFileSync(DOC, "utf8");
   const out = {};
-  for (const m of doc.matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| ([^|]+) \| (pending|approved) \|$/gm)) out[m[1]] = m[2].trim();
+  for (const m of doc.matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| ([^|]+) \| (pending|approved|hidden) \|$/gm)) out[m[1]] = m[2].trim();
   return out;
 }
 
@@ -35,7 +35,7 @@ function torontoAt(day, hour) {
 function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null } = {}) {
   const state = { rows: { billing_events: [], subscriptions: [], profiles: [], ...rows }, gifts: [], writes: [], rpcCalls: [] };
   const status = (g) => (g.voided_at ? "void" : g.redeemed_at ? "redeemed" : "unused");
-  const view = (g) => ({ created: false, collision: false, code: g.code, plan: g.plan, delivery: g.delivery, buyer_email: g.buyer_email,
+  const view = (g) => ({ created: false, collision: false, code: g.code, plan: g.plan, delivery: g.delivery, buyer_email: g.buyer_email, buyer_name: g.buyer_name,
     recipient_name: g.recipient_name, recipient_email: g.recipient_email, gift_message: g.gift_message, send_on: g.send_on,
     start_on: g.start_on, buyer_emailed_at: g.buyer_emailed_at, status: status(g) });
   const byCode = (c) => state.gifts.find((g) => g.code === c);
@@ -46,7 +46,7 @@ function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null
       if (had) return view(had);
       if (byCode(a.p_code)) return { created: false, collision: true };
       const g = { code: a.p_code, plan: a.p_plan, stripe_session_id: a.p_session, stripe_payment_intent: a.p_payment_intent, livemode: !!a.p_livemode,
-        buyer_email: a.p_buyer_email, delivery: a.p_delivery, recipient_name: a.p_recipient_name, recipient_email: a.p_recipient_email,
+        buyer_email: a.p_buyer_email, buyer_name: a.p_buyer_name || null, delivery: a.p_delivery, recipient_name: a.p_recipient_name, recipient_email: a.p_recipient_email,
         gift_message: a.p_message, send_on: a.p_send_on, start_on: a.p_start_on, amount_total_cents: a.p_total, buyer_emailed_at: null,
         recipient_sent_at: null, recipient_send_claimed_at: null, recipient_send_attempts: 0, recipient_last_error: null,
         redeemed_by: null, redeemed_at: null, starts_at: null, ends_at: null, voided_at: null, created_at: new Date().toISOString() };
@@ -56,7 +56,7 @@ function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null
     gift_mark_buyer_emailed(a) {
       const g = byCode(a.p_code); if (!g) return false;
       g.buyer_emailed_at = g.buyer_emailed_at || a.p_now;
-      if (g.delivery === "print") { g.recipient_name = null; g.gift_message = null; }
+      if (g.delivery === "print") { g.buyer_name = null; g.recipient_name = null; g.gift_message = null; }
       return true;
     },
     gift_refund(a) {
@@ -65,7 +65,7 @@ function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null
       if (g.voided_at) return { found: true, already_void: true };
       if (g.redeemed_at) return { found: true, redeemed: true };
       if (!a.p_full) return { found: true, partial: true };
-      Object.assign(g, { voided_at: a.p_now, void_reason: "refunded", recipient_name: null, gift_message: null, recipient_send_claimed_at: null });
+      Object.assign(g, { voided_at: a.p_now, void_reason: "refunded", buyer_name: null, recipient_name: null, gift_message: null, recipient_send_claimed_at: null });
       return { found: true, voided: true };
     },
     gift_redeem(a) {
@@ -95,11 +95,11 @@ function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null
         && torontoAt(g.send_on, 7).getTime() <= now).slice(0, a.p_limit || 5);
       return due.map((g) => { g.recipient_send_claimed_at = a.p_now; g.recipient_send_attempts++;
         return { code: g.code, plan: g.plan, recipient_email: g.recipient_email, recipient_name: g.recipient_name, gift_message: g.gift_message,
-          send_on: g.send_on, start_on: g.start_on, recipient_send_attempts: g.recipient_send_attempts }; });
+          send_on: g.send_on, start_on: g.start_on, recipient_send_attempts: g.recipient_send_attempts, buyer_name: g.buyer_name }; });
     },
     gift_mark_sent(a) {
       const g = byCode(a.p_code); if (!g || g.recipient_sent_at) return false;
-      Object.assign(g, { recipient_sent_at: a.p_now, recipient_send_claimed_at: null, recipient_last_error: null, recipient_name: null, gift_message: null });
+      Object.assign(g, { recipient_sent_at: a.p_now, recipient_send_claimed_at: null, recipient_last_error: null, buyer_name: null, recipient_name: null, gift_message: null });
       return true;
     },
     gift_mark_send_failed(a) { const g = byCode(a.p_code); if (g && !g.recipient_sent_at) g.recipient_last_error = a.p_error; return null; },

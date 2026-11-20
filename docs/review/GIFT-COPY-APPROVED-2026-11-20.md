@@ -1,0 +1,135 @@
+# flourish gift words: APPROVED (Nov 20 2026)
+
+ChatGPT (Review Marketing Campaign) 100/100 AGREE and Grok 100 AGREE, round 2. Use word for word.
+
+Notes:
+- The Plus gift lines (gift-plan-plus-name, gift-plan-plus-detail, gift-stripe-name-plus, gift-plan-plus) are NOT approved and must stay hidden until Plus is live.
+- gift-email-footer below is for Email 2 (recipient). Email 1 (buyer) keeps: flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. Questions? hello@flourishmoney.app
+- The ' / ' in gift-email-footer marks line breaks.
+- Start-date rule the words describe: the 12 months start on the LATEST of redeem day, the buyer's chosen start date, or the end of a paid period already on the account.
+- New fields: gift-form-buyer-name, gift-form-buyer-name-help, gift-error-buyer-name, gift-card-from; {from} = buyer's name.
+- Privacy Policy update for gift data still to be drafted and reviewed before launch.
+
+- `gift-page-title`: Give a year of flourish
+- `gift-page-description`: Give someone a year of flourish. One-time gift, nothing renews.
+- `gift-page-heading`: Give a year of flourish
+- `gift-page-intro`: A gift for someone who wants to see their money more clearly. They get 12 months of flourish from a one-time gift that doesn't renew.
+- `gift-page-onetime`: One-time gift, nothing renews.
+- `gift-form-plan-legend`: Choose a gift
+- `gift-plan-flourish-name`: A year of flourish
+- `gift-plan-flourish-detail`: 12 months of the flourish plan, with no limits on the coach or What-If.
+- `gift-price-plus-tax`: plus tax
+- `gift-form-buyer-email`: Your email
+- `gift-form-buyer-email-help`: We send the gift code and the printable card here. Stripe sends your receipt here too.
+- `gift-form-buyer-name`: Your name
+- `gift-form-buyer-name-help`: Shown to them in the email and on the card, so they know who it is from.
+- `gift-form-delivery-legend`: How should the gift arrive?
+- `gift-form-delivery-email`: Email it to them on a date I choose
+- `gift-form-delivery-print`: I'll print the card and give it myself
+- `gift-form-recipient-name`: Their name
+- `gift-form-optional-print`: Optional when you print the card.
+- `gift-form-recipient-email`: Their email
+- `gift-form-recipient-email-help`: Used only to send this gift.
+- `gift-form-send-on`: Date to email it
+- `gift-form-send-on-help`: It arrives at 7 a.m. Eastern time on that day.
+- `gift-form-message`: A short message (optional)
+- `gift-form-message-help`: Up to 200 characters. It appears on the card and in their email.
+- `gift-form-start-on`: Start the 12 months on a later date (optional)
+- `gift-form-start-on-help`: Their 12 months start on the latest of this date, the day they redeem the code, or the end of any paid period they already have.
+- `gift-form-submit`: Continue to checkout
+- `gift-form-sending`: Opening checkout…
+- `gift-form-stripe-note`: Checkout is run by Stripe. Sales tax is added there.
+- `gift-how-heading`: How it works
+- `gift-how-1`: You buy the gift. We email you the gift code and a printable card right away.
+- `gift-how-2`: They go to flourishmoney.app/gift/redeem, sign in or create an account, and enter the code once.
+- `gift-how-3`: Then they get the flourish app on the App Store or Google Play and sign in. Their 12 months start on the latest of the day they redeem the code, the start date you chose, or the end of any paid period they already have.
+- `gift-page-refund`: Changed your mind? A gift that hasn't been redeemed can be refunded within 30 days of purchase. Write to hello@flourishmoney.app.
+- `gift-thanks-heading`: Thank you. Your gift is ready.
+- `gift-thanks-body`: We've emailed you the gift code and a printable card. If you don't see it, check your spam folder or write to hello@flourishmoney.app.
+- `gift-error-buyer-email`: Enter your email address.
+- `gift-error-buyer-name`: Enter your name.
+- `gift-error-recipient-name`: Enter their name.
+- `gift-error-recipient-email`: Enter their email address, or choose to print the card.
+- `gift-error-send-on`: Choose a date from today to one year from today.
+- `gift-error-start-on`: Choose a start date from today to one year from today, or leave it blank.
+- `gift-error-message`: Keep the message to 200 characters.
+- `gift-error-limited`: Too many tries from here. Wait an hour, then try again.
+- `gift-error-unavailable`: Gifts aren't available right now. Please check back soon.
+- `gift-error-generic`: Something went wrong and nothing was charged. Please try again.
+- `gift-stripe-name-flourish`: A year of flourish (gift)
+- `gift-stripe-description`: One-time gift, nothing renews. 12 months, redeemed with a code.
+- `gift-plan-flourish`: a year of flourish
+- `gift-email1-subject`: Your gift is ready
+- `gift-email1-intro`: Thank you. Your gift of {plan} is ready.
+- `gift-email1-delivery-email`: We'll email it to {name} at {email} on {date}, at 7 a.m. Eastern time.
+- `gift-email1-delivery-print`: Print the card below and give it to them, or pass the code on yourself.
+- `gift-email1-code-label`: Gift code:
+- `gift-email1-card-line`: Printable card:
+- `gift-email1-card-button`: Open the printable card
+- `gift-email1-how`: To redeem it, they go to flourishmoney.app/gift/redeem, sign in or create an account, and enter the code.
+- `gift-email1-start-now`: Their 12 months start on the day they redeem the code, or after any paid period they already have ends if that is later.
+- `gift-email1-start-on`: Their 12 months start on the latest of {date}, the day they redeem the code, or the end of any paid period they already have.
+- `gift-email1-onetime`: One-time gift, nothing renews. The code doesn't expire.
+- `gift-email1-refund`: If it hasn't been redeemed, you can ask for a refund within 30 days. Write to hello@flourishmoney.app. A refund cancels the code.
+- `gift-email1-receipt`: Stripe sends your receipt in a separate email.
+- `gift-email2-subject`: {from} has given you {plan}
+- `gift-email2-hello-name`: Hi {name},
+- `gift-email2-hello`: Hi,
+- `gift-email2-intro`: {from} has given you {plan} as a gift.
+- `gift-email2-message-label`: Their message:
+- `gift-email2-code-label`: Your gift code:
+- `gift-email2-how`: To redeem it, go to flourishmoney.app/gift/redeem, sign in or create an account, and enter the code once.
+- `gift-email2-button`: Redeem your gift
+- `gift-email2-start-now`: Your 12 months start on the day you redeem the code, or after any paid period you already have ends if that is later.
+- `gift-email2-start-on`: Your 12 months start on the latest of {date}, the day you redeem the code, or the end of any paid period you already have.
+- `gift-email2-apps`: Then get the flourish app and sign in with the same account:
+- `gift-email2-onetime`: One-time gift, nothing renews. You won't be asked for a card, and the code doesn't expire.
+- `gift-email-footer`: This email was sent because {from} asked us to send you a flourish gift. / flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. Questions? hello@flourishmoney.app / Rather not get gift emails like this from us? Reply to this email and we'll stop sending them.
+- `gift-card-title`: Your flourish gift card
+- `gift-card-print-button`: Print this card
+- `gift-card-missing`: This card link is incomplete. Open the link from your gift email again, or write to hello@flourishmoney.app.
+- `gift-card-for`: For {name}
+- `gift-card-from`: From {from}
+- `gift-card-code-label`: Gift code
+- `gift-card-redeem-at`: Redeem at flourishmoney.app/gift/redeem
+- `gift-card-scan`: Or scan the code to open the page.
+- `gift-card-start-now`: 12 months, starting on the day the code is redeemed, or after any paid period the recipient already has ends if that is later.
+- `gift-card-start-on`: 12 months, starting on the latest of {date}, the day the code is redeemed, or the end of any paid period the recipient already has.
+- `gift-card-onetime`: One-time gift, nothing renews.
+- `gift-redeem-title`: Redeem a flourish gift
+- `gift-redeem-heading`: Redeem your gift
+- `gift-redeem-intro`: Enter the code from your card or email. You only need to do this once.
+- `gift-redeem-onetime`: One-time gift, nothing renews. No card needed.
+- `gift-redeem-signin-body`: Sign in or create an account first, so the gift goes to the right account.
+- `gift-redeem-signin-button`: Sign in or create an account
+- `gift-redeem-signed-in`: Signed in as {email}.
+- `gift-redeem-switch`: Use a different account
+- `gift-redeem-code-label`: Gift code
+- `gift-redeem-code-help`: 12 letters and numbers, like ABCD-EFGH-JKMN. Dashes and spaces are fine.
+- `gift-redeem-submit`: Redeem
+- `gift-redeem-working`: Checking…
+- `gift-redeem-ok`: Your gift is redeemed: {plan}, from {start} to {end}.
+- `gift-redeem-ok-later`: Your gift is redeemed. Your 12 months start on {start} and run to {end}.
+- `gift-redeem-paid-note`: You already have a paid plan that runs to {date}. Your gift starts after that paid period ends, or on the gift's chosen start date if that is later.
+- `gift-redeem-renew-app-store`: To avoid being charged again, turn off auto-renew in your Apple Account settings, under Subscriptions.
+- `gift-redeem-renew-play-store`: To avoid being charged again, turn off auto-renew in Google Play, under Payments and subscriptions.
+- `gift-redeem-renew-stripe`: To avoid being charged again, turn off auto-renew on our website: open Settings, choose Manage subscription, and cancel. You keep your plan until its paid period ends.
+- `gift-redeem-next`: Now get the flourish app and sign in with this account:
+- `gift-redeem-empty`: Enter the code from your card or email.
+- `gift-redeem-used`: This code has already been redeemed on a flourish account. If that was you, sign in to that account to use your gift.
+- `gift-redeem-mine`: You've already redeemed this code on this account. Your gift runs to {end}.
+- `gift-redeem-invalid`: That code doesn't match a gift. Check it and try again.
+- `gift-redeem-void`: This gift was refunded, so its code can't be redeemed. Questions? Write to hello@flourishmoney.app.
+- `gift-redeem-limited`: Too many tries. Wait an hour, then try again.
+- `gift-redeem-signin-again`: Please sign in again, then enter your code.
+- `gift-redeem-error`: Something went wrong and your code wasn't used. Please try again.
+- `gift-signin-note`: Sign in or create an account to redeem your gift. You'll come back to the code page after.
+- `gift-settings-line`: Your plan is a gift and runs to {date}. Nothing renews.
+- `gift-terms-heading`: Gifts
+- `gift-terms-1`: You can buy a year of flourish as a gift at flourishmoney.app/gift. A gift is a one-time purchase: nothing renews, and redeeming it does not require payment details.
+- `gift-terms-2`: The price is shown on the gift page in Canadian dollars. Sales tax is added at checkout. Stripe processes the payment.
+- `gift-terms-3`: Each gift has one code. A code can be redeemed once, on one flourish account, on our website; it can't be redeemed in the iPhone or Android app. The code doesn't expire.
+- `gift-terms-4`: The 12 months start on the latest of the day the code is redeemed, any start date the buyer chose, or the end of any paid period already on the account. To avoid being charged again, turn off auto-renew where that paid plan was bought: the App Store, Google Play, or Stripe through our website.
+- `gift-terms-5`: If the buyer chose email delivery, we email the gift to the address they gave at 7 a.m. Eastern time on the date they chose. We use that address only to send the gift.
+- `gift-terms-6`: A gift that hasn't been redeemed can be refunded within 30 days of purchase. Write to hello@flourishmoney.app. A refund cancels the code. Once a code is redeemed, the gift can't be refunded or moved to another account.
+- `gift-terms-7`: A gift has no cash value and can't be exchanged for money or credit. Keep the code private until you give it: anyone who has the code can redeem it.

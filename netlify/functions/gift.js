@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // THE GIFT PAGES' ONE ENDPOINT: /api/gift (netlify.toml). Website only. Every rule is in _lib/gifts.js.
 //
-//   GET                  the two prices, from the one config value (GIFT_PRICES), for the gift page to show
+//   GET                  the price of each gift on sale, from the one config value (GIFT_PRICES), for the gift page
 //   POST checkout        the buyer's form -> a Stripe Checkout Session (payment mode, Stripe Tax, no promotion codes)
 //                        -> { url }. No sign-in: anyone may buy a gift. 20 an hour per IP address.
 //   POST redeem          { code }, signed in (Bearer) -> the gift turns on for that account. 20 tries an hour per IP
@@ -87,8 +87,9 @@ async function run(event, deps = {}) {
 
   if (event.httpMethod === "GET") {
     if (!gifts.giftsEnabled()) return json(404, H, { error: "not_found" });
+    // Only what is sold (the Plus gift waits for Plus).
     return json(200, H, { enabled: true, currency: gifts.GIFT_PRICES.currency,
-      prices: { flourish: gifts.GIFT_PRICES.flourish, flourish_plus: gifts.GIFT_PRICES.flourish_plus } });
+      prices: Object.fromEntries(gifts.SOLD_PLANS.map((p) => [p, gifts.GIFT_PRICES[p]])) });
   }
   if (event.httpMethod !== "POST") return json(405, H, { error: "method_not_allowed" });
   if ((event.body || "").length > MAX_BODY) return json(413, H, { error: "too_large" });

@@ -21,8 +21,8 @@
 --
 -- Codes never expire: there is no expiry column (Ontario does not allow an expiry date on a gift card).
 --
--- Kept only while needed HERE: the recipient's name and the buyer's message are cleared once the recipient's email is
--- sent (or, for a printed card, once the buyer's email is sent), and on a refund. The two addresses stay: the buyer's for
+-- Kept only while needed HERE: the buyer's name ("From ..." in Email 2), the recipient's name and the buyer's message are
+-- cleared once the recipient's email is sent (or, for a printed card, once the buyer's email is sent), and on a refund. The two addresses stay: the buyer's for
 -- a refund or a "where is my code" question, the recipient's for the scheduled email. Stripe keeps its own copy of the
 -- form in the checkout session's metadata, which is how it reaches the webhook (docs/product/KNOWN-DEFECTS.md 64).
 --
@@ -42,6 +42,7 @@ create table if not exists public.gift_codes (
   livemode                  boolean     not null default false,
   buyer_email               text        not null check (length(buyer_email) between 3 and 254),
   delivery                  text        not null check (delivery in ('email', 'print')),
+  buyer_name                text        check (buyer_name is null or length(buyer_name) <= 60),
   recipient_name            text        check (recipient_name is null or length(recipient_name) <= 60),
   recipient_email           text        check (recipient_email is null or length(recipient_email) <= 254),
   gift_message              text        check (gift_message is null or length(gift_message) <= 200),
@@ -95,7 +96,8 @@ grant select, insert, update on table public.gift_codes to service_role;
 create or replace function public.gift_create(
   p_code text, p_plan text, p_session text, p_payment_intent text, p_livemode boolean,
   p_buyer_email text, p_delivery text, p_recipient_name text, p_recipient_email text, p_message text,
-  p_send_on date, p_start_on date, p_subtotal integer, p_tax integer, p_total integer, p_currency text)
+  p_send_on date, p_start_on date, p_subtotal integer, p_tax integer, p_total integer, p_currency text,
+  p_buyer_name text default null)
 returns jsonb
 language plpgsql
 set search_path = public
@@ -109,10 +111,10 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('gift_create:' || p_session, 0));
   select * into g from public.gift_codes where stripe_session_id = p_session;
   if not found then
-    insert into public.gift_codes (code, plan, stripe_session_id, stripe_payment_intent, livemode, buyer_email, delivery,
+    insert into public.gift_codes (code, plan, stripe_session_id, stripe_payment_intent, livemode, buyer_email, buyer_name, delivery,
                                    recipient_name, recipient_email, gift_message, send_on, start_on,
                                    amount_subtotal_cents, amount_tax_cents, amount_total_cents, currency)
-    values (p_code, p_plan, p_session, p_payment_intent, coalesce(p_livemode, false), p_buyer_email, p_delivery,
+    values (p_code, p_plan, p_session, p_payment_intent, coalesce(p_livemode, false), p_buyer_email, p_buyer_name, p_delivery,
             p_recipient_name, p_recipient_email, p_message, p_send_on, p_start_on, p_subtotal, p_tax, p_total, p_currency)
     on conflict (code) do nothing;
     get diagnostics v_rows = row_count;
@@ -124,7 +126,7 @@ begin
   end if;
   return jsonb_build_object(
     'created', v_inserted, 'collision', false, 'code', g.code, 'plan', g.plan, 'delivery', g.delivery,
-    'buyer_email', g.buyer_email, 'recipient_name', g.recipient_name, 'recipient_email', g.recipient_email,
+    'buyer_email', g.buyer_email, 'buyer_name', g.buyer_name, 'recipient_name', g.recipient_name, 'recipient_email', g.recipient_email,
     'gift_message', g.gift_message, 'send_on', g.send_on, 'start_on', g.start_on,
     'buyer_emailed_at', g.buyer_emailed_at, 'status', g.status);
 end
@@ -139,6 +141,7 @@ as $$
   with u as (
     update public.gift_codes
        set buyer_emailed_at = coalesce(buyer_emailed_at, p_now),
+           buyer_name       = case when delivery = 'print' then null else buyer_name end,
            recipient_name   = case when delivery = 'print' then null else recipient_name end,
            gift_message     = case when delivery = 'print' then null else gift_message end
      where code = p_code
@@ -161,7 +164,7 @@ begin
   if g.redeemed_at is not null then return jsonb_build_object('found', true, 'redeemed', true); end if;
   if not coalesce(p_full, false) then return jsonb_build_object('found', true, 'partial', true); end if;
   update public.gift_codes
-     set voided_at = p_now, void_reason = 'refunded', recipient_name = null, gift_message = null,
+     set voided_at = p_now, void_reason = 'refunded', buyer_name = null, recipient_name = null, gift_message = null,
          recipient_send_claimed_at = null
    where code = g.code and voided_at is null and redeemed_at is null;
   return jsonb_build_object('found', true, 'voided', true);
@@ -242,7 +245,7 @@ $$;
 -- attempts a row is left for Amanda. A refunded gift is never claimed, and neither is one already redeemed.
 create or replace function public.gift_claim_due_sends(p_now timestamptz default now(), p_limit integer default 5)
 returns table (code text, plan text, recipient_email text, recipient_name text, gift_message text,
-               send_on date, start_on date, recipient_send_attempts integer)
+               send_on date, start_on date, recipient_send_attempts integer, buyer_name text)
 language sql
 set search_path = public
 as $$
@@ -266,7 +269,7 @@ as $$
      and g.recipient_sent_at is null
      and g.voided_at is null
   returning g.code, g.plan, g.recipient_email, g.recipient_name, g.gift_message, g.send_on, g.start_on,
-            g.recipient_send_attempts;
+            g.recipient_send_attempts, g.buyer_name;
 $$;
 
 -- The one send, recorded; only a row not yet marked sent changes. The name and message go with it.
@@ -278,7 +281,7 @@ as $$
   with u as (
     update public.gift_codes
        set recipient_sent_at = p_now, recipient_send_claimed_at = null, recipient_last_error = null,
-           recipient_name = null, gift_message = null
+           buyer_name = null, recipient_name = null, gift_message = null
      where code = p_code and recipient_sent_at is null
     returning 1)
   select exists (select 1 from u);
@@ -308,7 +311,7 @@ as $$
 $$;
 
 -- Only the server calls these (Netlify functions, with the secret key).
-revoke all on function public.gift_create(text, text, text, text, boolean, text, text, text, text, text, date, date, integer, integer, integer, text) from public, anon, authenticated;
+revoke all on function public.gift_create(text, text, text, text, boolean, text, text, text, text, text, date, date, integer, integer, integer, text, text) from public, anon, authenticated;
 revoke all on function public.gift_mark_buyer_emailed(text, timestamptz) from public, anon, authenticated;
 revoke all on function public.gift_refund(text, boolean, timestamptz) from public, anon, authenticated;
 revoke all on function public.gift_redeem(text, uuid, timestamptz, timestamptz) from public, anon, authenticated;
@@ -317,7 +320,7 @@ revoke all on function public.gift_claim_due_sends(timestamptz, integer) from pu
 revoke all on function public.gift_mark_sent(text, timestamptz) from public, anon, authenticated;
 revoke all on function public.gift_mark_send_failed(text, text) from public, anon, authenticated;
 revoke all on function public.gift_release_send(text, text) from public, anon, authenticated;
-grant execute on function public.gift_create(text, text, text, text, boolean, text, text, text, text, text, date, date, integer, integer, integer, text) to service_role;
+grant execute on function public.gift_create(text, text, text, text, boolean, text, text, text, text, text, date, date, integer, integer, integer, text, text) to service_role;
 grant execute on function public.gift_mark_buyer_emailed(text, timestamptz) to service_role;
 grant execute on function public.gift_refund(text, boolean, timestamptz) to service_role;
 grant execute on function public.gift_redeem(text, uuid, timestamptz, timestamptz) to service_role;
