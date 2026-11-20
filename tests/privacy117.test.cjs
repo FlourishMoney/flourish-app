@@ -12,6 +12,11 @@
 "use strict";
 const { create } = require("./_runner.cjs");
 const { loadApp, textOf, describe } = require("./_renderApp.cjs");
+const G = require("./_giftLegalDate.cjs");
+// The website's Gifts entry (approved 2026-11-20, docs/review/PLUS-COPY-APPROVED-2026-11-20.md; tests/giftWords.test.cjs 7).
+// Section 6's Resend gift sentence (approved 2026-11-20, docs/review/GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md).
+const GIFT_RESEND = (/^- `gift-privacy-resend`: (.+)$/m.exec(require("fs").readFileSync(require("path").join(__dirname, "..", "docs", "review", "GIFT-PRIVACY-RESEND-APPROVED-2026-11-20.md"), "utf8")) || [])[1];
+const GIFT_PRIV = (/^Paragraph: (.+)$/m.exec(require("fs").readFileSync(require("path").join(__dirname, "..", "docs", "review", "PLUS-COPY-APPROVED-2026-11-20.md"), "utf8")) || [])[1];
 
 const SIGN_IN = "Signing in with Apple or Google: If you choose Continue with Apple or Continue with Google, we receive an account ID from Apple or Google and the email address they give us. If you use Apple's Hide My Email, that is a private address Apple creates, and our emails reach you through Apple. From Google we also receive the name on your Google account and a link to its profile picture. We store that link but do not use it to load or display your picture. We never receive your Apple or Google password.";
 const AGREEMENT = "Your agreement to our Terms and this Privacy Policy: When you tap Get started on the Before you start step, we record that you agreed, the words you were shown, the dates of the Terms and Privacy Policy you agreed to, when those words were shown, when your agreement was recorded, and whether you were on the website, iPhone or Android. We do not store your IP address with this record. We keep it for as long as your account exists so we can show what you agreed to and when, and it is deleted with your account.";
@@ -21,7 +26,7 @@ const APPLE = "Apple sign-in: If you sign in with Apple, we keep a refresh token
   const t = create();
   const M = await import("../src/lib/privacy117Words.js");
   const L = await import("../src/lib/legalConsent.js");
-  const { policyDateLabel } = await import("../src/lib/privacyLaunchWords.js");
+  const { policyDateLabel, POLICY_WORDS: PLW } = await import("../src/lib/privacyLaunchWords.js");
   const W = M.PRIVACY_117_WORDS;
 
   // ── 1. The words module, character for character ─────────────────────────────────────────────
@@ -52,7 +57,15 @@ const APPLE = "Apple sign-in: If you sign in with Apple, we keep a refresh token
         const s5 = page.slice(page.indexOf("5. Data Storage & Security"), page.indexOf("6. Data Sharing"));
         t.ok(s1.includes(SIGN_IN) && s1.includes(AGREEMENT) && s1.indexOf(SIGN_IN) < s1.indexOf(AGREEMENT), `2b ${tag}: sign-in then agreement, in section 1 (what we collect)`);
         t.ok(s5.includes(APPLE) && !s1.includes(APPLE), `2c ${tag}: Apple sign-in in section 5 (how we keep your information)`);
-        t.ok(page.includes(`Last updated ${policyDateLabel(M.privacyDate(launchDate))}`), `2d ${tag}: Last updated is privacyDate of the newsletter date`);
+        // On the website the Gifts entry dates the policy from the gift words' day, if later (tests/_giftLegalDate.cjs).
+        const day = pl === "web" ? G.webDay(M.privacyDate(launchDate)) : M.privacyDate(launchDate);
+        t.ok(page.includes(`Last updated ${policyDateLabel(day)}`), `2d ${tag}: Last updated is privacyDate of the newsletter date${pl === "web" ? ", or the gift words' day if later" : ""}`);
+        t.ok(pl === "web" ? once(GIFT_PRIV) && s1.includes(`Gifts: ${GIFT_PRIV}`) && s1.indexOf(GIFT_PRIV) > s1.indexOf(AGREEMENT) : !page.includes("flourish gift") && !page.includes("Gifts:"),
+          `2e ${tag}: ${pl === "web" ? "the Gifts entry, once, labelled, in section 1 after the 1.1.7 entries" : "no Gifts entry in a store app"}`);
+        // Section 6's Resend line, its gift sentence (approved 2026-11-20): after the line, before and after the newsletter launch.
+        const resend = `Resend: ${launchDate ? PLW.resend : "sends account and waitlist emails"}`;
+        t.ok(pl === "web" ? once(GIFT_RESEND) && page.includes(`${resend}. ${GIFT_RESEND}`) : page.includes(resend) && !page.includes("gift emails"),
+          `2f ${tag}: ${pl === "web" ? "the Resend line, then its gift sentence, word for word" : "the Resend line as it was, no gift sentence in a store app"}`);
       }
     }
   }

@@ -27,6 +27,7 @@ const { cleanEmail, isEmail } = require("./emailAddress");
 const { emailHtml } = require("./emailLayout");
 const { subjectKey } = require("./limiterKeys");
 const { stripeGet, stripePost } = require("./stripeApi");
+const { giftCover } = require("./gifts");
 
 const householdEnabled = (env = process.env) => env.HOUSEHOLD_ENABLED === "true";
 
@@ -170,6 +171,10 @@ async function householdCover(admin, userId, now = Date.now()) {
         return { covered: true, provider: sub.data.provider || "stripe", period_end: sub.data.current_period_end || null, unavailable: false };
       }
       if (ent.plan === "beta_founder" || ent.plan === "premium") return { covered: true, provider: null, period_end: null, unavailable: false };
+      // A gift year the other member redeemed (migration 0050) counts as their paid plan does.
+      const gift = await giftCover(admin, peer, new Date(now));
+      if (gift.unavailable) return { covered: false, unavailable: true };
+      if (gift.covered) return { covered: true, provider: null, period_end: gift.ends_at, unavailable: false };
     }
     return { covered: false, unavailable: false };
   } catch (e) {

@@ -41,6 +41,8 @@ function fakeAdmin(state) {
   };
   const norm = (e) => String(e || "").replace(/\s+/g, "").toLowerCase();
   const rpc = async (name, args) => {
+    // Gifts (migration 0050) are not applied in production yet: the function is not there, as PostgREST says.
+    if (name === "gift_cover") return { data: null, error: { code: "PGRST202", message: "Could not find the function public.gift_cover(p_now, p_user) in the schema cache" } };
     // waitlist_founding_number_for_email (0017). This file's fixtures never void a number or pass 50.
     if (name === "founding_seats_taken") return { data: state.seats || 0, error: null };   // 0032 (2026-10-29)
     if (name !== "waitlist_founding_number_for_email") return { data: null, error: { message: "no such function" } };

@@ -45,7 +45,8 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
   try { A = loadApp(["TermsOfService"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   if (A.TermsOfService) {
     const txt = textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} })));
-    t.ok(txt.includes(NEW) && txt.includes("Last updated October 14, 2026"), "5 rendered on the web: the sentence and the date");
+    // The website's Terms also carry the Gifts section (approved 2026-11-20): dated the gift words' day if later (tests/_giftLegalDate.cjs).
+    t.ok(txt.includes(NEW) && txt.includes(`Last updated ${require("./_giftLegalDate.cjs").webLabel("2026-10-14")}`), "5 rendered on the web: the sentence and the date");
   }
 
   // 6. Counsel's documents quote what is in the app (2026-10-15).

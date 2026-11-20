@@ -35,6 +35,8 @@ import { getPricing, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSpots, sharedFoundingAnswer, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
+// Gifts, website only (lib/giftReturn.js): back to /gift/redeem after signing in, and the Settings plan line. Empty in a native build.
+import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, GIFT_PRIVACY, GIFT_RESEND_LINE, GIFT_LEGAL_DATE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
@@ -75,7 +77,7 @@ import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_H
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
-import { recordLegalConsent, flushLegalConsent, markConsentShown } from "./lib/legalConsent.js";
+import { recordLegalConsent, flushLegalConsent, markConsentShown, privacyVersion, termsVersion, withGiftDate } from "./lib/legalConsent.js";
 import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
@@ -93,7 +95,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitli
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { captureAttribution, signupAttribution, readInstallReferrerOnce, landingAttribution, countStoreClick } from "./lib/attribution.js";
 import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
-import { PRIVACY_117_WORDS as P117, privacyDate } from "./lib/privacy117Words.js";
+import { PRIVACY_117_WORDS as P117 } from "./lib/privacy117Words.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -180,11 +182,12 @@ const supabase = createClient(
 );
 
 
-// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, and whether the Terms the person could
-// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides).
+// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, whether the Terms the person could
+// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides), and the gift
+// words' day, which dates both pages on the website only (lib/giftReturn.js GIFT_LEGAL_DATE, as the pages decide).
 function consentDeps(uid) {
   let storage = null; try { storage = window.localStorage; } catch { storage = null; }
-  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(),
+  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(), giftDate: isNativeApp() ? null : GIFT_LEGAL_DATE,
     getJwt: async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || null; } catch { return null; } } };
 }
 
@@ -12692,7 +12695,7 @@ function HouseholdSection({ info, linkToken, onInvite, onRevoke, onAccept, onLea
   </div>;
 }
 
-function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false}){
+function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade,storeSubscription=null,household=null,coveredByPartner=false,giftLine=null}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   // Couple mode: a link's invite opens Settings straight on Household (HouseholdSection).
   const [activeSection,setActiveSection]=useState(()=>household?.linkToken && household?.info?.enabled ? "household" : null);
@@ -13011,12 +13014,13 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
         <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
           {coveredByPartner ? HOUSEHOLD_WORDS.coveredByPartner
+            : giftLine ? giftLine
             : billingUi.mode==="manage"
             ? "Change your card or cancel."
             : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
         </div>
         {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
-        {!coveredByPartner&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
+        {!coveredByPartner&&!giftLine&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
       </div>
     )}
     {/* ── Version 1.1: the subscription, only in a store build that sells (lib/storeBilling.js). No price here. ── */}
@@ -13907,11 +13911,12 @@ function PrivacyPolicy({onBack,launchDate=null}){
   },[]);
   const launchLabel=policyDateLabel(launchDate||fetchedDate);
   const launched=!!launchLabel;
-  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js); Before you start records the same.
-  const last=policyDateLabel(privacyDate(launchDate||fetchedDate));
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();
+  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js), and on the website the Gifts
+  // entry's day (lib/giftReturn.js GIFT_LEGAL_DATE; a store app's policy has no Gifts entry). Before you start records the same.
+  const last=policyDateLabel(privacyVersion(launchDate||fetchedDate, native?null:GIFT_LEGAL_DATE));
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -13937,6 +13942,9 @@ function PrivacyPolicy({onBack,launchDate=null}){
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Testers:</strong> {PW.testers}</div>}
       <div data-privacy-117="sign-in" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.signInLabel}</strong> {P117.signIn}</div>
       <div data-privacy-117="agreement" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.agreementLabel}</strong> {P117.agreement}</div>
+      {/* Gifts (lib/giftReturn.js, approved 2026-11-20): the website's policy only. A store app shows nothing about gifts or
+          buying on the web, and a native build compiles GIFT_PRIVACY to null. */}
+      {GIFT_PRIVACY && !native && <div data-privacy-gifts="" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{GIFT_PRIVACY.label}</strong> {GIFT_PRIVACY.paragraph}</div>}
 
       <div style={h2}>2. How We Use Your Information</div>
       <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.{launched?` ${PW.use}`:""}</div>
@@ -13963,7 +13971,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
       {!native&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Stripe</strong>: payments on flourishmoney.app and sales tax calculation</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Apple and Google</strong>: payments for subscriptions bought in the iPhone or Android app</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>RevenueCat</strong>: records subscriptions bought in the iPhone or Android app (subscription status, plan and renewal dates, linked to your account ID)</div>
-      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}</div>
+      {/* The Resend line's gift sentence (lib/giftReturn.js GIFT_RESEND_LINE, approved 2026-11-20): the website's policy only. */}
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Resend</strong>: {launched?PW.resend:"sends account and waitlist emails"}{GIFT_RESEND_LINE && !native ? `. ${GIFT_RESEND_LINE}` : ""}</div>
       {launched&&<div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Google Play</strong>: {PW.googlePlay}</div>}
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Sentry</strong>: crash and error reports</div>
       {/* Website only (src/lib/webAnalytics.js): the store apps load no analytics. */}
@@ -14188,13 +14197,18 @@ function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
   useEffect(()=>{ let live=true; askTrialPlanFirst(fetch, API_BASE).then(a=>{ if(!live) return; if(a===false) setTpfSince(null); else if(a&&a.since) setTpfSince(a.since); }); return ()=>{ live=false; }; },[]);
   const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;
   const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";
+  // The website's Terms carry the Gifts section (approved 2026-11-20), so there they are dated the later of the above and
+  // the gift words' day (lib/giftReturn.js GIFT_LEGAL_DATE), as Before you start records it (lib/legalConsent.js). A store
+  // app's Terms have no Gifts section: their date does not move.
+  const giftDay = isNativeApp() ? null : GIFT_LEGAL_DATE;
+  const lastShown = giftDay && withGiftDate(termsVersion(tpfTerms ? tpfSince : null, true), giftDay) === giftDay ? policyDateLabel(giftDay) : last;
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
         <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
-          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {lastShown}</div>
         </div>
       </div>
 
@@ -14222,6 +14236,13 @@ function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
 
       <div style={h2}>{tpfTerms ? TRIAL_FIRST_TERMS_7_HEADING : isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
       <div style={p}>{tpfTerms && tpfTerms.map((x,i)=><span key={i} data-terms7-tpf="">{i>0&&<><br/><br/></>}{x}</span>)}{!tpfTerms && <>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</>}</div>
+
+      {/* Gifts (lib/giftReturn.js, approved 2026-11-20): the website's Terms only. A store app shows nothing about gifts or
+          buying on the web, and a native build compiles GIFT_TERMS to null. */}
+      {GIFT_TERMS && !isNativeApp() && <>
+        <div style={h2}>{GIFT_TERMS.heading}</div>
+        {GIFT_TERMS.paragraphs.map((x,i)=><div key={i} style={p} data-terms-gifts="">{x}</div>)}
+      </>}
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -17989,6 +18010,25 @@ export default function FlourishApp(){
       return foundingLinkPending(localStorage);
     }catch{ return false; }
   });
+  // A GIFT (lib/giftReturn.js, website only): /?gift=redeem, or one asked for on this device in the last 7 days. Signed out,
+  // the sign-in card opens with one line; signed in, the person goes back to the gift's redeem page. Never in a store app.
+  const [giftReturn,setGiftReturn]=useState(()=>{
+    if(isNativeApp() || !GIFT_REDEEM_PATH) return false;
+    try{
+      if(giftReturnInUrl(window.location.search)){
+        rememberGiftReturn(localStorage);
+        window.history.replaceState({},"",window.location.pathname+withoutGiftReturn(window.location.search)+window.location.hash);
+        return true;
+      }
+      return giftReturnPending(localStorage);
+    }catch{ return false; }
+  });
+  useEffect(()=>{
+    if(!giftReturn || !user?.id || !GIFT_REDEEM_PATH || isNativeApp()) return;
+    forgetGiftReturn(localStorage);
+    setGiftReturn(false);
+    window.location.assign(GIFT_REDEEM_PATH);
+  },[giftReturn,user?.id]);
   // The store apps (iOS, Android) sell nothing: no paywall, no upgrade button, no Plus pitch, no price
   // (billingUiState, PremiumGate). Their plan follows the web's rules since 2026-10-20 (lib/featureAccess.js).
   // ── Plaid reconnect state ─────────────────────────────────────
@@ -19754,7 +19794,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : (giftReturn && GIFT_SIGN_IN_NOTE ? GIFT_SIGN_IN_NOTE : null)} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -20049,7 +20089,7 @@ export default function FlourishApp(){
   }
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings creator={{ info: creatorInfo, onAdd: addCreatorCode }} household={{ info: householdInfo, linkToken: householdLinkToken, ...householdActions }} coveredByPartner={billingStatus?.covered_by==="partner"} giftLine={giftSettingsLine(billingStatus)} data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} storeSubscription={storeSubscription && storeStatus?.covered_by==="partner" ? { ...storeSubscription, line: HOUSEHOLD_WORDS.coveredByPartner, onManage: null, onSubscribe: null } : storeSubscription} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect||bankSignIn.some(x=>!x.partner)} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;

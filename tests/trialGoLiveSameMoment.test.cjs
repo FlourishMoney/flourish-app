@@ -68,7 +68,10 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     try { return fn(); } finally { Object.defineProperty(globalThis, "Capacitor", { value: real, configurable: true, writable: true }); }
   };
   const termsText = (p, since) => as(p, () => textOf((p === "web" ? A : S).render((p === "web" ? A : S).h((p === "web" ? A : S).TermsOfService, { onBack: () => {}, ...(since ? { tpfSince: since } : {}) }))));
-  const section7 = (text) => text.slice(text.search(/7\. (Subscription & Billing|Cost and usage limits|Plans and billing)/), text.indexOf("8. Intellectual Property")).trim();
+  // Section 7 ends at section 8, or, on the website, at the Gifts section that follows it (src/lib/giftReturn.js GIFT_TERMS,
+  // approved 2026-11-20; never in a store app).
+  const GIFTS_AT = (text) => text.indexOf("Gifts You can buy a year of flourish");
+  const section7 = (text) => text.slice(text.search(/7\. (Subscription & Billing|Cost and usage limits|Plans and billing)/), GIFTS_AT(text) >= 0 ? GIFTS_AT(text) : text.indexOf("8. Intellectual Property")).trim();
   const plansText = (props) => as("web", () => textOf(A.render(A.h(A.UpgradeScreen, { onClose: () => {}, mode: "upgrade", ...props }))));
   const webStatus = (extra = {}) => ({ enabled: true, provider: null, paid: false, period_end: null, manageable: false, web_attention: false, founding: { available: true, cohortLimit: 50, confirmEmail: false }, ...extra });
   // The store plans' card, exactly as StorePaywall builds it (the line is pinned below, 1f).
@@ -104,10 +107,12 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     }
     const webOffTerms = termsText("web", null);
     t.eq(section7(webOffTerms), LIVE_WEB_7, "1b off, the website: section 7 is the live text, word for word");
-    t.ok(webOffTerms.includes("Last updated October 14, 2026"), "1c …with its live date");
+    t.ok(webOffTerms.includes(`Last updated ${require("./_giftLegalDate.cjs").webLabel("2026-10-14")}`), "1c …with its live date (on the website, the gift words' day once the Gifts section is in: tests/_giftLegalDate.cjs)");
+    t.ok(GIFTS_AT(webOffTerms) > 0 && GIFTS_AT(webOffTerms) < webOffTerms.indexOf("8. Intellectual Property"), "1c2 the website's Terms carry the Gifts section, after section 7");
     for (const p of ["ios", "android"]) {
       const text = termsText(p, null);
       t.eq(section7(text), LIVE_STORE_7, `1d off, the ${p === "ios" ? "iPhone" : "Android"} app: section 7 is the live text, word for word, the founding sentence included`);
+      t.ok(!/Gifts You can buy|flourishmoney\.app\/gift/.test(text), `1d2 the ${p === "ios" ? "iPhone" : "Android"} app's Terms say nothing about gifts`);
     }
     t.eq(plansText({ status: webStatus(), trialFirst: off.web.trialFirst }), LIVE_WEB_PLANS, "1e off, the website's plans screen: the live words, all three plans, no trial line");
     t.ok(APP.includes("const trial = (trialFirst && copy) ? trialDisclosure({ platform, eligible: storeTrialEligible({ platform, product: p.product, eligibility: introElig }), price: copy.price, planKey: plan, words: trialWords }) : null;")
@@ -152,8 +157,11 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     for (const p of ["web", "ios", "android"]) {
       const text = termsText(p, on[p].terms && on[p].terms.since);
       t.eq(section7(text), `7. Plans and billing ${ON_7}`, `3a on (${p}): section 7 is the approved text, the founding plan and its sentence included`);
-      t.ok(text.includes(`Last updated ${SINCE_DAY}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
-        `3b …dated the day the switch went on, with nothing left of the old section (${p})`);
+      // The website's Terms also carry the Gifts section: there, the gift words' day if that is later (tests/_giftLegalDate.cjs).
+      const G = require("./_giftLegalDate.cjs");
+      const dated = p === "web" && G.webDay(G.localDay(SINCE)) !== G.localDay(SINCE) ? G.webLabel(G.localDay(SINCE)) : SINCE_DAY;
+      t.ok(text.includes(`Last updated ${dated}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
+        `3b …dated the day the switch went on (on the website, the gift words' day if later), with nothing left of the old section (${p})`);
     }
     {
       // The screen reads the clock itself: rendered again if the day turned over while it was being drawn.

@@ -51,13 +51,16 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
     // Since 1.1.7 (lib/privacy117Words.js) the page's own date is the 1.1.7 date; a later newsletter launch date wins.
     const { PRIVACY_117_DATE } = await import("../src/lib/privacy117Words.js");
     const DATE_117 = WORDS.policyDateLabel(PRIVACY_117_DATE);
-    t.ok(!!DATE_117 && pp.includes(`Last updated ${DATE_117}`) && !pp.includes("October 26, 2026"), `A7 Last updated ${DATE_117}`);
+    // On the website the Gifts entry (lib/giftReturn.js, approved 2026-11-20) dates it from the gift words' day, if later.
+    const G = require("./_giftLegalDate.cjs");
+    const DATE_WEB = G.webLabel(PRIVACY_117_DATE);
+    t.ok(!!DATE_117 && !!G.GIFT_LEGAL_DATE && pp.includes(`Last updated ${DATE_WEB}`) && !pp.includes("October 26, 2026"), `A7 Last updated ${DATE_WEB} on the website (the later of the 1.1.7 date and the gift words' day)`);
     const W = WORDS.POLICY_WORDS;
     const NEW = [W.newsletter, W.cameFrom, W.testers, W.ipSentence, W.use, W.keep, W.resend, W.googlePlay, W.age, W.address];
     t.ok(NEW.every((x) => !pp.includes(x)) && !pp.includes(W.analytics), "A8 before the newsletter goes live, none of its words are in the policy");
     const on = textOf(R.render(R.h(R.PrivacyPolicy, { onBack() {}, launchDate: "2026-12-12" }))).replace(/\s+/g, " ").replace(/ :/g, ":");
     t.ok([...NEW, W.analytics].every((x) => on.includes(x)), "A9 from then, all of them, word for word");
-    t.ok(on.includes("Last updated December 12, 2026") && !on.includes("October 26, 2026") && !on.includes(`Last updated ${DATE_117}`), "A10 with the newsletter's later date");
+    t.ok(on.includes(`Last updated ${G.webLabel("2026-12-12")}`) && !on.includes("October 26, 2026") && !on.includes(`Last updated ${DATE_117}`), "A10 with the newsletter's later date");
     t.ok(on.includes(`Newsletter: ${W.newsletter}`) && on.includes(`Where you came from: ${W.cameFrom}`) && on.includes(`Testers: ${W.testers}`), "A11 under their labels");
     t.ok(on.indexOf("Where you came from:") > on.indexOf("Information collected automatically:") && on.indexOf("Where you came from:") < on.indexOf("Bank connection data") && on.indexOf("Newsletter:") > on.indexOf("Waitlist:") && on.indexOf("Testers:") < on.indexOf("2. How We Use"), "A12 in the places approved");
     t.ok(!on.includes("We use it briefly to limit repeated sign-up and coach requests") && !on.includes("sends account and waitlist emails"), "A13 the changed lines replace the old ones");
@@ -83,7 +86,7 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
       // Contact section's "Website:" line. The privacy@ address is an email address, not the website.
       const rest = nat.replace(A.A1, "").replace("Website: flourishmoney.app", "").replace(/privacy@flourishmoney\.app/g, "");
       t.ok(!/flourishmoney\.app/.test(rest), `A ${pl}: no other mention of flourishmoney.app in the store app's policy`);
-      t.ok(nat.includes(`Last updated ${DATE_117}`) && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 and the date as on the website`);
+      t.ok(nat.includes(`Last updated ${DATE_117}`) && ["A1", "A3", "A4", "A5"].every((k) => nat.includes(A[k])), `A ${pl}: A1, A3, A4, A5 as on the website, and its own date (the 1.1.7 date: a store app's policy has no Gifts entry)`);
     }
   }
 

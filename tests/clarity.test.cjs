@@ -285,7 +285,8 @@ function fakeWindow({ path: p = "/", search = "", hash = "", native = false, rea
     // netlify/functions now also holds trial plan first's email placeholders (_lib/trialWords.js, 2026-11-10), refused on
     // their own: what this asks is that none of the check's findings is Clarity's.
     const found = [...(r.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => [m[1], m[2]]);
-    t.eq(found.filter(([id, f]) => !(id.startsWith("trialfirst-") && f.endsWith("trialWords.js"))), [], "5o no Clarity placeholder is left: the production build's words check finds none of Clarity's");
+    // …and the gifts' pending lines in their own words file (_lib/giftWords.js, 2026-11-20).
+    t.eq(found.filter(([id, f]) => !(id.startsWith("trialfirst-") && f.endsWith("trialWords.js")) && !(id.startsWith("gift-") && f.endsWith("giftWords.js"))), [], "5o no Clarity placeholder is left: the production build's words check finds none of Clarity's");
     const rc = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, "src", "lib", "privacyLaunchWords.js"), path.join(REPO, "netlify", "functions", "_lib", "policyNotice.js")], { encoding: "utf8" });
     t.eq(rc.status, 0, "5o2 …and the Clarity words and the launch notice pass it outright");
   }
