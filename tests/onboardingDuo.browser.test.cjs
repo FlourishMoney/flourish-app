@@ -27,6 +27,8 @@ const { create } = require("./_runner.cjs");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+// The notes the store app's What's new opens to: the first one in src/whatsNew.json, so the check follows the approved words.
+const WHATS_NEW_FIRST_NOTE = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "..", "src", "whatsNew.json"), "utf8")).notes[0];
 const { execFileSync } = require("child_process");
 const MOCK = require("./_mockSupabase.cjs");
 const { SCAN } = require("./_layoutScan.cjs");
@@ -209,7 +211,7 @@ function buildApp(supabaseUrl) {
       await p.getByText("days left in your trial", { exact: false }).first().waitFor();
     }],
     ["Store app: Settings", async (p) => { await p.getByRole("button", { name: "Settings", exact: true }).first().click(); await p.getByText("Restore purchases").first().waitFor(); }, true],
-    ["Store app: What's new", async (p) => { await p.getByRole("button", { name: /What's new/ }).first().click(); await p.getByText("Your weekly money meeting now opens with a recap", { exact: false }).first().waitFor(); }, true],
+    ["Store app: What's new", async (p) => { await p.getByRole("button", { name: /What's new/ }).first().click(); await p.getByText(WHATS_NEW_FIRST_NOTE, { exact: true }).first().waitFor(); }, true],
     ["Store app: See plans", async (p) => { await p.getByRole("button", { name: "See plans", exact: true }).first().click();
       await p.getByRole("button", { name: "Close", exact: true }).last().waitFor(); }, true],
   ];
