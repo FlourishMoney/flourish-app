@@ -107,6 +107,8 @@ function fakeAdmin(state) {
     // Couple mode round 5: every checkout first records the buyer's one purchase attempt (0031 purchase_attempt_begin),
     // which the real database grants a buyer with none live. Not recorded: these checks are about the founding functions.
     if (name === "purchase_attempt_begin") return { data: { result: "held" }, error: null };
+    // Gifts (migration 0050) are not applied in production yet: the function is not there, as PostgREST says. Not recorded.
+    if (name === "gift_cover") return { data: null, error: { code: "PGRST202", message: "Could not find the function public.gift_cover(p_now, p_user) in the schema cache" } };
     state.rpcCalls.push({ name, args });
     if (name === "waitlist_founding_number_for_email") {
       if (state.rpcError) return { data: null, error: { message: state.rpcError } };

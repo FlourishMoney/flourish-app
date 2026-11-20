@@ -77,7 +77,10 @@ const leaks = (store) => [...store.data.entries()].flatMap(([k, v]) => RAW.filte
   t.eq([r4.allowed, r4.reason, s4.data.size, await coach._bumpIpUsage(IP, { store: s4, now: NOW, secret: "" })], [false, "no_secret", 0, null], "4c with no secret nothing is written: signup refuses (fails closed), the coach's backstop is skipped");
 
   // ── 5. The daily cleanup ──────────────────────────────────────────────────────────────────────
-  const stores = { signup_attempts: memStore(), coach_ip_usage: memStore(), founding_confirm_sends: memStore() };
+  const stores = { signup_attempts: memStore(), coach_ip_usage: memStore(), founding_confirm_sends: memStore(), gift_attempts: memStore() };
+  // The gift pages' attempts (2026-11-20), counted by the hour for every kind: this hour kept, last hour deleted.
+  stores.gift_attempts.data.set(K.subjectKey("gift-redeem-user", "0f0e0d0c-0000-4000-8000-000000000003", SECRET), { w: "2026-10-21T14", n: 2 });
+  stores.gift_attempts.data.set(K.subjectKey("gift-redeem-ip", "198.51.100.5", SECRET), { w: "2026-10-21T13", n: 7 });
   const su = stores.signup_attempts, co = stores.coach_ip_usage, fc = stores.founding_confirm_sends;
   su.data.set(`ip:2026-10-21T03:${IP}`, { n: 2 }); su.data.set(`email:2026-10-21:person.name@example.com`, { n: 1 }); co.data.set(`2026-10-21:${IP}`, { n: 4 });
   su.data.set(K.subjectKey("ip", "198.51.100.3", SECRET), { w: "2026-10-21T14", n: 1 });   // this hour: kept
@@ -90,7 +93,7 @@ const leaks = (store) => [...store.data.entries()].flatMap(([k, v]) => RAW.filte
   const logs = []; const saved = console.log; console.log = (...a) => logs.push(a.join(" "));
   let result;
   try { result = await C.cleanAll({ getStore: (n) => stores[n], now: NOW }); } finally { console.log = saved; }
-  t.eq(result, { signup_attempts: { oldRaw: 2, expired: 2, kept: 2 }, coach_ip_usage: { oldRaw: 1, expired: 1, kept: 0 }, founding_confirm_sends: { oldRaw: 0, expired: 1, kept: 1 } },
+  t.eq(result, { signup_attempts: { oldRaw: 2, expired: 2, kept: 2 }, coach_ip_usage: { oldRaw: 1, expired: 1, kept: 0 }, founding_confirm_sends: { oldRaw: 0, expired: 1, kept: 1 }, gift_attempts: { oldRaw: 0, expired: 1, kept: 1 } },
     "5a the cleanup deletes every old raw key and every expired entry, and keeps the live ones");
   t.eq([...su.data.keys(), ...co.data.keys(), ...fc.data.keys()].filter((k2) => RAW.some((r) => k2.includes(r))), [], "5b no raw IP or address is left in any store");
   const fn = require("../netlify/functions/limiter-cleanup.js");

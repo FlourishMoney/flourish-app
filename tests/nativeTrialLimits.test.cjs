@@ -65,6 +65,8 @@ function fakeSupabase(h, { counter = "works" } = {}) {
     },
     async rpc(name, args) {
       calls.rpc.push({ name, args });
+      // Gifts (migration 0050) are not applied in production yet: the function is not there, as PostgREST says.
+      if (name === "gift_cover") return { data: null, error: { code: "PGRST202", message: "Could not find the function public.gift_cover(p_now, p_user) in the schema cache" } };
       if (name === "increment_coach_usage") return { data: 1, error: null };
       if (name === "increment_coach_usage_weekly") return { data: 1, error: null };
       if (name === "increment_ai_usage_daily") {

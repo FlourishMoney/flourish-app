@@ -15,7 +15,7 @@
 const { hourWindow, dayWindow, isCurrentFormat } = require("./limiterKeys");
 const { SEND_WINDOW_MS } = require("./foundingConfirm");
 
-const STORES = Object.freeze(["signup_attempts", "coach_ip_usage", "founding_confirm_sends"]);
+const STORES = Object.freeze(["signup_attempts", "coach_ip_usage", "founding_confirm_sends", "gift_attempts"]);
 
 // Is this entry past its window? An entry that cannot be read, or that has no window, is past it.
 function expired(storeName, key, value, now) {
@@ -25,6 +25,8 @@ function expired(storeName, key, value, now) {
   }
   const w = value && typeof value.w === "string" ? value.w : null;
   if (!w) return true;
+  // The gift pages' attempts (netlify/functions/gift.js) are counted by the hour, every kind.
+  if (storeName === "gift_attempts") return w !== hourWindow(now);
   return key.startsWith("v2/ip/") ? w !== hourWindow(now) : w !== dayWindow(now);
 }
 

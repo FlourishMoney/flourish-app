@@ -34,6 +34,7 @@ const plusAddon = require("./_lib/plusAddon");
 const { fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
 const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
 const { trialPlanFirstSince } = require("./_lib/planRules");
+const { giftCover } = require("./_lib/gifts");
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 const { householdCover, holdPurchase, holdPending, isAttemptId, reconcileHouseholdBilling, CHECKOUT_MINUTES } = require("./_lib/household");
@@ -181,6 +182,15 @@ exports.handler = async (event) => {
       const tpf = tpfState ? { trial_plan_first: tpfState } : {};
       // COUPLE MODE: the other member's subscription covers this person too (_lib/household.js). Covered, they are
       // paid, offered nothing, and have nothing of their own to manage. A household read that fails is a 503.
+      // A GIFT (migration 0050): a redeemed gift whose 12 months are running makes this account paid, read the same way
+      // for the website and both store apps. A store app is told `paid` and nothing about where it came from.
+      const gift = isPaidSubscription(row) ? { covered: false } : await giftCover(admin, user_id);
+      if (gift.unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (gift.covered) {
+        if (isNativeRequest(event)) return json(200, CORS, { enabled: true, paid: true, ...tpf });
+        return json(200, CORS, { enabled: true, provider: null, paid: true, covered_by: "gift", period_end: gift.ends_at,
+          manageable: false, web_attention: false, founding: { available: false, cohortLimit: FOUNDING_COHORT_LIMIT, confirmEmail: false }, ...tpf });
+      }
       const cover = isPaidSubscription(row) ? { covered: false } : await householdCover(admin, user_id);
       if (cover.unavailable) return json(503, CORS, { error: "status_unavailable" });
       if (cover.covered) {
@@ -247,6 +257,13 @@ exports.handler = async (event) => {
       }
       // COUPLE MODE: covered by the other member's subscription, the store app sells this person nothing.
       if (!state.paid) {
+        // A GIFT (migration 0050): paid, and nothing more. The store app is never told where it came from (Apple 3.1.1).
+        const gift = await giftCover(admin, user_id);
+        if (gift.unavailable) return json(503, CORS, { error: "unavailable" });
+        if (gift.covered) {
+          return json(200, CORS, { enabled: true, paid: true, provider: null, plan_key: null, conflict: !!state.conflict,
+            conflict_kind: state.conflictKind || null, web_attention: false, period_end: gift.ends_at, founding: { available: false, held_on_regular_plan: null }, ...tpf });
+        }
         const cover = await householdCover(admin, user_id);
         if (cover.unavailable) return json(503, CORS, { error: "unavailable" });
         if (cover.covered) {

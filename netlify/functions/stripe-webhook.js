@@ -34,6 +34,8 @@ const plusAddon = require("./_lib/plusAddon");
 const { stripeMilestone, recordMilestone } = require("./_lib/funnel");
 const { trialPlanFirstSince } = require("./_lib/planRules");
 const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
+// GIFTS (migration 0050): a paid gift checkout makes its one code; a refunded gift voids it while unused.
+const gifts = require("./_lib/gifts");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -347,6 +349,33 @@ exports.handler = async (event) => {
     }).eq("event_id", evt.id);
     return reply(200, { received: true, duplicate: true });
   };
+
+  // GIFTS (_lib/gifts.js). A gift's checkout and a gift's refund end here: no subscription row, no founding seat, no
+  // creator commission and no funnel milestone. The event is already claimed above, and the code is made once per
+  // Stripe session (gift_create), so a repeated delivery never makes a second code or a second Email 1.
+  const giftDone = async (note) => {
+    await admin.from("billing_events")
+      .update({ status: "processed", processed_at: new Date().toISOString(), error: note || null }).eq("event_id", evt.id);
+    return reply(200, { received: true, gift: true });
+  };
+  const giftFailed = async (e) => {
+    console.error("[stripe-webhook] gift", evt.type, e.message);
+    await admin.from("billing_events").update({ status: "failed", error: String(e.message).slice(0, 500) }).eq("event_id", evt.id);
+    return reply(500, { error: "processing_failed" });    // 5xx so Stripe retries
+  };
+  if (evt.type === "checkout.session.completed" && gifts.isGiftSession(object)) {
+    try {
+      const r = await gifts.fulfilGift({ admin, session: object });
+      if (!r.ok) throw new Error(`gift not fulfilled: ${r.reason}`);
+      return await giftDone(r.unpaid ? "gift: not paid" : r.skipped ? `gift: buyer email ${r.skipped}` : null);
+    } catch (e) { return await giftFailed(e); }
+  }
+  if (evt.type === "charge.refunded") {
+    let r;
+    try { r = await gifts.refundGift({ admin, charge: object }); }
+    catch (e) { return await giftFailed(e); }
+    if (r.gift) return await giftDone(r.voided ? "gift: voided" : r.redeemed ? "gift: refunded after redeem, code kept" : r.partial ? "gift: partial refund, code kept" : null);
+  }
 
   // THE FULL FUNNEL. Best effort, before the handling below (whose early answers would skip it); first time only, so a
   // retried event adds nothing. The account is the one the event names, or, for a refund, the one our own row holds

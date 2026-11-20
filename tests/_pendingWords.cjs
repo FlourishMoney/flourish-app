@@ -60,6 +60,24 @@ function pendingNetWorthWordIds() {
     .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
 
+// A FIFTH EXCEPTION, AS NARROW: THE GIFT WORDS (Christmas 2026; Amanda: "placeholders in code until I approve the words").
+// The same three conditions: the id starts "gift-"; docs/review/GIFT-COPY.md lists it with status "pending"; and it is in
+// one of the gift's own words homes below. The same refusal keeps them from shipping (check-pending-words.mjs), and once
+// they are approved this exception covers nothing.
+const GIFT_DOC = path.join(__dirname, "..", "docs", "review", "GIFT-COPY.md");
+const GIFT_HOMES = [
+  path.join("netlify", "functions", "_lib", "giftWords.js"),
+  path.join("src", "lib", "giftReturn.js"),
+  path.join("public", "gift", "index.html"),
+  path.join("public", "gift", "redeem.html"),
+  path.join("public", "gift", "card.html"),
+];
+function pendingGiftWordIds() {
+  let doc = "";
+  try { doc = fs.readFileSync(GIFT_DOC, "utf8"); } catch { return []; }
+  return [...doc.matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| pending \|$/gm)].map((m) => m[1]);
+}
+
 // Every placeholder in a text, by its id.
 const placeholders = (src) => [...String(src).matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
 // The placeholders in a file that the exceptions do not cover: every one, unless the file is one of the two words files.
@@ -70,7 +88,8 @@ function strayPlaceholders(src, file) {
   if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (TRIAL_HOMES.includes(where)) { const pending = pendingTrialWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (where === NW_HOME || where === NW_SERVER_HOME) { const pending = pendingNetWorthWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (GIFT_HOMES.some((h) => where === h || where.endsWith(path.sep + h))) { const pending = pendingGiftWordIds(); return found.filter((id) => !pending.includes(id)); }
   return found;
 }
 
-module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingNetWorthWordIds, placeholders, strayPlaceholders };
+module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingNetWorthWordIds, pendingGiftWordIds, placeholders, strayPlaceholders };

@@ -8,6 +8,7 @@
 const { createClient } = require("@supabase/supabase-js");
 const { deriveEntitlement } = require("./planRules");
 const { householdCover } = require("./household");
+const { giftCover } = require("./gifts");
 
 let _admin = null;
 function getAdminClient() {
@@ -190,6 +191,14 @@ async function getUserPlan(user_id, { delays = PLAN_READ_DELAYS_MS } = {}) {
     // already unlimited; the other member's paid subscription or beta-founder flag counts, their trial does
     // not (_lib/household.js householdCover). A household read that fails is "unavailable", never "not paid".
     if (!ent.unlimited) {
+      // A GIFT (migration 0050, _lib/gifts.js): a redeemed gift whose 12 months are running is a paid plan, the same in
+      // every app. Read only when nothing else entitles the account; a read that fails is "unavailable", never "not paid".
+      const gift = await giftCover(admin, user_id);
+      if (gift.unavailable) return { ...UNAVAILABLE, plan, founder_flag: founder };
+      if (gift.covered) {
+        return { plan, entitlement: "premium", founder_flag: founder, unlimited: true, paid: true,
+          subscription_status: sub ? sub.status : null, status_unavailable: false, covered_by: "gift", gift_plus: !!gift.plus };
+      }
       const cover = await householdCover(admin, user_id);
       if (cover.unavailable) return { ...UNAVAILABLE, plan, founder_flag: founder };
       if (cover.covered) {

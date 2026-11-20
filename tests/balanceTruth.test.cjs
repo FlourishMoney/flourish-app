@@ -421,10 +421,10 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     const { execFileSync } = require("child_process");
     let guard = 0, guardSaid = "";
     try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; guardSaid = String(e.stderr || ""); }
-    // trial plan first (2026-11-10): its listed placeholders hold the build back the same way.
+    // trial plan first (2026-11-10): its listed placeholders hold the build back the same way. So do the gifts' (2026-11-20).
     // 2026-11-10: the Plus, bank-limit and net-worth lines (lib/netWorthWords.js) are placeholders until approved, and hold
     // the build back too; the guard must still name no balance- line.
-    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingTrialWordIds().length || PW.pendingNetWorthWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
+    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingTrialWordIds().length || PW.pendingNetWorthWordIds().length || PW.pendingGiftWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
     t.ok(!/\[WORDS: balance-/.test(guardSaid), "7j2 …and whatever it refuses, it names no balance- line");
   }
 

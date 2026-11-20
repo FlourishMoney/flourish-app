@@ -182,6 +182,7 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
       "_lib/supportAlert.js": "not a household send at all: an internal alert to our own support inbox when the server flags a store subscription (version 1.1, 2026-10-18)",
       "_lib/newsletter.js": "not a waitlist send: its own opt-in list, one confirmation per request to the address typed next to a ticked box, at most one per 10 minutes and 3 a day, and it never reads a waitlist row (2026-11-04)",
       "_lib/policyNotice.js": "not a waitlist send: the privacy policy notice, one to each account, claimed before it goes (0040), off unless POLICY_NOTICE_SEND is set (2026-11-05)",
+      "_lib/gifts.js": "not a waitlist send: a gift's two emails, to the buyer who just paid (once per Stripe session) and to the recipient the buyer named (once per code, on the day the buyer chose), with an idempotency key each, never with a placeholder, off unless GIFTS_ENABLED (2026-11-20)",
       "_lib/household.js": "not a waitlist send: couple mode's invite, one per request, to the address the signed-in owner typed after consenting, at most 5 a day, in its approved words and never with a placeholder (2026-10-29)",
     };
     const extra = senders.filter(f => !KNOWN[f]);
@@ -280,10 +281,11 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const scheduled = [...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort();
     // TRIAL_PLAN_FIRST (2026-11-10): a seventh, the trial reminder sweep, which sends (only with the switch on).
-    const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm|policyNotice|trialReminder)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
-    t.eq([scheduled, scheduled.filter(sends)], [["creator-commissions-sweep", "founding-link-sweep", "limiter-cleanup", "newsletter-retention", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], ["founding-link-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"]],
-      "6n0 seven scheduled functions, and the limiter cleanup, the creator commissions sweep and the newsletter retention send nothing");
-    t.eq(scheduled.filter(sends), ["founding-link-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep, the founding link sweep, the policy notice and the trial reminder (off unless set)");
+    // Gifts (2026-11-20): an eighth, the gift recipient's email on its day, which sends (only with GIFTS_ENABLED).
+    const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm|policyNotice|trialReminder|gifts)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
+    t.eq([scheduled, scheduled.filter(sends)], [["creator-commissions-sweep", "founding-link-sweep", "gift-send-sweep", "limiter-cleanup", "newsletter-retention", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], ["founding-link-sweep", "gift-send-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"]],
+      "6n0 eight scheduled functions, and the limiter cleanup, the creator commissions sweep and the newsletter retention send nothing");
+    t.eq(scheduled.filter(sends), ["founding-link-sweep", "gift-send-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep, the founding link sweep, the gift recipient's email, the policy notice and the trial reminder (off unless set)");
     const everywhere = [toml, fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8"),
       ...fs.readdirSync(fnDir).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, f), "utf8")),
       ...fs.readdirSync(path.join(fnDir, "_lib")).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, "_lib", f), "utf8"))].join("\n");

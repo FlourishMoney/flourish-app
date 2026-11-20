@@ -1,0 +1,18 @@
+/* public/gift/card.css: the printable gift card. On screen it sits on the page; printed, only the card prints, in ink
+   on white, at a size that folds into a greeting card (about 13 cm wide). The QR prints at 3.3 cm. */
+.giftcard { background: #FFFFFF; color: #1A2035; border: 1px solid #E6E1D8; border-radius: 16px; padding: 28px 24px; max-width: 520px; }
+.giftcard h1 { font-size: 26px; margin: 0 0 8px; }
+.giftcard .for { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+.giftcard .from { font-size: 16px; color: #5B6170; margin: 0 0 12px; }
+.giftcard blockquote { margin: 0 0 16px; padding: 4px 0 4px 14px; border-left: 3px solid #007048; font-style: italic; }
+.giftcard .redeem { display: flex; gap: 18px; align-items: center; margin: 8px 0 16px; flex-wrap: wrap; }
+.giftcard .qr { width: 3.3cm; height: 3.3cm; flex: none; }
+.giftcard .label { margin: 0; font-weight: 700; color: #5B6170; font-size: 14px; }
+.giftcard .code { margin: 2px 0 8px; font-size: 24px; font-weight: 800; letter-spacing: .1em; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.giftcard .muted { color: #5B6170; }
+.giftcard .onetime { background: #EEF6F1; color: #1A2035; }
+@media print {
+  body { background: #FFFFFF; padding: 0; }
+  .no-print { display: none !important; }
+  .giftcard { border: 1px solid #BDB6A8; max-width: 13cm; margin: 1cm auto; box-shadow: none; }
+}

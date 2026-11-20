@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  public/gift/card.html: THE PRINTABLE GIFT CARD, linked from Email 1 (netlify/functions/_lib/gifts.js giftCardUrl).
+  Everything it shows comes from the link's FRAGMENT (#c=CODE&p=PLAN&to=NAME&f=FROM&m=MESSAGE&s=START), which the browser never
+  sends to a server, so the code reaches no log. noindex, no referrer, nothing loaded from elsewhere. The QR code is a
+  fixed file (public/gift/redeem-qr.svg, scripts/gift-qr.mjs) that opens flourishmoney.app/gift/redeem; the code is printed
+  beside it, never inside it. Website only. Words approved 2026-11-20 (docs/review/GIFT-COPY.md), held by tests/giftWords.test.cjs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title data-words="gift-card-title">Your flourish gift card</title>
+<link rel="icon" href="/flourish-adult-favicon-32.png">
+<link rel="stylesheet" href="/gift/gift.css">
+<link rel="stylesheet" href="/gift/card.css">
+<script src="/gift/card.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="no-print"><button class="btn" id="print" type="button" data-words="gift-card-print-button">Print this card</button></p>
+  <p class="card notice bad" id="missing" hidden data-words="gift-card-missing">This card link is incomplete. Open the link from your gift email again, or write to hello@flourishmoney.app.</p>
+  <article class="giftcard" id="giftcard" hidden>
+    <img class="mark" src="/flourish-adult-app-icon-180.png" width="48" height="48" alt="">
+    <h1 id="plan-name"></h1>
+    <p class="for" id="for" hidden></p>
+    <p class="from" id="from" hidden></p>
+    <blockquote id="message" hidden></blockquote>
+    <div class="redeem">
+      <img class="qr" src="/gift/redeem-qr.svg" width="132" height="132" alt="">
+      <div>
+        <p class="label" data-words="gift-card-code-label">Gift code</p>
+        <p class="code" id="code"></p>
+        <p data-words="gift-card-redeem-at">Redeem at flourishmoney.app/gift/redeem</p>
+        <p class="muted" data-words="gift-card-scan">Or scan the code to open the page.</p>
+      </div>
+    </div>
+    <p id="start"></p>
+    <p class="onetime" data-words="gift-card-onetime">One-time gift, nothing renews.</p>
+  </article>
+</main>
+<template id="words">
+  <span data-id="gift-plan-flourish-name">A year of flourish</span>
+  <span data-id="gift-card-for">For {name}</span>
+  <span data-id="gift-card-from">From {from}</span>
+  <span data-id="gift-card-start-on">12 months, starting on the latest of {date}, the day the code is redeemed, or the end of any paid period the recipient already has.</span>
+  <span data-id="gift-card-start-now">12 months, starting on the day the code is redeemed, or after any paid period the recipient already has ends if that is later.</span>
+</template>
+</body>
+</html>

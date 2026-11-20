@@ -87,6 +87,29 @@ if (mode === "artifact") {
         `    Build the store bundle with npm run build:native (it sets VITE_NATIVE_BUILD=true and strips dist/clarity).`);
   }
 
+  // GIFTS NEVER SHIP INSIDE THE STORE APPS (2026-11-20, Apple 3.1.1: no unlocking with codes or QR codes in the app, and
+  // no gift button, link, code box or mention). The pages are website only (public/gift, removed by
+  // strip-landing-media.mjs), and the app's way back to them (src/lib/giftReturn.js) is empty in a native build.
+  const GIFT_MARKS = ["/gift/redeem", "/gift/card", "/api/gift", "gift=redeem", "flourish_gift_return_at", "[WORDS: gift-", "gift-redeem-", "redeem-qr.svg"];
+  const withGift = [];
+  const walkGift = (dir) => {
+    for (const f of fs.readdirSync(dir)) {
+      const p = path.join(dir, f);
+      if (fs.statSync(p).isDirectory()) { if (f === "gift") withGift.push(path.relative(root, p)); else walkGift(p); }
+      else if (/\.(js|mjs|html?|json|css|txt|xml|svg|webmanifest)$/i.test(f)) {
+        const src = fs.readFileSync(p, "utf8");
+        const hit = GIFT_MARKS.find((m) => src.includes(m));
+        if (hit) withGift.push(`${path.relative(root, p)} (${hit})`);
+      }
+    }
+  };
+  if (fs.existsSync(path.join(root, "dist"))) walkGift(path.join(root, "dist"));
+  if (withGift.length) {
+    die(`dist/ mentions the gift pages (${withGift.join(", ")}): a gift link or code box would ship inside the iOS and Android apps.\n` +
+        `    Build the store bundle with npm run build:native (it sets VITE_NATIVE_BUILD=true and strips dist/gift).`);
+  }
+  console.log("  no gift pages      dist/");
+
   const indexHtml = path.join(root, "dist", "index.html");
   if (fs.existsSync(indexHtml) && fs.readFileSync(indexHtml, "utf8").includes("LANDING-META")) {
     die(`dist/index.html still holds the landing's link-preview tags, which name the website.\n` +
