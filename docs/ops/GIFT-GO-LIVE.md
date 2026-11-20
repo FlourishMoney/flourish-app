@@ -12,8 +12,10 @@ Gift sales stay off until step 5. Redeeming has no switch, but with no codes sol
    - The same deploy carries the Privacy Policy's Resend gift sentence (approved 2026-11-20). It does not need a date of its own.
    - Check after: flourishmoney.app Terms and Privacy Policy both say "Last updated" with the deploy day.
 
-2. **Run migration 0050 (gift codes).** Who: Amanda says go; CC runs it. Staging first, then production.
-   - Check after: `public.gift_codes` exists; the gift functions answer for service_role only.
+2. **Run migration 0050 (gift codes).** Staging first, then production.
+   - Staging: there is no hosted staging project, so CC runs it on a fresh throwaway local Supabase (every migration in order, then 0050 twice, then the check). Done 2026-11-20: all 16 checks true.
+   - Production: the exact file `supabase/migrations/0050_gift_codes.sql` (sha256 `202bc34d...8ebe4`), pasted into the Supabase SQL editor and run once by the main Claude chat for Amanda. CC does not run it.
+   - Check after: `docs/ops/gift-0050-check.sql` (read-only), one result, every row's `ok` true.
 
 3. **Stripe, live mode: the production webhook.** Who: Amanda. CC does not change Stripe.
    - Developers > Webhooks > the production endpoint (`https://flourishmoney.app/.netlify/functions/stripe-webhook`).
