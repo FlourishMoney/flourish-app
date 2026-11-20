@@ -9,13 +9,16 @@
 //   paid         stripe-webhook.js (signature verified, event claimed once in billing_events) -> fulfilGift: ONE row in
 //                public.gift_codes per Stripe session (migration 0050, gift_create), so a repeated webhook never makes a
 //                second code; then Email 1 to the buyer, once (Resend idempotency key per session).
-//   on the day   gift-send-sweep.js, every 15 minutes -> runSendSweep: Email 2 to the recipient at 07:00 Eastern on the
+//   on the day   gift-send-sweep.js, every 5 minutes -> runSendSweep: Email 2 to the recipient at 07:00 Eastern on the
 //                day the buyer chose. Claimed atomically, sent with an idempotency key, recorded: never twice.
 //   redeem       gift.js action "redeem", website only, signed in, rate limited -> redeemGift: 12 months from the latest
 //                of now, the buyer's start day, the end of the account's paid period, and the end of any gift it holds.
 //   refund       stripe-webhook.js charge.refunded -> refundGift: a full refund voids the code only while it is unused.
 //   entitlement  giftCover: a redeemed gift running now makes the account paid in getUserPlan (_lib/auth.js) and in
 //                billing.js status / store_status, the answers the website and both store apps already read.
+//
+// SWITCHES. GIFTS_ENABLED ("true") opens SALES only: the prices and the checkout. Redeeming and the recipient's email do
+// not depend on it, so turning sales off after Christmas never strands a code (codes never expire) or a scheduled email.
 //
 // STORE RULES. The iPhone and Android apps show nothing about gifts (Apple 3.1.1): no button, link, code box or mention.
 // The pages live in public/gift/, which a native build removes (scripts/strip-landing-media.mjs), and
@@ -47,6 +50,7 @@ const FROM = "Flourish <hello@flourishmoney.app>";
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 5000;
 
+// Sales (the prices and the checkout) only. Redeeming and the recipient's email always run.
 const giftsEnabled = (env = process.env) => env.GIFTS_ENABLED === "true";
 
 // ── THE CODE ─────────────────────────────────────────────────────────────────────────────────────────
@@ -118,6 +122,9 @@ function formatDay(v) {
 // ── THE BUYER'S FORM ─────────────────────────────────────────────────────────────────────────────────
 const clean = (v, max) => String(v == null ? "" : v)
   .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, " ")
+  // Square brackets become round ones, so nothing a buyer types can look like a "[WORDS: id]" placeholder (review,
+  // 2026-11-20: a name or message holding one would otherwise have stopped the emails).
+  .replace(/\[/g, "(").replace(/\]/g, ")")
   .replace(/\s+/g, " ").trim().slice(0, max);
 const NAME_MAX = 60;
 const MESSAGE_MAX = 200;
@@ -323,6 +330,17 @@ function recipientEmailPayload(g, { env = process.env, words = GIFT_WORDS } = {}
 
 const holdsPlaceholder = (payload) => /\[WORDS:/.test(JSON.stringify(payload || ""));
 
+// The lines each email is made of. Whether an email may go is asked of THESE (the words), never of the finished email,
+// which also holds what the buyer typed.
+const EMAIL1_IDS = Object.freeze(["gift-plan-flourish", "gift-plan-plus", "gift-email1-subject", "gift-email1-intro", "gift-email1-delivery-email",
+  "gift-email1-delivery-print", "gift-email1-code-label", "gift-email1-card-line", "gift-email1-card-button", "gift-email1-how",
+  "gift-email1-start-now", "gift-email1-start-on", "gift-email1-onetime", "gift-email1-refund", "gift-email1-receipt", "gift-email-footer"]);
+const EMAIL2_IDS = Object.freeze(["gift-plan-flourish", "gift-plan-plus", "gift-email2-subject", "gift-email2-hello-name", "gift-email2-hello",
+  "gift-email2-intro", "gift-email2-message-label", "gift-email2-code-label", "gift-email2-how", "gift-email2-button", "gift-email2-start-now",
+  "gift-email2-start-on", "gift-email2-apps", "gift-email2-onetime", "gift-email-footer"]);
+/** Is any line of this email still a placeholder (not approved yet)? */
+const wordsPending = (ids, words = GIFT_WORDS) => ids.some((id) => typeof words[id] !== "string" || /\[WORDS:/.test(words[id]));
+
 /**
  * One email through Resend, the sender every flourish email uses. The idempotency key makes a repeat of the same
  * send (a webhook delivered twice, a sweep run that died after sending) one email at Resend.
@@ -392,6 +410,12 @@ async function fulfilGift({ admin, session, now = new Date(), env = process.env,
 
   const out = { ok: true, code: row.code, created: !!row.created, emailed: false, skipped: null };
   if (row.buyer_emailed_at) return { ...out, emailed: true, already: true };
+  // Refunded before its email could go (an email that failed, then a refund, then Stripe's retry): never sent.
+  if (row.status === "void") return { ...out, void: true };
+  if (wordsPending(EMAIL1_IDS, words)) {
+    console.error("[gift] GIFT_BUYER_EMAIL_SKIPPED (placeholder): the words are not approved; the code exists, send it by hand");
+    return { ...out, skipped: "placeholder" };
+  }
   const mail = buyerEmailPayload({
     code: row.code, plan: row.plan, delivery: row.delivery, buyer_email: row.buyer_email,
     recipient_name: row.recipient_name, recipient_email: row.recipient_email, message: row.gift_message,
@@ -444,7 +468,9 @@ async function giftCover(admin, userId, now = new Date()) {
     return { covered: !!(r && r.covered), plus: !!(r && r.plus), ends_at: (r && r.ends_at) || null,
       next_starts_at: (r && r.next_starts_at) || null, unavailable: false };
   } catch (e) {
-    if (e.missing) { missingUntil = Date.now() + 5 * 60000; return { covered: false, unavailable: false }; }
+    // Not applied yet, while gifts are not on sale: no gift can exist, so no gift (remembered for 5 minutes, so the
+    // plan check does not ask on every request). Once sales are on, a missing function is a failure like any other.
+    if (e.missing && !giftsEnabled()) { missingUntil = Date.now() + 5 * 60000; return { covered: false, unavailable: false }; }
     console.error("[gift] cover read failed:", e.message);
     return { covered: false, unavailable: true };
   }
@@ -482,7 +508,7 @@ async function redeemGift({ admin, userId, rawCode, now = new Date() }) {
   return { ok: false, result: "unavailable" };
 }
 
-// ── THE RECIPIENT'S EMAIL ON ITS DAY (gift-send-sweep.js) ─────────────────────────────────────────────
+// ── THE RECIPIENT'S EMAIL ON ITS DAY (gift-send-sweep.js, every 5 minutes) ─────────────────────────────────────────────
 const MAX_ATTEMPTS = 10;
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 /**
@@ -494,7 +520,9 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 async function runSendSweep({ admin, now = () => new Date(), env = process.env, words = GIFT_WORDS, send = sendGiftEmail,
                               budgetMs = 18000, pauseMs = 250, log = console }) {
   const t0 = Date.now();
-  const out = { sent: 0, failed: 0, skipped: 0, unavailable: false };
+  const out = { sent: 0, failed: 0, skipped: 0, unavailable: false, wordsPending: false };
+  // The words not approved yet: nothing is claimed, so nothing is used up; the emails wait for the words.
+  if (wordsPending(EMAIL2_IDS, words)) { out.wordsPending = true; return out; }
   while (Date.now() - t0 < budgetMs) {
     let batch;
     try { batch = await rpc(admin, "gift_claim_due_sends", { p_now: now().toISOString(), p_limit: 5 }); }
@@ -512,12 +540,17 @@ async function runSendSweep({ admin, now = () => new Date(), env = process.env, 
         if (!marked) marked = await rpc(admin, "gift_mark_sent", { p_code: g.code, p_now: now().toISOString() }).then(() => true, () => false);
         if (!marked) log.error("[gift-send-sweep] GIFT_SEND_NOT_RECORDED: an email went but its row could not be marked; a later run resends the same key");
         out.sent++;
-      } else if (r.skipped) {
-        // Email is off (no key) or the words are not approved: nothing can go this run, so every claim goes back.
-        for (const left of batch.slice(i)) await rpc(admin, "gift_release_send", { p_code: left.code, p_error: `email_${r.skipped}` }).catch(() => 0);
-        log.error(`[gift-send-sweep] GIFT_EMAIL_OFF (${r.skipped}): ${batch.length - i} gift email(s) wait for the next run`);
+      } else if (r.skipped === "no_key") {
+        // Email is off (no Resend key): nothing can go this run, so every claim goes back and no attempt is used up.
+        for (const left of batch.slice(i)) await rpc(admin, "gift_release_send", { p_code: left.code, p_error: "email_no_key" }).catch(() => 0);
+        log.error(`[gift-send-sweep] GIFT_EMAIL_OFF (no_key): ${batch.length - i} gift email(s) wait for the next run`);
         out.skipped += batch.length - i;
         return out;
+      } else if (r.skipped) {
+        // Anything else refused for this one email is this row's failure: it never holds up the others.
+        await rpc(admin, "gift_mark_send_failed", { p_code: g.code, p_error: `skipped_${r.skipped}` }).catch(() => 0);
+        out.failed++;
+        log.error(`[gift-send-sweep] a gift email was refused (${r.skipped}), try ${g.recipient_send_attempts} of ${MAX_ATTEMPTS}`);
       } else {
         await rpc(admin, "gift_mark_send_failed", { p_code: g.code, p_error: r.error ? `${r.error}${r.status ? `_${r.status}` : ""}` : "failed" }).catch(() => 0);
         out.failed++;
@@ -536,5 +569,6 @@ module.exports = {
   TZ, SEND_HOUR, MAX_DAYS_AHEAD, torontoToday, isDay, addDays, torontoInstant, sendInstant, pickDay, formatDay,
   NAME_MAX, MESSAGE_MAX, checkGiftForm, checkoutParams, isGiftSession, giftFromSession,
   giftCardUrl, redeemUrl, STORE_BADGES, buyerEmailPayload, recipientEmailPayload, holdsPlaceholder, sendGiftEmail,
+  EMAIL1_IDS, EMAIL2_IDS, wordsPending,
   isMissing, fulfilGift, refundGift, giftCover, resetGiftCoverCache, redeemGift, MAX_ATTEMPTS, runSendSweep,
 };

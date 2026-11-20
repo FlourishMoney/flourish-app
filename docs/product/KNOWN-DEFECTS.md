@@ -1391,3 +1391,60 @@ saves even a moment apart merge correctly.
 
 **Fix (suggested, not built)** Merge inside the database in one statement (a function that locks or
 upserts with `answers = merged(existing, new)`), which needs a migration.
+
+## 64. Gifts: Stripe keeps the gift form (names, addresses, message) in the checkout session's metadata
+
+**Rating: LOW.** Found in the review of the gift branch (`gift-purchase`), 2026-11-20. Carried, not fixed.
+
+**Where** `netlify/functions/_lib/gifts.js` `checkoutParams` (the session's `metadata`).
+
+**What happens** The buyer's form travels to the webhook in the Checkout Session's metadata: the buyer's and the
+recipient's addresses, the recipient's name and the message. Our own table clears the name and message once they are
+used (migration 0050), but Stripe keeps its copy of the session for as long as Stripe keeps sessions.
+
+**Fix (suggested, not built)** Write the form to a pending row keyed by the session id before redirecting to Checkout,
+and send only that key in the metadata; or say in the Privacy Policy that Stripe holds the gift form with the payment.
+
+## 65. Gifts: a refund that reaches us before the code exists does not void it
+
+**Rating: LOW.** Found in the same review, 2026-11-20. Carried, not fixed.
+
+**Where** `netlify/functions/_lib/gifts.js` `refundGift` (no row: `gift: false`), `fulfilGift`.
+
+**What happens** If the database is down when the paid checkout arrives (the webhook answers 500 and Stripe retries)
+and the buyer is refunded before a retry succeeds, the refund finds no row and changes nothing; the retry then makes a
+working code and emails it. Needs a database outage and a refund inside Stripe's retry window. (A refund that lands
+after the code exists but before Email 1 went is handled: a void code is never emailed.) A chargeback (dispute) does
+not void an unused code either.
+
+**Fix (suggested, not built)** Record a refund with no row (by payment intent) and have `gift_create` refuse a session
+whose payment intent was refunded; void on `charge.dispute.closed` lost as well.
+
+## 66. Gifts: the start day does not wait for every kind of access the account already has
+
+**Rating: LOW.** Found in the same review, 2026-11-20. Carried, not fixed.
+
+**Where** `netlify/functions/_lib/gifts.js` `redeemGift` (`p_not_before`), `netlify/functions/billing.js`
+`create_checkout_session` and `store_hold`.
+
+**What happens** A gift starts after the account's OWN paid period (web or store, trial included). It starts at once
+for an account whose access comes from somewhere else: a partner's subscription in couple mode, a beta-founder flag,
+or a complimentary plan, so those months overlap. And while a gift year runs, the server does not itself refuse a new
+subscription checkout: the website and the apps hide the plans because status says paid, but a direct request would
+be sold one.
+
+**Fix (suggested, not built)** Pass the household cover's period end as `p_not_before` too, and add the gift to the
+"one paid state at a time" checks in `create_checkout_session` and `store_hold` (409, `covered_by: "gift"`).
+
+## 67. Gifts: "a year of flourish with Plus" turns on the flourish plan only, until the Plus add-on ships
+
+**Rating: LOW.** Known when built, 2026-11-20 (docs/review/GIFT-COPY.md, decision 3).
+
+**Where** `netlify/functions/_lib/gifts.js` `giftCover` (`plus`), `netlify/functions/_lib/auth.js` getUserPlan
+(`gift_plus`).
+
+**What happens** The Plus add-on is PR #128, not merged. A Plus gift is recorded as one (`plan = 'flourish_plus'`, and
+the entitlement read returns `plus: true`), but nothing reads that yet, so it gives the same plan as the cheaper gift.
+
+**Fix** When #128 merges, have its add-on entitlement (`_lib/plusAddon.js`) count `giftCover(...).plus`. Do not sell
+the Plus gift before then.

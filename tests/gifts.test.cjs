@@ -165,7 +165,10 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       load({ fake, user: "user-1" });
       delete process.env.GIFTS_ENABLED;
       let fn = mod(P.gift);
-      t.eq([(await fn.run({ httpMethod: "GET", headers: {} })).statusCode, (await fn.run(web({ action: "redeem", code: "x" }))).statusCode], [404, 404], "5a GIFTS_ENABLED unset: nothing answers");
+      const shut = [(await fn.run({ httpMethod: "GET", headers: {} })).statusCode,
+        (await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore() })).statusCode,
+        (await fn.run(web({ action: "redeem", code: "ABCDEFGHJKMN" }), { store: memStore(), getUser: async () => ({ user_id: null, error: "missing Authorization header" }) })).statusCode];
+      t.eq(shut, [404, 404, 401], "5a GIFTS_ENABLED unset: no prices and no checkout, but redeeming still answers (codes never strand)");
       process.env.GIFTS_ENABLED = "true";
       fn = mod(P.gift);
       for (const origin of ["capacitor://localhost", "https://localhost"]) {
@@ -237,6 +240,15 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       fail = false;
       const f2 = await h2.handler(signed(evt("evt_f1", "checkout.session.completed", session({ id: "cs_fail" }))));
       t.eq([f2.statusCode, fake2.state.gifts.length, fake2.state.gifts[0].code, calls2], [200, 1, code1, ["gift-buyer/cs_fail", "gift-buyer/cs_fail"]], "6j Stripe's retry sends it with the same code and the same key");
+      // refunded before Email 1 could go: the retry never emails a void code
+      const fakeV = makeFake(); load({ fake: fakeV }); const mV = fakeResend();
+      global.fetch = async () => ({ ok: false, status: 500 });
+      const hV = mod(P.hook);
+      await hV.handler(signed(evt("evt_v1", "checkout.session.completed", session({ id: "cs_void", payment_intent: "pi_void" }))));
+      fakeResend(mV);
+      await hV.handler(signed(evt("evt_v2", "charge.refunded", { id: "ch_v", object: "charge", payment_intent: "pi_void", refunded: true, amount_refunded: 11299 })));
+      const vRetry = await hV.handler(signed(evt("evt_v1", "checkout.session.completed", session({ id: "cs_void", payment_intent: "pi_void" }))));
+      t.eq([vRetry.statusCode, fakeV.state.gifts[0].voided_at ? "void" : "live", mV.length], [200, "void", 0], "6p refunded before Email 1 went: Stripe's retry sends no email for the void code");
       // unpaid, and the placeholders
       const fake3 = makeFake(); load({ fake: fake3 }); fakeResend();
       await mod(P.hook).handler(signed(evt("evt_u", "checkout.session.completed", session({ id: "cs_unpaid", payment_status: "unpaid" }))));
@@ -313,9 +325,15 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const { gifts: Gb, auth: authB } = load({ fake: blink }); Gb.resetGiftCoverCache();
       t.eq((await authB.getUserPlan("u-free", { delays: [] })).status_unavailable, true, "8g the gift read failing is 'unavailable', never 'not paid'");
       const missing = makeFake({ rows: fake.state.rows, missingGift: true });
+      const salesWere = process.env.GIFTS_ENABLED; delete process.env.GIFTS_ENABLED;
       const { gifts: Gm, auth: authM } = load({ fake: missing }); Gm.resetGiftCoverCache();
       t.eq([(await authM.getUserPlan("u-free", { delays: [] })).entitlement, (await authM.getUserPlan("u-free", { delays: [] })).status_unavailable], ["free", false], "8h before 0050 runs: no gift, nothing else changes");
       t.eq(missing.state.rpcCalls.filter((c) => c.fn === "gift_cover").length, 1, "8i …and the missing function is asked about once, not on every check");
+      process.env.GIFTS_ENABLED = "true";
+      const onSale = makeFake({ rows: fake.state.rows, missingGift: true });
+      const { gifts: Gs8, auth: authS } = load({ fake: onSale }); Gs8.resetGiftCoverCache();
+      t.eq((await authS.getUserPlan("u-free", { delays: [] })).status_unavailable, true, "8i2 once gifts are on sale, a missing gift function is a failure (503), never quietly 'no gift'");
+      process.env.GIFTS_ENABLED = salesWere;
       // couple mode: the other member's gift counts as their paid plan does
       const hh = makeFake({ rows: fake.state.rows });
       hh.GIFT.gift_create({ p_code: "FFFFFFFFFFFF", p_plan: "flourish", p_session: "cs_8h", p_delivery: "print", p_buyer_email: "b@example.ca" });
@@ -336,7 +354,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const sends = [];
       const send = async (payload, key) => { sends.push({ key, to: payload.to[0], subject: payload.subject, text: payload.text }); return { sent: true }; };
       const at = (s) => () => new Date(s);
-      t.eq(await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T11:45:00Z"), send, pauseMs: 0 }), { sent: 0, failed: 0, skipped: 0, unavailable: false }, "9a 6:45 a.m. Eastern on its day: nothing yet");
+      t.eq(await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T11:45:00Z"), send, pauseMs: 0 }), { sent: 0, failed: 0, skipped: 0, unavailable: false, wordsPending: false }, "9a 6:45 a.m. Eastern on its day: nothing yet");
       const r1 = await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T12:00:00Z"), send, pauseMs: 0 });
       t.eq([r1.sent, sends.map((s) => [s.key, s.to])], [1, [["gift-recipient/GGGGGGGGGGGG", "pat@example.ca"]]], "9b 7:00 a.m. Eastern: Email 2 to that day's recipient, keyed to the code");
       await G.runSendSweep({ admin: fake.client, now: at("2026-12-25T12:15:00Z"), send, pauseMs: 0 });
@@ -356,10 +374,28 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       const off = makeFake(); const { gifts: Go } = load({ fake: off, words: "real" });
       off.GIFT.gift_create({ p_code: "JJJJJJJJJJJJ", p_plan: "flourish", p_session: "cs_9c", p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: "Jo", p_recipient_email: "jo@example.ca", p_send_on: "2026-12-25" });
       const r3 = await Go.runSendSweep({ admin: off.client, now: at("2026-12-25T12:00:00Z"), pauseMs: 0, log: { error() {} } });
-      t.eq([r3.sent, r3.skipped, off.state.gifts[0].recipient_send_attempts, off.state.gifts[0].recipient_send_claimed_at], [0, 1, 0, null], "9h words not approved: nothing goes, the claim is handed back, no attempt is used up");
+      t.eq([r3.sent, r3.wordsPending, off.state.gifts[0].recipient_send_attempts, off.state.gifts[0].recipient_send_claimed_at, off.state.rpcCalls.length], [0, true, 0, null, 0], "9h words not approved: nothing is claimed, nothing goes, no attempt is used up");
       delete process.env.GIFTS_ENABLED;
-      t.eq(JSON.parse((await mod(P.sweep).handler({}, {}, { admin: off.client })).body), { ok: true, off: true }, "9i the scheduled job does nothing while GIFTS_ENABLED is unset");
+      const ranOff = makeFake(); const { gifts: Gro } = load({ fake: ranOff });
+      ranOff.GIFT.gift_create({ p_code: "KKKKKKKKKKKK", p_plan: "flourish", p_session: "cs_9off", p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: "Kit", p_recipient_email: "kit@example.ca", p_send_on: "2020-01-01" });
+      const offSend = []; const rOff = JSON.parse((await mod(P.sweep).handler({}, {}, { admin: ranOff.client, pauseMs: 0, send: async (pl, key) => { offSend.push(key); return { sent: true }; } })).body);
+      t.eq([rOff.sent, offSend], [1, ["gift-recipient/KKKKKKKKKKKK"]], "9i sales switched off: an email already bought still goes on its day");
       process.env.GIFTS_ENABLED = "true";
+      // A buyer's text that looks like a placeholder (review, 2026-11-20): cleaned at the door, and one refused email
+      // never holds up the others.
+      const { gifts: Gb } = load({ fake: makeFake() });
+      const form = Gb.checkGiftForm({ plan: "flourish", buyer_email: "b@example.ca", delivery: "email", recipient_name: "[WORDS: gift-x] Sam",
+        recipient_email: "s@example.ca", send_on: Gb.torontoToday(), message: "Hi [WORDS: y]" }).form;
+      t.eq([form.recipient_name, form.message], ["(WORDS: gift-x) Sam", "Hi (WORDS: y)"], "9n a name or message can never hold a placeholder: square brackets become round");
+      t.ok(!Gb.holdsPlaceholder(Gb.recipientEmailPayload({ code: "ABCDEFGHJKMN", plan: "flourish", recipient_email: "s@example.ca", recipient_name: form.recipient_name, message: form.message })), "9o …so the email built from it can go");
+      const meta = Gb.giftFromSession(session({ id: "cs_br" }, { recipient_name: "[WORDS: z]", gift_message: "[x]" }));
+      t.eq([meta.recipient_name, meta.message], ["(WORDS: z)", "(x)"], "9p …and the same at the webhook, whatever reached Stripe's metadata");
+      const two = makeFake(); const { gifts: Gt } = load({ fake: two });
+      for (const [c, n] of [["MMMMMMMMMMMM", "First"], ["NNNNNNNNNNNN", "Second"]]) two.GIFT.gift_create({ p_code: c, p_plan: "flourish", p_session: `cs_${c}`, p_delivery: "email", p_buyer_email: "b@example.ca", p_recipient_name: n, p_recipient_email: `${n.toLowerCase()}@example.ca`, p_send_on: "2026-12-25" });
+      const went = [];
+      const picky = async (pl, key) => (key.endsWith("MMMMMMMMMMMM") ? { sent: false, skipped: "placeholder" } : (went.push(key), { sent: true }));
+      const rp = await Gt.runSendSweep({ admin: two.client, now: at("2026-12-25T12:00:00Z"), send: picky, pauseMs: 0, log: { error() {} } });
+      t.eq([rp.sent, rp.failed, went, two.state.gifts[0].recipient_last_error], [1, 1, ["gift-recipient/NNNNNNNNNNNN"], "skipped_placeholder"], "9q one email refused is that row's failure; the next one still goes");
       const fakeMissing = makeFake({ missingGift: true }); const { gifts: Gx } = load({ fake: fakeMissing });
       t.eq((await Gx.runSendSweep({ admin: fakeMissing.client, pauseMs: 0 })).unavailable, true, "9j before 0050 runs: nothing to send, and it says so");
       // sendGiftEmail itself

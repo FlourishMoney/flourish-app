@@ -21,12 +21,13 @@
 --
 -- Codes never expire: there is no expiry column (Ontario does not allow an expiry date on a gift card).
 --
--- Kept only while needed: the recipient's name and the buyer's message are cleared once the recipient's email is sent
--- (or, for a printed card, once the buyer's email is sent), and on a refund. The two addresses stay: the buyer's for a
--- refund or a "where is my code" question, the recipient's for the scheduled email.
+-- Kept only while needed HERE: the recipient's name and the buyer's message are cleared once the recipient's email is
+-- sent (or, for a printed card, once the buyer's email is sent), and on a refund. The two addresses stay: the buyer's for
+-- a refund or a "where is my code" question, the recipient's for the scheduled email. Stripe keeps its own copy of the
+-- form in the checkout session's metadata, which is how it reaches the webhook (docs/product/KNOWN-DEFECTS.md 64).
 --
--- Until this runs: the gift functions find no table and answer "not available"; nothing else changes. The whole gift
--- feature is also behind GIFTS_ENABLED (exactly "true").
+-- Until this runs: the gift functions find no table and answer "not available"; nothing else changes. Gift SALES are
+-- also behind GIFTS_ENABLED (exactly "true"); redeeming and the recipient's email are not, so codes never strand.
 --
 -- Safe to run twice.
 -- grants: service_role only
@@ -234,7 +235,7 @@ as $$
     'next_starts_at', (select min(starts_at) from mine where starts_at > p_now));
 $$;
 
--- ── the recipient's email, on its day (gift-send-sweep.js, every 15 minutes) ───────────────────────────
+-- ── the recipient's email, on its day (gift-send-sweep.js, every 5 minutes) ───────────────────────────
 -- Claims the emails due (07:00 Eastern on send_on has passed), marking each claimed in the same statement, so two runs
 -- at once never take the same row (FOR UPDATE SKIP LOCKED). A claim older than 30 minutes is a run that died: the row
 -- may be claimed again (the send carries an idempotency key, so the email provider still sends it once). After 10

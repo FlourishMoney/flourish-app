@@ -8,7 +8,8 @@
 //   POST redeem          { code }, signed in (Bearer) -> the gift turns on for that account. 20 tries an hour per IP
 //                        address and 8 per account, counted before the code is looked at, so guessing is slow.
 //
-// OFF UNTIL GIFTS_ENABLED IS EXACTLY "true": every request answers 404, and nothing is read or written.
+// SALES ARE OFF UNTIL GIFTS_ENABLED IS EXACTLY "true": the prices and the checkout answer 404. Redeeming does not depend
+// on it, so a code bought before sales were switched off still works (codes never expire).
 //
 // NEVER FROM A STORE APP. The iPhone and Android apps have no gift screen (Apple 3.1.1: no unlocking with codes inside
 // the app), and a request from their origins (capacitor://localhost, https://localhost) is refused here too, so a code
@@ -81,11 +82,11 @@ exports.handler = async (event) => {
 // The handler's work, with its parts injectable for tests/gifts.test.cjs (store, stripePost, getUser, admin).
 async function run(event, deps = {}) {
   const H = headersFor(event);
-  if (!gifts.giftsEnabled()) return json(404, H, { error: "not_found" });
   if (isNativeRequest(event)) return json(403, H, { error: "web_only" });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: H, body: "" };
 
   if (event.httpMethod === "GET") {
+    if (!gifts.giftsEnabled()) return json(404, H, { error: "not_found" });
     return json(200, H, { enabled: true, currency: gifts.GIFT_PRICES.currency,
       prices: { flourish: gifts.GIFT_PRICES.flourish, flourish_plus: gifts.GIFT_PRICES.flourish_plus } });
   }
@@ -98,6 +99,7 @@ async function run(event, deps = {}) {
   const ip = clientIp(event);
 
   if (body.action === "checkout") {
+    if (!gifts.giftsEnabled()) return json(404, H, { error: "not_found" });
     if (await overLimit(store, "gift-checkout-ip", ip, LIMITS.checkoutIp, { failClosed: false })) {
       return json(429, H, { error: "limited" }, { "Retry-After": "3600" });
     }

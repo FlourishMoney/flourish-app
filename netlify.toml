@@ -50,10 +50,11 @@
   schedule = "@hourly"
 
 # Scheduled: the gift recipient's email (Email 2) at 7 a.m. Eastern on the day the buyer chose
-# (netlify/functions/gift-send-sweep.js, migration 0050). Claimed atomically and sent with an idempotency key, so it is
-# never sent twice. Reads and sends nothing unless GIFTS_ENABLED is "true".
+# (netlify/functions/gift-send-sweep.js, migration 0050). Every 5 minutes, so a busy Christmas morning goes out in good time.
+# Claimed atomically and sent with an idempotency key, so it is never sent twice. Runs whether or not gifts are on sale
+# (GIFTS_ENABLED is sales only), so an email bought before sales closed still goes on its day.
 [functions."gift-send-sweep"]
-  schedule = "*/15 * * * *"
+  schedule = "*/5 * * * *"
 
 # Microsoft Clarity (src/lib/webClarity.js): the tag and its script come from www.clarity.ms and scripts.clarity.ms, and its
 # recordings go to *.clarity.ms. img-src is left alone on purpose: the tag's Microsoft cookie sync (c.clarity.ms/c.gif) is
@@ -181,8 +182,8 @@
   to     = "/.netlify/functions/meeting"
   status = 200
 
-# Redirect: the gift pages (public/gift/, website only) → Netlify function. Answers 404 to everything until GIFTS_ENABLED
-# is "true", and refuses the store apps' origins (netlify/functions/gift.js).
+# Redirect: the gift pages (public/gift/, website only) → Netlify function. Its prices and checkout answer 404 until
+# GIFTS_ENABLED is "true"; redeeming always works; the store apps' origins are refused (netlify/functions/gift.js).
 [[redirects]]
   from   = "/api/gift"
   to     = "/.netlify/functions/gift"

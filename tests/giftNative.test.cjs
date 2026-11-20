@@ -68,6 +68,6 @@ const hits = (dir) => textFiles(dir).flatMap((f) => { const s = fs.readFileSync(
   const src = files(path.join(ROOT, "src")).filter((f) => /\.(js|jsx)$/.test(f)).map((f) => fs.readFileSync(f, "utf8")).join("\n");
   t.ok(!src.includes("/api/gift"), "4a nothing in src/ calls /api/gift: only the website's gift pages do");
   const toml = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
-  t.ok(/from\s+=\s+"\/api\/gift"\s+to\s+=\s+"\/\.netlify\/functions\/gift"/.test(toml) && /\[functions\."gift-send-sweep"\]\s+schedule = "\*\/15 \* \* \* \*"/.test(toml), "4b the route and the 15-minute email job are declared");
+  t.ok(/from\s+=\s+"\/api\/gift"\s+to\s+=\s+"\/\.netlify\/functions\/gift"/.test(toml) && /\[functions\."gift-send-sweep"\]\s+schedule = "\*\/5 \* \* \* \*"/.test(toml), "4b the route and the 5-minute email job are declared");
   t.summary("giftNative.test");
 })().catch((e) => { console.error(e); process.exitCode = 1; });
