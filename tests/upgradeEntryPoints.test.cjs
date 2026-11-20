@@ -63,7 +63,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     A.store.clear();
     t.ok(gate({}).includes("Start 14 days free →") && gate({}).includes("14 days free. Cancel any time."), "2a billing off, no trial yet: today's words");
     A.store.set("flourish_trial_started_at", "2026-09-01T00:00:00Z");
-    t.ok(gate({}).includes("[WORDS: plan-upgrade-cta]") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
+    t.ok(gate({}).includes("Subscribe to flourish →") && gate({ billingOn: false }).includes("You can cancel any time."), "2b billing off, trial used: the approved words (2026-10-20)");
     for (const trial of [null, "2026-09-01T00:00:00Z"]) {
       if (trial) A.store.set("flourish_trial_started_at", trial); else A.store.clear();
       const on = gate({ billingOn: true });

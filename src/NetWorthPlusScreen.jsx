@@ -4,7 +4,7 @@
 // Private by default between partners (Amanda): each person sees their own accounts, holdings and entries, what their
 // partner shared, and what both already see as the household's. A household total only when every part is shared
 // and real (src/lib/netWorthPlus.js viewerNetWorth); otherwise their own. Nothing here is estimated, and nothing is
-// added across currencies. Every line is a placeholder until approved (src/lib/netWorthWords.js).
+// added across currencies. Every line is approved, word for word (src/lib/netWorthWords.js, 2026-11-20).
 // -----------------------------------------------------------------------------
 import React, { useState } from "react";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";

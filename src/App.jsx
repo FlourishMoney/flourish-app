@@ -14854,7 +14854,7 @@ function Paywall({onClose,onPromoValid,onRetry,country,province=""}){
         {/* Hero */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={40} color={C.purpleBright} strokeWidth={1.3}/></div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>{netWorthWords("plan-adds-title")}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2,overflowWrap:"anywhere"}}>{netWorthWords("plan-adds-title")}</div>
           <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.</div>
         </div>
 

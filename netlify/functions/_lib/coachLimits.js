@@ -31,8 +31,8 @@ const FREE_CHAT_WEEKLY = 2;
 // One wording for the free limit, whether we counted to it or could not count at all. A free user
 // should not be able to tell the difference, and support should not have two messages to explain.
 function freeLimitMessage(freeWeekly) {
-  // It named the main plan "Plus" (2026-11-10: the main plan is "flourish"): back to review. {n} is the weekly limit.
-  return `${planWords("plan-server-coach-limit")} [n ${freeWeekly}]`;
+  // It named the main plan "Plus" (2026-11-10: the main plan is "flourish"). Approved 2026-11-20. {n} is the weekly limit.
+  return planWords("plan-server-coach-limit", { n: freeWeekly });
 }
 
 /**

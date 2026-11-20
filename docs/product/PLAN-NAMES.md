@@ -6,9 +6,9 @@ Amanda's decision: to households, the main paid plan is just **"flourish"** (mon
 - RevenueCat entitlement `plus`, `profiles.plan = "plus"`.
 - Stripe: the plan keys `monthly`, `annual`, `founding_annual`.
 
-New wording is a placeholder until both reviewers approve it (`docs/product/NET-WORTH-WORDS.md`, ids `plan-*`). Lines are as of main 69480cd; search for the text, as line numbers move.
+The new wording was approved 2026-11-20 (ChatGPT 100, Grok 100, Amanda) and is in the code word for word (`docs/product/NET-WORTH-WORDS.md`, ids `plan-*`). Lines are as of main 69480cd; search for the text, as line numbers move.
 
-## In the repo, now placeholders on branch net-worth-plus
+## In the repo: approved words on branch plus-1.1.8 (they were placeholders on net-worth-plus)
 
 | Where | What a household saw | Id |
 |---|---|---|
@@ -23,7 +23,7 @@ New wording is a placeholder until both reviewers approve it (`docs/product/NET-
 | Website, upgrade screen | title "Flourish Plus", and "You're on Flourish Plus" | `plan-name`, `plan-on` |
 | Website, plans screen | title "Flourish Plus", heading "What Plus adds" | `plan-name`, `plan-adds-title` |
 | Website, sidebar | "Upgrade to Flourish Plus →", badge "✦ Flourish Plus" | `plan-upgrade-cta`, `plan-name` |
-| Store apps, paywall (`src/lib/storeOffer.js`) | title "Flourish Plus" and the same lead line | none: approved 2026-11-05 as "Subscribe to flourish" and its lead, already on main |
+| Store apps, paywall (`src/lib/storeOffer.js`) | title "Flourish Plus" and the same lead line | title: none, approved 2026-11-05 as "Subscribe to flourish", already on main. Lead: `plan-adds-lead`, word for word, from 1.1.8 (the 2026-11-05 lead said "every flourish feature") |
 | Store apps that sell, Terms section 7 (`src/lib/freePlan.js`) | "Flourish Plus lifts these limits." | `plan-terms-lifts-limits` |
 | Couple mode, paying twice (`src/lib/householdWords.js`) | "…Settings > Flourish Plus > Manage subscription." | `plan-household-extra-stripe` |
 | The coach's weekly free limit (server, `_lib/coachLimits.js`) | "…Upgrade to Plus for unlimited…" | `plan-server-coach-limit` |

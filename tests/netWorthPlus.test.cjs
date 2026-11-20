@@ -97,7 +97,29 @@ const REPO = path.join(__dirname, "..");
     t.ok(/const nwHasData = netWorthRows\(data\)\.rows\.length > 0;/.test(app), "7c …decided by the same rows the figure is the sum of");
     t.ok(/nwHistory\.length > 1\s*\? <NetWorthSparkline history=\{nwHistory\}/.test(card7) && /netWorthWords\("networth-trend-not-yet"\)/.test(card7), "7d a line only from two months of the household's own figures; before that, the words say so");
     t.ok(!/month:"·"/.test(card7) && !/<polyline/.test(card7), "7e no placeholder months and no line drawn from anything else");
-    t.ok(W.NET_WORTH_WORDS["networth-empty-body"].startsWith("[WORDS:"), "7f its words are placeholders until approved (the production and store builds refuse them)");
+    t.eq([W.NET_WORTH_WORDS["networth-empty-title"], W.NET_WORTH_WORDS["networth-empty-body"], W.NET_WORTH_WORDS["networth-trend-not-yet"]],
+      ["No net worth to show yet", "Add an account, a debt or a balance, or connect a bank, to start building your net worth here.", "Your trend line starts after two months of your own figures."],
+      "7f its words are the approved lines, word for word (2026-11-20)");
+    // THE 48 LINES, APPROVED 2026-11-20 (ChatGPT 100, Grok 100, Amanda). The record is docs/review/PLUS-COPY-APPROVED-2026-11-20.md,
+    // numbered 1 to 48 in the order the code holds them: the app's 45 (src/lib/netWorthWords.js), then the server's 3
+    // (netlify/functions/_lib/planWords.js). The code, the record and the words doc say the same thing, word for word.
+    const fsW = require("fs"), pathW = require("path");
+    const record = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "review", "PLUS-COPY-APPROVED-2026-11-20.md"), "utf8");
+    const approved = [...record.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => [Number(m[1]), m[2]]);
+    const SRV = require("../netlify/functions/_lib/planWords.js");
+    const inCode = [...Object.entries(W.NET_WORTH_WORDS), ...Object.entries(SRV.PLAN_WORDS)];
+    t.eq([approved.length, approved.map(([n]) => n).join(",") === Array.from({ length: 48 }, (_, i) => i + 1).join(","), inCode.length], [48, true, 48], "7g the record numbers 48 lines, and the code holds 48 (45 in the app, 3 on the server)");
+    t.eq(inCode.filter(([, w], i) => w !== approved[i][1]).map(([id]) => id), [], "7h every line in the code is its approved line in the record, word for word, in the record's order");
+    const wordsDoc = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
+    const docRows = Object.fromEntries([...wordsDoc.matchAll(/^\| `([a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+) \| (\d+) \|$/gm)].map((m) => [m[1], [m[2].trim(), Number(m[3])]]));
+    const longest = (w) => [...w.replace("{used}", "10").replace("{limit}", "10").replace("{count}", "12").replace("{n}", "2")].length;
+    t.eq([Object.keys(docRows).length, inCode.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1]).map(([id]) => id)], [48, []],
+      "7i the words doc lists the same 48, each word for word and within its limit");
+    const PWORDS = require("./_pendingWords.cjs");
+    t.eq([PWORDS.pendingNetWorthWordIds(), inCode.filter(([, w]) => /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id)], [[], []],
+      "7j none is still to come, none holds a dash, and flourish is lowercase in every one");
+    t.eq([W.netWorthWords("banks-limit-person", { used: 2, limit: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).startsWith("You've used your 2 free coach messages this week.")], [false, false, true],
+      "7k the numbers go into the lines: no brace is left on screen");
   }
   t.summary("netWorthPlus.test");
 })();

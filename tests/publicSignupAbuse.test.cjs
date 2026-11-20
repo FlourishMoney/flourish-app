@@ -78,8 +78,8 @@ const COACH_PATH = require.resolve("../netlify/functions/coach.js");
     t.eq(free(2).allowed, true, "…the 2nd is allowed");
     t.eq(free(3).allowed, false, "…the 3rd is refused");
     t.eq(free(3).reason, "free_weekly", "…for the free weekly limit, not the abuse ceiling");
-    // The words named the main plan "Plus" (2026-11-10) and are back to review: the coach-limit line, with the limit, 2.
-    t.ok(/^\[WORDS: plan-server-coach-limit\] \[n 2\]$/.test(free(3).message || ""), "…and says so in the message");
+    // The words named the main plan "Plus" (2026-11-10). Approved 2026-11-20: the coach-limit line, with the limit, 2.
+    t.eq(free(3).message, "You've used your 2 free coach messages this week. A flourish subscription has unlimited messages, or come back on Monday when they reset.", "…and says so in the message");
     for (const n of [4, 9, 50, 500]) t.eq(free(n).allowed, false, `…and every later message that week is refused (${n})`);
 
     // The counter being down is not a licence to chat.

@@ -34,11 +34,11 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
     const third = call({ usedWeek: 3 });
     t.eq(third.allowed, false, "2c the THIRD is rejected");
     t.eq(third.reason, "free_weekly", "2d …as a free-limit rejection, not an abuse one");
-    // 2026-11-10: the line named the main plan "Plus"; it goes back to review (placeholder, with the weekly count). The facts it
-    // must say (this week, not today; resets Monday) are pinned in the words doc's row.
+    // 2026-11-10: the line named the main plan "Plus" and went back to review. Approved 2026-11-20, word for word, with the
+    // weekly count in it. The facts it must say (this week, not today; resets Monday) are pinned in the words doc's row.
     const WD = require("fs").readFileSync(require("path").join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
     const row = (WD.match(/^\| `plan-server-coach-limit` \|[^\n]*$/m) || [""])[0];
-    t.ok(/^\[WORDS: plan-server-coach-limit\] \[n \d+\]$/.test(third.message) && /this week/.test(row) && !/today/.test(row), "2e …and the message says this week, not today");
+    t.ok(/^You've used your \d+ free coach messages this week\. A flourish subscription has unlimited messages, or come back on Monday when they reset\.$/.test(third.message) && !/today/.test(third.message) && /this week/.test(row) && !/today/.test(row) && row.includes("You've used your {n} free coach messages this week. A flourish subscription has unlimited messages, or come back on Monday when they reset."), "2e …and the message says this week, not today");
     t.ok(!/tomorrow/.test(third.message), "2f …and never says tomorrow, which was the old daily wording");
     t.ok(/Monday/.test(row), "2g …and says when it resets");
     t.ok(/\b2\b/.test(third.message), "2h …and names the limit");

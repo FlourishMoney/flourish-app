@@ -120,7 +120,7 @@ function load(db, user) {
       const a = await lim.bankLimitFor(db.admin, A);
       const b = await lim.bankLimitFor(db.admin, B);
       t.eq([a.plus, a.connected, a.over, a.allowed, b.allowed], [false, 6, true, false, false], "4a Plus ended with 6 connected (4 and 2): all 6 are still there, the household is over its plan, and neither may add one");
-      t.eq(V.overLimitLine({ over: true, connected: 6, limit: 2 }), "[WORDS: banks-over-limit-kept] [limit 2, count 6]", "4b Settings says so with the server's numbers (placeholder until approved)");
+      t.eq(V.overLimitLine({ over: true, connected: 6, limit: 2 }), "You have 6 banks connected and your plan includes 2. They all stay connected and keep updating. You can add another once you're under the limit.", "4b Settings says so with the server's numbers (approved 2026-11-20, word for word)");
       const uneven = makeDb({ items: { [A]: ["active", "active", "active", "active", "active"], [B]: ["active"] }, partner: true });
       const ub = await load(uneven, B).lim.bankLimitFor(uneven.admin, B);
       t.eq([ub.allowed, ub.used], [true, 1], "4c 5 and 1: the partner with 1 may still add their second");
@@ -213,9 +213,9 @@ function load(db, user) {
     // ── 7. The app's lines ─────────────────────────────────────────────────────────────────────────
     {
       const e = (body) => Object.assign(new Error(body.error), { body });
-      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "person", used: 2, limit: 2 })), "[WORDS: banks-limit-person] [used 2, limit 2]", "7a the person's line, with the server's numbers");
-      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "household", used: 10, limit: 10 })), "[WORDS: banks-limit-household] [used 10, limit 10]", "7b the household's fair-use line");
-      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "person", used: "2", limit: null })), "[WORDS: plus-status-unavailable]", "7c numbers that are not whole are never shown: the plain line");
+      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "person", used: 2, limit: 2 })), "You've connected 2 of the 2 banks included for you. Your partner has their own bank limit. flourish Plus allows more banks for the household. Nothing you've connected changes.", "7a the person's line, with the server's numbers");
+      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "household", used: 10, limit: 10 })), "Your household has connected 10 of the 10 banks flourish Plus allows under its fair use limit. Nothing you've connected changes.", "7b the household's fair-use line");
+      t.eq(V.bankLimitMessage(e({ error: "bank_limit", scope: "person", used: "2", limit: null })), "We couldn't check your plan just now. Nothing has changed. Please try again.", "7c numbers that are not whole are never shown: the plain line");
       t.eq([V.bankLimitMessage(e({ error: "plan_limit" })), V.bankLimitMessage(new Error("x")), V.bankLimitMessage(null)], [null, null, null], "7d any other error is left to what the screen said before");
       const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       t.ok((app.match(/bankLimitMessage\(err\)/g) || []).length >= 4 && /err\.body = data;/.test(app), "7e the app words the server's answer where a new bank is started or exchanged, on the website and in the store apps");

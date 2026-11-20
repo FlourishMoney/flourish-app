@@ -431,6 +431,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // household invite), where to cancel a SECOND subscription the household does not need, how to link a joint
       // account in the app so it is not counted twice, and the join limit. None is advice about the household's money.
       "Cancel invite",
+      "Your partner's subscription already includes you. Cancel yours where you bought it: Settings > flourish > Manage subscription.",
       "If you share a joint account, only one of you should link it, or it will be counted twice.",
       "Too many tries. Wait an hour, then try again.",
     ]);

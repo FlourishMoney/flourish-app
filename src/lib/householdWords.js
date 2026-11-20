@@ -55,7 +55,7 @@ export const HOUSEHOLD_WORDS = Object.freeze({
   removeConfirm: "Remove",
 
   coveredByPartner: "Your partner's subscription includes you. There's nothing for you to buy or manage.",
-  // Named the main plan "Flourish Plus" (2026-11-10: the main plan is "flourish"; the line goes back to review).
+  // Named the main plan "Flourish Plus" (2026-11-10: the main plan is "flourish"; approved again 2026-11-20).
   extraStripe: netWorthWords("plan-household-extra-stripe"),
   extraAppStore: "Your partner's subscription already includes you. To cancel yours, open Settings on your iPhone, tap your name, then Subscriptions. Refund requests are handled by Apple.",
   extraPlayStore: "Your partner's subscription already includes you. To cancel yours, open Google Play, then Payments & subscriptions > Subscriptions.",
