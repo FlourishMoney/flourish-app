@@ -9,6 +9,7 @@ Gift sales stay off until step 5. Redeeming has no switch, but with no codes sol
 1. **Set the legal date to the deploy day.** Who: CC, in the deploy's pull request, on the day.
    - `src/lib/giftReturn.js`: `GIFT_LEGAL_DATE` is the day the deploy goes live (YYYY-MM-DD). It is a placeholder (2026-11-20) until then.
    - It dates the website's Terms (new Gifts section) and Privacy Policy (new Gifts entry), and the Before you start record keeps the same dates. The store apps' Terms and Privacy Policy have no gift words, so their dates do not move.
+   - If the Resend line's gift sentence is approved by then (`docs/review/GIFT-PRIVACY-RESEND-DRAFT.md`), it goes in the same deploy.
    - Check after: flourishmoney.app Terms and Privacy Policy both say "Last updated" with the deploy day.
 
 2. **Run migration 0050 (gift codes).** Who: Amanda says go; CC runs it. Staging first, then production.

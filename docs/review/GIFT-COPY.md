@@ -225,6 +225,9 @@ section 1 after the 1.1.7 entries, as a bold label then the paragraph (`GIFT_PRI
 build compiles it away). On the website, the Terms and the Privacy Policy are both dated `GIFT_LEGAL_DATE` (the deploy day)
 unless their own date is later; a store app's dates do not move.
 
+Still to approve (not in code): a gift sentence for section 6's Resend line, drafted in
+`docs/review/GIFT-PRIVACY-RESEND-DRAFT.md`.
+
 | id | where | draft | status |
 |---|---|---|---|
 | `gift-privacy-label` | Label | Gifts: | approved |
