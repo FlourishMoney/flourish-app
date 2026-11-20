@@ -55,6 +55,9 @@ const STORE_PROVIDERS = Object.freeze(["app_store", "play_store"]);
 const PLUS_STORE_SUBSCRIPTIONS = Object.freeze([...new Set(Object.keys(PLUS_PRODUCTS).map((k) => k.split(":")[0]))]);
 const isPlusStoreProductId = (id) => typeof id === "string" && PLUS_STORE_SUBSCRIPTIONS.includes(id.trim().split(":")[0]);
 const TABLE = "plus_addon_subscriptions";
+// COMPLIMENTARY PLUS (migration 0051): an account given Plus free, by hand, on the server. Its own table, written only
+// by the service role; who and why is recorded outside this repo. Never a subscription: nothing here reads a price.
+const COMP_TABLE = "complimentary_access";
 
 const isPlusPlanKey = (k) => typeof k === "string" && PLUS_PLAN_KEYS.includes(k);
 const clean = (v) => (typeof v === "string" ? v.trim() : "");
@@ -102,6 +105,19 @@ function isLivePlusRow(row, env = process.env, now = Date.now()) {
  *                        (503), never "you don't have Plus" and never a limit worked out from a guess.
  * Either member's live row covers the household (the fair-use limit of 10 bank connections is per household).
  */
+/**
+ * Does this account hold complimentary Plus? true or false; null when the read failed (never read as "no").
+ * A table that is not there yet (0051 not applied) is false: nobody can have been given it.
+ */
+async function hasComplimentaryPlus(admin, userId) {
+  const { data, error } = await admin.from(COMP_TABLE).select("plus_addon").eq("user_id", userId).maybeSingle();
+  if (error) {
+    if (isMissing(error)) return false;
+    console.error("[plus] complimentary read failed (status unavailable):", error.code || "error");
+    return null;
+  }
+  return !!data && data.plus_addon === true;
+}
 async function getPlusEntitlement(admin, userId, { env = process.env, now = Date.now() } = {}) {
   if (!plusEnabled(env)) return { enabled: false, plus: false, covered_by: null, status_unavailable: false };
   const unavailable = { enabled: true, plus: false, covered_by: null, status_unavailable: true };
@@ -113,6 +129,12 @@ async function getPlusEntitlement(admin, userId, { env = process.env, now = Date
         .eq("user_id", id).maybeSingle();
       if (error) { console.error("[plus] read failed (status unavailable):", error.code || "error"); return unavailable; }
       if (isLivePlusRow(data, env, now)) return { enabled: true, plus: true, covered_by: id === userId ? null : "partner", status_unavailable: false };
+    }
+    // No paid Plus in the household: complimentary Plus (0051) covers it the same way, the buyer's partner included.
+    for (const id of [userId, ...peers]) {
+      const comp = await hasComplimentaryPlus(admin, id);
+      if (comp === null) return unavailable;
+      if (comp) return { enabled: true, plus: true, covered_by: id === userId ? null : "partner", status_unavailable: false, complimentary: true };
     }
     return { enabled: true, plus: false, covered_by: null, status_unavailable: false };
   } catch (e) {
@@ -246,7 +268,7 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
 }
 
 module.exports = {
-  TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS,
-  plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, getPlusEntitlement,
+  TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS,
+  plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,
 };
