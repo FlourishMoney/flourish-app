@@ -37,8 +37,8 @@ const hits = (dir) => textFiles(dir).flatMap((f) => { const s = fs.readFileSync(
   // "gift" alone is older than this: a deposit can be categorised as a gift, and the US 529 card cites the gift-tax
   // exclusion. What must never be there is the gift you buy: a code, a card, redeeming, or a year of flourish.
   // (RevenueCat's own SDK has a redeemWebPurchase method; that is the store's, not a gift.)
-  t.eq(["gift code", "gift card", "redeem your gift", "redeem a gift", "redeem the code", "year of flourish", "give a year"].filter((w) => bundle.toLowerCase().includes(w)), [],
-    "1c the app's JavaScript in the store build never mentions a gift code, a gift card, redeeming or a year of flourish");
+  t.eq(["gift code", "gift card", "redeem your gift", "redeem a gift", "redeem the code", "year of flourish", "give a year", "buy a flourish gift", "gift email", "gift information"].filter((w) => bundle.toLowerCase().includes(w)), [],
+    "1c the app's JavaScript in the store build never mentions a gift code, a gift card, redeeming, a year of flourish, or the Privacy Policy's Gifts entry");
 
   // ── 2. the native build check ───────────────────────────────────────────────────────────────────
   const run = (dist) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-native-build.mjs"), "--artifact"], { cwd: dist, env: ENV, encoding: "utf8" });
@@ -63,6 +63,7 @@ const hits = (dir) => textFiles(dir).flatMap((f) => { const s = fs.readFileSync(
   t.ok(pages.every((f) => fs.readFileSync(path.join(web, "dist", "gift", f)).equals(fs.readFileSync(path.join(ROOT, "public", "gift", f)))), "3a the website serves every gift page and the QR code, byte for byte");
   const webJs = textFiles(path.join(web, "dist", "assets")).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(f, "utf8")).join("\n");
   t.ok(webJs.includes("/gift/redeem") && webJs.includes("flourish_gift_return_at"), "3b the website's app knows the way back to the redeem page after signing in");
+  t.ok(webJs.includes("If you buy a flourish gift on our website") && webJs.includes("You can buy a year of flourish as a gift"), "3c the website's Privacy Policy and Terms carry their Gifts words");
 
   // ── 4. nothing in the app calls the gift endpoint ───────────────────────────────────────────────
   const src = files(path.join(ROOT, "src")).filter((f) => /\.(js|jsx)$/.test(f)).map((f) => fs.readFileSync(f, "utf8")).join("\n");

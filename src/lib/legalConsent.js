@@ -22,22 +22,26 @@ const key = (uid) => `flourish_consent_pending:${uid}`;
 const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-/** The Terms' date as the page shows it: the trial-plan-first switch's date where the page uses it (lib/freePlan.js section 7), else the base date. */
-export function termsVersion(tpfSince, datedBySwitch) {
-  const t = Date.parse(tpfSince || "");
-  return datedBySwitch && Number.isFinite(t) ? localDate(new Date(t)) : TERMS_BASE_DATE;
+/** The later of a page's own date and giftDate: the gift words' date (lib/giftReturn.js GIFT_LEGAL_DATE) on the website, null in a store app (its pages carry no gift words). */
+export function withGiftDate(day, giftDate) {
+  return isDate(giftDate) && giftDate > day ? giftDate : day;
 }
-/** The Privacy Policy's date as the page shows it: the later of the newsletter launch's date and the 1.1.7 date. */
-export function privacyVersion(policyDate) { return privacyDate(policyDate); }
+/** The Terms' date as the page shows it: the trial-plan-first switch's date where the page uses it (lib/freePlan.js section 7), else the base date; then the gift date if that is later. */
+export function termsVersion(tpfSince, datedBySwitch, giftDate = null) {
+  const t = Date.parse(tpfSince || "");
+  return withGiftDate(datedBySwitch && Number.isFinite(t) ? localDate(new Date(t)) : TERMS_BASE_DATE, giftDate);
+}
+/** The Privacy Policy's date as the page shows it: the later of the newsletter launch's date and the 1.1.7 date; then the gift date if that is later. */
+export function privacyVersion(policyDate, giftDate = null) { return withGiftDate(privacyDate(policyDate), giftDate); }
 
 /** Both, asked of the same places the pages ask. Never throws; an unanswered question gives the page's own fallback. */
-export async function currentLegalVersions({ fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false } = {}) {
+export async function currentLegalVersions({ fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null } = {}) {
   let policyDate = null, tpf = null;
   await Promise.all([
     Promise.resolve().then(() => fetchImpl(`${apiBase}/api/newsletter`)).then((r) => (r && r.ok ? r.json() : null)).then((j) => { policyDate = j && j.policyDate; }).catch(() => {}),
     askTrialPlanFirst(fetchImpl, apiBase).then((a) => { tpf = a; }).catch(() => {}),
   ]);
-  return { terms_version: termsVersion(tpf && tpf.since, termsDatedBySwitch), privacy_version: privacyVersion(policyDate) };
+  return { terms_version: termsVersion(tpf && tpf.since, termsDatedBySwitch, giftDate), privacy_version: privacyVersion(policyDate, giftDate) };
 }
 
 // When the consent step first appeared, per account, for this run of the app only (never stored).
@@ -57,13 +61,13 @@ const clear = (storage, uid) => { try { storage.removeItem(key(uid)); } catch { 
  * Send the kept record, if there is one. Resolves "recorded" (or there was nothing to send), "kept" (to try again on the next
  * launch), or "dropped" (the server refused it as malformed, so sending again would not help). Never throws.
  */
-export async function flushLegalConsent({ uid, storage, getJwt, fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false }) {
+export async function flushLegalConsent({ uid, storage, getJwt, fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null }) {
   if (!uid || !storage) return "kept";
   const rec = read(storage, uid);
   if (!rec) return "recorded";
   try {
     if (!isDate(rec.terms_version) || !isDate(rec.privacy_version)) {
-      Object.assign(rec, await currentLegalVersions({ fetchImpl, apiBase, termsDatedBySwitch }));
+      Object.assign(rec, await currentLegalVersions({ fetchImpl, apiBase, termsDatedBySwitch, giftDate }));
       write(storage, uid, rec);
     }
     const jwt = await getJwt();

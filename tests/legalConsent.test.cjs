@@ -158,9 +158,25 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     const { policyDateLabel } = await import(path.join(REPO, "src", "lib", "privacyLaunchWords.js"));
     const terms = (APP.match(/const last = tpfTerms \? chargeDateLabel\(new Date\(tpfSince\)\) : "([^"]+)";/) || [])[1];
     t.eq(policyDateLabel(C.TERMS_BASE_DATE), terms, "5a the Terms' own date is the one recorded");
-    t.ok(/const last=policyDateLabel\(privacyDate\(launchDate\|\|fetchedDate\)\);/.test(APP) && C.PRIVACY_BASE_DATE === P117 &&
+    t.ok(/const last=policyDateLabel\(privacyVersion\(launchDate\|\|fetchedDate, native\?null:GIFT_LEGAL_DATE\)\);/.test(APP) && C.PRIVACY_BASE_DATE === P117 &&
       [undefined, null, "", "x", "2026-11-07", P117, "2027-01-05"].every((d) => C.privacyVersion(d) === privacyDate(d)),
-      "5a the Privacy Policy's date is the one recorded: the page and the record both take privacyDate of the newsletter date");
+      "5a the Privacy Policy's date is the one recorded: the page and the record both take privacyVersion (privacyDate of the newsletter date, with no gift date)");
+    // The gift words (Terms' Gifts section, Privacy Policy's Gifts entry, approved 2026-11-20) date both pages on the website only.
+    const RET = fs.readFileSync(path.join(REPO, "src", "lib", "giftReturn.js"), "utf8");
+    const GIFT = (/export const GIFT_LEGAL_DATE = NATIVE_BUILD \? null : "(\d{4}-\d{2}-\d{2})";/.exec(RET) || [])[1];
+    t.ok(!!GIFT && new Date(`${GIFT}T00:00:00Z`).toISOString().slice(0, 10) === GIFT && GIFT >= P117 && GIFT > C.TERMS_BASE_DATE,
+      `5b the gift words' day (lib/giftReturn.js GIFT_LEGAL_DATE ${GIFT}) is a real date, no earlier than either page's own; null in a native build`);
+    t.eq([C.privacyVersion(null, GIFT), C.privacyVersion("2027-01-05", GIFT), C.privacyVersion(null, null), C.privacyVersion(null, "soon")], [GIFT, "2027-01-05", P117, P117],
+      "5c the Privacy Policy with the gift date: the later of it and the page's own (a later newsletter date still wins); none, or not a date: the page's own");
+    const laterSwitch = "2027-02-03T15:00:00Z";
+    t.eq([C.termsVersion(null, false, GIFT), C.termsVersion(null, true, GIFT), C.termsVersion(laterSwitch, true, GIFT), C.termsVersion(null, false, null)],
+      [GIFT, GIFT, C.termsVersion(laterSwitch, true), "2026-10-14"], "5d the Terms with the gift date: the later of it and the page's own (a later switch date still wins); none: the page's own");
+    t.eq(await C.currentLegalVersions({ fetchImpl: async () => { throw new Error("offline"); }, termsDatedBySwitch: true, giftDate: GIFT }), { terms_version: GIFT, privacy_version: GIFT },
+      "5e the record on the website, no answer: both pages' gift date");
+    t.ok(/giftDate: isNativeApp\(\) \? null : GIFT_LEGAL_DATE,/.test(APP) && /const giftDay = isNativeApp\(\) \? null : GIFT_LEGAL_DATE;/.test(APP) &&
+      /const lastShown = giftDay && withGiftDate\(termsVersion\(tpfTerms \? tpfSince : null, true\), giftDay\) === giftDay \? policyDateLabel\(giftDay\) : last;/.test(APP) &&
+      APP.includes("Terms of Service</div>\n          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {lastShown}</div>"),
+      "5f the record, the Terms page and the Privacy Policy take the gift date in the same place: on the website, never in a store app");
   }
 
   // ── 6. When the step was shown, and when Get started was tapped (Privacy Policy 1.1.7: "when those words were shown,

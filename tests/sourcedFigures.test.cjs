@@ -438,6 +438,10 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // paragraph (src/lib/giftReturn.js GIFT_TERMS). Legal text: "Keep the code private" is about guarding a gift code,
       // not about the household's money.
       "A gift has no cash value and can't be exchanged for money or credit. Keep the code private until you give it: anyone who has the code can redeem it.",
+      // The website's Privacy Policy, Gifts entry (approved 2026-11-20, docs/review/PLUS-COPY-APPROVED-2026-11-20.md;
+      // src/lib/giftReturn.js GIFT_PRIVACY). Legal text: "please make sure they would be comfortable getting a gift email"
+      // is about the recipient's email address, not a verdict on the household's money.
+      "If you buy a flourish gift on our website, we keep your name and email, the name and email you give us for the person receiving it, your optional message, the dates you choose for sending and starting, and the gift's code and status. Stripe processes the payment, and we never receive your card number. We use the recipient's email only to send that gift on the date you chose, and the email shows your name. When a gift is redeemed, we record which flourish account redeemed it and when. If you give us someone else's name and email, please make sure they would be comfortable getting a gift email from flourish. We keep gift information only as long as we need it to send, redeem, refund or support the gift, or to meet our legal record-keeping requirements.",
     ]);
     // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
     const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;

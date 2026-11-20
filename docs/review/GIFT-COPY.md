@@ -217,3 +217,15 @@ On the website's Terms only, after section 7 (`GIFT_TERMS` in `src/lib/giftRetur
 | `gift-terms-5` | Paragraph 5 | If the buyer chose email delivery, we email the gift to the address they gave at 7 a.m. Eastern time on the date they chose. We use that address only to send the gift. | approved |
 | `gift-terms-6` | Paragraph 6 | A gift that hasn't been redeemed can be refunded within 30 days of purchase. Write to hello@flourishmoney.app. A refund cancels the code. Once a code is redeemed, the gift can't be refunded or moved to another account. | approved |
 | `gift-terms-7` | Paragraph 7 | A gift has no cash value and can't be exchanged for money or credit. Keep the code private until you give it: anyone who has the code can redeem it. | approved |
+
+## Privacy Policy: a new "Gifts" entry
+
+Approved 2026-11-20 in `docs/review/PLUS-COPY-APPROVED-2026-11-20.md` (its last section). On the website's policy only, in
+section 1 after the 1.1.7 entries, as a bold label then the paragraph (`GIFT_PRIVACY` in `src/lib/giftReturn.js`; a store
+build compiles it away). On the website, the Terms and the Privacy Policy are both dated `GIFT_LEGAL_DATE` (the deploy day)
+unless their own date is later; a store app's dates do not move.
+
+| id | where | draft | status |
+|---|---|---|---|
+| `gift-privacy-label` | Label | Gifts: | approved |
+| `gift-privacy` | Paragraph | If you buy a flourish gift on our website, we keep your name and email, the name and email you give us for the person receiving it, your optional message, the dates you choose for sending and starting, and the gift's code and status. Stripe processes the payment, and we never receive your card number. We use the recipient's email only to send that gift on the date you chose, and the email shows your name. When a gift is redeemed, we record which flourish account redeemed it and when. If you give us someone else's name and email, please make sure they would be comfortable getting a gift email from flourish. We keep gift information only as long as we need it to send, redeem, refund or support the gift, or to meet our legal record-keeping requirements. | approved |

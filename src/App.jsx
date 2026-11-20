@@ -36,7 +36,7 @@ import { foundingOfferCopy, foundingLiveLine, foundingListLine, sharedFoundingSp
 import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS, FOUNDING_CONFIRM_COPY, foundingConfirmOffered, foundingConfirmResult } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 // Gifts, website only (lib/giftReturn.js): back to /gift/redeem after signing in, and the Settings plan line. Empty in a native build.
-import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
+import { GIFT_REDEEM_PATH, GIFT_SIGN_IN_NOTE, GIFT_TERMS, GIFT_PRIVACY, GIFT_LEGAL_DATE, giftReturnInUrl, withoutGiftReturn, rememberGiftReturn, forgetGiftReturn, giftReturnPending, giftSettingsLine } from "./lib/giftReturn.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable, landingWaitlistArea } from "./lib/signupUi.js";
 import { SIGNUP_STATUS_RETRY_MS, fieldErrors, SIGNUP_COPY } from "./lib/signupUi.js";
@@ -77,7 +77,7 @@ import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_H
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
-import { recordLegalConsent, flushLegalConsent, markConsentShown } from "./lib/legalConsent.js";
+import { recordLegalConsent, flushLegalConsent, markConsentShown, privacyVersion, termsVersion, withGiftDate } from "./lib/legalConsent.js";
 import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
 import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
 import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
@@ -95,7 +95,7 @@ import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitli
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
 import { captureAttribution, signupAttribution, readInstallReferrerOnce, landingAttribution, countStoreClick } from "./lib/attribution.js";
 import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
-import { PRIVACY_117_WORDS as P117, privacyDate } from "./lib/privacy117Words.js";
+import { PRIVACY_117_WORDS as P117 } from "./lib/privacy117Words.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -182,11 +182,12 @@ const supabase = createClient(
 );
 
 
-// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, and whether the Terms the person could
-// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides).
+// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, whether the Terms the person could
+// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides), and the gift
+// words' day, which dates both pages on the website only (lib/giftReturn.js GIFT_LEGAL_DATE, as the pages decide).
 function consentDeps(uid) {
   let storage = null; try { storage = window.localStorage; } catch { storage = null; }
-  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(),
+  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(), giftDate: isNativeApp() ? null : GIFT_LEGAL_DATE,
     getJwt: async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || null; } catch { return null; } } };
 }
 
@@ -13910,11 +13911,12 @@ function PrivacyPolicy({onBack,launchDate=null}){
   },[]);
   const launchLabel=policyDateLabel(launchDate||fetchedDate);
   const launched=!!launchLabel;
-  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js); Before you start records the same.
-  const last=policyDateLabel(privacyDate(launchDate||fetchedDate));
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();
+  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js), and on the website the Gifts
+  // entry's day (lib/giftReturn.js GIFT_LEGAL_DATE; a store app's policy has no Gifts entry). Before you start records the same.
+  const last=policyDateLabel(privacyVersion(launchDate||fetchedDate, native?null:GIFT_LEGAL_DATE));
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -13940,6 +13942,9 @@ function PrivacyPolicy({onBack,launchDate=null}){
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Testers:</strong> {PW.testers}</div>}
       <div data-privacy-117="sign-in" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.signInLabel}</strong> {P117.signIn}</div>
       <div data-privacy-117="agreement" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.agreementLabel}</strong> {P117.agreement}</div>
+      {/* Gifts (lib/giftReturn.js, approved 2026-11-20): the website's policy only. A store app shows nothing about gifts or
+          buying on the web, and a native build compiles GIFT_PRIVACY to null. */}
+      {GIFT_PRIVACY && !native && <div data-privacy-gifts="" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{GIFT_PRIVACY.label}</strong> {GIFT_PRIVACY.paragraph}</div>}
 
       <div style={h2}>2. How We Use Your Information</div>
       <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.{launched?` ${PW.use}`:""}</div>
@@ -14191,13 +14196,18 @@ function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
   useEffect(()=>{ let live=true; askTrialPlanFirst(fetch, API_BASE).then(a=>{ if(!live) return; if(a===false) setTpfSince(null); else if(a&&a.since) setTpfSince(a.since); }); return ()=>{ live=false; }; },[]);
   const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;
   const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";
+  // The website's Terms carry the Gifts section (approved 2026-11-20), so there they are dated the later of the above and
+  // the gift words' day (lib/giftReturn.js GIFT_LEGAL_DATE), as Before you start records it (lib/legalConsent.js). A store
+  // app's Terms have no Gifts section: their date does not move.
+  const giftDay = isNativeApp() ? null : GIFT_LEGAL_DATE;
+  const lastShown = giftDay && withGiftDate(termsVersion(tpfTerms ? tpfSince : null, true), giftDay) === giftDay ? policyDateLabel(giftDay) : last;
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
         <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
-          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {lastShown}</div>
         </div>
       </div>
 

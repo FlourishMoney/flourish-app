@@ -41,6 +41,19 @@ export const GIFT_TERMS = NATIVE_BUILD ? null : Object.freeze({
   ]),
 });
 
+// The Privacy Policy's "Gifts" entry (approved 2026-11-20, docs/review/PLUS-COPY-APPROVED-2026-11-20.md, last section), on
+// the WEBSITE's policy only (src/App.jsx, section 1, after the 1.1.7 entries), for the same reason as the Terms section.
+export const GIFT_PRIVACY = NATIVE_BUILD ? null : Object.freeze({
+  label: "Gifts:",
+  paragraph: "If you buy a flourish gift on our website, we keep your name and email, the name and email you give us for the person receiving it, your optional message, the dates you choose for sending and starting, and the gift's code and status. Stripe processes the payment, and we never receive your card number. We use the recipient's email only to send that gift on the date you chose, and the email shows your name. When a gift is redeemed, we record which flourish account redeemed it and when. If you give us someone else's name and email, please make sure they would be comfortable getting a gift email from flourish. We keep gift information only as long as we need it to send, redeem, refund or support the gift, or to meet our legal record-keeping requirements.",
+});
+
+// The day the Terms' Gifts section and the Privacy Policy's Gifts entry go live on the website (YYYY-MM-DD): the day this
+// deploys. SET IT TO THE REAL DEPLOY DAY BEFORE DEPLOYING (docs/ops/GIFT-GO-LIVE.md, step 1). On the website both pages'
+// "Last updated" is the later of their own date and this one, and the Before you start record keeps the same dates
+// (lib/legalConsent.js). A store app's pages carry no gift words, so their dates do not move: null in a native build.
+export const GIFT_LEGAL_DATE = NATIVE_BUILD ? null : "2026-11-20";
+
 /** Does this query string ask to come back to the redeem page? */
 export function giftReturnInUrl(search) {
   if (!GIFT_RETURN_PARAM) return false;

@@ -58,10 +58,12 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   const terms = (X, p, props = {}) => as(p, () => textOf(X.render(X.h(X.TermsOfService, { onBack: () => {}, ...props }))));
   const ON = APPROVED_7.join(" ");
   const webOff = terms(A, "web"), webOn = terms(A, "web", { tpfSince: SINCE });
-  t.ok(webOff.includes("7. Subscription & Billing") && webOff.includes("a 14-day trial of premium features") && !webOff.includes("Plans and billing") && webOff.includes("Last updated October 14, 2026"),
-    "1f the website, switch off: today's section 7 and date, unchanged");
-  t.ok(webOn.includes(`7. Plans and billing ${ON}`) && !webOn.includes("a 14-day trial of premium features") && !webOn.includes("Flourish Plus") && webOn.includes("Last updated November 20, 2026"),
-    "1g the website, switch on: the approved section 7, dated the day it went on");
+  // The website's Terms also carry the Gifts section: dated the gift words' day when that is later (tests/_giftLegalDate.cjs).
+  const G = require("./_giftLegalDate.cjs");
+  t.ok(webOff.includes("7. Subscription & Billing") && webOff.includes("a 14-day trial of premium features") && !webOff.includes("Plans and billing") && webOff.includes(`Last updated ${G.webLabel("2026-10-14")}`),
+    "1f the website, switch off: today's section 7, unchanged, and its date (or the gift words' day, if later)");
+  t.ok(webOn.includes(`7. Plans and billing ${ON}`) && !webOn.includes("a 14-day trial of premium features") && !webOn.includes("Flourish Plus") && webOn.includes(`Last updated ${G.webLabel(G.localDay(SINCE))}`),
+    "1g the website, switch on: the approved section 7, dated the day it went on (or the gift words' day, if later)");
   for (const p of ["ios", "android"]) {
     const off = terms(S, p), on = terms(S, p, { tpfSince: SINCE });
     t.ok(off.includes(`7. Cost and usage limits ${F.STORE_TERMS_SECTION_7_IAP}`) && !off.includes("Plans and billing"), `1h a selling store build (${p}), switch off: today's section 7`);

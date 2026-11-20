@@ -107,7 +107,7 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     }
     const webOffTerms = termsText("web", null);
     t.eq(section7(webOffTerms), LIVE_WEB_7, "1b off, the website: section 7 is the live text, word for word");
-    t.ok(webOffTerms.includes("Last updated October 14, 2026"), "1c …with its live date");
+    t.ok(webOffTerms.includes(`Last updated ${require("./_giftLegalDate.cjs").webLabel("2026-10-14")}`), "1c …with its live date (on the website, the gift words' day once the Gifts section is in: tests/_giftLegalDate.cjs)");
     t.ok(GIFTS_AT(webOffTerms) > 0 && GIFTS_AT(webOffTerms) < webOffTerms.indexOf("8. Intellectual Property"), "1c2 the website's Terms carry the Gifts section, after section 7");
     for (const p of ["ios", "android"]) {
       const text = termsText(p, null);
@@ -157,8 +157,11 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     for (const p of ["web", "ios", "android"]) {
       const text = termsText(p, on[p].terms && on[p].terms.since);
       t.eq(section7(text), `7. Plans and billing ${ON_7}`, `3a on (${p}): section 7 is the approved text, the founding plan and its sentence included`);
-      t.ok(text.includes(`Last updated ${SINCE_DAY}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
-        `3b …dated the day the switch went on, with nothing left of the old section (${p})`);
+      // The website's Terms also carry the Gifts section: there, the gift words' day if that is later (tests/_giftLegalDate.cjs).
+      const G = require("./_giftLegalDate.cjs");
+      const dated = p === "web" && G.webDay(G.localDay(SINCE)) !== G.localDay(SINCE) ? G.webLabel(G.localDay(SINCE)) : SINCE_DAY;
+      t.ok(text.includes(`Last updated ${dated}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
+        `3b …dated the day the switch went on (on the website, the gift words' day if later), with nothing left of the old section (${p})`);
     }
     {
       // The screen reads the clock itself: rendered again if the day turned over while it was being drawn.

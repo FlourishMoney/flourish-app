@@ -12,6 +12,8 @@
 //      invest; flourish in lowercase; no em dash; no line sends anyone to use the website instead of the app
 //   6  the app itself (src/App.jsx) holds no gift path and no gift words: only lib/giftReturn.js, which a native build
 //      empties; the Terms' Gifts section shows on the website only
+//   7  the Privacy Policy's Gifts entry (docs/review/PLUS-COPY-APPROVED-2026-11-20.md, last section), word for word, on
+//      the website's policy only, in the 1.1.7 entries' style
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -115,5 +117,22 @@ t.ok(/const NATIVE_BUILD = import\.meta\.env\.VITE_NATIVE_BUILD === "true";/.tes
   "6c …which empties every address, every line and the Terms section in a native build");
 t.ok(/isNativeApp\(\) \|\| !GIFT_REDEEM_PATH/.test(APP) && /!GIFT_REDEEM_PATH \|\| isNativeApp\(\)/.test(APP), "6d …and the app also checks it is not a store app before using any of it");
 t.ok(/\{GIFT_TERMS && !isNativeApp\(\) && <>/.test(APP) && APP.indexOf("{GIFT_TERMS && !isNativeApp()") < APP.indexOf("8. Intellectual Property"), "6e the Terms' Gifts section shows on the website only, after section 7");
+
+// ── 7. the Privacy Policy's Gifts entry (approved 2026-11-20) ────────────────────────────────────
+// docs/review/PLUS-COPY-APPROVED-2026-11-20.md, its last section: "Label: Gifts:" and the one paragraph.
+const PLUS_SHEET = read("docs", "review", "PLUS-COPY-APPROVED-2026-11-20.md");
+const privSection = PLUS_SHEET.slice(PLUS_SHEET.indexOf("## Privacy Policy, new entry for gifts"));
+const PRIV = { label: (/^Label: (.+)$/m.exec(privSection) || [])[1], paragraph: (/^Paragraph: (.+)$/m.exec(privSection) || [])[1] };
+t.ok(PLUS_SHEET.includes("## Privacy Policy, new entry for gifts") && PRIV.label === "Gifts:" && /^If you buy a flourish gift on our website/.test(PRIV.paragraph || ""), "7a the approved sheet's Privacy entry: label and paragraph");
+const privBlock = /export const GIFT_PRIVACY = NATIVE_BUILD \? null : Object\.freeze\(\{([\s\S]*?)\n\}\);/.exec(RET);
+const privStrings = privBlock ? [...privBlock[1].matchAll(/^\s+(label|paragraph): "((?:[^"\\]|\\.)*)",?$/gm)].map((m) => [m[1], JSON.parse(`"${m[2]}"`)]) : [];
+t.eq(Object.fromEntries(privStrings), PRIV, "7b lib/giftReturn.js GIFT_PRIVACY holds both, word for word, and a native build compiles it to null");
+t.eq([ROWS["gift-privacy-label"], ROWS["gift-privacy"]], [{ text: PRIV.label, status: "approved" }, { text: PRIV.paragraph, status: "approved" }], "7c GIFT-COPY.md lists both, approved");
+t.ok(/\{GIFT_PRIVACY && !native && <div data-privacy-gifts="" style=\{\{\.\.\.p,marginTop:SPACE\.md\}\}><strong style=\{\{color:C\.cream\}\}>\{GIFT_PRIVACY\.label\}<\/strong> \{GIFT_PRIVACY\.paragraph\}<\/div>\}/.test(APP),
+  "7d the policy shows it as the 1.1.7 entries are shown (bold label, then the paragraph), on the website only");
+const sec1 = APP.indexOf('data-privacy-117="agreement"'), sec2 = APP.indexOf("2. How We Use Your Information");
+t.ok(sec1 > 0 && APP.indexOf("{GIFT_PRIVACY && !native") > sec1 && APP.indexOf("{GIFT_PRIVACY && !native") < sec2, "7e …in section 1, after the 1.1.7 entries");
+const privRules = [PRIV.label, PRIV.paragraph].join(" ");
+t.ok(!BANNED.some((rx) => rx.test(privRules)) && !/Flourish/.test(privRules) && !/—/.test(privRules), "7f it keeps the rules: none of the banned words, flourish in lowercase, no em dash");
 
 t.summary("giftWords.test");
