@@ -1,5 +1,5 @@
 -- docs/ops/gift-0050-check.sql
--- Read-only check after migration 0050_gift_codes.sql. One result: every row's "ok" must be true.
+-- Read-only check after migration 0050_gift_codes.sql. One result: every row's "ok" must be true (21 rows).
 -- Run it in the Supabase SQL editor (production) or with psql (the stand-in staging). It changes nothing.
 select n, check_name, expected, actual, actual is not distinct from expected as ok from (
   select 1 as n, 'gift_codes table exists' as check_name, '1' as expected,
@@ -47,4 +47,17 @@ select n, check_name, expected, actual, actual is not distinct from expected as 
          (select count(*)::text from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname like 'gift\_%' and has_function_privilege('service_role', p.oid, 'execute'))
   union all select 16, 'gift functions that are security definer', '0',
          (select count(*)::text from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname like 'gift\_%' and p.prosecdef)
+  -- Fingerprints: they prove the pasted SQL made exactly what the file makes. The function one is taken from the file's
+  -- own text, so it holds on any Postgres version. The other three come from how Postgres 17 prints definitions; if
+  -- only those are false and row 21 is not 17, the server prints them differently: compare by eye, nothing is wrong.
+  union all select 17, 'function bodies match the file (fingerprint)', '76fd5836f8655949f67625c33b1824ab',
+         (select md5(string_agg(p.proname || ':' || p.prosrc, '|' order by p.proname)) from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname like 'gift\_%')
+  union all select 18, 'constraints match the file (fingerprint)', 'd871c430c1cf90278d786fe855001f20',
+         (select md5(string_agg(c.conname || ':' || pg_get_constraintdef(c.oid), '|' order by c.conname)) from pg_constraint c where c.conrelid = to_regclass('public.gift_codes'))
+  union all select 19, 'indexes match the file (fingerprint)', '96b8e8c3e12fcc04f28b1f1d9f1411af',
+         (select md5(string_agg(indexname || ':' || indexdef, '|' order by indexname)) from pg_indexes where schemaname = 'public' and tablename = 'gift_codes')
+  union all select 20, 'columns match the file (fingerprint)', 'b77ff19a3afb0d3aa566e827c4fa9a33',
+         (select md5(string_agg(column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '') || ':' || coalesce(generation_expression, ''), '|' order by ordinal_position)) from information_schema.columns where table_schema = 'public' and table_name = 'gift_codes')
+  union all select 21, 'Postgres major version (for rows 18-20)', '17',
+         (select (current_setting('server_version_num')::int / 10000)::text)
 ) x order by n;
