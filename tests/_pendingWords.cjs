@@ -33,7 +33,19 @@ function pendingBalanceWordIds() {
     .filter((m) => m[1] === m[2]).map((m) => m[1]);
 }
 
-// A THIRD EXCEPTION, AS NARROW: THE PLUS ADD-ON, BANK LOGIN LIMITS AND NET WORTH WORDS (2026-11-10), UNTIL BOTH
+// A THIRD EXCEPTION, AS NARROW: TRIAL PLAN FIRST'S WORDS (2026-11-10, both reviewers first). The same three conditions:
+// the id starts "trialfirst-"; docs/product/TRIAL-PLAN-FIRST-WORDS.md lists it with the placeholder as its line; and it
+// is in src/lib/trialWords.js or netlify/functions/_lib/trialWords.js. The same refusal keeps them from shipping.
+const TRIAL_DOC = path.join(__dirname, "..", "docs", "product", "TRIAL-PLAN-FIRST-WORDS.md");
+const TRIAL_HOMES = [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")];
+function pendingTrialWordIds() {
+  let doc = "";
+  try { doc = fs.readFileSync(TRIAL_DOC, "utf8"); } catch { return []; }
+  return [...doc.matchAll(/^\| `(trialfirst-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: (trialfirst-[a-z0-9-]+)\] \| \d+ \|$/gm)]
+    .filter((m) => m[1] === m[2]).map((m) => m[1]);
+}
+
+// A FOURTH EXCEPTION, AS NARROW: THE PLUS ADD-ON, BANK LOGIN LIMITS AND NET WORTH WORDS (2026-11-10), UNTIL BOTH
 // REVIEWERS APPROVE THEM. The same three conditions: the id starts "plus-", "banks-", "networth-" or "plan-";
 // docs/product/NET-WORTH-WORDS.md lists it with the placeholder as its line; and it is in src/lib/netWorthWords.js.
 // The same refusal keeps them from shipping, and once they are approved this exception covers nothing.
@@ -56,8 +68,9 @@ function strayPlaceholders(src, file) {
   const where = path.normalize(String(file || ""));
   if (where === HOME) { const pending = pendingCreatorWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (TRIAL_HOMES.includes(where)) { const pending = pendingTrialWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (where === NW_HOME || where === NW_SERVER_HOME) { const pending = pendingNetWorthWordIds(); return found.filter((id) => !pending.includes(id)); }
   return found;
 }
 
-module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingNetWorthWordIds, placeholders, strayPlaceholders };
+module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingNetWorthWordIds, placeholders, strayPlaceholders };

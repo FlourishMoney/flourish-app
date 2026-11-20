@@ -33,6 +33,7 @@ const { planWords } = require("./_lib/planWords");
 const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
+const { revokeForAccount: revokeAppleTokens, logAppleConfigOnce } = require("./_lib/appleTokens");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -70,6 +71,7 @@ async function plaid(endpoint, body) {
 }
 
 exports.handler = async (event) => {
+  logAppleConfigOnce("plaid");   // names only: whether this instance can sign for Apple (account deletion revokes with it)
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
   const ok = (data) => ({ statusCode: 200, headers: CORS, body: JSON.stringify(data) });
@@ -114,6 +116,11 @@ exports.handler = async (event) => {
 
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
+      // Every link token, new or update-mode, names its country and the same redirect address. Plaid requires
+      // country_codes on update mode too: without it /link/token/create answers 400 MISSING_FIELDS and a bank whose
+      // sign-in ran out (ITEM_LOGIN_REQUIRED) can never be reconnected (Plaid logs, Scotiabank, Nov 10 2026).
+      const COUNTRY_CODES = [country];
+      const REDIRECT_URI = "https://flourishmoney.app";
 
       // BANK CONNECTION LIMITS (behind PLUS_ENABLED, _lib/bankLimits.js): asked before Plaid opens, so nobody signs in to a
       // bank only to be refused after. Only a NEW bank: a reconnect (item_id, Plaid's update mode) is never limited.
@@ -144,10 +151,12 @@ exports.handler = async (event) => {
       const linkBody = isUpdate
         ? {
             user:         { client_user_id: user_id },
-            client_name:  "Flourish Money",
-            access_token: updateAccessToken,
-            webhook:      WEBHOOK_URL,
-            language:     "en",
+            client_name:   "Flourish Money",
+            access_token:  updateAccessToken,
+            country_codes: COUNTRY_CODES,
+            language:      "en",
+            redirect_uri:  REDIRECT_URI,
+            webhook:       WEBHOOK_URL,
           }
         : {
             user:              { client_user_id: user_id },
@@ -167,10 +176,10 @@ exports.handler = async (event) => {
             ...(plusAddon.plusEnabled()
               ? { optional_products: ["liabilities"], additional_consented_products: ["investments"] }
               : { optional_products: ["investments", "liabilities"] }),
-            country_codes:     [country],
+            country_codes:     COUNTRY_CODES,
             language:          "en",
             transactions:      { days_requested: 90 },
-            redirect_uri:      "https://flourishmoney.app",
+            redirect_uri:      REDIRECT_URI,
             webhook:           WEBHOOK_URL,
           };
       const data = await plaid("/link/token/create", linkBody);
@@ -965,6 +974,17 @@ exports.handler = async (event) => {
           console.warn("[delete_account] no email found for user; beta seat (if any) not freed:", user_id);
         }
       } catch (e) { console.warn("[delete_account] beta seat free threw:", e.message); }
+
+      // 3d. SIGN IN WITH APPLE (App Store guideline 5.1.1(v), 1.1.7): every Apple token kept for this account (migration
+      // 0049 apple_tokens, sealed) is revoked at Apple now, just before the sign-in goes, so the app no longer appears
+      // under the person's Apple ID. Best effort by design: a failure, a missing setting (APPLE_*) or a token never kept
+      // is logged as an outcome with no personal data (_lib/appleTokens.js), the deletion goes on, and the response is
+      // unchanged, so the person sees nothing new. The row itself goes with the account (on delete cascade).
+      {
+        let appleUser = null;
+        try { const { data: au } = await admin.auth.admin.getUserById(user_id); appleUser = (au && au.user) || null; } catch { appleUser = null; }
+        await revokeAppleTokens(admin, user_id, appleUser);
+      }
 
       // 4. Delete the Supabase auth user (service-role only)
       const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);

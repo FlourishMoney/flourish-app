@@ -65,8 +65,12 @@ const plan = async (p) => { await TAB(p, "Do"); await ARIA(p, "Build Plan"); };
 // order; a screen's empty fields are filled first (a name, amounts, the next payday) where its Continue waits
 // for them. A forward control that is not found fails the screen as unreachable rather than skipping it.
 // Since 2026-10-23 (the first number) there is no "you and your household" or credit-score screen.
-const ONBOARDING = ["welcome", "connect a bank", "balances", "income", "bills", "debts"];
-const FORWARD = ["Get Started →", "Enter it myself", "Continue →", "Continue →", "Continue →"];
+// 1.1.7: the number comes right after pay and the next payday; bills and debts come after it. The sweep marks the
+// first-number screen as seen (flourish_first_visit_done), so "Show me my number" lands on the bills. The button's
+// words are read from src/lib/firstRunWords.js, not typed twice.
+const SHOW_NUMBER = (require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "firstRunWords.js"), "utf8").match(/\bshowNumber: "([^"]+)"/) || [])[1];
+const ONBOARDING = ["welcome", "connect a bank", "balances", "income", "bills (after the number)", "debts (after the number)"];
+const FORWARD = ["Get started", "Enter it myself", "Continue →", SHOW_NUMBER, "Continue →"];
 const FILL = () => {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   for (const el of document.querySelectorAll("input")) {

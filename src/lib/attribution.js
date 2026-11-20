@@ -48,6 +48,32 @@ export function parseInstallReferrer(raw) {
   } catch { return null; }
 }
 
+// THE HOME PAGE'S OWN LINK (2026-11-08, migration 0043): this visit's src and cr, from the address or, after a reload, the
+// browser session. Never in a store app. Used for the home page's counts and to tag its two store badges the way /get does.
+export function landingAttribution(search = (typeof window !== "undefined" && window.location ? window.location.search : ""), storage) {
+  if (nativePlatform()) return null;
+  try {
+    const q = new URLSearchParams(search || "");
+    const src = cleanTag(q.get("src")), cr = cleanTag(q.get("cr"));
+    if (src || cr) return { src: src || "direct", cr: cr || null };
+    const st = storage !== undefined ? storage : globalThis.sessionStorage;
+    const kept = JSON.parse((st && st.getItem(WEB_KEY)) || "null");
+    if (kept && cleanTag(kept.src)) return { src: cleanTag(kept.src), cr: cleanTag(kept.cr) };
+  } catch { /* nothing to tag */ }
+  return null;
+}
+
+// A tap through to a store from the home page's badges: our own count, by src and cr (/api/attribution), as /get counts its
+// own. sendBeacon, so the store's page never waits for it. Nothing about the visitor is sent.
+export function countStoreClick(attribution, { beacon } = {}) {
+  try {
+    const send = beacon || (typeof navigator !== "undefined" && navigator.sendBeacon ? navigator.sendBeacon.bind(navigator) : null);
+    if (!send) return false;
+    const a = attribution || {};
+    return !!send("/api/attribution", new Blob([JSON.stringify({ event: "store_click", src: a.src || "", cr: a.cr || "" })], { type: "application/json" }));
+  } catch { return false; }
+}
+
 // What goes on the signup: this install's Play referrer, otherwise the website's link, otherwise nothing.
 export function signupAttribution() {
   try {

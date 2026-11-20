@@ -12,6 +12,8 @@ const TAG_RX = /^[a-z0-9_-]{1,40}$/;
 const NO_SRC = "direct";
 const NO_CR = "none";
 const PUBLIC_EVENTS = Object.freeze(["landing_visit", "store_click", "install"]);
+// home_visit (migration 0043): the home page was shown, counted by beta.js with the landing's own count, never sent here.
+const COUNT_EVENTS = Object.freeze([...PUBLIC_EVENTS, "home_visit"]);
 
 function cleanTag(value) {
   const v = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -41,7 +43,7 @@ function accountPlatform(event) {
 
 /** Never throws; true when the database took the count. */
 async function bumpAttributionCount({ supabaseUrl, secretKey, name, attribution, platform, fetchImpl = fetch, timeoutMs = 3000 }) {
-  if (!PUBLIC_EVENTS.includes(name) || !supabaseUrl || !secretKey) return false;
+  if (!COUNT_EVENTS.includes(name) || !supabaseUrl || !secretKey) return false;
   const { src, cr } = cleanAttribution(attribution);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -85,4 +87,4 @@ async function markActivated(admin, userId, createdAt, now = new Date()) {
   }
 }
 
-module.exports = { TAG_RX, NO_SRC, NO_CR, PUBLIC_EVENTS, cleanTag, cleanAttribution, platformFromUserAgent, accountPlatform, bumpAttributionCount, recordAccountAttribution, markActivated };
+module.exports = { TAG_RX, NO_SRC, NO_CR, PUBLIC_EVENTS, COUNT_EVENTS, cleanTag, cleanAttribution, platformFromUserAgent, accountPlatform, bumpAttributionCount, recordAccountAttribution, markActivated };

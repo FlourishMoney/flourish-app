@@ -21,6 +21,27 @@ export const INSET = {
   left: "env(safe-area-inset-left, 0px)",
 };
 
+// The store apps: the Android app and the iPhone app (Capacitor's own platform names). Both run the page behind the
+// status bar. Not the website, which has no status bar of ours to run behind.
+export function drawsBehindStatusBar(win = typeof window === "undefined" ? undefined : window) {
+  try {
+    const platform = win && win.Capacitor && typeof win.Capacitor.getPlatform === "function" ? win.Capacitor.getPlatform() : null;
+    return platform === "android" || platform === "ios";
+  } catch { return false; }
+}
+
+// THE STATUS BAR'S COVER, IN THE STORE APPS (found on the Android emulator, 2026-11-18; the iPhone app did the same).
+// From Android 15 the app is drawn edge to edge, and the iPhone app asks for the whole screen (viewport-fit=cover): the
+// status bar is transparent and the page runs behind it. Every screen pads its top by the bar's height, but that
+// padding scrolls away with the page, so on a screen with no header of its own the words slid up under the clock and
+// the icons (on an iPhone, under the Dynamic Island too). The cover is a strip the height of the bar, fixed to the
+// top, in the screen's own background: at rest it sits over the screen's empty top padding, the same colour, and takes
+// no room; scrolled, the words pass behind it. Where there is no bar along the top (the iPhone Duo's outer screen,
+// whose strip is on the right) the inset is 0 and so is the cover.
+// z-index 1, and it goes FIRST in its screen, so anything the screen layers on purpose (a dialog's dimmed backdrop, a
+// sheet) is drawn over it, later in the page. Not on the website: null there, nothing in the page.
+export const statusBarCoverStyle = (bg) => ({ position: "fixed", top: 0, left: 0, right: 0, height: INSET.top, background: bg, zIndex: 1 });
+
 // One side's padding: the design's own `min` px, or the inset when that is larger.
 export const safeSide = (side, min = 0) => `max(${min}px, ${INSET[side]})`;
 

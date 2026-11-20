@@ -23,7 +23,7 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
 (async () => {
   const t = create();
   const { STORE_TERMS_SECTION_7 } = await import("../src/lib/freePlan.js");
-  const terms = APP.slice(APP.indexOf("function TermsOfService({onBack}){"), APP.indexOf("function ", APP.indexOf("function TermsOfService({onBack}){") + 30));
+  const terms = APP.slice(APP.indexOf("function TermsOfService("), APP.indexOf("function ", APP.indexOf("function TermsOfService(") + 30));
 
   t.ok(terms.includes(NEW), "1a the approved sentence, word for word");
   t.ok(!/inclusive of applicable taxes|USD for US users/.test(APP), "1b the old sentence is gone everywhere in the app");
@@ -35,7 +35,7 @@ const NEW = "Prices are in Canadian dollars (CAD) and do not include sales tax. 
   }
   t.ok(/\. Prices are in Canadian dollars \(CAD\) and do not include sales tax\. Applicable GST\/HST and provincial sales taxes are calculated from your billing address and added at checkout\. You may cancel at any time;/.test(terms),
     "2b …in the same place: after the billing sentence, before cancellation");
-  t.ok(/const last="October 14, 2026";/.test(terms), "3a the Terms' Last updated date is October 14, 2026");
+  t.ok(terms.includes('const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";'), "3a the Terms' Last updated date is October 14, 2026 (while TRIAL_PLAN_FIRST is on, the switch's date: trialGoLiveWords.test 1g)");
   const privacy = APP.slice(APP.indexOf("function PrivacyPolicy("), APP.indexOf("function ", APP.indexOf("function PrivacyPolicy(") + 30));
   t.ok(privacy.length > 100 && !/October 14, 2026/.test(privacy), "3b the Privacy Policy's date is not touched");
   t.ok(/\{isNativeApp\(\) \? \(storeBillingBuild\(\) \? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7\) : <>/.test(terms) && /^There is nothing to buy in the iOS and Android apps\. /.test(STORE_TERMS_SECTION_7),

@@ -241,7 +241,7 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     t.ok(/usePlaidLinkSDK\(reconnectToken, onReconnectSuccess, onReconnectExit\)/.test(APP), "3h the Settings bank window (add and reconnect) now hears every exit");
     t.ok(/const onReconnectExit = useCallback\(\(err, meta\) => \{[\s\S]{0,400}setReconnectToken\(null\);\s*alertModal\(\{ message: linkExitMessage\(err, \{ intent, bank \}\)\.message \}\);/.test(APP),
       "3i …and says it in a dialog, with the spent token cleared so the next tap starts fresh");
-    t.ok(/const onPlaidExit=useCallback\(\(err\)=>\{\s*count\(err \? "bank_link_failed" : "bank_link_cancelled"\);\s*setBankOutcome\(err \? "failed" : "cancelled"\);/.test(APP), "3j onboarding keeps its approved W4 answer");
+    t.ok(/const onPlaidExit=useCallback\(\(err\)=>\{\s*(\/\/[^\n]*\n\s*)?if \(err\) count\("bank_link_failed", linkFailDetail\(currentPlatform\(\), err\.error_code\)\); else count\("bank_link_cancelled"\);\s*setBankOutcome\(err \? "failed" : "cancelled"\);/.test(APP), "3j onboarding keeps its approved W4 answer (a failure counted with its platform and Plaid code)");
     // Settings' consent sheet "Connect My Bank" is the only way in, and a bank already linked is not added twice.
     t.ok(/\.find\(it => it\.status === "login_required" \|\| it\.status === "error" \|\| it\.status === "pending_expiration"\)/.test(APP), "3k Reconnect picks a bank that needs a sign-in, login_required included");
   }
@@ -336,8 +336,8 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
       } catch (e) { t.ok(false, `5e-5g backgroundRefresh: ${describe(e)}`); } finally { global.fetch = realFetch; }
     }
     const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/document\.addEventListener\("visibilitychange", onShow\)/.test(APP) && /if \(document\.visibilityState === "visible"\) refreshBanksRef\.current\?\.\(\)/.test(APP),
-      "5h the app looks again each time it comes back on screen (a phone app resumed, a tab shown)");
+    t.ok(/document\.addEventListener\("visibilitychange", onShow\)/.test(APP) && /if \(document\.visibilityState === "visible" && !isPlaidLinkOpen\(\)\) refreshBanksRef\.current\?\.\(\)/.test(APP),
+      "5h the app looks again each time it comes back on screen (a phone app resumed, a tab shown), except while Plaid Link is open (1.1.7)");
     t.ok(/const waiting = items\.some\(it => it && it\.transactions_pending\);/.test(APP) && /const forced = force \|\| waiting \|\| pending\.length > 0;/.test(APP),
       "5i new transactions waiting (the webhook's flag) or a history loading: no 30-minute wait");
   }
@@ -421,9 +421,10 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     const { execFileSync } = require("child_process");
     let guard = 0, guardSaid = "";
     try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; guardSaid = String(e.stderr || ""); }
+    // trial plan first (2026-11-10): its listed placeholders hold the build back the same way.
     // 2026-11-10: the Plus, bank-limit and net-worth lines (lib/netWorthWords.js) are placeholders until approved, and hold
     // the build back too; the guard must still name no balance- line.
-    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingNetWorthWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
+    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingTrialWordIds().length || PW.pendingNetWorthWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
     t.ok(!/\[WORDS: balance-/.test(guardSaid), "7j2 …and whatever it refuses, it names no balance- line");
   }
 

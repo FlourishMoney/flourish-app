@@ -163,9 +163,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         let header = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
         // An inner scroller (the coach scrolls under its own bar) clips at its own top.
         for (let p = els[0].parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight + 1) { header = Math.max(header, p.getBoundingClientRect().top); break; } }
-        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight };
+        const bar = document.getElementById("tour-actions");
+        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight, barTop: bar ? Math.round(bar.getBoundingClientRect().top) : innerHeight };
       }, targets[k]);
-        clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
+        clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && m.bottom <= m.barTop && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
         if (clear || Date.now() - t0 > 4000) break;
         await page.waitForTimeout(100);
       }
@@ -493,7 +494,8 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(await page.locator('input[type="password"]').first().isVisible(), "11q the main button opens website sign-up");
     await page.waitForTimeout(300);
     t.eq(seen.counts.map(c => [c.event, c.src]), [["landing_view", "ig"], ["main_tap", "ig"]], "11r one landing view and the tap, each counted with the visit's src and nothing else");
-    t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,event,src"), "11s …the counts carry no email and no other field");
+    t.ok(seen.counts.every(c => Object.keys(c).sort().join() === "action,attribution,event,src"), "11s …the counts carry no email and no other field");
+    t.eq(seen.counts.map(c => c.attribution), [{ src: "ig", cr: null }, { src: "ig", cr: null }], "11s2 …the visit's own src and cr (0043), and nothing else in it");
     await ctx.close();
   }
   {

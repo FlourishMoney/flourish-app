@@ -56,4 +56,12 @@ function decideSignup({ code, open, isValidCode }) {
   return { allow: true, source: "self_serve", usedCode: false };
 }
 
-module.exports = { openSignupEnabled, decideSignup };
+// INSTANT SIGNUP (Amanda, 2026-11-11, first-run audit). With SIGNUP_INSTANT exactly "true" and signup open, a new
+// account is confirmed on creation and signed straight in: no trip to the inbox, no second sign-in. Its address is not
+// proved by its owner; app_metadata.email_confirmation "instant" records that, where only the server can write it.
+// Off unless exactly "true", like OPEN_SIGNUP; with it off, signup is today's byte for byte (confirm by link).
+function signupInstantEnabled(env = process.env) {
+  return (env && env.SIGNUP_INSTANT) === "true";
+}
+
+module.exports = { openSignupEnabled, signupInstantEnabled, decideSignup };

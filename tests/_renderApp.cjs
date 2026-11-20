@@ -10,7 +10,7 @@ const Module = require("module");
 
 const REPO = path.join(__dirname, "..");
 
-function loadApp(names, { native = false } = {}) {
+function loadApp(names, { native = false, env = null } = {}) {
   const esbuild = require(path.join(REPO, "node_modules", "esbuild"));
   const contents = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8") + `
 export { ${names.map((n) => `${n} as __${n}`).join(", ")} };
@@ -29,6 +29,10 @@ export { createElement as __h } from "react";
       "import.meta.env.VITE_BUILD_SHA": JSON.stringify("test"),
       "import.meta.env.MODE": JSON.stringify("test"),
       "import.meta.env.VITE_NATIVE_BUILD": JSON.stringify(native ? "true" : ""),
+      // env: extra build variables, read as the whole import.meta.env (App.jsx VITE_ENV), e.g. { VITE_IAP_ENABLED: "true" }
+      // for a store build that sells. Without it the bundle is exactly as before.
+      ...(env ? { "import.meta.env": JSON.stringify({ VITE_SUPABASE_URL: "https://placeholder.invalid", VITE_SUPABASE_PUBLISHABLE_KEY: "placeholder",
+        VITE_SENTRY_DSN: "", VITE_BUILD_SHA: "test", MODE: "test", VITE_NATIVE_BUILD: native ? "true" : "", ...env }) } : {}),
     },
   });
   const store = new Map();

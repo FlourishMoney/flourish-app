@@ -76,8 +76,8 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
       const today = new Date();
       const text = DC.demoCheckInInsight(demoCA, today);
       const view = safeToSpendView(SafeSpendEngine.calculate(demoCA, today));
-      t.ok(typeof text === "string" && text.startsWith(`${view.headlineText} is safe to spend until your next deposit on `),
-        `4e0 the insight opens "${view.headlineText} is safe to spend until your next deposit on [date]"`);
+      t.ok(typeof text === "string" && text.startsWith(`${view.headlineText} is safe to spend until your next payday on `),
+        `4e0 the insight opens "${view.headlineText} is safe to spend until your next payday on [date]"`);
       t.ok(typeof text === "string" && text.includes(view.headlineText) && text.includes(view.balanceText),
         `4e the insight states the demo's own safe to spend (${view.headlineText}) and balance (${view.balanceText})`);
       const shown = new Set(view.rows.map(r => r.value).concat([view.headlineText]));

@@ -6,7 +6,7 @@
 // and run in Chromium as the iPhone or Android app: Capacitor's own custom-platform hook names the platform, and a
 // fake RevenueCat plugin answers through Capacitor's native bridge with the store's packages and price strings.
 // The server (Supabase and /api/billing store_status) is this test's own; nothing reaches the network.
-//   1  founding + confirmed + unpaid: the plans screen opens by itself, Founding annual first and marked chosen,
+//   1  founding + confirmed + unpaid, the tips already seen: the plans screen opens by itself, Founding annual first and marked chosen,
 //      the store's prices, the approved disclosure, a close button; one tap on Founding annual opens the store's
 //      sheet for the founding package, and the confirmed purchase closes the screen
 //   2  not founding: nothing opens by itself; See plans in Settings still opens the plans, in the old order
@@ -103,18 +103,18 @@ function installStore([platform, uid]) {
   const DIALOG = '[role="dialog"][aria-label="Subscription"]';
 
   // A phone: one browser context is one phone (its storage survives reloads). scenario.status is what the server answers.
-  const phone = async ({ platform = "ios", scenario }) => {
+  const phone = async ({ platform = "ios", scenario, tips = false }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, timezoneId: "America/Toronto", colorScheme: "dark" });
     await ctx.addInitScript(installStore, [platform, MOCK.USER_ID]);
-    await ctx.addInitScript(([key, session]) => { try {
+    await ctx.addInitScript(([key, session, tips]) => { try {
       if (!localStorage.getItem("test_seeded")) {
         localStorage.setItem("test_seeded", "1");
         localStorage.setItem(key, session);
         localStorage.setItem("flourish_first_visit_done", "1");
-        localStorage.setItem("flourish_tour_done", "1");
+        if (!tips) localStorage.setItem("flourish_tour_done", "1");
         localStorage.setItem("flourish_ai_disclosure_seen", "1");
       }
-    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.now() / 1000)))]);
+    } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession(Math.floor(Date.now() / 1000))), tips]);
     const asked = [];
     // Nothing leaves this machine: the store app's API origin is answered here, and any other host is refused.
     await ctx.route((url) => !url.href.startsWith(base), (r) => {
@@ -231,7 +231,11 @@ function installStore([platform, uid]) {
       const scenario = { status: status({ founding: true }) };
       const { ctx, page } = await phone({ platform: "android", scenario });
       await go(page, null);
-      t.ok(await until(() => dialogUp(page), 30000), "5a a new founding account is asked straight away, over onboarding");
+      await page.waitForTimeout(6000);
+      t.eq(await dialogUp(page), false, "5a Flourish first (2026-11-05): a new founding account is not asked over onboarding");
+      onboarded = true;
+      await go(page);
+      t.ok(await until(() => dialogUp(page), 30000), "5a2 once onboarding is done (the tips already seen), it opens in that visit");
       await page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
       t.eq(await plans(page), [["founding_annual", true], ["monthly", false]], "5b Android: Founding annual first, marked chosen");
       const text = await page.locator(DIALOG).innerText();
@@ -239,11 +243,45 @@ function installStore([platform, uid]) {
       await page.waitForTimeout(600);
       await shot(page, "android-founding-plans-auto-open.png");
       await page.locator(`${DIALOG} button[aria-label="Close"]`).click();
-      t.ok(await until(async () => !(await dialogUp(page)), 5000), "5d closed, onboarding is where it was underneath");
-      await shot(page, "android-onboarding-after-close.png");
+      t.ok(await until(async () => !(await dialogUp(page)), 5000), "5d closed, the app is where it was underneath");
+      await shot(page, "android-after-close.png");
       await ctx.close();
       onboarded = true;
     }
+    // ── 5b. Flourish first: the intro tips, then the plans, in the same visit (2026-11-05) ──────────────────────────
+    {
+      const scenario = { status: status({ founding: true }) };
+      const { ctx, page, asked } = await phone({ scenario, tips: true });
+      await go(page);
+      await page.getByText("Step 1 of 5").waitFor({ timeout: 40000 });
+      await quiet(page, asked);
+      t.eq(await dialogUp(page), false, "5e the intro tips come first: nothing opens by itself while they are on screen");
+      for (let i = 0; i < 4; i++) {
+        await page.getByRole("button", { name: "Next →" }).click();
+        await page.getByText(`Step ${i + 2} of 5`).waitFor();
+        await page.waitForTimeout(300);
+        t.eq(await dialogUp(page), false, `5f …still nothing on tip ${i + 2}`);
+      }
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      t.ok(await until(() => dialogUp(page), 15000), "5g Done on the last tip: the plans open straight away, in the same visit");
+      await page.locator(`${DIALOG} [data-plan]`).first().waitFor({ timeout: 10000 });
+      t.eq((await plans(page))[0][0], "founding_annual", "5h …with Founding annual first");
+      await shot(page, "ios-after-tips.png");
+      await page.locator(`${DIALOG} button[aria-label="Close"]`).click();
+      t.ok(await until(async () => !(await dialogUp(page)), 5000), "5i closed: as before");
+      asked.length = 0;
+      await go(page);
+      await quiet(page, asked);
+      t.eq(await dialogUp(page), false, "5j and it does not reopen on its own");
+      await ctx.close();
+      const s2 = await phone({ scenario: { status: status({ founding: true }) }, tips: true });
+      await go(s2.page);
+      await s2.page.getByText("Step 1 of 5").waitFor({ timeout: 40000 });
+      await s2.page.getByRole("button", { name: "Skip", exact: true }).click();
+      t.ok(await until(() => dialogUp(s2.page), 15000), "5k Skip on the tips: the plans open straight away too");
+      await s2.ctx.close();
+    }
+
     // ── 6. Keep the trial ────────────────────────────────────────────────────────────────────────
     {
       const O = await import("../src/lib/storeOffer.js");

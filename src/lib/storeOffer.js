@@ -17,8 +17,8 @@
 // pins each. Do not reword them here. FOUNDING_SWITCH_COPY below is still unwritten, and TRIAL_KEEP_COPY is to come.
 // -----------------------------------------------------------------------------
 
-import { netWorthWords } from "./netWorthWords.js";
 import { pendingWords } from "./pendingWords.js";
+import { trialWords } from "./trialWords.js";
 
 const PERIOD = Object.freeze({ monthly: "a month", annual: "a year", founding_annual: "a year" });
 
@@ -49,9 +49,16 @@ export function offerCopy({ plan, priceString, platform = "ios" }) {
   };
 }
 
-/** The approved disclosure under the plans, for this platform. */
-export function storeDisclosure(platform) {
-  return platform === "android" ? STORE_DISCLOSURE.android : STORE_DISCLOSURE.ios;
+/**
+ * The disclosure under the plans, for this platform: the approved line of 2026-10-20, which says the payment is
+ * charged when the purchase is confirmed. That is untrue beside a plan that claims 14 days free (TRIAL_PLAN_FIRST on and
+ * the store's own yes for this person), so there, and only there, the line still to come shows in its place
+ * (lib/trialWords.js trialfirst-disclosure-ios / -android). trialClaimed: a plan on this screen claims the 14 days.
+ */
+export function storeDisclosure(platform, { trialClaimed = false } = {}) {
+  const android = platform === "android";
+  if (trialClaimed === true) return trialWords(android ? "trialfirst-disclosure-android" : "trialfirst-disclosure-ios");
+  return android ? STORE_DISCLOSURE.android : STORE_DISCLOSURE.ios;
 }
 
 // THE FOUNDING SWITCH (2026-10-18): a household holding a founding position while a regular store subscription is
@@ -112,9 +119,9 @@ export function foundingSpotLine(status) {
 }
 
 export const PAYWALL_COPY = Object.freeze({
-  // The main plan's name (2026-11-10): "flourish" to households; "flourish Plus" is only the add-on. Placeholders until approved.
-  title: netWorthWords("plan-name"),
-  lead: netWorthWords("plan-adds-lead"),
+  // 2026-11-05 (ChatGPT and Grok AGREE, Amanda): the screen sells the main flourish plan, so no "Plus" and no free plan.
+  title: "Subscribe to flourish",
+  lead: "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If.",
   dataSafe: "Your accounts, bills and history stay as they are.",
   terms: "Terms of Use",          // approved 2026-10-20 (on iOS it opens Apple's standard EULA)
   privacy: "Privacy Policy",      // approved 2026-10-20

@@ -48,15 +48,17 @@ Numbers in a line ({used}, {limit}, {count}) are whole numbers of bank logins, f
 ## The main plan's name (2026-11-10)
 To households the main paid plan is "flourish" (monthly, annual, founding). "flourish Plus" is only the add-on. Each line below named the main plan "Flourish Plus" or "Plus", and goes back to review. Product and entitlement ids never change. `docs/product/PLAN-NAMES.md` lists every place, in the repo and outside it.
 
+The store apps' paywall title and lead are no longer here: main's approved words (2026-11-05, "Subscribe to flourish") already name the main plan "flourish", and came in when this branch was brought up to main on 2026-11-20.
+
 | Id | Where it shows | The facts it must say | Line | Limit |
 |---|---|---|---|---|
-| `plan-name` | Website: the Settings plan card title, the upgrade screen title, the plans screen title, the sidebar badge (after "✦ "). Store apps: the paywall title | The main paid plan's name: flourish | [WORDS: plan-name] | 30 |
+| `plan-name` | Website: the Settings plan card title, the upgrade screen title, the plans screen title, the sidebar badge (after "✦ ") | The main paid plan's name: flourish | [WORDS: plan-name] | 30 |
 | `plan-get-cta` | Website: Today's upgrade card | Open the main plan's plans | [WORDS: plan-get-cta] | 30 |
 | `plan-upgrade-cta` | Website: the locked screen's button after a trial, and the sidebar's upgrade link | Open the main plan's plans | [WORDS: plan-upgrade-cta] | 30 |
 | `plan-on` | Website: the upgrade screen for a household that pays | This household pays for the main plan | [WORDS: plan-on] | 40 |
 | `plan-includes-title` | Website: the locked screen (PremiumGate), above the list | What the main plan includes | [WORDS: plan-includes-title] | 40 |
 | `plan-adds-title` | Website: the plans screen's heading | What the main plan adds to the free plan | [WORDS: plan-adds-title] | 40 |
-| `plan-adds-lead` | Website: the Settings plan card. Store apps: the paywall lead | The main plan adds Credit and the coach-run meeting and lifts the free plan's limits on the coach and What-If | [WORDS: plan-adds-lead] | 140 |
+| `plan-adds-lead` | Website: the Settings plan card | The main plan adds Credit and the coach-run meeting and lifts the free plan's limits on the coach and What-If | [WORDS: plan-adds-lead] | 140 |
 | `plan-sim-limit` | Website: What-If, when today's free simulations are used | The free simulations for today are used; the main plan has unlimited What-If; or come back tomorrow | [WORDS: plan-sim-limit] | 160 |
 | `plan-sim-cta` | Website: What-If, the button under that line | Unlimited simulations come with the main plan | [WORDS: plan-sim-cta] | 40 |
 | `plan-terms-web-label` | Website: Terms of Service section 7, the label before "Premium features require a paid subscription." | The main plan's name, as a label | [WORDS: plan-terms-web-label] | 30 |

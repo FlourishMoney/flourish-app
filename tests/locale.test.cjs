@@ -90,11 +90,15 @@ const { create } = require("./_runner.cjs");
       if (/your next/i.test(line) && payish.test(line)) nextClaims.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
     });
     t.eq(nextClaims.join("\n"), "", "no sentence about the NEXT income event names it as a pay cheque, in ANY preposition");
-    const nextDeposit = raw.split("\n").filter(l => /until your next deposit/i.test(l) && !l.includes("/*")).length;
-    // Floor 2, not 3: the Decisions daily card no longer claims to keep anyone safe "until your next
-    // deposit" (QA-surgical item 4: it is a 14-day pace, not a limit), so one fewer surface makes the
-    // claim. The two that still do, the savings card and Today's "hold off" line, say "deposit".
-    t.ok(nextDeposit >= 2, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
+    // 2026-11-13: these surfaces said "until your next deposit" while the window they describe ended at the next
+    // deposit of any size. Since PR #138 it ends at the next MAIN payday (forecastEdits.js nextMainPaydayFor), and
+    // the approved words say so: "until your next payday". Still never "paycheque" (the check above): a household's
+    // main payday can be a benefit or a pension. Three surfaces make the claim (the Decisions card, Money Plan's
+    // spare row and Today's line when nothing is left), and none still says "until your next deposit".
+    const untilLines = raw.split("\n").filter(l => !/^\s*\/\//.test(l) && !l.includes("/*"));
+    const nextPayday = untilLines.filter(l => /until your next payday/i.test(l)).length;
+    const nextDeposit = untilLines.filter(l => /until your next deposit/i.test(l)).length;
+    t.ok(nextPayday >= 3 && nextDeposit === 0, `…and the surfaces that make that claim say "payday", none "deposit" (found ${nextPayday} and ${nextDeposit})`);
 
     // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously:
     // every forecast row renders depositLines(), whose only generic word is "deposit".

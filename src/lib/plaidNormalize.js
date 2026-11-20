@@ -756,8 +756,11 @@ export function removeByIds(list, ids) {
 // Normalize a Plaid account into a single signed balance number (the app's canonical account.balance).
 // Cash/depository: prefer AVAILABLE (excludes held/pending funds, e.g. a cheque on hold), falling back to
 // CURRENT only when Plaid omits available. Credit/loan: the amount owed is the CURRENT balance, stored negative.
+// Investment (and the older "brokerage" type): the account's VALUE is CURRENT. Its "available" is only the cash in
+// it that can be withdrawn, so preferring available stored an RRSP holding $50,000 with $120.55 of cash as $120.55,
+// in net worth and everywhere else (audit of 2026-11-13, finding 11). Available is the fallback when no value is sent.
 export function normalizeAccountBalance(a) {
-  return (a.type === "credit" || a.type === "loan")
-    ? -(a.balance?.current || 0)
-    : (a.balance?.available ?? a.balance?.current ?? 0);
+  if (a.type === "credit" || a.type === "loan") return -(a.balance?.current || 0);
+  if (a.type === "investment" || a.type === "brokerage") return a.balance?.current ?? a.balance?.available ?? 0;
+  return a.balance?.available ?? a.balance?.current ?? 0;
 }

@@ -367,9 +367,8 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       t.eq(Object.keys(u).sort(), ["app_metadata", "email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
       // app_metadata (server-only) holds one thing: how the address gets confirmed. With signup open, by link.
       t.eq(u.app_metadata, { email_confirmation: "link" }, `${label}: app_metadata says only how the address is confirmed`);
-      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_platform", "signup_source", "signup_src"], `${label}: and metadata carries only the labels`);
+      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_platform", "signup_source"], `${label}: and metadata carries only the labels`);
       t.eq(u.user_metadata.signup_platform, "web", `${label}: a signup from the website is labelled "web" (the confirmation link carries it on into the app)`);
-      t.ok(["direct", "ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b", "shop-trenton-counter", "shop-trenton-bag", "shop-napanee-counter", "shop-napanee-bag", "shop-belleville-counter", "shop-belleville-bag"].includes(u.user_metadata.signup_src), `${label}: signup_src is a known src or "direct", never free text`);
       const meta = JSON.stringify(u.user_metadata);
       t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);
     }
@@ -378,6 +377,17 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     for (const origin of ["capacitor://localhost", "https://localhost"]) {
       const r = await signup(OPEN, { code: "" }, undefined, origin);
       t.eq(r.state.created[0] && r.state.created[0].user_metadata.signup_platform, "app", `a signup from ${origin} is labelled "app"`);
+    }
+    // NO CAMPAIGN CODE IN ACCOUNT METADATA (2026-11-10). The approved privacy words (2026-11-05): only an Android account
+    // carries a campaign code, and that one lives in account_attribution. A visit's ?src= must never reach the
+    // metadata of a website, iPhone or Android account, under signup_src or any other name.
+    for (const [label, origin] of [["website", "https://flourishmoney.app"], ["iPhone", "capacitor://localhost"], ["Android", "https://localhost"]]) {
+      const r = await signup(OPEN, { code: "", src: "ig", cr: "reel-1", attribution: { src: "ig", cr: "reel-1" } }, undefined, origin);
+      const u = r.state.created[0] || {};
+      const meta = u.user_metadata || {};
+      t.ok(r.status === 200 && !!u.user_metadata, `${label} signup with ?src=ig: the account is created`);
+      t.ok(!("signup_src" in meta), `${label} signup: no signup_src in the account's metadata`);
+      t.ok(!/"(ig|reel-1)"/.test(JSON.stringify(meta)) && !/"(ig|reel-1)"/.test(JSON.stringify(u.app_metadata || {})), `${label} signup: the visit's src and cr appear nowhere in the account's metadata`);
     }
     const beta = fs.readFileSync(path.join(REPO, "netlify", "functions", "beta.js"), "utf8");
     // Comments stripped: the comments here EXPLAIN what the trigger grants, so a naive scan would

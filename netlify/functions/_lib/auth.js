@@ -93,6 +93,22 @@ function getPublicClient() {
   return _public;
 }
 
+// A client that acts AS THE SIGNED-IN PERSON: the publishable key plus their own access token, so every
+// read goes through the table's row-level security exactly as if the app had made it. Never the secret
+// key. Built per request (it carries one person's token) and never cached. meeting.js reads the
+// household's meetings with it, so the 0011 and 0030 policies decide what comes back, not this code.
+// Throws when SUPABASE_URL or SUPABASE_ANON_KEY is unset or there is no token.
+function getUserScopedClient(token) {
+  const url = (process.env.SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_ANON_KEY || "").trim();
+  if (!url || !key) throw new Error("SUPABASE_URL or SUPABASE_ANON_KEY env var is missing");
+  if (!token) throw new Error("no access token");
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+}
+
 // Sprint Q (v1 policy): plan limits are CODE-READY but OFF for v1 (free, no IAP). Flip via the
 // Netlify env var ENFORCE_PLAN_LIMITS=true when v1.1 IAP ships — no code deploy needed.
 const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
@@ -224,4 +240,6 @@ module.exports = {
   unauthorized,
   isEmailConfirmed,
   getPublicClient,
+  getUserScopedClient,
+  extractToken,
 };

@@ -279,10 +279,11 @@ const SENT = { founding_link: { kind: "canada_launch", sent_at: "2026-10-26T15:0
     t.ok(!fs.existsSync(path.join(fnDir, "founding-reminder-sweep.js")) && !fs.existsSync(path.join(fnDir, "_lib", "foundingReminderEmail.js")), "6m the founding reminder sweep and its email are gone");
     const toml = fs.readFileSync(path.join(REPO, "netlify.toml"), "utf8");
     const scheduled = [...toml.matchAll(/\[functions\."([^"]+)"\]\s*\n\s*schedule/g)].map(m => m[1]).sort();
-    const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm|policyNotice)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
-    t.eq([scheduled, scheduled.filter(sends)], [["creator-commissions-sweep", "founding-link-sweep", "limiter-cleanup", "newsletter-retention", "policy-notice-sweep", "waitlist-sweep"], ["founding-link-sweep", "policy-notice-sweep", "waitlist-sweep"]],
-      "6n0 six scheduled functions, and the limiter cleanup, the creator commissions sweep and the newsletter retention send nothing");
-    t.eq(scheduled.filter(sends), ["founding-link-sweep", "policy-notice-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep, the founding link sweep and the policy notice (off unless set)");
+    // TRIAL_PLAN_FIRST (2026-11-10): a seventh, the trial reminder sweep, which sends (only with the switch on).
+    const sends = (f) => /require\("\.\/_lib\/(?:waitlistWelcome|foundingLinkEmail|foundingConfirm|policyNotice|trialReminder)"\)|api\.resend\.com|sendFoundingLinkEmail|sendWelcome/.test(fs.readFileSync(path.join(fnDir, `${f}.js`), "utf8"));
+    t.eq([scheduled, scheduled.filter(sends)], [["creator-commissions-sweep", "founding-link-sweep", "limiter-cleanup", "newsletter-retention", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], ["founding-link-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"]],
+      "6n0 seven scheduled functions, and the limiter cleanup, the creator commissions sweep and the newsletter retention send nothing");
+    t.eq(scheduled.filter(sends), ["founding-link-sweep", "policy-notice-sweep", "trial-reminder-sweep", "waitlist-sweep"], "6n the only scheduled senders are the welcome sweep, the founding link sweep, the policy notice and the trial reminder (off unless set)");
     const everywhere = [toml, fs.readFileSync(path.join(REPO, "docs", "ops", "BILLING-DAY-OCT-26.md"), "utf8"),
       ...fs.readdirSync(fnDir).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, f), "utf8")),
       ...fs.readdirSync(path.join(fnDir, "_lib")).filter(f => f.endsWith(".js")).map(f => fs.readFileSync(path.join(fnDir, "_lib", f), "utf8"))].join("\n");

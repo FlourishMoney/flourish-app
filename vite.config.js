@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { execSync } from 'node:child_process'
+import { trialFirstMetaPlugin } from './scripts/trial-first-meta.mjs'
 
 // ── Build stamp ──────────────────────────────────────────────────────────────
 // Bake the git commit SHA into the bundle so a deployed web build and a Capacitor iOS build can be
@@ -31,7 +32,8 @@ const BUILD_SHA = resolveBuildSha()
 const DEPLOY_CONTEXT = (process.env.CONTEXT || '').trim()
 
 export default defineConfig({
-  plugins: [react()],
+  // trial-first-meta: index.html's two descriptions follow TRIAL_PLAN_FIRST at build time (scripts/trial-first-meta.mjs).
+  plugins: [react(), trialFirstMetaPlugin()],
   // Static replacement — bakes the literal SHA in wherever the app reads import.meta.env.VITE_BUILD_SHA.
   // Only this exact member is defined, so other import.meta.env reads (Supabase, Sentry) are untouched.
   define: {

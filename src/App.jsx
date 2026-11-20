@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useId, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
@@ -29,7 +29,7 @@ import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
-         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
+         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, needsOnFileStamp, stampOnFile, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
@@ -53,8 +53,9 @@ import { analyticsPage, setAnalyticsPage, track, EVENT } from "./lib/webAnalytic
 import { clarityPage, setClarityPage, setClarityAuthForm } from "./lib/webClarity.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
 import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
-import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea } from "./lib/safeArea.js";
-import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
+import { INSET, safeSide, safeX, overlaySafe, centredInSafeArea, drawsBehindStatusBar, statusBarCoverStyle } from "./lib/safeArea.js";
+import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty, meetOpeningFor, applyMeetingAnswers } from "./lib/meetSnapshot.js";
+import { loadMeetingRecords, saveMeetingRecord, answersFor, withRecord, localDay } from "./lib/meetingMemory.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
@@ -66,10 +67,11 @@ import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
-import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
+import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, cancelAllScheduled } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { wealthForecastView } from "./lib/wealthProjection.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
@@ -77,19 +79,26 @@ import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
+import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
+import { recordLegalConsent, flushLegalConsent, markConsentShown } from "./lib/legalConsent.js";
+import { lockBrowserStorage, unlockBrowserStorage, markAccountDeleted, wipeDeletedAccount, onDeletionElsewhere, followDeletionElsewhere, deletedAt, clearDeletedMark, refuseOwnerlessLocal } from "./lib/accountWipe.js";
+import { sendAppleGrant, takeWebAppleGrant, appleGrantStorage } from "./lib/appleGrant.js";
+import { markPlaidLinkOpen, markPlaidLinkClosed, isPlaidLinkOpen } from "./lib/plaidLinkOpen.js";
+import { SOCIAL_PROVIDERS, signInWithProvider, nativeSignInPlugins } from "./lib/socialSignIn.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP } from "./lib/freePlan.js";
+import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP, TRIAL_FIRST_TERMS_7_HEADING, trialFirstTermsSection7 } from "./lib/freePlan.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
 import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc, currentWaitlistSrc } from "./lib/waitlistSrc.js";
-import { captureAttribution, signupAttribution, readInstallReferrerOnce } from "./lib/attribution.js";
+import { captureAttribution, signupAttribution, readInstallReferrerOnce, landingAttribution, countStoreClick } from "./lib/attribution.js";
 import { POLICY_WORDS as PW, policyDateLabel, microsoftLinkParts, MICROSOFT_PRIVACY_URL } from "./lib/privacyLaunchWords.js";
+import { PRIVACY_117_WORDS as P117, privacyDate } from "./lib/privacy117Words.js";
 import { countLanding, countLandingViewOnce } from "./lib/landingCounts.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount, findAnchor, enteredNextPayDate, withDepositPhase } from "./lib/incomeSchedule.js";
@@ -102,6 +111,16 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan, webPlan } from "./lib/planFromProfile.js";
+import { trialPlanFirstOf, accountTrialFrom, rememberAccountTrial, recalledAccountTrial, plansFirstStage, plansOfferedBefore, notePlansOffered, rememberRequired, recalledRequired, trialDisclosure, storeTrialEligible, androidPurchaseOption, chargeDateLabel, PLANS_OFFERED_PREFIX, askTrialPlanFirstOn, askTrialPlanFirst, chipChargeDateFor } from "./lib/trialPlanFirst.js";
+import { trialWords, switchWords } from "./lib/trialWords.js";
+// TRIAL_PLAN_FIRST FOR SCREENS DEEP IN THE TREE (2026-11-13): is the switch known to be on? FlourishApp sets it from the
+// server's answers (tpfOn); a screen that must not promise a free account or a trial to start reads it with useTpfOn().
+// Off until an answer says on, so every such line is today's line by default (lib/trialWords.js switchWords).
+const TPF_STORE = { on: false, subs: new Set() };
+function setTpfOn(v){ const on = v === true; if(TPF_STORE.on !== on){ TPF_STORE.on = on; TPF_STORE.subs.forEach(f => f()); } }
+const tpfSubscribe = (f) => { TPF_STORE.subs.add(f); return () => { TPF_STORE.subs.delete(f); }; };
+const tpfSnapshot = () => TPF_STORE.on;
+function useTpfOn(){ return useSyncExternalStore(tpfSubscribe, tpfSnapshot, tpfSnapshot); }
 import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
@@ -116,8 +135,8 @@ import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js"
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
-import { sendOnboardingCount, noteFirstSignin } from "./lib/onboardingCounts.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
+import { sendOnboardingCount, noteFirstSignin, linkFailDetail } from "./lib/onboardingCounts.js";
+import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
 import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
 import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
@@ -165,6 +184,14 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 );
 
+
+// The consent step's record (lib/legalConsent.js): where it is kept, how it is sent, and whether the Terms the person could
+// open carry the trial-plan-first date (the website and a store build that sells, as TermsOfService decides).
+function consentDeps(uid) {
+  let storage = null; try { storage = window.localStorage; } catch { storage = null; }
+  return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(),
+    getJwt: async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || null; } catch { return null; } } };
+}
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
 // "(CRA, 2026)": the authority and the year behind a TAX_DATA figure, for copy that shows one. The
@@ -854,6 +881,10 @@ async function activationSession() {
 let _activationOff = false;
 const signalActivation = (metric, demo, userId) => (_activationOff ? Promise.resolve(false)
   : sendActivationOnce(metric, { demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
+// A money check-in finished (the full funnel, migration 0042): "meeting" when a money meeting is marked done, "weekly"
+// when the weekly check-in's Done is tapped. The server keeps only the day on the account (docs/ops/MEASUREMENT.md).
+const signalCheckIn = (kind, demo) => (_activationOff ? Promise.resolve(false)
+  : sendActivationOnce("checkin", { demo: !!demo, kind, getSession: activationSession, apiBase: API_BASE }));
 // Onboarding counts (2026-10-23): the steps, the first number and the bank link, aggregate only (lib/onboardingCounts.js).
 const signalOnboarding = (event, { detail, mode, demo, userId } = {}) => (_activationOff ? Promise.resolve(false)
   : sendOnboardingCount(event, { detail, mode, demo: !!demo, userId, getSession: activationSession, apiBase: API_BASE }));
@@ -1040,10 +1071,12 @@ function usePlaidLinkSDK(linkToken, onSuccess, onExit) {
 
   const openPlaidLink = useCallback(() => {
     if (!sdkReady || !window.Plaid || !linkToken) return;
+    // Open until it reports back (lib/plaidLinkOpen.js): coming back from the bank's own app must not start anything over under it.
+    markPlaidLinkOpen();
     window.Plaid.create({
       token: linkToken,
-      onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } if (onExitRef.current) onExitRef.current(err || null, meta); },
+      onSuccess: (...args) => { markPlaidLinkClosed(); onSuccessRef.current(...args); },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } markPlaidLinkClosed(); if (onExitRef.current) onExitRef.current(err || null, meta); },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -1211,7 +1244,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "savings",
       icon: "💚",
       color: C.green,
-      title: `$${safeToMove} spare until your next deposit`,
+      title: `$${safeToMove} spare until your next payday`,
       detail: spareWorking(safeToMove, spareInfo.safe),
       action: "See Goals", screen: "goals"
     });
@@ -1297,7 +1330,7 @@ function AutopilotCard({data, setScreen}) {
     // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
     // are gone, and so is "Left over" (it was net of those amounts, and read as more money free).
     {
-      icon:"🐷", label:"Spare until your next deposit", amount:formatMoney(plan.spare),
+      icon:"🐷", label:"Spare until your next payday", amount:formatMoney(plan.spare),
       color:C.teal, detail: plan.spare > 0 ? spareWorking(plan.spare, plan.spareFrom)
         : plan.spareReason === "tight" ? "Nothing: safe to spend is below 15% of your monthly income."
         : plan.spareReason === "overdraft" ? "Nothing: the forecast shows an overdraft in the next 30 days."
@@ -2874,27 +2907,21 @@ function WealthForecast({data}) {
   const tfsaMo    = toMonthly(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
   const pensionMo = toMonthly(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
   const monthlyContrib = rrspMo + tfsaMo + pensionMo;
-  const monthlyInvest = monthlyContrib + extra;
 
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const annualReturn = 0.07;
   const hasData = startingBal > 0 || monthlyContrib > 0;
 
-  const project = (monthly, years) => {
-    let val = startingBal;
-    for (let y = 0; y < years; y++) {
-      val = val * (1 + annualReturn) + monthly * 12;
-    }
-    return Math.max(0, Math.round(val));
-  };
-
+  // Every figure comes from lib/wealthProjection.js. The slider's extra is counted once, in the line under it:
+  // "Current Path" and the two fixed bars are worked out from today's contribution and do not move with the slider
+  // (audit of 2026-11-13, finding 13: the extra used to be in all three bars, and twice in the slider's line).
+  const wealth = wealthForecastView({ startingBal, monthlyContrib, extra, horizon });
   const scenarios = [
-    {label:"Current Path",        monthly:monthlyInvest,           color:C.teal,    icon:"📍"},
-    {label:"+$200/mo saved",       monthly:monthlyInvest+200,       color:C.green,   icon:"📈"},
-    {label:"+$500/mo invested",    monthly:monthlyInvest+500,       color:C.purple,  icon:"🚀"},
+    {label:"Current Path",        color:C.teal,    icon:"📍"},
+    {label:"+$200/mo saved",       color:C.green,   icon:"📈"},
+    {label:"+$500/mo invested",    color:C.purple,  icon:"🚀"},
   ];
 
-  const vals = scenarios.map(s => project(s.monthly, horizon));
+  const vals = wealth.scenarios.map(s => s.value);
   const maxVal = Math.max(...vals, 1);
 
   const fmt = n => { const v=n||0; return v >= 1000000 ? `$${(v/1000000).toFixed(2)}M` : `$${(v/1000).toFixed(0)}k`; };
@@ -2971,7 +2998,7 @@ function WealthForecast({data}) {
           {extra > 0 && (
             <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
               <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-                +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
+                +${extra}/mo → {fmt(wealth.withExtra)} in {horizon} years vs {fmt(wealth.now)} now
               </span>
             </div>
           )}
@@ -3141,18 +3168,18 @@ function MoneyWrapped({data, onClose}) {
       bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          {!nwShowW ? <div data-wrapped-networth-locked style={{marginBottom:24,color:"#fff"}}>
+          {!nwShowW ? <div data-wrapped-networth-locked style={{marginBottom:SPACE.xl,color:"#fff"}}>
             <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:18,fontWeight:700,marginBottom:6,overflowWrap:"anywhere"}}>{netWorthWords(nwStateW.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
             {nwStateW.mode!=="unavailable"&&<div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
-          </div> : nwPlusW ? <div style={{marginBottom:24}}>
-            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{netWorthWords(nwPlusW.totals?(nwPlusW.showing==="household"?"networth-plus-household-total":"networth-plus-your-total"):"networth-plus-no-total")}</div>
+          </div> : nwPlusW ? <div style={{marginBottom:SPACE.xl}}>
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.md}}>{netWorthWords(nwPlusW.totals?(nwPlusW.showing==="household"?"networth-plus-household-total":"networth-plus-your-total"):"networth-plus-no-total")}</div>
             {(nwPlusW.totals||[]).map(t=><div key={t.currency} style={{fontFamily:"'Playfair Display',serif",fontSize:36,fontWeight:900,color:t.netCents>=0?"#6EF0A0":"#FF7070",lineHeight:1.1,overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
           </div> : <>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
           <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
           </>}
-          <div style={{display:"grid",gridTemplateColumns:nwStateW.mode==="today"?"1fr 1fr":"1fr",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:nwStateW.mode==="today"?"1fr 1fr":"1fr",gap:SPACE.md}}>
             {[
               ...(nwStateW.mode==="today"?[{label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"}]:[]),
               {label:"Health Score", val:`${score}/100`,               icon:"💚"},
@@ -4241,21 +4268,28 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // entered by hand), paycheques, bills and debts, then the first number. Name, province, household and credit
 // score are not asked here: they have defaults and are set in Settings. onCount(event, detail) is told each step
 // completed and each bank link started, completed, failed or cancelled (aggregate counts, lib/onboardingCounts.js).
-function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected,onCount}){
-  const [step,setStep]=useState(0);
+// FIRST RUN (1.1.7, 2026-11-11): two phases. "before": welcome, the bank (or a statement, or enter it myself and the
+// balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
+// debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
+// still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
+function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater}){
+  const after = phase==="after";
+  const [step,setStep]=useState(after?3:0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
   const onCountRef=useRef(onCount); onCountRef.current=onCount;
   const count=(event,detail)=>{ try{ onCountRef.current&&onCountRef.current(event,detail); }catch{ /* a count never blocks a step */ } };
   // Leaving a step forward counts it once per visit.
   const done=(name,next)=>{ count("onboarding_step_completed",name); setStep(next); };
+  // The consent step on screen: when it first appeared, for its record (lib/legalConsent.js, shown_at).
+  useEffect(()=>{ if(step===0&&!after) markConsentShown(userId); },[step,userId,after]);
   // profile.province holds CA province code when country=CA, US state code when country=US. Left unset ("")
   // here, as are status and kids: until Settings sets them, Flourish shows federal content only, no couple
   // framing and no child-benefit tips. The country is the device's (lib/deviceCountry.js: a Canadian time zone
   // is Canada; else a US time zone or US region is the US; else Canada); Settings changes it. It is also Plaid's search.
   const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
-  const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
-  const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
+  const [bills,setBills]=useState(()=>after&&Array.isArray(initialBills)&&initialBills.length?initialBills.map(b=>({...b,amount:String(b.amount??""),date:String(b.date??"")})):[{name:"",amount:"",date:""}]);
+  const [debts,setDebts]=useState(()=>after&&Array.isArray(initialDebts)&&initialDebts.length?initialDebts.map(d=>({...d,balance:String(d.balance??""),rate:String(d.rate??""),min:String(d.min??"")})):[{name:"",balance:"",rate:"",min:""}]);
   // Pre-populate debts from connected credit card accounts when user reaches debt step
   useEffect(()=>{
     if(step !== 4) return;
@@ -4300,7 +4334,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const connAccts = Array.isArray(connectedAccounts) ? connectedAccounts : [];
   const [plaidTxns,setPlaidTxns]=useState([]);
   const [linkToken,setLinkToken]=useState(null);
-  const [detectedBills,setDetectedBills]=useState(null); // null=not yet detected, []=detected but empty
+  // null=not yet detected, []=detected but empty. After the number, the bills the bank showed are already in the household's
+  // data (marked auto), so the step says what was found rather than that detection is still to come.
+  const [detectedBills,setDetectedBills]=useState(()=>after&&Array.isArray(initialBills)&&initialBills.some(b=>b&&b.auto)?initialBills.filter(b=>b&&b.auto):null);
 
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
@@ -4395,7 +4431,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     }catch(err){
       // Bug fix: always clear the progress interval even if exchange fails
       if(progTimer) clearInterval(progTimer);
-      count("bank_link_failed");
+      // The failed count says where and why (counts only): our exchange, or the free plan's one-bank limit.
+      count("bank_link_failed", linkFailDetail(currentPlatform(), /plan_limit/.test(String(err?.message||"")) ? "PLAN_LIMIT" : "EXCHANGE_FAILED"));
       // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
       // Every other failure (an expired session included) is W4: try again or enter the numbers.
       // The bank login limit (behind PLUS_ENABLED): its own line, with the server's numbers. Nothing was disconnected.
@@ -4407,7 +4444,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   },[]);
   // W4 when Plaid closes without linking: err is null when the person closed it, an error when Plaid failed.
   const onPlaidExit=useCallback((err)=>{
-    count(err ? "bank_link_failed" : "bank_link_cancelled");
+    // A failure carries the platform and Plaid's error code from the fixed list (never its message): lib/onboardingCounts.js.
+    if (err) count("bank_link_failed", linkFailDetail(currentPlatform(), err.error_code)); else count("bank_link_cancelled");
     setBankOutcome(err ? "failed" : "cancelled");
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -4542,7 +4580,14 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   // get_accounts succeeds, so re-sending them here would let a stale local copy overwrite the truth.
   // `transactions` still carries statement-upload rows (plaidTxns); the parent MERGES rather than
   // replaces, so bank transactions promoted earlier survive.
-  const finish=()=>{ count("onboarding_step_completed","debts"); return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
+  const finish=()=>{ count("onboarding_step_completed","debts");
+    // After the number: only the bills and the debts go back; App merges them and marks the household done.
+    if (after) return onComplete({bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance)});
+    return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
+  // Before the number: pay and the next payday are the last questions. Bills found in a linked bank's transactions and
+  // cards from the bank still go in now (nobody typed them); everything else waits for "after".
+  const finishBeforeNumber=()=>{ count("onboarding_step_completed","income");
+    return onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null,billsAfterNumber:"pending"},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]}); };
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
   // W1: weekly, every-two-weeks and twice-a-month pay asks for the next payday, unless the bank's deposits
@@ -4561,18 +4606,22 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const [typesOpen,setTypesOpen]=useState(()=>new Set());
 
   const screens=[
-    // 0: Welcome (slim — Phase 3e-A trim)
-    <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
-      {/* Quality Sprint item 9: single combined lockup (diamond + wordmark are baked into the
-          app-icon art) replaces the icon + a separate text wordmark — no more duplicated "flourish". */}
-      <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
-      <button onClick={()=>done("welcome",1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
-      <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
-      <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
+    // 0: The consent step, for every new account (email, Apple or Google alike). 1.1.7: the value screen before sign-up
+    // replaced the old welcome here (its tagline, its line about price and countries, the demo
+    // button and the capital-F lockup). What stays is the reason this step exists: the data-processing consent, which the
+    // sign-up card's line (Terms and Privacy only) does not cover and an Apple or Google sign-up never sees. Its words were
+    // approved 2026-11-12 (lib/firstRunWords.js consentTitle, consentLine). The Terms and the Privacy Policy are tappable
+    // here, before Get started; tapping Get started is recorded against the account (onConsent, lib/legalConsent.js).
+    <div data-onboarding-consent="" style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
+      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:16,maxWidth:320}}>{FIRST_RUN_WORDS.consentTitle}</div>
+      <div style={{marginBottom:24,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
+        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{FIRST_RUN_WORDS.consentLine}</div>
+        <div style={{display:"flex",gap:16,marginTop:6}}>
+          <button data-consent-legal="terms" onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Terms</button>
+          <button data-consent-legal="privacy" onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,minHeight:LAYOUT.minTap,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Privacy Policy</button>
+        </div>
       </div>
+      <button data-consent-accept="" onClick={()=>{ try{ onConsent&&onConsent(); }catch{ /* the record never blocks the step */ } done("welcome",1); }} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>{FIRST_RUN_WORDS.getStarted}</button>
     </div>,
 
     // 1: Bank Connection
@@ -4643,8 +4692,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
-          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>For accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
+          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementTitle}</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementSub}</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4898,12 +4947,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source, even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>done("income",3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
+      <Btn label={FIRST_RUN_WORDS.showNumber} onClick={finishBeforeNumber} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount)) || incomes.some(payDateMissing)}/>
     </div>,
 
-    // 3: Bills
+    // 3: Bills (after the number)
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your bills</div>
+      {after&&<div data-after-number-lead="" style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,marginBottom:12}}>{FIRST_RUN_WORDS.billsLead}</div>}
       {detectedBills&&detectedBills.length>0?(
         <div style={{color:C.muted,fontSize:14,marginBottom:14}}>
           We found <span style={{color:C.tealBright,fontWeight:700}}>{detectedBills.length} recurring bills</span> from your transactions. Amounts are averaged. Edit anything that looks off.
@@ -4937,6 +4987,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       ))}
       <Btn label="+ Add Bill" onClick={addBill} outline color={C.green} small/>
       <div style={{marginTop:10}}><Btn label="Continue →" onClick={()=>done("bills",4)}/></div>
+      {after&&onLater&&<div style={{marginTop:6}}><Btn label={FIRST_RUN_WORDS.notNow} onClick={onLater} outline color={C.muted} small/></div>}
     </div>,
 
     // 4: Debts (then the first number)
@@ -4974,20 +5025,22 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       ))}
       <Btn label="+ Add Debt" onClick={addDebt} outline color={C.green} small/>
       <div style={{marginTop:6}}><Btn label="No debt, skip" onClick={finish} outline color={C.muted} small/></div>
-      <div style={{marginTop:8}}><Btn label="Show me today's number →" onClick={finish}/></div>
+      <div style={{marginTop:8}}><Btn label={after?FIRST_RUN_WORDS.updateNumber:"Show me today's number →"} onClick={finish}/></div>
     </div>,
 
   ];
 
   return (
     <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
+      <StatusBarCover bg={C.bg}/>
       <div style={{width:"100%",maxWidth:430,minWidth:0,boxSizing:"border-box",padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
-        {step>0&&(
+        {step>(after?3:0)&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
           </div>
         )}
-        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:4}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
+        {/* Two steps each side of the number: the bank and pay before it, bills and debts after it. */}
+        {step>0&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:2}).map((_,i)=>{ const at=after?step-3:step-1; return <div key={i} style={{height:3,borderRadius:99,flex:i===at?3:1,background:i<=at?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<=at?`0 0 8px ${C.green}44`:"none"}}/>; })}</div>}
         {screens[step]}
       </div>
     </div>
@@ -5142,8 +5195,8 @@ function getNetWorthHistory() {
 function NetWorthLocked({ mode, C, label = null }){
   return (
     <div data-networth-locked={mode}>
-      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{label}</div>}
-      <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
+      {label && <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>{label}</div>}
+      <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs,overflowWrap:"anywhere"}}>{netWorthWords(mode==="unavailable"?"networth-locked-unavailable":"networth-locked-title")}</div>
       {mode!=="unavailable" && mode!=="pending" && <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",overflowWrap:"anywhere"}}>{netWorthWords("networth-locked-body")}</div>}
     </div>
   );
@@ -6276,7 +6329,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next deposit.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
+              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next payday.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
             </div>}
           </div>
         </div>
@@ -6291,7 +6344,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
         <HowWeGotThis
           title="Safe to spend until next payday"
           value={ssView.headlineText}
-          meaning="What is left after the bills, debt payments and savings already committed before your next deposit."
+          meaning="What is left after bills, minimum debt payments, a spending buffer and savings are counted until your next payday."
           inputs={[
             {label:"In your accounts", value:ssView.balanceText},
             ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
@@ -6418,12 +6471,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
           // second division of safe. The weekly framing is that daily figure, not safe/7.
-          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
-          // this surface has not established WHICH income arrives next.
+          // Prompt 3d: the engine's pace as a fact, not an instruction. "payday" (2026-11-13): safe to spend runs to
+          // the next main payday (forecastEdits.js nextMainPaydayFor), so that is the day this line names.
           const doIt = safe>0
             // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
             ? paceSentence(dailyPace, ssView.headline)
-            : "Nothing is left to spend until your next deposit lands.";
+            : "Nothing is left to spend until your next payday.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
@@ -6652,12 +6705,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
           {!nwShow ? <NetWorthLocked mode={nwState.mode} C={C} label="Net Worth Trend"/> : nwPlus ? <div data-networth-plus-card>
             <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
             {nwPlus.totals ? <>
-              <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords(nwPlus.showing==="household"?"networth-plus-household-total":"networth-plus-your-total")}</div>
+              <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>{netWorthWords(nwPlus.showing==="household"?"networth-plus-household-total":"networth-plus-your-total")}</div>
               {nwPlus.totals.map(t=><div key={t.currency} style={{color:t.netCents<0?C.redBright:C.tealBright,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',Georgia,serif",overflowWrap:"anywhere"}}>{moneyIn(t.netCents,t.currency)}</div>)}
             </> : <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-plus-no-total")}</div>}
           </div> : !nwHasData ? <div>
             <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
-            <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{netWorthWords("networth-empty-title")}</div>
+            <div style={{color:C.cream,fontWeight:700,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>{netWorthWords("networth-empty-title")}</div>
             <div style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{netWorthWords("networth-empty-body")}</div>
           </div> : <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
@@ -7445,7 +7498,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
 // "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
 // else explains itself by being tapped, because the number opens HowWeGotThis.
 const TERMS = {
-  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit.",
+  "Safe to spend": "Not your balance. What is left after bills, minimum debt payments, a spending buffer and savings are counted until your next payday.",
   "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
   "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
@@ -10481,7 +10534,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
-function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false }){
+function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false, meetingMemory = null }){
   // Activation (2026-10-15): the household opened the money meeting (this agenda) for the first time.
   // Once per account; never in the demo.
   // Opened by the household, not by the tour's Meet step (2026-10-23): a tour stop is not a meeting opened.
@@ -10493,6 +10546,9 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
   const agenda = useMemo(() => {
     try {
       const full = meetAgendaFor(data);
+      // Meeting memory: when the household's meetings could not be read, their "no" answers are unknown, so no
+      // question is asked (on screen or by the coach) rather than one they already declined being asked again.
+      if (!data.demo && !Array.isArray(data.meetingRecords)) full.questions = [];
       return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : withWeekAhead(full, data);
     } catch {
       // A malformed stored shape must cost the household its agenda, not its app: unguarded, a
@@ -10505,6 +10561,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
+  const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo's and the locked meeting's line follow the switch
   const [started, setStarted] = useState(false);
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -10513,6 +10570,34 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
   // A refused or failed meeting message rules out a store review ask for a while (reviewRules.js).
   useEffect(() => { if (meetError) noteReviewTrouble(); }, [meetError]);
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
+  // Meeting memory (2026-11-08): the meetings are read again each time Meet opens, so one a partner just held shows.
+  // fresh: what was held is dropped first, so until this read answers there is no opening at all (never one from before
+  // a leave or a join, or from the other household).
+  // readThisVisit: Meet's first draw happens before that effect runs, with whatever this phone already held, so the
+  // opening and the questions wait for THIS visit's read to answer as well. Until then: nothing.
+  const [readThisVisit, setReadThisVisit] = useState(false);
+  useEffect(() => {
+    if (data?.demo || !meetingMemory) return;
+    let live = true;
+    Promise.resolve(meetingMemory.reload({ fresh: true })).catch(() => null).then(() => { if (live) setReadThisVisit(true); });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // How this meeting opens: what the last one decided (meetingRecord.js meetingOpening). Only when the meetings were
+  // actually read: a failed read shows nothing, never the first-meeting line.
+  const opening = useMemo(() => {
+    if (data.demo || !readThisVisit || !Array.isArray(data.meetingRecords)) return null;
+    try { return meetOpeningFor(data); } catch { return null; }
+  }, [data, readThisVisit]);
+  const recordsKnown = !data.demo && readThisVisit && Array.isArray(data.meetingRecords) && !!meetingMemory;
+  // The household's Yes or No to each question, by its id (the change's signature). Tapping the chosen one again
+  // clears it: no answer is a real choice too, and it is not recorded.
+  const [choices, setChoices] = useState({});
+  const choose = (id, answer) => setChoices(c => { const n = { ...c }; if (n[id] === answer) delete n[id]; else n[id] = answer; return n; });
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const lastHeld = data.profile?.meetingSchedule?.lastMeetingAt;
+  const heldToday = !!lastHeld && new Date(lastHeld).toDateString() === new Date().toDateString();
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
@@ -10603,6 +10688,12 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
       <NotAdviceLine style={{textAlign:"left",marginBottom:SPACE.sm}}/>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
+      {opening && opening.lines.length > 0 && (
+        <div style={card} data-meet="opening">
+          {opening.lines.map((l, i) => <div key={i} style={{color:i===0?C.cream:C.mutedHi,fontSize:13,lineHeight:1.6,fontWeight:i===0?600:400}}>{l.text}</div>)}
+        </div>
+      )}
+
       <div style={card} data-tour="meet">
         <div style={sTitle}>This week</div>
         {items.length>0
@@ -10633,17 +10724,40 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
         </div>
       ))}
 
+      {/* The questions from the bank's view of the bills, each with Yes or No. Recorded when the meeting is marked done:
+          a yes changes the bills then (applyMeetingAnswers), a no is remembered and the question is not asked again.
+          Only when the meetings were read (recordsKnown), so a declined question is never asked again by mistake. */}
+      {recordsKnown && setAppData && !heldToday && agenda.questions && agenda.questions.length > 0 && (
+        <div style={card} data-meet="questions">
+          <div style={{display:"flex",flexDirection:"column",gap:SPACE.lg}}>
+            {agenda.questions.map(q => (
+              <div key={q.id}>
+                <div style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl}}>{q.text}</div>
+                <div style={{display:"flex",gap:8}}>
+                  {q.options.map(o => {
+                    const on = choices[q.id] === o.answer;
+                    return <button key={o.answer} type="button" aria-pressed={on} onClick={()=>choose(q.id, o.answer)} disabled={saving}
+                      style={{flex:1,minHeight:LAYOUT.minTap,background:on?C.purple:"none",border:`1px solid ${on?C.purple:C.border}`,borderRadius:10,padding:"8px 12px",
+                        color:on?textOn(C.purple):C.cream,fontWeight:700,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit"}}>{o.label}</button>;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {data.demo ? (
         /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
           <div style={{marginBottom:SPACE.sm}}><span style={exampleTagStyle()}>{DEMO_STATUS_LABEL}</span></div>
           <div data-chat="plain" style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
+          <div data-demo-meeting-line="" style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>{switchWords("trialfirst-demo-meeting", tpfOnNow)}</div>
         </div>
       ) : facilitatorGate === "trial" ? (
         /* A store app sells nothing: it says the meeting isn't on the free plan (lib/freePlan.js), and stops. */
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? LOCKED_LINE : "Start your trial to run the meeting with your coach."}</div></div>
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? LOCKED_LINE : switchWords("trialfirst-meeting-locked", tpfOnNow)}</div></div>
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
@@ -10684,10 +10798,27 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
           (which also moves the next scheduled meeting on), and it is what "First money meeting held" on
           Today's setup checklist reads. Never in demo mode: the sample household holds no meetings. */}
       {!data.demo && setAppData && (()=>{
-        const last = data.profile?.meetingSchedule?.lastMeetingAt;
-        const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
-        const markDone = () => {
-          setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
+        // Meeting memory (2026-11-08): the meeting's answers are saved FIRST (/api/meeting, lib/meetingMemory.js). Only
+        // once the server has stored them is the meeting marked done and each yes applied to the bills. A failed save
+        // changes nothing: no bill, no date, no answer, and the choices stay on screen to try again. savingRef stops a
+        // second tap while the first is in flight, and applyMeetingAnswers can only apply a yes while the bank still
+        // shows that change, so marking done again (or on another device) never applies it twice.
+        const markDone = async () => {
+          if (savingRef.current) return;
+          savingRef.current = true; setSaving(true); setSaveFailed(false);
+          let res = { ok: false };
+          try { res = meetingMemory ? await meetingMemory.record(answersFor(agenda.questions, choices)) : { ok: false }; }
+          catch { res = { ok: false }; }
+          if (!res || !res.ok) { setSaveFailed(true); savingRef.current = false; setSaving(false); return; }
+          const stored = res.record.answers;
+          setAppData(prev => {
+            if (!prev) return prev;   // signed out (or reset) while it saved: there is nothing to change
+            const { bills } = applyMeetingAnswers(prev, stored);
+            return { ...prev, bills, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } };
+          });
+          signalCheckIn("meeting", data.demo);   // the full funnel (#127): counted once the meeting is saved and marked held
+          setChoices({});
+          savingRef.current = false; setSaving(false);
           // The store's own review sheet after a completed meeting (reviewRules.js decides: once per meeting,
           // at most three times in 365 days, never on the web or in demo mode, never within 24 hours of
           // trouble, and nothing in front of it).
@@ -10695,7 +10826,10 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false 
         };
         return heldToday
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
-          : <button onClick={markDone} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:SPACE.sm}}>Mark this meeting done</button>;
+          : <>
+              <button onClick={markDone} disabled={saving} aria-busy={saving} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:saving?"default":"pointer",fontFamily:"inherit",marginTop:SPACE.sm,opacity:saving?0.6:1}}>Mark this meeting done</button>
+              {saveFailed && <div role="alert" style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm}}>Your meeting wasn't saved. Please try again.</div>}
+            </>;
       })()}
       {explainItem&&<HowWeGotThis title={explainItem.title} value={explainItem.value} meaning={explainItem.meaning}
         inputs={explainItem.rows||[]} source={explainItem.source} onClose={()=>setExplainItem(null)}/>}
@@ -10711,7 +10845,7 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
-function Family({data,setAppData,setScreen,tourActive=false}){
+function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null}){
   const [tab,setTab]=useState("meeting");
   const [started,setStarted]=useState(false);
   const [checks,setChecks]=useState({});
@@ -10964,7 +11098,7 @@ function Family({data,setAppData,setScreen,tourActive=false}){
     })()}
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive}/>}
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData} tourActive={tourActive} meetingMemory={meetingMemory}/>}
     {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
     {false&&<>
       {!started&&!done2&&<>
@@ -11222,7 +11356,7 @@ function Family({data,setAppData,setScreen,tourActive=false}){
             {["😰","😟","😐","🙂","😊","🤩"].map(e=><button key={e} onClick={()=>setMood(e)} style={{fontSize:28,background:mood===e?C.purple+"33":"none",border:`2px solid ${mood===e?C.purple:"transparent"}`,borderRadius:12,padding:6,cursor:"pointer",transition:"all .2s"}}>{e}</button>)}
           </div>
         </Card>}
-        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>{setDone2(true);setSchedule({lastMeetingAt:new Date().toISOString()});}} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
+        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>{setDone2(true);setSchedule({lastMeetingAt:new Date().toISOString()});signalCheckIn("meeting", data?.demo);}} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
       </>}
 
       {done2&&<div>
@@ -13224,7 +13358,7 @@ function renderCoachMarkdown(src) {
 // Step 4 (COPY-CHANGES §2/§9): the two labels for surfaces that mix engine output and coach prose,
 // and the footer under every coach reply. Small, reusable.
 function CalcByFlourish({ style = {} }) {
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by flourish</span>;
 }
 function YourCoachTag({ style = {} }) {
   return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
@@ -13251,6 +13385,7 @@ function SegTabs({ tabs, value, onChange }) {
 
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
+  const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo coach's last line and button follow the switch
   const [messages, setMessages] = useState(()=>{
     try {
       const saved = safeLoadLS("flourish_coach_history", null);
@@ -13628,8 +13763,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           <CalcByFlourish style={{marginTop:2}}/>
           <NotAdviceLine/>
           <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
-            {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{switchWords("trialfirst-demo-coach", tpfOnNow)}</div>
+            {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{switchWords("trialfirst-demo-coach-button", tpfOnNow)}</button>}
           </div>
         </div>
       ) : (<>
@@ -13846,7 +13981,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
   },[]);
   const launchLabel=policyDateLabel(launchDate||fetchedDate);
   const launched=!!launchLabel;
-  const last=launchLabel||"October 26, 2026";
+  // The later of the newsletter launch's date and the 1.1.7 words' (lib/privacy117Words.js); Before you start records the same.
+  const last=policyDateLabel(privacyDate(launchDate||fetchedDate));
   // A store app never names the website (Amanda's rule, 2026-10-22): A2 starts at the Apple and Google sentence, and the
   // Stripe line is left out. The website keeps the full approved text. tests/privacyAndWords.test.cjs.
   const native=isNativeApp();
@@ -13873,6 +14009,8 @@ function PrivacyPolicy({onBack,launchDate=null}){
       <div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Waitlist:</strong> If you join the waitlist, we collect your email address and country, the page or link you joined from, and a record of what you agreed to receive and when.</div>
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Newsletter:</strong> {PW.newsletter}</div>}
       {launched&&<div style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>Testers:</strong> {PW.testers}</div>}
+      <div data-privacy-117="sign-in" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.signInLabel}</strong> {P117.signIn}</div>
+      <div data-privacy-117="agreement" style={{...p,marginTop:SPACE.md}}><strong style={{color:C.cream}}>{P117.agreementLabel}</strong> {P117.agreement}</div>
 
       <div style={h2}>2. How We Use Your Information</div>
       <div style={p}>We use your financial data solely to provide the Flourish Money service, including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.{launched?` ${PW.use}`:""}</div>
@@ -13886,6 +14024,7 @@ function PrivacyPolicy({onBack,launchDate=null}){
       <div style={h2}>5. Data Storage & Security</div>
       <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies, no conversation history is stored server-side by Flourish.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe to spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API. You can turn the AI coach off in Settings. When it is off, no financial data is sent to Anthropic.</div>
+      <div data-privacy-117="apple" style={{...p,marginTop:10}}><strong style={{color:C.cream}}>{P117.appleLabel}</strong> {P117.apple}</div>
 
       <div style={h2}>6. Data Sharing</div>
       <div style={p}>We share data with the following service providers solely to operate the App:</div>
@@ -14112,11 +14251,17 @@ function DeleteAccount({onBack}){
   );
 }
 
-function TermsOfService({onBack}){
+function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="October 14, 2026";
+  // TRIAL_PLAN_FIRST (approved 2026-11-11): while the switch is on, section 7 is the one text for the website and a store
+  // app that sells (lib/freePlan.js trialFirstTermsSection7), dated from the switch. The Terms ask the server themselves
+  // (GET /api/trial-plan-first), so every place that opens them follows it; off, or no answer, is today's section 7.
+  const [tpfSince,setTpfSince]=useState(tpfSinceFirst);
+  useEffect(()=>{ let live=true; askTrialPlanFirst(fetch, API_BASE).then(a=>{ if(!live) return; if(a===false) setTpfSince(null); else if(a&&a.since) setTpfSince(a.since); }); return ()=>{ live=false; }; },[]);
+  const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;
+  const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -14149,8 +14294,8 @@ function TermsOfService({onBack}){
       <div style={h2}>6. Acceptable Use</div>
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
-      <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>{netWorthWords("plan-terms-web-label")}</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={h2}>{tpfTerms ? TRIAL_FIRST_TERMS_7_HEADING : isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
+      <div style={p}>{tpfTerms && tpfTerms.map((x,i)=><span key={i} data-terms7-tpf="">{i>0&&<><br/><br/></>}{x}</span>)}{!tpfTerms && <>{isNativeApp() ? (storeBillingBuild() ? STORE_TERMS_SECTION_7_IAP : STORE_TERMS_SECTION_7) : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>{netWorthWords("plan-terms-web-label")}</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are in Canadian dollars (CAD) and do not include sales tax. Applicable GST/HST and provincial sales taxes are calculated from your billing address and added at checkout. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -14283,7 +14428,18 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote,billingOn=false,storeOn=
 // WHICH PLANS are offered is the server's answer, not this screen's opinion — the founding price
 // appears only because the status call said there is room for it, and its price id never reaches
 // the browser at all: the client posts a plan KEY.
-function UpgradeScreen({status, mode, notice, onClose, onManage}){
+// TRIAL_PLAN_FIRST (item 1): the lines above a plan's button, from lib/trialPlanFirst.js trialDisclosure. The first
+// line (the trial, or the price charged today) is the most prominent; how to cancel is last.
+function TrialTerms({disclosure}){
+  if(!disclosure) return null;
+  return (
+    <div data-trial-lines={disclosure.claim?"trial":"no-trial"} style={{marginTop:SPACE.sm,display:"flex",flexDirection:"column",gap:2}}>
+      {disclosure.lines.map((l,i)=><div key={i} data-trial-line={i} style={{color:i===0?C.cream:C.mutedHi,fontSize:i===0?14:13,fontWeight:i===0?800:500,lineHeight:1.5,overflowWrap:"anywhere"}}>{l}</div>)}
+    </div>
+  );
+}
+
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14298,6 +14454,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   const chosenKey = selectedChoice(choices, picked);
   const chosen = choices.find(p=>p.key===chosenKey) || null;
   const trialLine = upgradeTrialLine(trialEndLabel(trialEndsAtMs(), { trialActive: isTrialActive() }));
+  // TRIAL_PLAN_FIRST: with the switch on, each plan says above its button whether it starts with 14 days free (only
+  // when the server says this account is eligible) and what is charged, when, and how to cancel. Off: null, as before.
+  // L3 (review round): once checkout has said the trial does not apply (Stripe's history), the screen shows that, for this visit.
+  const [trialSaid,setTrialSaid]=useState(null);
+  const webEligible = trialSaid!==null ? trialSaid : trialFirst?.web_trial_eligible===true;
+  const trialOf = (plan) => trialFirst ? trialDisclosure({ platform:"web", eligible: webEligible, price: plan.price, planKey: plan.key, words: trialWords }) : null;
 
   const sendConfirm = async () => {
     setConfirmState("sending");
@@ -14323,9 +14485,17 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
         body: JSON.stringify(planKey==="__portal__"
           ? {action:"create_portal_session"}
-          : {action:"create_checkout_session", plan_key:planKey}),
+          : {action:"create_checkout_session", plan_key:planKey, ...(trialFirst ? { trial: webEligible } : {})}),
       });
       const body = await res.json().catch(()=>({}));
+      // TRIAL_PLAN_FIRST: the server's answer on the trial differs from what this screen showed. Nothing was created;
+      // the status is asked again, so the plans show what applies, and the person chooses again.
+      if(res.status===409 && body.error==="trial_changed"){
+        setError(trialWords("trialfirst-changed")); setStep("choose"); setBusy(null);
+        if(typeof body.trial==="boolean") setTrialSaid(body.trial);
+        if(onRecheck) await onRecheck();
+        return;
+      }
       // The server refused the founding price for this account (billing.js 403). Retrying never helps,
       // so it is said plainly, not as a connection error (src/lib/billingVisibility.js checkoutErrorText).
       if(res.status===403){
@@ -14346,7 +14516,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>{netWorthWords("plan-name")}</div>
-          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+          {!required&&<button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>}
         </div>
 
         {notice&&(
@@ -14355,6 +14525,12 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           </div>
         )}
 
+        {required&&mode!=="manage"&&(
+          <div data-plans-first="" style={{marginBottom:SPACE.md}}>
+            <h1 style={{...TYPE.title2,color:C.cream,margin:`0 0 ${SPACE.xs}px`}}>{trialWords("trialfirst-plans-title")}</h1>
+            <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{trialWords("trialfirst-plans-lead")}</div>
+          </div>
+        )}
         {mode==="manage" ? (
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             {/* H4: a renewal that failed (past_due) is not on Plus until the card is fixed: the portal line only. */}
@@ -14374,9 +14550,9 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
               </div>
               {chosen.note&&<div style={{color:chosen.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{chosen.note}</div>}
             </div>
-            <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>
+            {trialOf(chosen) ? <TrialTerms disclosure={trialOf(chosen)}/> : <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>{reviewChargeLine(chosen.key)}</div>}
             <button data-review-confirm="" onClick={()=>go(chosen.key)} disabled={!!busy} style={{width:"100%",minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy?0.7:1}}>
-              {busy===chosen.key?"Opening checkout…":UPGRADE_COPY.reviewConfirm}
+              {busy===chosen.key?"Opening checkout…":(trialOf(chosen)?.claim ? trialWords("trialfirst-button") : UPGRADE_COPY.reviewConfirm)}
             </button>
             <button onClick={()=>{setStep("choose");setError("");}} disabled={!!busy} style={{alignSelf:"center",background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>
               ← Back
@@ -14420,6 +14596,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
                         </span>
                         {plan.sub&&<span style={{display:"block",color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</span>}
                         {plan.note&&<span style={{display:"block",color:founding?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</span>}
+                        {trialOf(plan)&&<TrialTerms disclosure={trialOf(plan)}/>}
                       </span>
                     </label>
                   );
@@ -14436,6 +14613,16 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
         <div style={{color:C.muted,fontSize:13,marginTop:18,lineHeight:1.7}}>
           Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
         </div>
+        {/* The plans screen that cannot be closed links to the Terms and the Privacy Policy (reviewers' check, 2026-11-10),
+            with the approved labels the store paywall uses; each opens in place, and Back returns here. */}
+        {required&&(onViewLegal||onSignOut||onDeleteAccount)&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",columnGap:SPACE.md,marginTop:SPACE.md}}>
+          {onViewLegal&&<button type="button" data-plans-legal="terms" onClick={()=>onViewLegal("terms")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.terms}</button>}
+          {onViewLegal&&<button type="button" data-plans-legal="privacy" onClick={()=>onViewLegal("privacy")} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PAYWALL_COPY.privacy}</button>}
+          {onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{trialWords("trialfirst-sign-out")}</button>}
+          {onDeleteAccount&&<button type="button" data-plans-delete="" onClick={onDeleteAccount} style={{background:"none",border:"none",minHeight:LAYOUT.minTap,padding:`0 ${SPACE.sm}px`,color:C.mutedHi,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",textUnderlineOffset:2}}>{PLANS_DELETE_LABEL}</button>}
+        </div>}
+        {/* Held at the plans, this screen is all that is mounted: the deletion's question needs the dialog host here. */}
+        {required&&onDeleteAccount&&<ModalHost/>}
       </div>
     </div>
   );
@@ -14452,8 +14639,11 @@ const STORE_ATTEMPT = { current: null };
 // approved three links are always on it: Terms of Use (on iOS, Apple's standard EULA), Privacy Policy, Restore
 // purchases. It can always be closed: it opens only when the household asks (item 3). It is drawn OVER the app,
 // whose one ModalHost sits above it.
-function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false}){
+function StorePaywall({purchases, platform, status, askStore, onResolved, onViewLegal, onManage, onClose, inTrial=false, trialFirst=null, onSignOut, onDeleteAccount}){
   const [pkgs,setPkgs]=useState(null);           // { monthly, annual, founding } once the store answers
+  // TRIAL_PLAN_FIRST: the iPhone's eligibility answer from RevenueCat, per product id ({} until asked, and when asking
+  // fails: then no plan claims a trial). Android's comes with each product (lib/trialPlanFirst.js storeTrialEligible).
+  const [introElig,setIntroElig]=useState({});
   const [keepTrial,setKeepTrial]=useState(false); // the "keep the trial" confirm (2026-10-29) is open
   const keepStayRef=useRef(null);
   const [loadFailed,setLoadFailed]=useState(false);
@@ -14475,18 +14665,29 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         const off = await purchases.getOfferings();
         const chosen = choosePackages(off, { foundingAvailable });
         if(!chosen.monthly && !chosen.annual && !chosen.founding) throw new Error("no_products");
+        if(trialFirst && platform==="ios" && typeof purchases.checkTrialOrIntroductoryPriceEligibility==="function"){
+          const ids = [chosen.monthly, chosen.annual, chosen.founding].filter(Boolean).map(p=>p.product?.identifier).filter(Boolean);
+          let elig = {};
+          try{ elig = (await purchases.checkTrialOrIntroductoryPriceEligibility({ productIdentifiers: ids })) || {}; }catch{ elig = {}; }
+          if(!cancelled) setIntroElig(elig);
+        }
         if(!cancelled) setPkgs(chosen);
       }catch{ if(!cancelled) setLoadFailed(true); }
     })();
     return ()=>{ cancelled=true; };
-  },[purchases, platform, foundingAvailable, !!held]);
+  },[purchases, platform, foundingAvailable, !!held, !!trialFirst]);
 
   const deps = {
     serverStatus: ()=>askStore("store_status"),
     serverHold: (attempt_id, state)=>askStore("store_hold", { platform, attempt_id, ...(state ? { state } : {}) }),
     attempt: STORE_ATTEMPT,   // couple mode: one purchase attempt across taps (lib/storeBilling.js attemptFor)
     serverSync: ()=>askStore("store_sync"),
-    purchasePackage: (p)=>purchases.purchasePackage({ aPackage: p }),
+    // Android buys the option the screen showed (lib/trialPlanFirst.js androidPurchaseOption): the base plan unless this
+    // plan's card claimed the 14 days.
+    purchasePackage: (p)=>{
+      const base = platform==="android" ? androidPurchaseOption(p.product, !!(trialFirst && storeTrialEligible({ platform, product: p.product, eligibility: introElig }))) : null;
+      return base ? purchases.purchaseSubscriptionOption({ subscriptionOption: base }) : purchases.purchasePackage({ aPackage: p });
+    },
     restorePurchases: ()=>purchases.restorePurchases(),
   };
   const finish = async (r)=>{
@@ -14510,9 +14711,14 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
 
   // Founding annual first, and marked as the chosen plan, when it is offered (1.1.3, lib/foundingPlans.js); otherwise
   // Monthly then Annual, as before. Each plan's own button opens the store's sheet in one tap.
-  const cards = pkgs ? paywallPlanOrder(pkgs).map(([plan,p])=>({
-    plan, pkg:p, copy: offerCopy({ plan, priceString: p.product.priceString, platform }),
-  })).filter(c=>!!c.copy) : [];
+  const cards = pkgs ? paywallPlanOrder(pkgs).map(([plan,p])=>{
+    const copy = offerCopy({ plan, priceString: p.product.priceString, platform });
+    // TRIAL_PLAN_FIRST: above this plan's button, "14 days free" only when the store says this person is eligible.
+    const trial = (trialFirst && copy) ? trialDisclosure({ platform, eligible: storeTrialEligible({ platform, product: p.product, eligibility: introElig }), price: copy.price, planKey: plan, words: trialWords }) : null;
+    return { plan, pkg:p, copy, trial };
+  }).filter(c=>!!c.copy) : [];
+  // Does a plan on this screen claim the 14 days? Then "charged when you confirm" is untrue under it (lib/storeOffer.js storeDisclosure).
+  const trialClaimed = cards.some(c=>c.trial?.claim===true);
   const said = outcome ? PAYWALL_COPY.outcomes[outcome] : null;
   const link = {background:"none",border:"none",color:C.mutedHi,fontSize:13,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",padding:"10px 4px",minHeight:LAYOUT.minTap};
   // KEEP THE TRIAL (2026-10-29, lib/storeOffer.js TRIAL_KEEP_COPY): small print under the founding plans, for a
@@ -14536,7 +14742,8 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         {onClose&&<div style={{display:"flex",justifyContent:"flex-end"}}><button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.mutedHi,fontSize:20,cursor:"pointer",minWidth:LAYOUT.minTap,minHeight:LAYOUT.minTap}}>✕</button></div>}
         <div style={{display:"flex",justifyContent:"center",marginBottom:SPACE.md}}><FlourishMark size={48}/></div>
-        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{PAYWALL_COPY.title}</h1>
+        <h1 style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:24,fontWeight:900,textAlign:"center",margin:`0 0 ${SPACE.sm}px`}}>{(trialFirst&&!onClose) ? trialWords("trialfirst-plans-title") : PAYWALL_COPY.title}</h1>
+        {trialFirst&&!onClose&&<div data-plans-first="" style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{trialWords("trialfirst-plans-lead")}</div>}
         <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.xs}}>{PAYWALL_COPY.lead}</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center",marginBottom:SPACE.lg}}>{PAYWALL_COPY.dataSafe}</div>
         {held && (
@@ -14550,20 +14757,23 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
         {!held && !pkgs && !loadFailed && <div role="status" style={{color:C.muted,fontSize:13,textAlign:"center",padding:"18px 0"}}>{PAYWALL_COPY.checking}</div>}
         {!held && loadFailed && <div role="status" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,textAlign:"center",padding:"12px 0"}}>{PAYWALL_COPY.storeUnavailable}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:LAYOUT.cardGap}}>
-          {!held && cards.map(({plan,pkg,copy})=>(
+          {!held && cards.map(({plan,pkg,copy,trial})=>(
             <div key={plan} data-plan={plan} data-selected={plan==="founding_annual"?"":undefined} style={{background:C.card,border:`2px solid ${plan==="founding_annual"?C.gold:C.border}`,borderRadius:16,padding:"16px 18px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:SPACE.sm}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{copy.name}</div>
                 <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{copy.price}</div>
               </div>
               {copy.note&&<div style={{color:C.gold,fontSize:13,marginTop:SPACE.xs,lineHeight:1.5}}>{copy.note}</div>}
+              <TrialTerms disclosure={trial}/>
               <button onClick={()=>doBuy(plan,pkg)} disabled={!!busy || waiting} style={{width:"100%",marginTop:SPACE.md,minHeight:LAYOUT.minTap,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:(busy||waiting)?"default":"pointer",opacity:waiting?0.5:1,fontFamily:"inherit"}}>
-                {busy===plan?PAYWALL_COPY.checking:copy.button}
+                {busy===plan?PAYWALL_COPY.checking:(trial?.claim ? trialWords("trialfirst-button") : copy.button)}
               </button>
             </div>
           ))}
         </div>
-        {!held && cards.length>0 && <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform)}</div>}
+        {/* TRIAL_PLAN_FIRST: beside a plan that claims the 14 days, "charged when you confirm" is untrue; the line still to
+            come takes its place there, and only there (lib/storeOffer.js storeDisclosure). */}
+        {!held && cards.length>0 && <div data-store-disclosure={trialClaimed?"trial":"standard"} style={{color:C.muted,fontSize:13,lineHeight:1.6,marginTop:SPACE.md}}>{storeDisclosure(platform, { trialClaimed })}</div>}
         {showKeepTrial && <div style={{display:"flex",justifyContent:"center",marginTop:SPACE.xs}}>
           <button type="button" data-trial-link="" onClick={openKeepTrial} style={link}>{TRIAL_KEEP_COPY.link}</button>
         </div>}
@@ -14590,11 +14800,18 @@ function StorePaywall({purchases, platform, status, askStore, onResolved, onView
             : <button onClick={()=>onViewLegal("terms")} style={link}>{PAYWALL_COPY.terms}</button>}
           <button onClick={()=>onViewLegal("privacy")} style={link}>{PAYWALL_COPY.privacy}</button>
           <button onClick={doRestore} disabled={!!busy} style={link}>{busy==="restore"?PAYWALL_COPY.checking:PAYWALL_COPY.restore}</button>
+          {!onClose&&onSignOut&&<button type="button" data-plans-sign-out="" onClick={onSignOut} style={link}>{trialWords("trialfirst-sign-out")}</button>}
+          {/* Held at the plans, Settings cannot be reached, so its Delete Account is here too (App Store 5.1.1(v)): Settings'
+              own label, and the same deletion with the same question (deleteAllData). */}
+          {!onClose&&onDeleteAccount&&<button type="button" data-plans-delete="" onClick={onDeleteAccount} style={link}>{PLANS_DELETE_LABEL}</button>}
         </div>
       </div>
     </div>
   );
 }
+
+// The plans screen that cannot be closed carries Settings' own "Delete Account" (no new words): see StorePaywall.
+const PLANS_DELETE_LABEL = "Delete Account";
 
 // THE FALLBACK (audit 2026-10-26, B4): shown only when the billing status could not be read (or billing is off).
 // It takes no payment, so it never offers a free trial (every account's trial starts at signup), never says plans
@@ -14754,6 +14971,7 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
     // Scrolls when the screen is shorter than its content (a Duo's outer screen in landscape is 466px tall): centred
     // by auto margins rather than justifyContent, so it never spills past the bottom safe-area padding into the strip.
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",overflowY:"auto",padding:"40px 28px",textAlign:"center",...overlaySafe([40, 28], { bottom: true })}}>
+      <StatusBarCover bg={C.bg}/>
       {/* Ambient glow */}
       <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
@@ -14813,6 +15031,10 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
               ? <span data-first-number-line="">{firstNumberSentence(ss)}{bufferPending(data, ss)&&<>{firstNumberSentence(ss)?" ":""}<span data-buffer-pending="">{BUFFER_PENDING_LINE}</span></>}</span>
               : "Add your income in Settings to see your personalised safe to spend number."}
         </div>
+        {/* 1.1.7: bills come after the number, so the number says it doesn't hold them yet. */}
+        {data.profile?.billsAfterNumber==="pending" && !(data.bills||[]).length && !ssView.needsSetup && !noIncome && (
+          <div data-bills-pending="" style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:280,margin:"-20px auto 28px"}}>{FIRST_RUN_WORDS.billsPending}</div>
+        )}
 
         {/* Breakdown — progressive disclosure. Never when needsSetup: there are no rows and no
             total, so the card would be a heading, nothing, and a labelled blank. */}
@@ -14877,6 +15099,7 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
   };
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px",...safeX(24)}}>
+      <StatusBarCover bg={C.bg}/>
       <div style={{maxWidth:480,width:"100%",minWidth:0}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🤖</div>
@@ -15032,7 +15255,8 @@ function loadState() {
 function saveState(patch) {
   try {
     const cur = loadState() || {};
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({...cur, ...patch}));
+    const p = patch && patch.appData ? { ...patch, appData: withoutRenderOnly(patch.appData) } : patch;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({...cur, ...p}));
   } catch {}
 }
 export function clearState() {
@@ -15741,14 +15965,15 @@ function FoundingListLine() {
   return <p className="fll-found-line" data-founding-line="">{line}</p>;
 }
 
-// THE MAIN BUTTON, top and bottom of the landing (approved Oct 22): it opens website signup. The visit's src
+// THE MAIN BUTTON, top and bottom of the landing (approved Oct 22; with TRIAL_PLAN_FIRST on, "Get started" with
+// trialfirst-landing under it, approved 2026-11-11): it opens website signup. The visit's src
 // (lib/waitlistSrc.js) goes with the signup to the new account; the tap is counted (lib/landingCounts.js).
-function TrialButton({ onClick }) {
+function TrialButton({ onClick, tpfOn = false }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
       <button type="button" className="fll-btn fll-main"
-        onClick={() => { countLanding("main_tap", { base: API_BASE }); track(EVENT.tryFree); onClick(); }}>Try flourish free for 14 days</button>
+        onClick={() => { countLanding("main_tap", { base: API_BASE }); track(EVENT.tryFree); onClick(); }}>{tpfOn ? trialWords("trialfirst-get-started") : "Try flourish free for 14 days"}</button>
     </>
   );
 }
@@ -15789,9 +16014,9 @@ function StoreBadges(){
   if (isNativeApp()) return null;
   return (
     <div className="fll-stores">
-      {storeBadgesFor(captureWaitlistSrc()).map((b) => (
+      {storeBadgesFor(captureWaitlistSrc(), landingAttribution()).map((b) => (
         <a key={b.store} className="fll-store" href={b.href} target="_blank" rel="noopener noreferrer"
-          onClick={() => track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" })}>
+          onClick={() => { track(EVENT.storeBadge, { store: b.store === "app_store" ? "App Store" : "Google Play" }); countStoreClick(landingAttribution()); }}>
           <img src={b.src} alt={b.alt} width={b.width} height={b.height} />
         </a>
       ))}
@@ -15799,8 +16024,9 @@ function StoreBadges(){
   );
 }
 
-function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
-  const [mode, setMode] = useState("login");
+function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpfOn = false }) {
+  // 1.1.7: a store app opens on its value screen ("welcome"), never on a log-in form a new person can't use.
+  const [mode, setMode] = useState(() => (isNativeApp() && !startOnLogin ? "welcome" : "login"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [betaCode, setBetaCode] = useState("");
@@ -16036,6 +16262,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
         return;
       }
       setPendingConfirm("");
+      // INSTANT SIGNUP (SIGNUP_INSTANT on the server): the account is ready, so sign in with the address and password
+      // just typed and go straight into onboarding. No inbox, no second sign-in. A store build from before this keeps
+      // the line below: one tap on Log In, with both fields still filled in.
+      if (out.instant) { setLoading(false); await handleLogin(); return; }
       setSuccess("Account created. You can log in now.");
       setMode("login");
       setLoading(false);
@@ -16160,6 +16390,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 
   return (
     <div style={{ minHeight: "100dvh", background: showAuth ? AUTH_C.page : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)", ...safeX(0) }}>
+      <StatusBarCover bg={showAuth ? AUTH_C.page : "#FDF6EC"}/>
 
       {!showAuth ? (
 
@@ -16175,6 +16406,11 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
             .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:32px; color:#163a1c; letter-spacing:-0.3px; }
             .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.2); color:#52624f; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
+            /* The menu: Blog (the guides, a plain link to /guides/), then Log in. One row from 360 wide; on a narrower phone the pair drops under the name instead of being cut off. */
+            .fll-nav{ flex-wrap:wrap; gap:6px 12px; }
+            .fll-nav-links{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+            .fll-navlink{ display:inline-flex; align-items:center; min-height:44px; padding:0 4px; color:#52624f; font-size:13px; font-weight:600; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-navlink:hover{ color:#2E8B2E; }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
             .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "card" "form" "founding" "demo"; gap:${SPACE.xl}px; }
@@ -16359,7 +16595,10 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
               <FlourishMark size={52} />
               <span>flourish</span>
             </div>
-            <button className="fll-login" onClick={goLogin}>Log in</button>
+            <div className="fll-nav-links">
+              <a className="fll-navlink" href="/guides/">Blog</a>
+              <button className="fll-login" onClick={goLogin}>Log in</button>
+            </div>
           </div>
 
           {/* Hero. The trial-first landing, approved Oct 22. Phone, one column: H1, subline, the $1,944 card, the main
@@ -16386,8 +16625,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                 {/* Founding spots open (approved Oct 22): the main button, its line, the badges, the read-only line and
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
-                {trialFirst && <TrialButton onClick={goSignup}/>}
-                {trialFirst && <p className="fll-trial-line">Every feature free for 14 days. Also on iPhone and Android.</p>}
+                {trialFirst && <TrialButton onClick={goSignup} tpfOn={tpfOn}/>}
+                {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
@@ -16477,7 +16716,8 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
           {trialFirst && (
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
-              <TrialButton onClick={goSignup}/>
+              <TrialButton onClick={goSignup} tpfOn={tpfOn}/>
+              {tpfOn && <p className="fll-trial-line">{trialWords("trialfirst-landing")}</p>}
             </div>
           </div>
           )}
@@ -16506,12 +16746,17 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                 <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
                 <a href="/newsletter/">Canadian money dates</a>
+                <a href="/guides/">Blog</a>
               </div>
             </div>
           </div>
 
         </div>
 
+      ) : mode === "welcome" ? (
+        <AppWelcome onGetStarted={() => { setMode("signup"); setError(""); setSuccess(""); setTouched({}); }}
+          onLogIn={() => { setMode("login"); setError(""); setSuccess(""); setTouched({}); }}
+          onDemo={onTryDemo ? () => onTryDemo(waitlistCountry) : null} />
       ) : (
 
         /* ───────────────── AUTH FORM ─────────────────
@@ -16528,7 +16773,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
               </button>}
               <div style={{ display: "flex", justifyContent: "center", marginBottom: SPACE.sm }}><FlourishLockup size={60} color={AUTH_C.heading} /></div>
               <div style={{ color: AUTH_C.muted, fontSize: 14, marginTop: SPACE.xs }}>
-                {mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
+                {mode === "signup" ? switchWords("trialfirst-signup-title", tpfOn) : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
@@ -16587,6 +16832,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
                       <button onClick={retrySignupStatus} style={{ ...authLinkStyle, padding: "0 10px" }}>Try again</button>
                     </div>
                   )}
+                  <SocialSignIn onFailed={() => { setSuccess(""); setError(FIRST_RUN_WORDS.socialFailed); }} />
                   <label htmlFor="auth-email" style={fieldLabelStyle}>Email address</label>
                   <input id="auth-email" style={inpStyle(fieldErr.email)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email}
                     onChange={e => setEmail(stripEmailSpaces(e.target.value))} onBlur={() => email && setTouched(t => ({ ...t, email: true }))}
@@ -16669,6 +16915,95 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false }) {
 }
 
 
+// THE STORE APPS' FIRST SCREEN (1.1.7): the value before any account. The sample number is the demo household's own,
+// worked out by the same engine as Today, and labelled as an example; "Get started" is the way in, "Log in" a small link.
+function AppWelcome({ onGetStarted, onLogIn, onDemo }) {
+  const view = useMemo(() => {
+    try {
+      const d = buildDemoState("CA");
+      return safeToSpendView(SafeSpendEngine.calculate(d), { hasCashAccount: true, hasIncome: true });
+    } catch { return null; }
+  }, []);
+  const W = FIRST_RUN_WORDS;
+  return (
+    <div data-app-welcome="" style={{ minHeight: "100dvh", background: AUTH_C.page, color: AUTH_C.ink, display: "flex", justifyContent: "center", padding: `${SPACE.xl}px ${SPACE.xl}px` }}>
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: SPACE.lg }}>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: SPACE.md }}><FlourishLockup size={48} color={AUTH_C.heading} /></div>
+        <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 30, lineHeight: 1.15, fontWeight: 900, color: AUTH_C.heading, textAlign: "center", margin: 0 }}>{W.valueHeadline}</h1>
+        <p style={{ color: AUTH_C.muted, fontSize: 15, lineHeight: 1.6, textAlign: "center", margin: 0 }}>{W.valueLead}</p>
+        {view && view.headline != null && (
+          <div data-sample-number="" style={{ background: AUTH_C.card, border: `1px solid ${AUTH_C.border}`, borderRadius: 22, padding: SPACE.lg, boxShadow: "0 10px 30px rgba(22,58,28,0.07)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", rowGap: SPACE.xs, columnGap: SPACE.sm }}>
+              <span style={{ color: AUTH_C.heading, fontWeight: 700, fontSize: 13 }}>{W.sampleLabel}</span>
+              <span data-sample-tag="" style={{ background: "#f3ead6", border: "1px solid #e3d3ad", color: "#7a5a12", borderRadius: 99, padding: "2px 10px", fontSize: 13, fontWeight: 700 }}>{W.sampleTag}</span>
+            </div>
+            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 56, lineHeight: 1.1, color: AUTH_C.heading, margin: `${SPACE.sm}px 0` }}>{formatMoney(view.headline)}</div>
+            {view.rows.map(r => (
+              <div key={r.key} style={{ display: "flex", justifyContent: "space-between", gap: SPACE.sm, fontSize: 13, color: AUTH_C.muted, padding: "2px 0" }}>
+                <span>{r.sign ? `${r.sign} ` : ""}{r.label}</span><span style={{ color: AUTH_C.ink, fontWeight: 700 }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button data-get-started="" onClick={onGetStarted} style={{ minHeight: LAYOUT.minTap, width: "100%", padding: "14px 22px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#2E8B2E,#1f6b22)", color: textOn("#2E8B2E", "#1f6b22"), fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{W.getStarted}</button>
+        <div style={{ textAlign: "center", color: AUTH_C.muted, fontSize: 14 }}>
+          {W.haveAccount} <button data-welcome-login="" onClick={onLogIn} style={{ background: "none", border: "none", color: AUTH_C.link, fontWeight: 700, fontSize: 14, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, minHeight: LAYOUT.minTap, padding: "0 6px", fontFamily: "inherit" }}>{W.logIn}</button>
+        </div>
+        {onDemo && (
+          <div style={{ textAlign: "center" }}>
+            <button onClick={onDemo} style={{ minHeight: LAYOUT.minTap, background: AUTH_C.card, border: `1.5px solid ${AUTH_C.link}`, color: AUTH_C.link, borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 {W.demo}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// SIGN IN WITH APPLE AND GOOGLE (1.1.7, lib/socialSignIn.js): on the sign-up and log-in cards, website and apps, above
+// the email form. The session lands through Supabase; the app's auth listener does the rest.
+function SocialSignIn({ onFailed }) {
+  const [busy, setBusy] = useState(null);
+  const platform = (() => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } })();
+  const go = async (provider) => {
+    if (busy) return;
+    setBusy(provider);
+    let res = { ok: false };
+    try {
+      const native = isNativeApp();
+      // The plugins, loaded as the button is tapped (lib/socialSignIn.js nativeSignInPlugins: a promise must never resolve
+      // to a Capacitor plugin itself, or it never settles and the button waits for good).
+      const { appleSignIn, browser, app: capApp } = native ? await nativeSignInPlugins({ platform, provider, load: {
+        apple: () => import("@capacitor-community/apple-sign-in"), browser: () => import("@capacitor/browser"), app: () => import("@capacitor/app") } })
+        : { appleSignIn: null, browser: null, app: null };
+      const appListener = capApp ? (cb) => { let h = null; capApp.addListener("appUrlOpen", e => cb(e && e.url)).then(x => { h = x; }); return () => { if (h) h.remove(); }; } : null;
+      res = await signInWithProvider(provider, { supabase, native, platform, origin: native ? "https://flourishmoney.app" : window.location.origin, appleSignIn, browser, appListener, storage: appleGrantStorage() });
+      // An Apple sign-in in the app: what deleting the account will need to revoke it at Apple (lib/appleGrant.js). Not waited for.
+      if (res && res.ok && res.appleGrant) (async () => { try { const { data } = await supabase.auth.getSession(); await sendAppleGrant({ grant: res.appleGrant, jwt: data?.session?.access_token, apiBase: API_BASE }); } catch { /* nothing kept; deleting still deletes */ } })();
+    } catch { res = { ok: false }; }
+    if (!res.redirecting) setBusy(null);
+    if (!res.ok) onFailed && onFailed();
+  };
+  const W = FIRST_RUN_WORDS;
+  const btn = (dark) => ({ width: "100%", minHeight: LAYOUT.minTap, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 16px", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif", border: dark ? "none" : `1.5px solid ${AUTH_C.inputBorder}`, background: dark ? "#000" : "#fff", color: textOn(dark ? "#000000" : "#FFFFFF") });
+  return (
+    <div data-social-signin="" style={{ display: "flex", flexDirection: "column", gap: SPACE.sm, marginBottom: SPACE.lg }}>
+      {SOCIAL_PROVIDERS.includes("apple") && <button data-provider="apple" onClick={() => go("apple")} disabled={!!busy} style={btn(true)}>
+        <svg aria-hidden="true" width="16" height="19" viewBox="0 0 814 1000" fill="currentColor"><path d="M788 341c-6 4-110 63-110 193 0 151 132 204 136 205-1 3-21 73-70 145-43 63-89 126-158 126s-87-40-167-40c-78 0-106 41-169 41s-107-58-158-129C33 798 0 663 0 534c0-207 135-317 267-317 70 0 129 46 173 46 42 0 107-49 187-49 31 0 140 3 161 127zM554 160c33-39 56-93 56-147 0-8-1-15-2-21-53 2-117 36-155 80-30 34-58 88-58 143 0 8 1 16 2 19 3 0 9 1 14 1 48 0 108-32 143-75z"/></svg>
+        {busy === "apple" ? "…" : W.continueApple}
+      </button>}
+      {SOCIAL_PROVIDERS.includes("google") && <button data-provider="google" onClick={() => go("google")} disabled={!!busy} style={btn(false)}>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.1 5.5c4.2-3.9 7.2-9.6 7.2-16.9z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.4-4.6 2.2-8.8 2.2-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+        {busy === "google" ? "…" : W.continueGoogle}
+      </button>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: SPACE.xs }}>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+        <span style={{ color: AUTH_C.muted, fontSize: 13 }}>{W.orEmail}</span>
+        <div style={{ flex: 1, height: 1, background: AUTH_C.border }} />
+      </div>
+    </div>
+  );
+}
+
 // ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
 // ── Quality Sprint item 4: shared modal family (replaces window.confirm/alert/prompt) ─────────
 // Promise-based imperative API so call sites convert with minimal restructuring:
@@ -16682,6 +17017,13 @@ function _showModal(cfg) {
     _modalListener({ ...cfg, _resolve: resolve });
   });
 }
+// The store apps only (lib/safeArea.js statusBarCoverStyle): a screen that scrolls, with no header of its own, puts
+// this first so its words pass behind the status bar, not under the clock. `bg` is that screen's own background.
+function StatusBarCover({ bg }) {
+  if (!drawsBehindStatusBar()) return null;
+  return <div data-status-bar-cover="" aria-hidden="true" style={statusBarCoverStyle(bg)}/>;
+}
+
 function confirmModal(opts = {}) { return _showModal({ kind: "confirm", ...opts }); }
 function alertModal(opts = {})   { return _showModal({ kind: "alert", ...opts }); }
 function promptModal(opts = {})  { return _showModal({ kind: "prompt", ...opts }); }
@@ -17550,6 +17892,17 @@ export default function FlourishApp(){
     if (!bs.some(needs)) return;
     setAppData(d => ({ ...d, bills: (d.bills || []).map(b => needs(b) ? { ...b, nextDueDate: computeNextDueDate(b) } : b) }));
   }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Audit of 2026-11-13, finding 3: a recurring bill with no sign of when it was put on file (onboarding's bills, older
+  // ones) is stamped the first time the app sees it. From then on, a due date of its that passes with no payment seen
+  // is known to be overdue and stays counted for a few days (forecastEdits.js OVERDUE_GRACE_DAYS); a due date before
+  // the stamp was never missed. Idempotent: a bill is stamped once, and a bill added by hand or found from the bank
+  // already carries its own sign.
+  useEffect(() => {
+    const bs = appData?.bills;
+    if (!Array.isArray(bs) || !bs.length) return;
+    if (!bs.some(needsOnFileStamp)) return;
+    setAppData(d => ({ ...d, bills: stampOnFile(d.bills) }));
+  }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
   // Every debt needs a stable link key so a bill can say which debt it pays (billPaysDebt). Debts added
   // before ids existed, onboarding debts and the demo's are given an id here, once.
   useEffect(() => {
@@ -17628,10 +17981,15 @@ export default function FlourishApp(){
       const sc=scrollerOf(els[0]);
       // Below the app header, and below the top of an inner scroller (the coach scrolls under its own bar).
       const topSafe=Math.round(Math.max((bell?bell.getBoundingClientRect().bottom:0), sc?sc.getBoundingClientRect().top:0)+12);
-      const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
+      // ONE PLACE FOR THE BUTTONS (2026-11-05): Skip and Next sit in their own bar, always just above the tab bar, so they
+      // never move from one step to the next. Only the words move: under the bar's top when the target fits above them,
+      // otherwise at the top of the screen with the target between the words and the bar.
+      const actions=document.getElementById("tour-actions");
+      const bar=(actions?actions.offsetHeight:0)+8;
+      const vh=window.innerHeight, sh=sheet.offsetHeight+bar, gap=12, tabBar=100;
       const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
       const sheetTop = fitsAbove ? null : topSafe;
-      const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
+      const want = fitsAbove ? topSafe : topSafe + sheet.offsetHeight + gap; // where the target's top should sit
       const dy=Math.round(top-want);
       if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
       setTourSheetTop(sheetTop);
@@ -17669,6 +18027,17 @@ export default function FlourishApp(){
   // web household has a paid subscription. webPlan() combines the two; see the effect after openUpgrade.
   const [profilePlan,setProfilePlan]=useState(null);
   const webPaidRef = useRef(false);
+  // TRIAL_PLAN_FIRST (lib/trialPlanFirst.js): the server's trial_plan_first answer from the last status call (web or
+  // store), or null while the switch is off; and the last profiles row read, so the plan is worked out again when it
+  // says this account has no account trial.
+  const [tpfStatus,setTpfStatus]=useState(null);
+  const lastProfileRef = useRef(null);
+  // ...and, before sign-in, the public answer (GET /api/trial-plan-first): true, false (off), or null (no answer: today's
+  // lines). Asked once per page load; the landing and the first onboarding screen stop saying "no card" while it is on.
+  const [tpfPublic,setTpfPublic]=useState(null);
+  useEffect(()=>{ let live = true; askTrialPlanFirstOn(fetch, API_BASE).then(v=>{ if(live) setTpfPublic(v); }); return ()=>{ live = false; }; },[]);
+  const tpfOn = !!tpfStatus || tpfPublic===true;
+  useEffect(()=>{ setTpfOn(tpfOn); },[tpfOn]);
   // The account the status call has FINISHED for, whatever it answered: how the founding link tells
   // "billing is off" from "not asked yet".
   const [billingAskedFor,setBillingAskedFor]=useState(null);
@@ -17726,7 +18095,9 @@ export default function FlourishApp(){
   // trialExpired:  true ONLY for users whose trial ENDED (not for users who never had one)
   const trialDaysLeft = getTrialDaysLeft();
   const trialActive = isTrialActive();
-  const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
+  // TRIAL_PLAN_FIRST: an account made after the switch never had the account trial, so it is never told one ended.
+  const accountTrialKept = tpfStatus ? tpfStatus.account_trial !== false : recalledAccountTrial(deviceStorage(), user?.id);
+  const trialExpired = accountTrialKept && !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
   // H13 (audit 2026-10-26): the website's trial countdown, from the trial itself, not from isPremium (which the trial
   // sets, so the old banner never showed). Not for a household the server says pays, and not in a store app, which
   // has NativeTrialChip. lib/upgradeFlow.js trialCountdown.
@@ -17814,7 +18185,8 @@ export default function FlourishApp(){
         .eq("user_id", userId)
         .maybeSingle();
       if (!prof) return null;
-      const cp = derivePlan(prof);
+      lastProfileRef.current = { userId, prof };
+      const cp = derivePlan(prof, Date.now(), { accountTrial: recalledAccountTrial(deviceStorage(), userId) });
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
@@ -17895,6 +18267,20 @@ export default function FlourishApp(){
     window.addEventListener("online", onOnline);
     return ()=>{ cancelled = true; if(timer) clearTimeout(timer); window.removeEventListener("online", onOnline); };
   },[storeBilling, user?.id, askStore]);
+  // TRIAL_PLAN_FIRST: a store app takes the switch from store_status (the web, from its status call: takeBilling).
+  useEffect(()=>{ if(storeBilling && storeStatus) setTpfStatus(trialPlanFirstOf(storeStatus)); },[storeBilling, storeStatus]);
+  // ...and, once the server has answered, this account's plan is worked out again with its answer about the account
+  // trial (kept on the device for the next sign-in). The switch off: no key, the cache is cleared, and the plan is
+  // the one already worked out. Only a definite answer for this account counts.
+  useEffect(()=>{
+    const answered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
+    if(!user?.id || !answered) return;
+    rememberAccountTrial(deviceStorage(), user.id, { trial_plan_first: tpfStatus });
+    const last = lastProfileRef.current;
+    if(!last || last.userId!==user.id) return;
+    const cp = derivePlan(last.prof, Date.now(), { accountTrial: accountTrialFrom({ trial_plan_first: tpfStatus }) });
+    setProfilePlan(prev => prev===cp ? prev : cp);
+  },[tpfStatus, user?.id, storeBilling, storeAskedFor, storeStatus, billingAskedFor, billingStatus]);
   useEffect(()=>{
     let cancelled = false;
     // A new account, or none: nothing can be bought until RevenueCat is this account. Without this a second
@@ -17933,6 +18319,7 @@ export default function FlourishApp(){
     if(!user?.id) return;
     if(body){
       setBillingStatus(nativeApp ? { enabled: body?.enabled === true, paid: body?.paid === true } : body);
+      if(!storeBilling) setTpfStatus(trialPlanFirstOf(body));
       // Item 16: this definite answer stands in if a later status read fails, until its paid period ends.
       if(body?.enabled === true) rememberGate(deviceStorage(), user.id, body?.paid === true, body?.period_end || null, Date.now(), WEB_PAID_KEY);
     }
@@ -18023,23 +18410,25 @@ export default function FlourishApp(){
   // A confirmed subscription closes it.
   useEffect(()=>{ if(!storeBilling || storeEntitled===true) setPaywallUp(false); },[storeBilling, storeEntitled]);
   // THE ONE EXCEPTION (1.1.3, Amanda 2026-10-28, lib/foundingPlans.js): a founding household with no paid plan is asked
-  // straight away. The plans screen opens by itself once per account, as soon as the account is in the app, with
-  // Founding annual first; it can be closed, and See plans opens it any time after. Declared after the effect above
-  // so that, when both run, this one has the last word. Every other household: nothing opens on its own.
+  // straight away. The plans screen opens by itself once per account, with Founding annual first; it can be closed, and
+  // See plans opens it any time after. FLOURISH FIRST (Amanda, 2026-11-05): never over onboarding, and not while the intro
+  // tips are on screen: it opens as soon as they are done or skipped, in the same visit. Declared after the effect above so
+  // that, when both run, this one has the last word. Every other household: nothing opens on its own.
   const foundingOpenedRef = useRef(new Set());
   useEffect(()=>{
     const store = deviceStorage();
     const shown = !!user?.id && (foundingOpenedRef.current.has(user.id) || foundingPlansShown(store, user.id));
     if(!foundingPlansAutoOpen({ storeBilling, userId: user?.id, askedFor: storeAskedFor, status: storeStatus,
-      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen, shown })) return;
+      planKnown: storeEntitledNow!==null, inApp: hydrated && aiDisclosureSeen && onboarded, tourDone: tourStep===null, shown })) return;
     foundingOpenedRef.current.add(user.id);
     rememberFoundingPlansShown(store, user.id);
     setPaywallUp(true);
-  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen]);
+  },[storeBilling, user?.id, storeAskedFor, storeStatus, storeEntitledNow, hydrated, aiDisclosureSeen, onboarded, tourStep]);
   useEffect(()=>{
     if(!storeBilling || !user?.id) return;
     const onVisible = ()=>{
       if(document.visibilityState!=="visible") return;
+      if(isPlaidLinkOpen()) return;   // back from the bank's own app with Link open: nothing changes under it
       askStore("store_status").then(s=>{ if(s) setStoreStatus(s); }).catch(()=>{});
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -18107,6 +18496,56 @@ export default function FlourishApp(){
   const householdRef = useRef(null);   // couple mode: { id, role, version, base } while this account shares a household
   const latestStateRef = useRef(null); // couple mode: the latest { onboarded, appData, checkInBonus }, for a merge on return
   const accessTokenRef = useRef(null); // Sprint Z2 #12: latest JWT, cached for the synchronous pagehide keepalive beacon
+  // ── The money meeting's memory (2026-11-08, lib/meetingMemory.js) ──
+  // The household's meetings, read through /api/meeting as the signed-in person (RLS decides: their own and their
+  // partner's since joining). Held HERE, beside appData and never inside it, so no save path can write them to
+  // user_data, the household blob or this device. null = not read (or the read failed): Meet then shows no opening
+  // and asks no questions. recordsGenRef drops an answer that arrives after a newer read or a save.
+  const [meetingRecords, setMeetingRecords] = useState(null);
+  const meetingRecordsRef = useRef(null);
+  const recordsGenRef = useRef(0);
+  const meetingUserRef = useRef(null);   // whose meetings these are; a save that finishes for someone else is dropped
+  const setRecords = (v) => { meetingRecordsRef.current = v; setMeetingRecords(v); };
+  // fresh: forget what is held first, so nothing is shown until this read answers (Meet opening, a household change).
+  const reloadMeetingRecords = async ({ fresh = false } = {}) => {
+    const gen = ++recordsGenRef.current;
+    if (fresh) setRecords(null);
+    const recs = await loadMeetingRecords({ apiBase: API_BASE, getJwt });
+    if (gen !== recordsGenRef.current) return meetingRecordsRef.current;
+    setRecords(recs);
+    return recs;
+  };
+  // Save a finished meeting. Returns { ok, record }. Nothing changes here unless the server stored it.
+  const recordMeeting = async (answers) => {
+    const who = meetingUserRef.current;
+    const known = meetingRecordsRef.current || await reloadMeetingRecords();
+    if (!Array.isArray(known)) return { ok: false };
+    // Only this save's answers: the server merges them into anything already recorded today (meeting.js mergeDay),
+    // so a device whose list is out of date cannot send an old answer back over a newer one.
+    const res = await saveMeetingRecord({ apiBase: API_BASE, getJwt, metOn: localDay(), answers });
+    if (!res.ok) return res;
+    // Signed out or another account signed in while it saved: nothing of it reaches the screen now showing.
+    if (!who || meetingUserRef.current !== who) return { ok: false };
+    recordsGenRef.current++;   // a read still in flight may predate this save: its answer is dropped
+    setRecords(withRecord(meetingRecordsRef.current, res.record));
+    return res;
+  };
+  // Joined or left a household on this device: the meetings held are the old household's. Forget them at once (Meet
+  // shows no opening) and read again. Only on a real change, not on the first render.
+  const meetingRoleRef = useRef(householdRole);
+  useEffect(() => {
+    if (meetingRoleRef.current === householdRole) return;
+    meetingRoleRef.current = householdRole;
+    if (!user) return;
+    reloadMeetingRecords({ fresh: true });
+  }, [householdRole]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    recordsGenRef.current++;
+    meetingUserRef.current = user?.id || null;
+    setRecords(null);
+    if (!user) return;
+    reloadMeetingRecords();
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [syncError, setSyncError] = useState(false);
   // (5) one-time "backed up" banner after a local→DB migration upload.
   const [showMigratedBanner, setShowMigratedBanner] = useState(()=>{ try { return localStorage.getItem("flourish_db_migrated")==="1"; } catch { return false; } });
@@ -18173,7 +18612,7 @@ export default function FlourishApp(){
   const writeHouseholdStamp = (v) => { try { if (v) localStorage.setItem(HOUSEHOLD_STAMP_KEY, JSON.stringify(v)); else localStorage.removeItem(HOUSEHOLD_STAMP_KEY); } catch {} };
   const householdPayload = ({ onboarded: ob, appData: ad, checkInBonus: cb }, userId) => {
     const hh = householdRef.current;
-    const slimAppData = ad ? { ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) } : ad;
+    const slimAppData = ad ? withoutRenderOnly({ ...ad, transactions: manualTransactions(ad.transactions, ad.accounts) }) : ad;
     const sideKeys = readSideKeys();
     return { userId, householdId: hh.id, personal: personalKeysOf(sideKeys), blob: buildHouseholdBlob({ onboarded: ob, slimAppData, checkInBonus: cb },
       { householdId: hh.id, nowIso: new Date().toISOString(), sideKeys }) };
@@ -18339,7 +18778,9 @@ export default function FlourishApp(){
         if (fromInit) setAuthLoading(false);
         return;
       }
-      setUser(session?.user ?? null);
+      // Plaid Link open (lib/plaidLinkOpen.js): back from the bank's app, supabase-js announces the same session again.
+      // Keep the same account object so nothing re-reads under Link; only the token is taken. Otherwise, as before.
+      setUser(prev => (isPlaidLinkOpen() && prev && session?.user && prev.id === session.user.id) ? prev : (session?.user ?? null));
       accessTokenRef.current = session?.access_token || null; // Sprint Z2 #12: keep JWT fresh for the exit beacon
       if (fromInit) setAuthLoading(false);
     };
@@ -18353,6 +18794,40 @@ export default function FlourishApp(){
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // 1.1.7: after an Apple or Google sign-in, the server is told once per account on this device (beta.js social_signin). It
+  // secures an account whose address was never proved and that Apple or Google has just reached (a new random password,
+  // other sessions signed out), and counts a NEW Apple or Google account as a signup. A failed call is tried on the next launch.
+  useEffect(() => {
+    const providers = user?.app_metadata?.providers || (user?.app_metadata?.provider ? [user.app_metadata.provider] : []);
+    if (!user?.id || !providers.some(p => p === "apple" || p === "google")) return;
+    const key = `flourish_social_signin_sent:${user.id}`;
+    try { if (localStorage.getItem(key)) return; } catch { return; }
+    supabase.auth.getSession().then(({ data }) => {
+      const jwt = data?.session?.access_token;
+      if (!jwt) return;
+      return fetch(`${API_BASE}/api/beta`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action: "social_signin" }) })
+        .then(r => { if (r.ok) { try { localStorage.setItem(key, "1"); } catch { /* sent; may send once more */ } } });
+    }).catch(() => { /* the next launch tries again */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 1.1.7: the consent step's record (lib/legalConsent.js). One that could not be sent when Get started was tapped is
+  // sent again here, on the next launch, with the time and the dates it was kept with.
+  useEffect(() => {
+    if (!user?.id) return;
+    flushLegalConsent(consentDeps(user.id));
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 1.1.7: back on the website from Apple's page, Supabase's session carries Apple's refresh token this once; the server
+  // keeps it sealed so that deleting the account can revoke it at Apple (lib/appleGrant.js, App Store guideline 5.1.1(v)).
+  useEffect(() => {
+    if (!user?.id || isNativeApp()) return;
+    supabase.auth.getSession().then(({ data }) => {
+      const s = data?.session;
+      const grant = takeWebAppleGrant(s, appleGrantStorage());
+      if (grant && s?.access_token) sendAppleGrant({ grant, jwt: s.access_token, apiBase: API_BASE });
+    }).catch(() => { /* nothing kept; deleting still deletes */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Phase D1-E: one-time migration of localStorage Plaid tokens to Supabase.
   // Runs after auth confirms. Skips if already done. Non-blocking.
@@ -18398,8 +18873,14 @@ export default function FlourishApp(){
     // NOT wiped — it migrates into the new account below. The positive gate keeps DB writes
     // blocked through this whole reset, so the cleared empty state can't be saved up.
     const localUid = loadState()?.userId || (()=>{ try { return localStorage.getItem(STAMP_KEY); } catch { return null; } })();
-    if (localUid && localUid !== user.id) {
-      console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
+    // 2026-11-13 (lib/accountWipe.js): local data with no owner goes into this account only when the account was made
+    // minutes ago (a sign-up on this device) and no account was deleted here since. Otherwise it is cleared, as another
+    // person's would be.
+    const deletedHere = (()=>{ try { return deletedAt(localStorage); } catch { return null; } })();
+    const ownerlessRefused = refuseOwnerlessLocal({ localUid, hasRealData: hasRealLocalData(loadState()?.appData), userCreatedAt: user.created_at, deletedAtMs: deletedHere });
+    if (deletedHere) { try { clearDeletedMark(localStorage); } catch {} }
+    if ((localUid && localUid !== user.id) || ownerlessRefused) {
+      console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id, ownerless: ownerlessRefused });
       clearAllUserLocal();
       setAppData(null); setOnboarded(false); setIsPremium(false); setProfilePlan(null); setCheckInBonus(0);
     }
@@ -18501,6 +18982,7 @@ export default function FlourishApp(){
   useEffect(()=>{
     const onVis = async ()=>{
       if (document.visibilityState !== "visible") return;
+      if (isPlaidLinkOpen()) return;   // Link open: the household is looked at again on the next return
       const hh = householdRef.current;
       if (!hh || !user || hydratedUidRef.current !== user.id) return;
       let remote;
@@ -18671,6 +19153,9 @@ export default function FlourishApp(){
       return true;
     } catch { return false; }
   };
+  // The account was deleted in another tab of this device (lib/accountWipe.js): stop saving, clear, reload. Before this,
+  // a second tab saved the deleted account's finances back as the sign-out reached it (2026-11-13).
+  useEffect(()=>onDeletionElsewhere(()=>followDeletionElsewhere()), []);
   useEffect(()=>{
     const flush = ()=>{
       try {
@@ -19288,7 +19773,7 @@ export default function FlourishApp(){
   },[appData?.bankConnected, isPremium]);
   // Back on screen (a phone app resumed, a browser tab shown again): look again, under the same rules.
   useEffect(()=>{
-    const onShow = () => { if (document.visibilityState === "visible") refreshBanksRef.current?.(); };
+    const onShow = () => { if (document.visibilityState === "visible" && !isPlaidLinkOpen()) refreshBanksRef.current?.(); };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
   },[]);
@@ -19305,13 +19790,43 @@ export default function FlourishApp(){
   // action can be completed and saved, and below the one ModalHost, so the delete confirmation shows on top.
   // Terms and Privacy open inside the overlay, so nothing behind it unmounts. Defined before the early returns because
   // the founding plans screen (1.1.3) can open by itself over onboarding and the first-number screen as well.
+  // TRIAL_PLAN_FIRST (item 1, lib/trialPlanFirst.js plansFirstStage). Only with the switch on: a new account sees the plans
+  // screen after the first safe-to-spend number and before the rest of the app ("required", cannot be closed); an account
+  // whose own account trial has ended sees the new plans screen once ("offer_once", closable, nothing taken away). The
+  // switch off: null, and none of this exists.
+  const tpfAnswered = storeBilling ? (storeAskedFor===user?.id && !!storeStatus) : (billingAskedFor===user?.id && !!billingStatus);
+  const tpfPaySource = storeBilling ? storeStatus : billingStatus;
+  // H1 (review round): someone who came from a partner's invite (householdLinkToken) is never held at the plans: they
+  // join in Settings, and the partner's plan then covers them.
+  const plansStageNow = plansFirstStage({ tpf: tpfStatus, paid: tpfPaySource?.paid===true, coveredBy: tpfPaySource?.covered_by||null,
+    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken });
+  // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open),
+  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1).
+  const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required"
+    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken
+       && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));
+  useEffect(()=>{ if(user?.id && tpfAnswered) rememberRequired(deviceStorage(), user.id, plansStageNow==="required"); },[user?.id, tpfAnswered, plansStageNow]);
+  useEffect(()=>{
+    if(!user?.id || plansStageNow!=="offer_once" || !onboarded || !firstVisitDone) return;
+    if(plansOfferedBefore(deviceStorage(), user.id)) return;
+    notePlansOffered(deviceStorage(), user.id);
+    openUpgrade();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id, plansStageNow, onboarded, firstVisitDone]);
+  // The way out of the screen that cannot be closed: sign out (as Settings does, without its question).
+  const plansSignOut = async ()=>{
+    try { await supabase.auth.signOut(); } catch {}
+    try { Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k)); } catch {}
+    window.location.reload();
+  };
   const storePaywallOverlay = (storeBilling && (paywallUp || foundingSwitchOpen)) ? (
     <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        <StatusBarCover bg={C.bg}/>
       {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
         : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
         : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
             onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)}
-            inTrial={trialActive} onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }}/>}
+            inTrial={trialActive} onManage={manageStoreSubscription} onClose={()=>{ setPaywallUp(false); setFoundingSwitchOpen(false); setPaywallLegal(null); }} trialFirst={tpfStatus}/>}
     </div>
   ) : null;
   // ── Legal screens — always accessible, even before auth/onboarding ──
@@ -19319,10 +19834,13 @@ export default function FlourishApp(){
   // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
   // white — unreadable in dark theme. legalShell supplies the background the shell would have.
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",...safeX(16),fontFamily:"'Plus Jakarta Sans',sans-serif"};
-  if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
+  // The store apps: these pages scroll and have no header of their own. They layer nothing (no dialog, no sheet), so the cover
+  // can follow the page here; the page stays the shell's first child (tests/supportPage.test.cjs 1d).
+  const legalCover=<StatusBarCover bg={C.bg}/>;
+  if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>{legalCover}</div>;
+  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/>{legalCover}</div>;
   // THE CONFIRMATION LINK (2026-10-23). Supabase confirms the address and lands here with the session in the
   // URL, which the auth client reads, so the person is signed in. A web signup goes straight on into the app (the
   // AI disclosure, then onboarding), with no second sign-in: the effect above moves to "/". A signup made in a
@@ -19341,7 +19859,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); track(EVENT.demoOpen); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }} foundingNote={foundingLink ? FOUNDING_SIGN_IN_NOTE : null} startOnLogin={loginFromConfirm} tpfOn={tpfOn}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -19362,8 +19880,10 @@ export default function FlourishApp(){
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={openUpgrade} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <><Onboarding
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);signalCheckIn("weekly", appData?.demo);}}/>;
+  // Keyed by phase: with the first-number screen already seen on this device, "after" follows "before" directly, and
+  // without a key React would keep the first phase's step (pay) instead of starting the second at the bills.
+  if(!onboarded)return <><Onboarding key="before"
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
     onComplete={d=>{
@@ -19380,13 +19900,37 @@ export default function FlourishApp(){
         return merged;
       });
       setOnboarded(true);
-    }} onViewLegal={s=>setScreen(s)} userId={user?.id}
-    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
+    }} onViewLegal={s=>setScreen(s)} userId={user?.id} onConsent={()=>{ recordLegalConsent(consentDeps(user?.id)); }}
+    tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
     onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
-  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
+  // 1.1.7: bills and debts come AFTER the first number, for a household onboarded from 1.1.7 on (billsAfterNumber
+  // "pending", set by onboarding's first phase). "Not now" leaves them to the checklist on Today.
+  if(firstVisitDone&&appData&&!appData.demo&&appData.profile?.billsAfterNumber==="pending")return <><Onboarding key="after" phase="after"
+    initialBills={appData.bills||[]} initialDebts={appData.debts||[]}
+    connectedAccounts={appData?.accounts||[]} onAccountsConnected={promoteConnectedAccounts} onViewLegal={s=>setScreen(s)} userId={user?.id} tpfOn={tpfOn}
+    onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}
+    onComplete={d=>setAppData(prev=>({...(prev||{}),bills:d.bills||[],debts:d.debts||[],profile:{...(prev?.profile||{}),billsAfterNumber:"done"}}))}
+    onLater={()=>setAppData(prev=>({...(prev||{}),profile:{...(prev?.profile||{}),billsAfterNumber:"later"}}))}/>{storePaywallOverlay}</>;
+  // TRIAL_PLAN_FIRST: the activation moment (the first safe-to-spend number, above) is kept; then the plans, first.
+  if(plansRequired && firstVisitDone){
+    if(storeBilling) return (
+      <div role="dialog" aria-modal="true" aria-label="Subscription" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        <StatusBarCover bg={C.bg}/>
+        {paywallLegal==="terms" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><TermsOfService onBack={()=>setPaywallLegal(null)}/></div>
+          : paywallLegal==="privacy" ? <div style={{background:C.bg,padding:"20px 16px 0"}}><PrivacyPolicy onBack={()=>setPaywallLegal(null)}/></div>
+          : <StorePaywall purchases={storePurchases} platform={window.Capacitor?.getPlatform?.()} status={storeStatus} askStore={askStore}
+              onResolved={(st)=>setStoreStatus(st)} onViewLegal={(which)=>setPaywallLegal(which)} inTrial={false}
+              onManage={manageStoreSubscription} trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData}/>}
+        <ModalHost/>
+      </div>
+    );
+    if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
+      trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
+  }
+  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
@@ -19399,7 +19943,8 @@ export default function FlourishApp(){
   // fresh sign-in, which new banks' histories are on the way, and how fresh the bank balances are.
   const _bankNow = Date.now();
   const bankStatus = { signIn: bankSignIn, history: historyCards(historyPending, _bankNow), fresh: bankFreshness({ accounts: appData?.accounts, nowMs: _bankNow, signIn: bankSignIn }) };
-  const dataWithHousehold={...appData,isPremium,householdRole,bankStatus};
+  // meetingRecords: render-only, like bankStatus (never saved; see the meeting memory state above).
+  const dataWithHousehold={...appData,isPremium,householdRole,bankStatus,meetingRecords};
 
   // ── Pass isOnline down to AICoach + reset helper ──────────────
   const handleReset = () => { clearState(); window.location.reload(); };
@@ -19497,7 +20042,9 @@ export default function FlourishApp(){
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
   };
 
-  const deleteAllData = async ()=>{
+  // A function DECLARATION, so it exists for the whole render: the plans screen that cannot be closed returns before
+  // this line and offers the same deletion (5.1.1(v): an account held at the plans cannot reach Settings).
+  async function deleteAllData(){
     // Version 1.1: deleting the account does not cancel a store subscription; the store says so only in the store.
     const storeNote = storeBilling && storeStatus?.paid ? storeCancelNote(storeStatus.provider)
       : (!nativeApp && billingStatus?.paid ? storeCancelNote(billingStatus.provider) : null);   // the website, for a store subscriber
@@ -19513,13 +20060,16 @@ export default function FlourishApp(){
     }
 
     // Phase D2: backend revokes all Plaid items + deletes plaid_items rows + deletes the Supabase auth user.
+    // 2026-11-13 (lib/accountWipe.js): from here on nothing of ours is written to this browser, until the server says
+    // the account was not deleted (each FAIL CLOSED below unlocks) or the page reloads after the wipe.
+    lockBrowserStorage();
     let resp;
     try {
       resp = await callPlaid("delete_account", {}, { jwt });
     } catch (err) {
       console.error("[deleteAllData] backend wipe failed:", err?.message);
       alertModal({message:"We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED — keep session + local data
+      unlockBrowserStorage(); return; // FAIL CLOSED — keep session + local data
     }
 
     // 2a: fail closed on any step that means the account/data was NOT removed. plaid_remove
@@ -19534,26 +20084,30 @@ export default function FlourishApp(){
       // KNOWN-DEFECTS 23: the subscription is cancelled before anything is erased; if it could not be, nothing was.
       if (criticalErrors.some(e => e.step === "billing_cancel")) {
         alertModal({message:"We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."});
-        return; // FAIL CLOSED
+        unlockBrowserStorage(); return; // FAIL CLOSED
       }
       const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
       alertModal({message: untouched
         ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."
         : "Your account deletion did not finish. Some of your data may already be removed, and your account still exists so you can try again to finish it, or contact privacy@flourishmoney.app."});
-      return; // FAIL CLOSED
+      unlockBrowserStorage(); return; // FAIL CLOSED
     }
     if (errs.length) {
       // account IS deleted; only best-effort Plaid bank revocation was incomplete
       console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
     }
 
-    // Confirmed deleted server-side — now sign out + sweep ALL flourish_* keys + reload.
+    // Confirmed deleted server-side: sign out, then every flourish key (both web storages) and database
+    // (IndexedDB) goes, the iPhone and Android apps' scheduled reminders too, and the page reloads. The storage stays
+    // locked throughout: signing out re-renders the app with no user, and its save effect once wrote the deleted
+    // account's finances back, ownerless, for the next sign-up to take (2026-11-13, lib/accountWipe.js). The device is
+    // marked first, so any other open tab stops saving and clears before the sign-out reaches it.
+    markAccountDeleted();
     try { await supabase.auth.signOut(); } catch {}
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_")).forEach(k => localStorage.removeItem(k));
-    } catch {}
+    try { await cancelAllScheduled(); } catch {}
+    await wipeDeletedAccount();
     window.location.reload();
-  };
+  }
 
   // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
   // family devices). Keeps the appData blob (STORAGE_KEY) so re-login restores the user's data,
@@ -19562,12 +20116,13 @@ export default function FlourishApp(){
   // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
   // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
   // It also keeps FOUNDING_PLANS_SHOWN_KEY (1.1.3, lib/foundingPlans.js): the founding plans screen opens by itself once
-  // per account, and signing out and back in is the same account.
+  // per account, and signing out and back in is the same account. And, for the same reason, TRIAL_PLAN_FIRST's marker
+  // that the new plans were offered once to an account whose trial had ended (lib/trialPlanFirst.js plansOfferedBefore).
   const signOut = async ()=>{
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => !k.startsWith(PLANS_OFFERED_PREFIX) && k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY && k !== FOUNDING_PLANS_SHOWN_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
@@ -19640,7 +20195,7 @@ export default function FlourishApp(){
       // included, so say what actually happened and when it lifts, not that the feature is missing.
       return <PremiumGate billingOn={billingUi.show} storeOn={storeBilling} feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={coachLimitLine()} onUpgrade={openUpgrade}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} tourActive={tourShown}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} tourActive={tourShown} meetingMemory={{ reload: reloadMeetingRecords, record: recordMeeting }}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
@@ -19871,6 +20426,9 @@ input,button,select,textarea { font-family:inherit; }
         {countdown&&<TrialCountdown countdown={countdown} onUpgrade={openUpgrade}/>}
         {isNativeApp()&&trialExpired&&!isPremium&&!trialEndNoteHidden&&<NativeTrialEndedLine onDismiss={hideTrialEndNote}/>}
         {isNativeApp()&&trialActive&&trialDaysLeft>0&&<NativeTrialChip daysLeft={trialDaysLeft}/>}
+        {/* TRIAL_PLAN_FIRST: during the store's or Stripe's 14 days, the date of the first charge (apps and website), for
+            where the trial was bought, not the device it is read on (lib/trialPlanFirst.js chipChargeDateFor). */}
+        {tpfStatus?.trialing&&chipChargeDateFor(tpfPaySource?.provider, tpfStatus.trial_ends)&&<div data-trial-first-chip="" role="status" style={{margin:`0 18px ${SPACE.sm}px`,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",color:C.mutedHi,fontSize:13,lineHeight:1.5,overflowWrap:"anywhere"}}>{trialWords("trialfirst-chip", { date: chargeDateLabel(chipChargeDateFor(tpfPaySource?.provider, tpfStatus.trial_ends)) })}</div>}
         {/* hotfix vc15: no overscroll-behavior here. This column has no height limit, so it never scrolls
             (the page does), and current Chromium applies "contain" even to a scroller that cannot
             scroll: every swipe that began on the content stopped here, and on the Play build no tab
@@ -19911,20 +20469,19 @@ input,button,select,textarea { font-family:inherit; }
           const step=TOUR[tourStep];
           const isLast=tourStep===TOUR.length-1;
           return(
-            <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
+            <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),...centredInSafeArea(20, 390),
-                background:C.surface,borderRadius:20,padding:"20px 20px 16px",
-                border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
-                pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
+              {/* The words: right above the buttons, or at the top of the screen when what they describe needs the room. */}
+              <div id="tour-sheet" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:"calc(100px + var(--tour-actions-h, 76px) + 8px)"}),...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"20px 20px 16px",animation:"slideUp .3s ease"}}>
                 <div style={{display:"flex",gap:5,marginBottom:14,justifyContent:"center"}}>
                   {TOUR.map((_,i)=>(
                     <div key={i} style={{width:i===tourStep?20:6,height:6,borderRadius:99,transition:"width .3s",
                       background:i<=tourStep?C.green:C.border}}/>
                   ))}
                 </div>
-                <div style={{marginBottom:SPACE.md}}>
+                <div>
                   <div style={{color:C.muted,fontSize:13,fontWeight:600,marginBottom:SPACE.xs}}>Step {tourStep+1} of {TOUR.length}</div>
                   <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
                     {step.title}
@@ -19932,6 +20489,10 @@ input,button,select,textarea { font-family:inherit; }
                   {/* The Today step names only the parts in this household's number (lib/tour.js stepBody). */}
                   <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{stepBody(step, step.target==="today"&&dataWithHousehold ? SafeSpendEngine.calculate(dataWithHousehold) : null)}</div>
                 </div>
+              </div>
+              {/* The buttons: one place on every step, just above the tab bar (2026-11-05). */}
+              <div id="tour-actions" ref={el=>{ if(el) document.documentElement.style.setProperty("--tour-actions-h", el.offsetHeight+"px"); }} style={{position:"absolute",bottom:100,...centredInSafeArea(20, 390),
+                background:C.surface,borderRadius:20,border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,pointerEvents:"auto",padding:"12px 16px"}}>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",

@@ -249,7 +249,7 @@ export const AutopilotEngine = {
         : "Cash is critically low.";
       alerts.push({ type:"danger", msg });
     } else if (cashTight) {
-      alerts.push({ type:"warning", msg:"Safe to spend is below 15% of your monthly income, so nothing is spare until your next deposit." });
+      alerts.push({ type:"warning", msg:"Safe to spend is below 15% of your monthly income, so flourish shows $0 spare until your next payday." });
     } else if (nearTermLow) {
       alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }

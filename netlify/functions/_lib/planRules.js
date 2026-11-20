@@ -40,13 +40,40 @@ function trialEndsAtMs(profile) {
   return started === null ? null : started + TRIAL_MS;
 }
 
+// TRIAL_PLAN_FIRST (2026-11-10, Amanda): the usual app-store trial. A new person picks a plan on day one with Apple,
+// Google or Stripe and gets 14 days free there; there is no account trial for them. Off unless TRIAL_PLAN_FIRST is
+// exactly "true" AND TRIAL_PLAN_FIRST_SINCE is a time: only an account whose own trial started at or after that time
+// is "new". Anything else (unset, a typo, no time) is today's rule exactly. Read per call, so the switch is an
+// environment change, not a deploy. Returns the time in ms, or null when off.
+// The time must be a full one, with hours, minutes and a zone ("2026-11-20T15:00:00Z"): a date alone ("2026-11-20") is
+// midnight UTC, hours before the switch, and would take the account trial from everyone who signed up in between.
+const SINCE_RX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+function trialPlanFirstSince(env = process.env) {
+  if (!env || env.TRIAL_PLAN_FIRST !== "true") return null;
+  const raw = String(env.TRIAL_PLAN_FIRST_SINCE || "").trim();
+  if (!SINCE_RX.test(raw)) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : null;
+}
+// Does this row keep the 14-day account trial? Every row does while the switch is off, and every row from before the
+// switch's time does: someone mid-trial keeps it to its end, unchanged (item 2). A row with no start keeps the old rule.
+// An account given a longer trial on purpose (the tester free month, 0039, sets trial_ends_at past the 14 days) keeps it:
+// that was granted, not the default.
+function accountTrialApplies(profile, planFirstSince) {
+  if (planFirstSince == null) return true;
+  const started = _time(profile && profile.trial_started_at);
+  if (started === null || started < planFirstSince) return true;
+  const ends = _time(profile && profile.trial_ends_at);
+  return ends !== null && ends - started > TRIAL_MS + 3600000;
+}
+
 // "beta_founder" | "premium" | "trial" | "free" — the same four answers the client derives.
-function derivePlan(profile, now = Date.now()) {
+function derivePlan(profile, now = Date.now(), { planFirstSince = trialPlanFirstSince() } = {}) {
   if (!profile) return "free";
   if (profile.founder_flag) return "beta_founder";
   const plan = profile.plan;
   if (plan === "plus" || plan === "pro") return "premium";
-  if (plan === "trial") {
+  if (plan === "trial" && accountTrialApplies(profile, planFirstSince)) {
     const ends = trialEndsAtMs(profile);
     const t = now instanceof Date ? now.getTime() : now;
     if (ends !== null && t < ends) return "trial";
@@ -115,6 +142,6 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
 }
 
 module.exports = {
-  TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile,
+  TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile, trialPlanFirstSince, accountTrialApplies,
   SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
 };

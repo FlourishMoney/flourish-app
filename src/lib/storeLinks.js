@@ -28,8 +28,22 @@ export const STORE_BADGES = Object.freeze([
 
 // The badges for a visit from this src. Read like the server reads it (spaces and case do not matter), and anything
 // outside STORE_CAMPAIGN_SRCS gets the plain links, so nothing typed into the address reaches a store link.
-export function storeBadgesFor(src) {
+// A visit with its own src and cr (lib/attribution.js landingAttribution) gets the same tagged links as /get (public/get/get.js):
+// Apple's campaign link with ct = src_cr cut to the 30 characters App Store Connect allows, and a Play referrer of
+// utm_source=src&utm_campaign=cr. The shop QR codes keep their own links.
+export const APPLE_CT_MAX = 30;
+const TAG = /^[a-z0-9_-]{1,40}$/;
+export function storeBadgesFor(src, attribution) {
   const tag = typeof src === "string" ? src.trim().toLowerCase() : "";
+  const a = attribution && TAG.test(String(attribution.src || "")) ? { src: attribution.src, cr: TAG.test(String(attribution.cr || "")) ? attribution.cr : "" } : null;
+  if (!STORE_CAMPAIGN_SRCS.includes(tag) && a) {
+    const ct = (a.cr ? `${a.src}_${a.cr}` : a.src).slice(0, APPLE_CT_MAX);
+    const hrefs = {
+      app_store: `${APP_STORE_URL}?pt=${APPLE_PROVIDER_TOKEN}&ct=${ct}&mt=8`,
+      play_store: `${PLAY_STORE_URL}&referrer=${encodeURIComponent(`utm_source=${a.src}${a.cr ? `&utm_campaign=${a.cr}` : ""}`)}`,
+    };
+    return STORE_BADGES.map((b) => ({ ...b, href: hrefs[b.store] }));
+  }
   if (!STORE_CAMPAIGN_SRCS.includes(tag)) return STORE_BADGES;
   const hrefs = {
     app_store: `${APP_STORE_URL}?pt=${APPLE_PROVIDER_TOKEN}&ct=${tag}&mt=8`,

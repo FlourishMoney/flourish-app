@@ -1,0 +1,205 @@
+{
+  "slug": "minimum-payment-credit-card-canada",
+  "status": "published",
+  "title": "What happens when you only pay the minimum on a Canadian credit card",
+  "seoTitle": "Paying only the minimum on a Canadian credit card",
+  "description": "How the minimum payment is set in Canada, what paying only the minimum does to time and interest, and the federal calculator that runs your numbers.",
+  "publishedAt": "2026-11-18",
+  "updatedAt": "2026-11-18",
+  "image": "/guide-media/og-minimum-payment-credit-card-canada.jpg",
+  "howWeChecked": "Written by the flourish team, with AI tools used to help draft it. Every figure and every statement about how credit cards work comes from the three FCAC pages linked in the text, read on November 12, 2026. The only arithmetic of our own is the difference between FCAC's two scenarios. We made up no example. No financial professional reviewed this page.",
+  "sources": [
+    {
+      "label": "Financial Consumer Agency of Canada, Paying off your credit card",
+      "url": "https://www.canada.ca/en/financial-consumer-agency/services/credit-cards/pay-off-credit-card.html"
+    },
+    {
+      "label": "Financial Consumer Agency of Canada, How credit cards work",
+      "url": "https://www.canada.ca/en/financial-consumer-agency/services/credit-cards/credit-card-work.html"
+    },
+    {
+      "label": "Financial Consumer Agency of Canada, Credit Card Payment Calculator",
+      "url": "https://itools-ioutils.fcac-acfc.gc.ca/CCPC-CPCC/CCPC-CPCC-eng.aspx"
+    }
+  ],
+  "body": [
+    {
+      "type": "p",
+      "html": "A minimum-only payment is allowed, and it has a cost in time and interest. This page explains how it works, using the explanation and the example published by the Financial Consumer Agency of Canada (FCAC), a Government of Canada agency. Every figure below is FCAC's, not ours."
+    },
+    {
+      "type": "h2",
+      "text": "What the minimum payment is"
+    },
+    {
+      "type": "p",
+      "html": "FCAC defines the minimum payment as the least you must pay each month on your credit card balance, and says to make at least that payment if you can't pay the balance off (<a href=\"https://www.canada.ca/en/financial-consumer-agency/services/credit-cards/pay-off-credit-card.html\">FCAC, Paying off your credit card</a>, last checked November 12, 2026)."
+    },
+    {
+      "type": "p",
+      "html": "According to the same page, your minimum payment will be one of two things:"
+    },
+    {
+      "type": "ul",
+      "items": [
+        "a flat amount (usually $10) plus any interest and fees, or",
+        "whichever is higher: a dollar amount (typically $10) or a percentage of what you owe (typically 3%)."
+      ]
+    },
+    {
+      "type": "p",
+      "html": "Your credit agreement says which method your issuer uses."
+    },
+    {
+      "type": "p",
+      "html": "<strong>Quebec is different.</strong> FCAC notes that since August 1, 2025, the credit card minimum payment for Quebec residents is 5% (same page, last checked November 12, 2026)."
+    },
+    {
+      "type": "h2",
+      "text": "What paying only the minimum means"
+    },
+    {
+      "type": "p",
+      "html": "FCAC puts it in two points. With only the minimum each month:"
+    },
+    {
+      "type": "ul",
+      "items": [
+        "the balance takes longer to clear",
+        "more interest is paid"
+      ]
+    },
+    {
+      "type": "p",
+      "html": "It then gives one example, which we reproduce as published."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "FCAC's scenario",
+        "Starting balance",
+        "Payment",
+        "Interest rate",
+        "Time to pay off",
+        "Interest paid",
+        "Total paid"
+      ],
+      "rows": [
+        [
+          "1: only the minimum each month",
+          "$2,000",
+          "$60",
+          "18%",
+          "3 years, 11 months",
+          "$793",
+          "$2,793"
+        ],
+        [
+          "2: the minimum plus $100 each month",
+          "$2,000",
+          "$160",
+          "18%",
+          "1 year, 2 months",
+          "$231",
+          "$2,231"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "html": "Source: FCAC, Table 1 on <a href=\"https://www.canada.ca/en/financial-consumer-agency/services/credit-cards/pay-off-credit-card.html\">Paying off your credit card</a>, last checked November 12, 2026."
+    },
+    {
+      "type": "p",
+      "html": "In FCAC's example, the larger payment ends 2 years and 9 months sooner and the interest is $562 lower (our subtraction from FCAC's figures). FCAC's own summary is that a bigger monthly payment shortens the payoff time, and that \"even a small amount will shorten the time by a lot.\""
+    },
+    {
+      "type": "h2",
+      "text": "Why interest keeps building"
+    },
+    {
+      "type": "p",
+      "html": "Two FCAC points explain it."
+    },
+    {
+      "type": "p",
+      "html": "<strong>Interest reaches back to the purchase date.</strong> If the balance isn't paid by the due date, FCAC says on the same page, interest is charged from the date of each purchase. Interest continues until the balance is paid in full (<a href=\"https://www.canada.ca/en/financial-consumer-agency/services/credit-cards/credit-card-work.html\">FCAC, How credit cards work</a>, last checked November 12, 2026)."
+    },
+    {
+      "type": "p",
+      "html": "<strong>The minimum usually goes to the cheapest part of your balance.</strong> Different rates can apply to different transactions. FCAC's example is 19% on regular purchases and 22% on cash advances. It says the minimum payment typically goes to the part of the balance with the lowest rate. Anything you pay above the minimum goes either to the portion with the highest rate or proportionally across the whole balance, depending on your issuer."
+    },
+    {
+      "type": "p",
+      "html": "There is also a grace period worth knowing about. Federally regulated financial institutions must give at least 21 interest-free days on new purchases, and it does not apply to cash advances, cash-like transactions or balance transfers (FCAC, How credit cards work, last checked November 12, 2026)."
+    },
+    {
+      "type": "h2",
+      "text": "Your statement already shows the answer"
+    },
+    {
+      "type": "p",
+      "html": "If your card comes from a federally regulated financial institution, FCAC says your statement must include the time required to pay off your balance by paying only the minimum. FCAC's calculator page adds that issuers may round your balance up to the next $100 for that estimate, so it can differ slightly from a calculation on your exact balance (<a href=\"https://itools-ioutils.fcac-acfc.gc.ca/CCPC-CPCC/CCPC-CPCC-eng.aspx\">FCAC, Credit Card Payment Calculator</a>, page dated 2026-01-27, last checked November 12, 2026)."
+    },
+    {
+      "type": "h2",
+      "text": "What FCAC's credit card calculator shows"
+    },
+    {
+      "type": "p",
+      "html": "The <a href=\"https://itools-ioutils.fcac-acfc.gc.ca/CCPC-CPCC/CCPC-CPCC-eng.aspx\">Credit Card Payment Calculator</a> asks for your balance, your annual interest rate and how your minimum is set. It compares three options:"
+    },
+    {
+      "type": "ul",
+      "items": [
+        "<strong>Option A:</strong> only the minimum each month",
+        "<strong>Option B:</strong> the minimum plus an extra amount each month",
+        "<strong>Option C:</strong> one fixed amount each month"
+      ]
+    },
+    {
+      "type": "p",
+      "html": "Two things FCAC says about its own tool. It assumes a balance is already being carried and that the card isn't used while it is paid down. It also notes that the minimum payment gets smaller as the balance falls. FCAC adds that the tool does not replace professional financial advice and that your issuer may calculate differently."
+    },
+    {
+      "type": "h2",
+      "text": "What a missed or late payment risks"
+    },
+    {
+      "type": "p",
+      "html": "If you don't pay at least the minimum, or you pay late, FCAC lists four risks:"
+    },
+    {
+      "type": "ul",
+      "items": [
+        "a higher interest rate",
+        "damage to your credit score",
+        "the loss of any promotional rate you had",
+        "the card being cancelled by your financial institution"
+      ]
+    },
+    {
+      "type": "p",
+      "html": "A due date that lands on a weekend or holiday can be paid the next business day and still count as on time, FCAC says. Processing time depends on how you pay, so it suggests asking your issuer how long each method takes."
+    },
+    {
+      "type": "h2",
+      "text": "Where flourish fits"
+    },
+    {
+      "type": "p",
+      "html": "flourish does not replace FCAC's calculator or your statement. It shows your card next to everything else due before payday."
+    },
+    {
+      "type": "ul",
+      "items": [
+        "<strong>Today</strong> counts your minimum debt payments due before your next payday when it calculates what is safe to spend.",
+        "<strong>Do</strong> shows a payoff date for each debt, calculated from your balance, rate and payment. Drag the extra payment and watch the date move."
+      ]
+    },
+    {
+      "type": "p",
+      "html": "Not financial advice."
+    }
+  ]
+}

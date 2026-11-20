@@ -27,14 +27,19 @@
 
 "use strict";
 
-const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
-const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
+const crypto = require("crypto");
+
+const { getAdminClient, getPublicClient, getUserFromRequest } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { openSignupEnabled, signupInstantEnabled, decideSignup } = require("./_lib/signupGate");
 const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { cleanEmail, isEmail } = require("./_lib/emailAddress");
-const { accountPlatform, recordAccountAttribution } = require("./_lib/attribution");
+const { accountPlatform, recordAccountAttribution, bumpAttributionCount, platformFromUserAgent } = require("./_lib/attribution");
+const { recordMilestone } = require("./_lib/funnel");
+const { recordConsent } = require("./_lib/legalConsent");
+const { storeGrant: storeAppleGrant, isApple: isAppleUser, logAppleConfigOnce } = require("./_lib/appleTokens");
 const { cleanTesterCode, testerCodeIsLive } = require("./_lib/testers");
 const { creatorsEnabled, creatorCodeTyped, cleanCreatorCode, creatorSourceOf, checkCreatorCode, attributeCreatorCode } = require("./_lib/creators");
 
@@ -308,6 +313,12 @@ async function handle(event) {
   if (action === "landing_count") {
     if (CLIENT_COUNT_EVENTS.includes(body.event)) {
       await bumpLandingCount({ supabaseUrl, secretKey, event, name: body.event, src: body.src });
+      // The same visit by src AND cr (migration 0043), so the home page sits beside /get in the source report. The tags are
+      // checked again there; the user agent is read for the platform and not kept.
+      if (body.event === "landing_view") {
+        const h = event.headers || {};
+        await bumpAttributionCount({ supabaseUrl, secretKey, name: "home_visit", attribution: body.attribution, platform: platformFromUserAgent(h["user-agent"] || h["User-Agent"]) });
+      }
     }
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
@@ -545,6 +556,106 @@ async function handle(event) {
   // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
   // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
   // created unconfirmed and must open the email first.
+  // SIGN IN WITH APPLE OR GOOGLE (1.1.7, src/lib/socialSignIn.js). Supabase made or found the account, so nothing above
+  // saw it. The app asks once per account on a device, signed in, after an Apple or Google sign-in. Two things:
+  //
+  //   SECURE. Supabase links an Apple or Google sign-in to an existing account with the same address, whether or not that
+  //   account's owner ever proved the address. An account made by instant signup ("instant") or with an invite code while
+  //   signup was shut ("auto") never was: someone could have made it with another person's address and kept its password.
+  //   When such an account is reached through Apple or Google (which did prove the address), its password is replaced
+  //   with a random one nobody holds and every other session is signed out, so only the person who just signed in keeps
+  //   it; the account is then marked "provider" and this is not done again. Forgot password still works for its owner.
+  //
+  //   COUNT. A NEW Apple or Google account (made in the last 15 minutes) is counted as a signup is: account_created by
+  //   src and device, its platform and channel, the funnel's signed_up. Once per account; test addresses not counted.
+  //
+  // It grants nothing. Nothing about the account is logged.
+  if (action === "social_signin") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    const jwt = String((event.headers && (event.headers.authorization || event.headers.Authorization)) || "").replace(/^Bearer\s+/i, "");
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    try {
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      const user = !error && data && data.user;
+      const meta = (user && user.app_metadata) || {};
+      const providers = Array.isArray(meta.providers) ? meta.providers : (meta.provider ? [meta.provider] : []);
+      if (!user || !providers.some((p) => p === "apple" || p === "google")) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured: false, recorded: false }) };
+      }
+      let secured = false;
+      if ((meta.email_confirmation === "instant" || meta.email_confirmation === "auto") && providers.includes("email")) {
+        const { error: pwErr } = await admin.auth.admin.updateUserById(user_id, {
+          password: crypto.randomBytes(32).toString("base64url"),
+          app_metadata: { ...meta, email_confirmation: "provider" },
+        });
+        if (pwErr) { console.error("[beta:social_signin] not secured"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+        const { error: outErr } = await admin.auth.admin.signOut(jwt, "others");
+        if (outErr) console.error("[beta:social_signin] other sessions not signed out");
+        secured = true;
+        console.log("[beta:social_signin] secured an unproved account reached through a provider");
+      }
+      let recorded = false;
+      const fresh = Date.now() - Date.parse(user.created_at) < 15 * 60 * 1000;
+      if (["apple", "google"].includes(meta.provider) && fresh) {
+        const { data: had } = await admin.from("account_milestones").select("user_id").eq("user_id", user_id).eq("milestone", "signed_up").limit(1);
+        if (!(Array.isArray(had) && had.length)) {
+          if (!isTestEmail(user.email)) {
+            const platform = accountPlatform(event);
+            await recordAccountAttribution(admin, user_id, platform === "android" ? body.attribution : null, platform);
+            await recordMilestone(admin, user_id, "signed_up", platform);
+          }
+          console.log(`[beta:social_signin] signup_completed provider=${meta.provider}`);
+          await bumpLandingCount({ supabaseUrl, secretKey, event, name: "account_created", src: body.src });
+          recorded = true;
+        }
+      }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ secured, recorded }) };
+    } catch {
+      console.error("[beta:social_signin] failed");
+      return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) };
+    }
+  }
+
+  // THE CONSENT STEP (1.1.7, _lib/legalConsent.js, migration 0049): recorded against the signed-in account when they tap Get
+  // started: the words (the server's own copy for the consent id), the Terms' and the Privacy Policy's dates, when, where.
+  // Once per account per consent. 503 while it cannot be written (0049 not run yet): the app keeps it and sends it again.
+  if (action === "record_consent") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let admin;
+    try { admin = getAdminClient(); }
+    catch { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
+    const r = await recordConsent(admin, user_id, body, accountPlatform(event));
+    if (r.recorded) return { statusCode: 200, headers: CORS, body: JSON.stringify({ recorded: true }) };
+    if (r.error === "store_failed") { console.error("[beta:record_consent] not stored"); return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "unavailable" }) }; }
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: r.error }) };
+  }
+
+  // SIGN IN WITH APPLE: KEEP WHAT DELETING THE ACCOUNT NEEDS TO REVOKE IT AT APPLE (App Store guideline 5.1.1(v), 1.1.7,
+  // _lib/appleTokens.js, migration 0049). Sent by the app after an Apple sign-in: the iPhone's one-time code, or the refresh
+  // token the website or Android got from Supabase. Stored sealed. Always 200 with { stored }: whatever happens, sign-in is
+  // unaffected and there is nothing for the person to see. Only an outcome is logged.
+  if (action === "apple_grant") {
+    const { user_id } = await getUserFromRequest(event);
+    if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "unauthorized" }) };
+    let stored = false;
+    try {
+      const admin = getAdminClient();
+      const { data, error } = await admin.auth.admin.getUserById(user_id);
+      if (!error && data && isAppleUser(data.user)) {
+        const r = await storeAppleGrant(admin, user_id, body.grant);
+        stored = !!r.stored;
+        console.log(`[beta:apple_grant] ${r.stored ? `stored client=${r.client}` : `not stored: ${r.reason}${r.problems && r.problems.length ? ` (${r.problems.join(", ")})` : ""}${r.status ? ` status=${r.status}` : ""}`}`);
+      } else {
+        console.log("[beta:apple_grant] not stored: not_apple");
+      }
+    } catch { console.error("[beta:apple_grant] not stored: failed"); }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ stored }) };
+  }
+
   if (action === "signup") {
     const email = cleanEmail(body.email);   // a phone keyboard's stray space is not a different address
     const password = body.password;
@@ -613,7 +724,11 @@ async function handle(event) {
     // handed it out, not that this person owns the address they typed, and the founding price follows the
     // address (_lib/foundingCohort.js). So every account created while the door is open confirms its
     // email by clicking the link we send.
-    const confirmOnCreate = gate.usedCode && !open;
+    //
+    // INSTANT SIGNUP (SIGNUP_INSTANT "true", _lib/signupGate.js): with the door open, every new account is confirmed on
+    // creation and signed straight in, marked "instant" (never proved by its owner). Off, nothing here changes.
+    const instant = open && signupInstantEnabled();
+    const confirmOnCreate = (gate.usedCode && !open) || instant;
 
     // CHECKED BEFORE THE ACCOUNT EXISTS. An account that must confirm its address is unusable until it
     // does, so creating one we cannot possibly email would leave a person holding an account that can
@@ -687,17 +802,18 @@ async function handle(event) {
         // was confirmed here. _lib/foundingCohort.js offers the founding price only to "link" accounts
         // whose address has been confirmed, so an auto-confirmed address never gets it.
         // `tester` only saves everyone else a call from the app; /api/tester checks the tester_accounts row.
-        app_metadata: { email_confirmation: confirmOnCreate ? "auto" : "link", ...(testerCode ? { tester: true } : {}) },
+        app_metadata: { email_confirmation: instant ? "instant" : confirmOnCreate ? "auto" : "link", ...(testerCode ? { tester: true } : {}) },
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
         // founder_flag false, and nothing anywhere reads these fields.
-        // `signup_src` (2026-10-22): the campaign the visit came from (?src=, lib/waitlistSrc.js), a known one or
-        // "direct", carried from the landing's main button through to the account. Counted, never acted on.
+        // No campaign code goes in this metadata (2026-11-10). The approved privacy words (2026-11-05) say only an
+        // Android account carries one, from Google Play's Install Referrer, and that one is recorded in
+        // account_attribution below. A website or iPhone account carries none. (#92 wrote `signup_src` here.)
         // `signup_platform` (2026-10-23): "app" for a signup made in a store app, "web" otherwise. The confirmation
         // link opens in a browser either way; the website's /confirmed page reads this to sign a web signup straight
         // into onboarding and to send an app signup back to the app (src/App.jsx confirmedFromApp).
-        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_src: waitlistSourceFor(body.src), signup_platform: isNativeRequest(event) ? "app" : "web", signed_up: new Date().toISOString() },
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signup_platform: isNativeRequest(event) ? "app" : "web", signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");
@@ -730,6 +846,8 @@ async function handle(event) {
     if (newAccountId && !isTestEmail(email)) {
       const platform = accountPlatform(event);
       await recordAccountAttribution(admin, newAccountId, platform === "android" ? body.attribution : null, platform);
+      // The full funnel (migration 0042): which channel the account was made on, so web and store sign-ups stay apart.
+      await recordMilestone(admin, newAccountId, "signed_up", platform);
     }
     if (newAccountId && testerCode) {
       try {
@@ -760,7 +878,8 @@ async function handle(event) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
     }
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source }) };
+    // Instant: the app signs in with the address and password it already holds, straight into onboarding.
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, ...(instant ? { instant: true } : {}) }) };
   }
 
   try {
@@ -821,6 +940,7 @@ function withoutServerKeys(metadata) {
 
 exports.handler = async (event) => {
   connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
+  logAppleConfigOnce("beta");   // names only: whether this instance can sign for Apple
   let res;
   try { res = await handle(event); }
   catch (e) { console.log(logLine(event, { statusCode: 500, body: JSON.stringify({ error: "threw" }) })); throw e; }

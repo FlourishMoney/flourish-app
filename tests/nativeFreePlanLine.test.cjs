@@ -113,7 +113,10 @@ const offences = (s) => [...SELLS, ...COPY].filter(([, rx]) => rx.test(s)).map((
   // ── 5. every store-app screen uses these lines ─────────────────────────────────────────────────────
   const gate = as("ios", () => textOf(A.render(A.h(A.PremiumGate, { feature: "Credit Coaching", desc: "x", onUpgrade: () => {} }))));
   t.ok(gate.includes(APPROVED.LOCKED_LINE), "5a a locked screen (Credit) in a store app says the founder's line");
-  t.ok(/\{isNativeApp\(\) \? LOCKED_LINE : "Start your trial to run the meeting with your coach\."\}/.test(APP), "5b …and so does Meet, when the coach-run meeting is locked (the web keeps its own)");
+  // 2026-11-13: the web's own line now follows TRIAL_PLAN_FIRST (lib/trialWords.js switchWords): today's words while it is off.
+  const SWITCH_OFF = (await import(path.join(__dirname, "..", "src", "lib", "trialWords.js"))).SWITCH_OFF_WORDS;
+  t.ok(/\{isNativeApp\(\) \? LOCKED_LINE : switchWords\("trialfirst-meeting-locked", tpfOnNow\)\}/.test(APP) && SWITCH_OFF["trialfirst-meeting-locked"] === "Start your trial to run the meeting with your coach.",
+    "5b …and so does Meet, when the coach-run meeting is locked (the web keeps its own)");
   const send = APP.slice(APP.indexOf("const sendToFacilitator = async"), APP.indexOf("const sendToFacilitator = async") + 3500);
   t.ok(/if \(r\.status === 402 && j\.error === "plan_limit"\) \{[\s\S]{0,300}setMeetError\(\{ kind:"limit", text: isNativeApp\(\) \? LOCKED_LINE : \(j\.message \|\| LOCKED_LINE\) \}\);/.test(send),
     "5c …and so does the server's refusal of the meeting (402 plan_limit), shown as a limit with no Try again");

@@ -105,11 +105,11 @@ const FOUNDING_LINE = "We'll email you your founding price link, and no other ma
   t.ok(/\{waitlistArea === "waitlist" && <WaitlistForm source="hero"\/>\}/.test(auth) && !/<WaitlistForm [^>]*founding/.test(APP),
     "5d the hero: today's form with signup shut; no form in the price box on the trial-first page");
   t.ok(/\{waitlistForms && \(\s*<FoundingOffer launched=\{waitlistArea !== "waitlist"\}\/>/.test(auth), "5e the price box, with its after-launch words on the trial-first page, and nothing inside it");
-  t.ok(/const trialFirst = waitlistArea === "founding";/.test(auth) && (auth.match(/<TrialButton onClick=\{goSignup\}\/>/g) || []).length === 2,
+  t.ok(/const trialFirst = waitlistArea === "founding";/.test(auth) && (auth.match(/<TrialButton onClick=\{goSignup\} tpfOn=\{tpfOn\}\/>/g) || []).length === 2,
     "5e2 the main button, top and bottom, on the trial-first page");
   const second = auth.slice(auth.indexOf("{/* Second email capture */}"), auth.indexOf("{/* Footer */}"));
   t.ok(/\{waitlistArea === "waitlist" && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<h2 className="fll-h2"[^>]*>Be first to know\.<\/h2>\s*<p className="fll-lede"[^>]*>Join the waitlist and we'll email you the moment flourish launches in Canada\.<\/p>\s*<WaitlistForm source="bottom_cta"\/>/.test(second)
-    && /\{trialFirst && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<TrialButton onClick=\{goSignup\}\/>/.test(second),
+    && /\{trialFirst && \(\s*<div className="fll-wrap fll-section"[^>]*>\s*<div className="fll-cta2">\s*<TrialButton onClick=\{goSignup\} tpfOn=\{tpfOn\}\/>/.test(second),
     "5f the bottom: the launch heading, promise and form only on today's page; the main button while founding spots are open");
   t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "5g the sign-up card's own status check is unchanged");
 

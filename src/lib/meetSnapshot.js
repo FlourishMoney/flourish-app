@@ -6,11 +6,12 @@
 // and the facilitator context use — so what is displayed is exactly what is generated and sent.
 
 import { ForecastEngine } from "./forecastEngine.js";
+import { nextMainPaydayFor } from "./forecastEdits.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { selectHighestRateDebt, savingsBufferAfter, spareUntilDeposit } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
-import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
+import { billPrompts, billChangeQuestion, billChanges, billChangeSignature, applyBillChange, billKey } from "./billsReconcile.js";
 import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
@@ -128,17 +129,20 @@ export function buildMeetSnapshot(data = {}, now = new Date()) {
     const { spare: extra, safe } = spareUntilDeposit(data, now);
     if (top && extra > 0) {
       const buf    = savingsBufferAfter(data.accounts, 0); // engine helper: the savings balance now
+      // The date is the next MAIN payday, the last day of the window the figure was worked out over
+      // (safeSpendEngine.js; forecastEdits.js nextMainPaydayFor). It used to be the forecast's first deposit of
+      // any size, so a benefit landing before the paycheque read "spare before Nov 20" for a figure that ran to
+      // the paycheque on Nov 26 (tests/paydayWords.test.cjs).
       let periodEnd = "";
       try {
-        const fc2 = ForecastEngine.generate(data, 31, null, now) || {};
-        const pay = (fc2.forecast || []).find(f => f.day > 0 && f.isPayday);
+        const pay = nextMainPaydayFor(data, now);
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
-      } catch { /* no payday found → generic period label */ }
+      } catch { /* no payday known: the generic period label */ }
       const savingsAccts = (data.accounts || []).filter(a => String((a && (a.type || a.subtype)) || "").toLowerCase() === "savings");
       snap.decisions = [{
-        question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
+        question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next payday"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
         explain: {
-          title: `Spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}`, value: formatMoney(extra),
+          title: `Spare ${periodEnd ? `before ${periodEnd}` : "until your next payday"}`, value: formatMoney(extra),
           meaning: "A quarter of what's safe to spend until your next payday, rounded down to the dollar. It is a figure to talk about: nothing is moved.",
           rows: [...(_safeRows(data) || [{ label: "= Safe until next payday", value: formatMoney(safe) }]),
                  { label: "× 25%, rounded down", value: formatMoney(extra) }],
@@ -199,6 +203,40 @@ export function buildReconcilePrompts(data = {}) {
     // A detector failure must not take the meeting down with it: the agenda is still worth having
     // without its questions.
     return [];
+  }
+}
+
+// ── A YES CHANGES THE BILLS (2026-11-08) ───────────────────────────────────────────────────────
+// When a meeting is marked done, each "yes" to a bill question is applied to the household's bills with
+// applyBillChange: a new bill is added, a changed amount is updated, an ended bill is removed.
+//
+// IT CAN ONLY APPLY ONCE. An answer is applied only while the bank still shows the change it was about:
+// the changes are worked out again here, from these bills, by the same detector the question came from,
+// and an answer whose signature matches none of them does nothing. Once applied, the bills match the
+// bank and the change is gone, so marking the meeting done again, a second device, a retry or a replay
+// of the same record finds nothing left to apply. A "no" is never applied (it is remembered instead).
+// Returns { bills, applied } with applied the signatures that changed something. Never throws: on any
+// failure the bills come back as they were.
+export function applyMeetingAnswers(data = {}, answers = []) {
+  const bills = Array.isArray(data.bills) ? data.bills : [];
+  try {
+    const yes = (Array.isArray(answers) ? answers : []).filter(a => a && a.domain === "bills" && a.answer === "accepted" && a.signature);
+    if (!yes.length) return { bills, applied: [] };
+    const detected = detectRecurringBills(data.transactions || [], { overrides: data.userBillOverrides || {}, debts: data.debts || [] });
+    const changes = billChanges(detected, bills);
+    let next = bills;
+    const applied = [];
+    for (const a of yes) {
+      if (applied.includes(a.signature)) continue;
+      const change = changes.find(c => billChangeSignature(c) === a.signature);
+      if (!change) continue;
+      const detectedBill = detected.find(b => billKey(b && b.name) === change.key) || null;
+      const after = applyBillChange(next, change, detectedBill);
+      if (after !== next && JSON.stringify(after) !== JSON.stringify(next)) { next = after; applied.push(a.signature); }
+    }
+    return { bills: applied.length ? next : bills, applied };
+  } catch {
+    return { bills, applied: [] };
   }
 }
 

@@ -266,8 +266,8 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.ok(/setMailSent\(true\);\s*setResendCooldown\(60\);/.test(needs), "H10b the mail has just gone: the resend waits the same 60 s as any resend");
     t.ok(/setMailSent\(false\);\s*setError\(SIGNUP_COPY\.mailNotSent\);\s*setResendCooldown\(0\);/.test(needs),
       "H10c no mail went out: it says so, and the resend is ready at once");
-    t.ok(/setPendingConfirm\(""\);\s*setSuccess\("Account created\. You can log in now\."\);\s*setMode\("login"\);/.test(signup),
-      "H10d a coded signup (confirmed on creation) still goes to Log In, with its line");
+    t.ok(/setPendingConfirm\(""\);\s*(?:\/\/[^\n]*\n\s*)*if \(out\.instant\) \{ setLoading\(false\); await handleLogin\(\); return; \}\s*setSuccess\("Account created\. You can log in now\."\);\s*setMode\("login"\);/.test(signup),
+      "H10d a coded signup (confirmed on creation) still goes to Log In, with its line (an instant one signs straight in: instantSignup.test)");
     const ce = auth.slice(auth.indexOf('{mode === "check_email" && ('), auth.indexOf('{(mode === "login" || mode === "signup") && ('));
     t.ok(ce.length > 200, "H10e found the check-email state");
     t.ok(/\{mailSent && <div[^>]*>\s*We sent a confirmation link to <span data-check-email-address=""[^>]*>\{email \|\| "your email"\}<\/span>\. Click it to activate your account, then come back and log in\./.test(ce),

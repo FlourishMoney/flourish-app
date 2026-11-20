@@ -12,6 +12,7 @@
 // A count that cannot be sent is simply lost: it never blocks or slows the page.
 // -----------------------------------------------------------------------------
 import { currentWaitlistSrc } from "./waitlistSrc.js";
+import { landingAttribution } from "./attribution.js";
 
 export const CLIENT_COUNT_EVENTS = Object.freeze(["landing_view", "main_tap"]);
 const VIEW_KEY = "flourish_landing_viewed";
@@ -22,7 +23,8 @@ export function countLanding(event, { fetchImpl = (typeof fetch === "function" ?
     const p = fetchImpl(`${base}/api/beta`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "landing_count", event, src: currentWaitlistSrc() }),
+      // src as the waitlist list reads it (0027), and the visit's own src and cr for the source report (0043).
+      body: JSON.stringify({ action: "landing_count", event, src: currentWaitlistSrc(), attribution: landingAttribution() }),
       keepalive: true,
     });
     if (p && p.catch) p.catch(() => {});

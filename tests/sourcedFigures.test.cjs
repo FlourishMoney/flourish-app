@@ -388,9 +388,15 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const ALLOW = new Set([
       // The founding plans screen's trial confirm (approved 2026-10-29): the household keeps its free trial, not money.
       "Keep your trial for now?", "Keep my trial",
+      // Trial plan first (approved 2026-11-10, ChatGPT 100, Grok 100): flourish's own subscription, its trial button and
+      // the store-rule line on how to avoid its first charge. About the app's plan, never advice on the household's money.
+      "Start free trial", "Cancel before {date} to avoid the first charge.",
+      // Its go-live words (approved 2026-11-11, ChatGPT 100, Grok 100): the landing's main button, and Terms section 7's
+      // line on avoiding flourish's own first charge (legal text about the app's plan, not the household's money).
+      "Get started", "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
-      "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
+      "Save Layout", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
       "Start solo check-in", "Start Meeting ▶", "Start Check-In ▶", "Start New", "Save Debt ✓", "Save Goal ✓", "Always visible", "Open Family Dashboard →", "Open Support",
       "Start coaching session →", "Clear chat history", "Clear history", "Apply this change?", "Open Settings", "Save Goal", "Save Plan", "✓ Save My Budget Plan",
       "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
@@ -487,7 +493,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       const data = demoOn(c, made, { goals, bankConnected: true });
       const sp = DE.spareUntilDeposit(data).spare;
       const today = textOf(A.render(A.h(A.Dashboard, { data, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
-      t.ok(today.includes("Spare until your next deposit") && (sp === 0 || today.includes(`= $${sp.toLocaleString("en-US")}`) || today.includes(`rounded down to $${sp.toLocaleString("en-US")}`)),
+      t.ok(today.includes("Spare until your next payday") && (sp === 0 || today.includes(`= $${sp.toLocaleString("en-US")}`) || today.includes(`rounded down to $${sp.toLocaleString("en-US")}`)),
         `12f ${c}: Today's Money Plan shows the spare amount ($${sp}) as a fact, with how it was worked out`);
       const plan = DE.AutopilotEngine.generate(data, {});
       const debtsShown = plan.debtsOwed.every(dd => today.includes(dd.name) && today.includes(formatMoney(dd.balance)));
@@ -504,7 +510,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       const safe = DE.displayedSafeToSpend(d, VIEW);
       const dec = textOf(A.render(A.h(A.DecisionEngine, { data: d, safe, bal: 3083, monthlyIncome: FinancialCalcEngine.cashFlow(d, {}, VIEW).monthlyIncome, soonBills: [], todayDate: VIEW,
         dailyPace: suggestedDailyView(safe, d.incomes, d.transactions, VIEW, d), setScreen: noop })));
-      t.ok(dec.includes("$487 spare until your next deposit") && dec.includes("25% × $1,951 = $487.75, rounded down to $487") && !/more a month|Extra|toward/.test(dec), "12f2 Decisions: $486 spare, worked out, and no debt amount");
+      t.ok(dec.includes("$487 spare until your next payday") && dec.includes("25% × $1,951 = $487.75, rounded down to $487") && !/more a month|Extra|toward/.test(dec), "12f2 Decisions: $486 spare, worked out, and no debt amount");
     }
     t.ok(!/plan\.(savingsTransfer|debtPayment|goalContribution|buffer|surplus)\b/.test(APP) && !/modeMultipliers|mult\.(savings|debt|goal)/.test(fs.readFileSync(path.join(REPO, "src", "lib", "decisionEngine.js"), "utf8")),
       "12i the 40% / 40% / 50% rules are gone from the engine and nothing reads an allocation");

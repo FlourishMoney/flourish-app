@@ -125,7 +125,11 @@ const path = require("path");
     t.ok(!/reviewOnTodayOpen|reviewOnCheckInDone/.test(app), "the retired triggers are gone from the app");
     const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
     t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
-    t.ok(/const markDone = \(\) => \{[\s\S]{0,600}reviewOnMeetingDone\(\{ demo: !!data\.demo \}\);/.test(app),
+    // Meeting memory (2026-11-08): markDone saves the meeting first, so "after the meeting is recorded" is now checked
+    // in order: the review is asked only after a save that succeeded and after the meeting is marked done.
+    const md = app.slice(app.indexOf("const markDone = async () => {"), app.indexOf("return heldToday", app.indexOf("const markDone = async () => {")));
+    const iOk = md.indexOf("if (!res || !res.ok) {"), iDone = md.indexOf("lastMeetingAt: new Date().toISOString()"), iAsk = md.indexOf("reviewOnMeetingDone({ demo: !!data.demo });");
+    t.ok(md.length > 0 && iOk > 0 && iDone > iOk && iAsk > iDone && /if \(!res \|\| !res\.ok\) \{[^}]*return; \}/.test(md),
          "…\"Mark this meeting done\", after the meeting is recorded, passing demo (the wrapper keys the meeting by its day)");
     const sp = app.slice(app.indexOf("function StorePaywall("), app.indexOf("function Paywall("));
     t.ok(/if\(r\.outcome==="failed" \|\| r\.outcome==="pending" \|\| r\.outcome==="cancelled" \|\| r\.outcome==="unconfirmed"\) noteReviewTrouble\(\);/.test(sp),

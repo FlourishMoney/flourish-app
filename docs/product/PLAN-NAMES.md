@@ -23,7 +23,7 @@ New wording is a placeholder until both reviewers approve it (`docs/product/NET-
 | Website, upgrade screen | title "Flourish Plus", and "You're on Flourish Plus" | `plan-name`, `plan-on` |
 | Website, plans screen | title "Flourish Plus", heading "What Plus adds" | `plan-name`, `plan-adds-title` |
 | Website, sidebar | "Upgrade to Flourish Plus →", badge "✦ Flourish Plus" | `plan-upgrade-cta`, `plan-name` |
-| Store apps, paywall (`src/lib/storeOffer.js`) | title "Flourish Plus" and the same lead line | `plan-name`, `plan-adds-lead` |
+| Store apps, paywall (`src/lib/storeOffer.js`) | title "Flourish Plus" and the same lead line | none: approved 2026-11-05 as "Subscribe to flourish" and its lead, already on main |
 | Store apps that sell, Terms section 7 (`src/lib/freePlan.js`) | "Flourish Plus lifts these limits." | `plan-terms-lifts-limits` |
 | Couple mode, paying twice (`src/lib/householdWords.js`) | "…Settings > Flourish Plus > Manage subscription." | `plan-household-extra-stripe` |
 | The coach's weekly free limit (server, `_lib/coachLimits.js`) | "…Upgrade to Plus for unlimited…" | `plan-server-coach-limit` |

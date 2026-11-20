@@ -79,6 +79,7 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
     }
     const fnText = app.slice(bodyStart, end);
 
+    const { recalledAccountTrial } = await import("../src/lib/trialPlanFirst.js");
     const make = (profile) => {
       const store = new Map([["flourish_plan", "beta_founder"]]);
       const calls = { setPlan: [], setIsPremium: [] };
@@ -89,8 +90,12 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
       const { derivePlan } = require("../netlify/functions/_lib/planRules.js"); // same rule, CJS side
       // setProfilePlan only records the profile's plan for the web paid-subscription effect
       // (tests/webPaidPlan.test.cjs); it sets no plan and no premium flag, so here it records nothing.
+      // TRIAL_PLAN_FIRST (2026-11-10): the function also remembers the row it read, and asks the device whether the
+      // server said this account has no account trial (the real helper; this run's storage has no such answer).
       const fn = new Function("supabase", "derivePlan", "setPlan", "setIsPremium", "setProfilePlan", "isCapacitorIOS", "localStorage", "console",
-        `return (${fnText});`)(supabase, derivePlan, setPlan, setIsPremium, () => {}, () => false, localStorage, { error() {} });
+        "lastProfileRef", "recalledAccountTrial", "deviceStorage",
+        `return (${fnText});`)(supabase, derivePlan, setPlan, setIsPremium, () => {}, () => false, localStorage, { error() {} },
+        { current: null }, recalledAccountTrial, () => localStorage);
       return { fn, store, calls };
     };
 

@@ -1373,3 +1373,21 @@ defect.
 **What to do** Wait in the test for the tour step's own content (its "Step 1 of 5" text or its Next button)
 before measuring, instead of measuring right after the reload. Do not loosen 2b: a screen with nothing to
 measure must still fail.
+
+## 63. Two saves of the same meeting at the same instant: one save's answers can be lost
+
+**Rating: LOW.** Found in the adversarial review of #125 (meeting memory), 2026-11-08. Left as is on Amanda's
+decision; logged here.
+
+**Where** `netlify/functions/meeting.js`, `action: "record"`: it reads the person's row for that day
+(`const prior = await admin…`, line 178) and then writes the merged answers back with an upsert (line 188).
+
+**What happens** Saves of one person's meeting on one day are merged by question (later answer wins), so a
+second device's save no longer erases the first. But the read and the write are two steps, not one. If the
+same person taps "Mark this meeting done" on two devices at the same instant, both can read the day before
+either has written, and the second write then replaces the first: that device's answers are lost, and a
+question answered "No" there can be asked again. Partners are not affected (each has their own row), and
+saves even a moment apart merge correctly.
+
+**Fix (suggested, not built)** Merge inside the database in one statement (a function that locks or
+upserts with `answers = merged(existing, new)`), which needs a migration.

@@ -69,7 +69,8 @@ function statusFor(row) {
     // ── 3. Checkout's refusal keeps its reason ────────────────────────────────────────────────────
     t.eq(V.checkoutErrorText({ status: 409, error: "already_subscribed" }), "This account already has a subscription.", "3a 409 already_subscribed has its own words");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    const go = app.slice(app.indexOf("const go = async (planKey) => {"), app.indexOf("const go = async (planKey) => {") + 1600);
+    // TRIAL_PLAN_FIRST (2026-11-10) adds its trial_changed answer above this line: the function is read to its end.
+    const go = app.slice(app.indexOf("const go = async (planKey) => {"), app.indexOf("\n  };", app.indexOf("const go = async (planKey) => {")));
     t.ok(/if\(!res\.ok \|\| !body\.url\)\{ setError\(checkoutErrorText\(\{ status: res\.status, error: body\.error\|\|"unavailable" \}\)\); setBusy\(null\); return; \}/.test(go),
       "3b the checkout screen passes the status and the server's reason, so a 409 is not \"Couldn't reach checkout\"");
   } finally {

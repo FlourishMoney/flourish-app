@@ -120,7 +120,11 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     // were rounded to the nearest dollar inside the engine, and one rounded down; now each is rounded up once, in the view.
     // balance-truth 2026-11-06: the demos' Netflix and Hulu payments are no longer also daily spending, so each figure
     // moved up by that share of the buffer (it was 1944, 973, 2415 and 1421).
-    const want = { "CA 2026-09-29 0": 1951, "CA 2026-09-29 25": 974, "US 2026-09-29 0": 2425, "US 2026-09-29 25": 1422 };
+    // Audit of 2026-11-13, finding 3 (tests/overdueBills.test.cjs): the two 25-day-old demos moved again, on purpose.
+    // Each was made Sep 4, so one of its bills (CA: hydro, $95; US: phone, $85) fell due in the five days before
+    // Sep 29 with no payment of it in the sample transactions; past due and not seen paid, it is still counted (they
+    // were 974 and 1422). The fresh demos, whose bills are all still ahead, did not move.
+    const want = { "CA 2026-09-29 0": 1951, "CA 2026-09-29 25": 879, "US 2026-09-29 0": 2425, "US 2026-09-29 25": 1337 };
     for (const [k, v] of Object.entries(want)) {
       const [c, iso, age] = k.split(" ");
       const now = new Date(iso + "T12:00:00"); const made = new Date(now); made.setDate(made.getDate() - Number(age));

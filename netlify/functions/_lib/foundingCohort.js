@@ -22,7 +22,9 @@
 //
 // CONFIRMED. Supabase Auth's email_confirmed_at, from the server's own record, never the client's word. An
 // address confirmed on creation (app_metadata.email_confirmation "auto": an invite code while signup was shut)
-// was never proved by its owner and is not offered the founding price.
+// was never proved by its owner and is not offered the founding price. An INSTANT signup ("instant",
+// SIGNUP_INSTANT, 2026-11-11) is not proved either, but it is offered the founding price: the price now goes to the
+// first 50 households who pay for it (rule 3), not to an address on a list, so paying is what earns the seat.
 //
 // FAILS CLOSED. If the seats cannot be counted (0032 not applied, the read failed) or the address is a test
 // address, the answer is "no": the regular prices are still offered. Offering a price we then cannot honour is

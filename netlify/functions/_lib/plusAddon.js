@@ -49,6 +49,11 @@ const PLUS_PRODUCTS = Object.freeze({
   "flourish_plus_addon:annual":          "plus_annual",
 });
 const STORE_PROVIDERS = Object.freeze(["app_store", "play_store"]);
+// Is a store product id (as a RevenueCat event names it) one of the add-on's? Google's may come as the subscription
+// alone ("flourish_plus_addon") or with its base plan. The main plan's ids (app.flourishmoney.plus.*, flourish_plus)
+// are never the add-on's.
+const PLUS_STORE_SUBSCRIPTIONS = Object.freeze([...new Set(Object.keys(PLUS_PRODUCTS).map((k) => k.split(":")[0]))]);
+const isPlusStoreProductId = (id) => typeof id === "string" && PLUS_STORE_SUBSCRIPTIONS.includes(id.trim().split(":")[0]);
 const TABLE = "plus_addon_subscriptions";
 
 const isPlusPlanKey = (k) => typeof k === "string" && PLUS_PLAN_KEYS.includes(k);
@@ -242,6 +247,6 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
 
 module.exports = {
   TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS,
-  plusEnabled, isPlusPlanKey, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, getPlusEntitlement,
+  plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,
 };

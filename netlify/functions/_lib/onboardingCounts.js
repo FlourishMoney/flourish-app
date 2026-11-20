@@ -9,6 +9,10 @@
 //   first_number_shown         two rows: "<mode>:signup:<bucket>" (from the account's created_at, read here) and,
 //                              when the app sent it, "<mode>:signin:<bucket>" (from the device's first sign-in)
 //   bank_link_*                detail = ""
+//   bank_link_failed           detail = "<platform>:<code>" (2026-11-11): ios, android or web, and Plaid's error code from
+//                              LINK_FAIL_CODES (or ours: EXCHANGE_FAILED, PLAN_LIMIT; anything else OTHER). Never Plaid's message.
+//                              Until migration 0047 widens the table's check, the database refuses that detail (23514) and
+//                              activation.js counts the event with detail "" instead, exactly as before.
 // -----------------------------------------------------------------------------
 "use strict";
 
@@ -17,6 +21,20 @@ const BANK_LINK_EVENTS = Object.freeze(["bank_link_started", "bank_link_complete
 const ONBOARDING_EVENTS = Object.freeze(["onboarding_step_completed", "first_number_shown", ...BANK_LINK_EVENTS]);
 const MODES = Object.freeze(["manual", "linked"]);
 const BUCKETS = Object.freeze(["under_60", "60_120", "120_180", "over_180"]);
+const LINK_PLATFORMS = Object.freeze(["ios", "android", "web"]);
+const LINK_FAIL_CODES = Object.freeze([
+  "INVALID_CREDENTIALS", "INVALID_MFA", "INVALID_SEND_METHOD", "INVALID_UPDATED_USERNAME", "INSUFFICIENT_CREDENTIALS",
+  "ITEM_LOCKED", "ITEM_LOGIN_REQUIRED", "ITEM_NOT_SUPPORTED", "ITEM_NO_ERROR", "MFA_NOT_SUPPORTED", "NO_ACCOUNTS", "NO_AUTH_ACCOUNTS",
+  "PASSWORD_RESET_REQUIRED", "USER_SETUP_REQUIRED", "USER_INPUT_TIMEOUT", "ACCESS_NOT_GRANTED", "PRODUCTS_NOT_SUPPORTED", "PRODUCT_NOT_READY",
+  "INSTITUTION_DOWN", "INSTITUTION_NOT_RESPONDING", "INSTITUTION_NOT_AVAILABLE", "INSTITUTION_NO_LONGER_SUPPORTED",
+  "INSTITUTION_NOT_ENABLED_IN_ENVIRONMENT", "INSTITUTION_REGISTRATION_REQUIRED", "INSTITUTION_NOT_FOUND",
+  "INVALID_LINK_TOKEN", "INVALID_FIELD", "MISSING_FIELDS", "OAUTH_STATE_ID_NOT_FOUND", "RATE_LIMIT_EXCEEDED", "INTERNAL_SERVER_ERROR",
+  "PLANNED_MAINTENANCE",
+  // Ours: the bank linked but our server's exchange failed, or the free plan's one-bank limit refused it.
+  "EXCHANGE_FAILED", "PLAN_LIMIT",
+  // Anything else Plaid sends (never its text).
+  "OTHER",
+]);
 const MAX_SIGNIN_MS = 90 * 24 * 3600 * 1000;   // a longer gap is not a first session's
 
 // Under 60 s, 60 to 120, 120 to 180, over 180.
@@ -45,7 +63,16 @@ function onboardingRows(body, createdAt, now = new Date()) {
     if (fromSignin) rows.push({ event, detail: `${body.mode}:signin:${fromSignin}` });
     return rows;
   }
+  if (event === "bank_link_failed" && body.detail !== undefined) {
+    return isLinkFailDetail(body.detail) ? [{ event, detail: body.detail, fallbackDetail: "" }] : null;
+  }
   return [{ event, detail: "" }];
 }
 
-module.exports = { ONBOARDING_STEPS, BANK_LINK_EVENTS, ONBOARDING_EVENTS, MODES, BUCKETS, timeBucket, onboardingRows };
+// "<platform>:<code>", both from the fixed lists; anything else is not a detail we keep.
+function isLinkFailDetail(detail) {
+  const m = typeof detail === "string" ? detail.match(/^([a-z]+):([A-Z_]+)$/) : null;
+  return !!m && LINK_PLATFORMS.includes(m[1]) && LINK_FAIL_CODES.includes(m[2]);
+}
+
+module.exports = { ONBOARDING_STEPS, BANK_LINK_EVENTS, ONBOARDING_EVENTS, MODES, BUCKETS, LINK_PLATFORMS, LINK_FAIL_CODES, timeBucket, onboardingRows, isLinkFailDetail };
