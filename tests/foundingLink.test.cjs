@@ -322,7 +322,7 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.ok(/\[functions\."founding-link-sweep"\]\s*\n\s*schedule = "\*\/15 \* \* \* \*"/.test(toml), "6a the sweep runs every 15 minutes");
     t.ok(/from "\.\/lib\/foundingLink\.js"/.test(APP), "6b the App reads the link through src/lib/foundingLink.js");
     t.ok(/foundingLinkAction\(\{ requested: foundingLink, native: nativeApp,/.test(APP), "6c …and asks it what to do");
-    t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : null\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them");
+    t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : \(giftReturn && GIFT_SIGN_IN_NOTE \? GIFT_SIGN_IN_NOTE : null\)\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them (and, website only, the gift's line when the redeem page did, lib/giftReturn.js)");
     t.ok(/useState\(isNativeApp\(\) \|\| !!foundingNote\)/.test(APP), "6e …and opens straight to sign-in");
     // TRIAL_PLAN_FIRST (2026-11-10): a second mount, the plans-first screen, behind the same guard: every mount is.
     t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, (APP.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length, "6f still only behind billingUi.show, wherever the checkout screen is mounted");
