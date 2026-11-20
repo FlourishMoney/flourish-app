@@ -165,44 +165,44 @@ function memStore() { const m = new Map(); return { m, get: async (k) => m.get(k
       load({ fake, user: "user-1" });
       delete process.env.GIFTS_ENABLED;
       let fn = mod(P.gift);
-      t.eq([(await fn.handler({ httpMethod: "GET", headers: {} })).statusCode, (await fn.handler(web({ action: "redeem", code: "x" }))).statusCode], [404, 404], "5a GIFTS_ENABLED unset: nothing answers");
+      t.eq([(await fn.run({ httpMethod: "GET", headers: {} })).statusCode, (await fn.run(web({ action: "redeem", code: "x" }))).statusCode], [404, 404], "5a GIFTS_ENABLED unset: nothing answers");
       process.env.GIFTS_ENABLED = "true";
       fn = mod(P.gift);
       for (const origin of ["capacitor://localhost", "https://localhost"]) {
-        const r = await fn.handler({ ...web({ action: "redeem", code: "ABCDEFGHJKMN" }), headers: { origin } }, {}, { store: memStore() });
+        const r = await fn.run({ ...web({ action: "redeem", code: "ABCDEFGHJKMN" }), headers: { origin } }, { store: memStore() });
         t.eq([r.statusCode, JSON.parse(r.body).error], [403, "web_only"], `5b a store app (${origin}) is refused: redeeming is website only`);
       }
-      const prices = await fn.handler({ httpMethod: "GET", headers: { origin: "https://flourishmoney.app" } }, {}, { store: memStore() });
+      const prices = await fn.run({ httpMethod: "GET", headers: { origin: "https://flourishmoney.app" } }, { store: memStore() });
       t.eq(JSON.parse(prices.body), { enabled: true, currency: "cad", prices: { flourish: 9999, flourish_plus: 14998 } }, "5c the page reads the prices from the one value");
       let sent = null;
       const stripePost = async (p2, params) => { sent = { p2, params }; return { id: "cs_x", url: "https://checkout.stripe.com/c/pay/cs_x" }; };
-      const bad = await fn.handler(web({ action: "checkout", plan: "flourish", delivery: "email" }), {}, { store: memStore(), stripePost });
+      const bad = await fn.run(web({ action: "checkout", plan: "flourish", delivery: "email" }), { store: memStore(), stripePost });
       t.eq([bad.statusCode, JSON.parse(bad.body).fields, sent], [400, ["buyer_email", "recipient_email", "recipient_name", "send_on"], null], "5d a form with gaps: 400 with the fields, and Stripe is not asked");
-      const good = await fn.handler(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), {}, { store: memStore(), stripePost });
+      const good = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore(), stripePost });
       t.eq([good.statusCode, JSON.parse(good.body).url, sent.p2, sent.params.mode], [200, "https://checkout.stripe.com/c/pay/cs_x", "/checkout/sessions", "payment"], "5e a whole form: a Checkout Session, and its address");
-      const down = await fn.handler(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), {}, { store: memStore(), stripePost: async () => { const e = new Error("No such price: acct_secret_detail"); e.statusCode = 400; throw e; } });
+      const down = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: memStore(), stripePost: async () => { const e = new Error("No such price: acct_secret_detail"); e.statusCode = 400; throw e; } });
       t.eq([down.statusCode, /acct_secret/.test(down.body)], [502, false], "5f Stripe refusing: 502, and its message stays on the server");
       const st = memStore();
       let last;
-      for (let i = 0; i < 21; i++) last = await fn.handler(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), {}, { store: st, stripePost });
+      for (let i = 0; i < 21; i++) last = await fn.run(web({ action: "checkout", plan: "flourish", buyer_email: "b@example.ca", delivery: "print" }), { store: st, stripePost });
       t.eq(last.statusCode, 429, "5g 20 checkouts an hour from one address, then 429");
       t.ok([...st.m.keys()].every((k) => !k.includes("203.0.113.7")), "5h …counted under a keyed hash, never the address itself");
       // redeem
-      const noAuth = await mod(P.gift).handler(web({ action: "redeem", code: "ABCD-EFGH-JKMN" }), {}, { store: memStore(), getUser: async () => ({ user_id: null, error: "missing Authorization header" }) });
+      const noAuth = await mod(P.gift).run(web({ action: "redeem", code: "ABCD-EFGH-JKMN" }), { store: memStore(), getUser: async () => ({ user_id: null, error: "missing Authorization header" }) });
       t.eq(noAuth.statusCode, 401, "5i redeeming needs a signed-in account");
       const rs = memStore();
       const user = async () => ({ user_id: "user-1" });
       fake.GIFT.gift_create({ p_code: "ABCDEFGHJKMN", p_plan: "flourish", p_session: "cs_r1", p_delivery: "print", p_buyer_email: "b@example.ca" });
       const answers = [];
       for (let i = 0; i < 9; i++) {
-        const r = await mod(P.gift).handler(web({ action: "redeem", code: i === 0 ? "abcd-efgh-jkmn" : "ZZZZ-ZZZZ-ZZZZ" }), {}, { store: rs, getUser: user, admin: fake.client });
+        const r = await mod(P.gift).run(web({ action: "redeem", code: i === 0 ? "abcd-efgh-jkmn" : "ZZZZ-ZZZZ-ZZZZ" }), { store: rs, getUser: user, admin: fake.client });
         answers.push(r.statusCode === 429 ? "limited" : JSON.parse(r.body).result);
       }
       t.eq(answers, ["ok", "invalid", "invalid", "invalid", "invalid", "invalid", "invalid", "invalid", "limited"], "5j a code redeems once; then 8 tries an hour per account, whatever they are");
       const ipStore = memStore(); let ipLast;
-      for (let i = 0; i < 21; i++) ipLast = await mod(P.gift).handler(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), {}, { store: ipStore, getUser: async () => ({ user_id: `u-${i}` }), admin: fake.client });
+      for (let i = 0; i < 21; i++) ipLast = await mod(P.gift).run(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), { store: ipStore, getUser: async () => ({ user_id: `u-${i}` }), admin: fake.client });
       t.eq(ipLast.statusCode, 429, "5k …and 20 an hour per IP address, however many accounts try");
-      const closed = await mod(P.gift).handler(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), {}, { store: null, getUser: user, admin: fake.client });
+      const closed = await mod(P.gift).run(web({ action: "redeem", code: "ZZZZZZZZZZZZ" }), { store: null, getUser: user, admin: fake.client });
       t.eq(closed.statusCode, 429, "5l with no way to count, a redeem is refused (a guesser never gets unlimited tries)");
     }
 

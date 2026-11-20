@@ -73,12 +73,17 @@ async function overLimit(store, kind, value, max, { failClosed, now = new Date()
   }
 }
 
-exports.handler = async (event, _ctx, deps = {}) => {
+exports.handler = async (event) => {
+  connectBlobs(event);   // before any getStore: Lambda-style functions get their Blobs context on the event
+  return run(event);
+};
+
+// The handler's work, with its parts injectable for tests/gifts.test.cjs (store, stripePost, getUser, admin).
+async function run(event, deps = {}) {
   const H = headersFor(event);
   if (!gifts.giftsEnabled()) return json(404, H, { error: "not_found" });
   if (isNativeRequest(event)) return json(403, H, { error: "web_only" });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: H, body: "" };
-  connectBlobs(event);
 
   if (event.httpMethod === "GET") {
     return json(200, H, { enabled: true, currency: gifts.GIFT_PRICES.currency,
@@ -127,8 +132,9 @@ exports.handler = async (event, _ctx, deps = {}) => {
   }
 
   return json(400, H, { error: "unknown_action" });
-};
+}
 
+exports.run = run;
 exports.overLimit = overLimit;
 exports.LIMITS = LIMITS;
 exports.STORE = STORE;
