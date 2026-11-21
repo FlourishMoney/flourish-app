@@ -14,6 +14,13 @@ export const PRICING = {
   US: { currency: "USD", monthly: 7.99,  annual: 59.99, foundingAnnual: null }, // US pricing review pending
 };
 
+// THE FLOURISH PLUS ADD-ON (Amanda, 2026-11-10): $4.99 a month or $49.99 a year, CAD plus tax, on top of any plan, with
+// no founding discount. These are the website's figures (Stripe); a store app shows the store's own price string and
+// never these. Behind PLUS_ENABLED: nothing shows them while it is off (lib/plusBuy.js).
+export const PLUS_ADDON_PRICING = {
+  CA: { currency: "CAD", monthly: 4.99, annual: 49.99 },
+};
+
 export function getPricing(country) {
   return PRICING[country === "US" ? "US" : "CA"];
 }

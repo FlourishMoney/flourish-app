@@ -5,6 +5,7 @@ ChatGPT 100/100 AGREE and Grok 100 AGREE (round 2). Numbers match docs/review/PL
 Notes:
 - Line 40 changed meaning: once Plus ships, the main plan no longer has every flourish feature. The store apps' approved paywall lead ("A subscription gives you every flourish feature, including Credit...", Nov 5) must change to line 40's words in 1.1.8 too.
 - Line 31 is the entry form's button: Done (not Save).
+- Line 49 (approved Nov 20, ChatGPT 100, Grok 100) is the website plans screen's headline (src/lib/upgradeFlow.js). It replaces "All of flourish, in one subscription", for the same reason as line 40.
 
 1. We couldn't check your plan just now. Nothing has changed. Please try again.
 2. You've connected {used} of the {limit} banks included for you. Your partner has their own bank limit. flourish Plus allows more banks for the household. Nothing you've connected changes.
@@ -54,6 +55,7 @@ Notes:
 46. You've used your {n} free coach messages this week. A flourish subscription has unlimited messages, or come back on Monday when they reset.
 47. The free plan connects one bank. A flourish subscription connects more.
 48. The free plan connects one bank. A flourish subscription connects more.
+49. flourish, in one subscription
 
 ## Privacy Policy, new entry for gifts (approved Nov 20 2026, ChatGPT 100, Grok 100)
 

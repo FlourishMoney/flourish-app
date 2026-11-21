@@ -288,11 +288,14 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const used = [...APP.matchAll(/trialWords\("([a-z0-9-]+)"/g)].map((m) => m[1]);
     t.ok(used.length >= 10 && used.every((id) => ids.includes(id)), "5c the app uses only listed lines");
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
-    // Gifts (2026-11-20): the one other set still to come, each in its own words home and listed as pending in
-    // docs/review/GIFT-COPY.md (tests/_pendingWords.cjs), holds the build back on its own. None of trial plan first's is left.
+    // 2026-11-20: two sets are still to come, each in its own words home and listed as pending: the Plus purchase lines
+    // (lib/netWorthWords.js, docs/product/NET-WORTH-WORDS.md) and the gifts' (docs/review/GIFT-COPY.md). Each holds the
+    // build back on its own (tests/_pendingWords.cjs). None of trial plan first's is left.
     const PWg = require("./_pendingWords.cjs");
-    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !PWg.pendingGiftWordIds().includes(id));
-    t.eq([left, all.status], [[], PWg.pendingGiftWordIds().length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the gifts' pending lines");
+    const listed = [...PWg.pendingGiftWordIds(), ...PWg.pendingNetWorthWordIds()];
+    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !listed.includes(id));
+    t.eq([left, all.status], [[], listed.length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the listed Plus and gift lines");
+    t.ok(!/\[WORDS: trialfirst-/.test(String(all.stderr || "") + String(all.stdout || "")), "5d0b …and whatever the check refuses, it names no trialfirst- line");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
       t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);

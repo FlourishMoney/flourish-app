@@ -212,7 +212,10 @@ function androidProduct(plan, price, { offer = false } = {}) {
       const noHold = await store.buy(deps(async () => ({ paid: false }), async () => null), { product: {} });
       t.eq([noAnswer, threw, noHold, bought], [{ outcome: "failed", reason: "status_unavailable" }, { outcome: "failed", reason: "status_unavailable" }, { outcome: "failed", reason: "hold_unavailable" }, 0],
         "3i a status call that times out, or a hold that does, opens no purchase sheet: nothing is sold on no answer");
-      t.eq((APP.match(/const wait = \[5000, 20000, 60000\]\[attempt\];/g) || []).length, 2, "3j both status calls are asked again after 5, 20 and 60 seconds (and when the network returns)");
+      // 2026-11-20: the Plus add-on's own status call retries the same way, so the line is no longer counted across the
+      // file: each of the two status calls must carry it, right after its own ask.
+      const retryAfter = (ask) => { const i = APP.indexOf(ask); return i > 0 && /const wait = \[5000, 20000, 60000\]\[attempt\];\s+if\(wait\) timer = setTimeout\(\(\)=>ask\(attempt \+ 1\), wait\);[\s\S]{0,120}window\.addEventListener\("online", onOnline\);/.test(APP.slice(i, i + 700)); };
+      t.eq([retryAfter('try{ s = await askStore("store_status"); }catch{ s = null; }'), retryAfter("try{ body = await askBilling(); }catch{ body = null; }")], [true, true], "3j both status calls are asked again after 5, 20 and 60 seconds (and when the network returns)");
     }
 
     // ════ 4. A TRIAL STARTED ON THE WEBSITE, THEN A STORE APP (AND THE OTHER WAY ROUND) ═══════════════
