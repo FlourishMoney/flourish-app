@@ -4,7 +4,7 @@ Written 2026-11-20. **Nothing below exists yet** (all four consoles were read th
 
 - The ids are the ones the code expects (`src/lib/plusBuy.js`, `netlify/functions/_lib/plusAddon.js`; `tests/plusBuy.test.cjs` holds the two together). **Type each id exactly. An id cannot be changed after it is created.**
 - Prices: **CAD 4.99 a month, CAD 49.99 a year**, plus tax. No trial, no introductory price, no founding discount, no promotion code.
-- Names a buyer sees are marked *draft*. They are listed for review in `docs/review/PLUS-BUY-COPY.md` and are not approved.
+- Names a buyer sees are marked *approved 2026-11-20* (ChatGPT 100, Grok 100, Amanda). Type each exactly as written. They are listed as C1 to C12 in `docs/review/PLUS-BUY-COPY.md`.
 - Keys and secrets never go into the repo or a chat. Nothing here needs a new secret: the price ids in section D are not secret.
 - Do the sections in order. A, B and C can be done before the 1.1.8 build exists, except the two review screenshots.
 
@@ -18,7 +18,7 @@ The group:
 2. Reference Name: `Flourish Plus add-on`
 3. Create
 4. Group → App Store Localization → **+** → English (Canada)
-5. Subscription Group Display Name: `flourish Plus` (*draft*)
+5. Subscription Group Display Name: `flourish Plus` (*approved 2026-11-20*)
 6. App Name Display Options: Use App Name
 7. Save
 
@@ -31,8 +31,8 @@ Monthly (inside the `Flourish Plus add-on` group, **Create**):
 12. Availability: Canada only (untick every other country)
 13. Subscription Prices → **+** → Canada: `CAD 4.99`
 14. App Store Localization → **+** → English (Canada)
-15. Display Name: `flourish Plus monthly` (*draft*, 30 characters at most)
-16. Description: `Net worth, investments, more banks` (*draft*, 45 characters at most)
+15. Display Name: `flourish Plus monthly` (*approved 2026-11-20*, 30 characters at most)
+16. Description: `Net worth, investments, more banks` (*approved 2026-11-20*, 45 characters at most)
 17. Family Sharing: **off** (it can never be turned off once on)
 18. Introductory Offers: **none**
 19. Promotional Offers: **none**
@@ -48,8 +48,8 @@ Annual (same group, **Create**):
 26. Subscription Duration: `1 Year`
 27. Availability: Canada only
 28. Subscription Prices → **+** → Canada: `CAD 49.99`
-29. App Store Localization → English (Canada) → Display Name: `flourish Plus annual` (*draft*)
-30. Description: `Net worth, investments, more banks` (*draft*)
+29. App Store Localization → English (Canada) → Display Name: `flourish Plus annual` (*approved 2026-11-20*)
+30. Description: `Net worth, investments, more banks` (*approved 2026-11-20*)
 31. Family Sharing: **off**
 32. Introductory Offers: **none**
 33. Promotional Offers: **none**
@@ -70,12 +70,12 @@ Flourish → Monetize with Play → Products → Subscriptions.
 
 1. **Create subscription**
 2. Product ID: `flourish_plus_addon`
-3. Name: `flourish Plus` (*draft*)
+3. Name: `flourish Plus` (*approved 2026-11-20*)
 4. Create
-5. Subscription details → Benefits → `Net worth by currency` (*draft*)
-6. Benefits → `Investment holdings` (*draft*)
-7. Benefits → `More connected banks` (*draft*)
-8. Description: `An optional add-on to any flourish plan.` (*draft*)
+5. Subscription details → Benefits → `Net worth by currency` (*approved 2026-11-20*)
+6. Benefits → `Investment holdings` (*approved 2026-11-20*)
+7. Benefits → `More connected banks` (*approved 2026-11-20*)
+8. Description: `An optional add-on to any flourish plan.` (*approved 2026-11-20*)
 9. Save
 10. Base plans → **Add base plan**
 11. Base plan ID: `monthly`
@@ -126,8 +126,8 @@ Nothing else changes: the webhook, the API keys and the transfer behaviour stay 
 Do it in **test mode** first, try it on a deploy preview, then repeat every step in **live mode**. The two modes have different price ids.
 
 1. Product catalog → **+ Add product**
-2. Name: `flourish Plus` (*draft*; it shows on Checkout, receipts and the portal)
-3. Description: `An optional add-on to any flourish plan: net worth, investments and more connected banks.` (*draft*)
+2. Name: `flourish Plus` (*approved 2026-11-20*; it shows on Checkout, receipts and the portal)
+3. Description: `An optional add-on to any flourish plan: net worth, investments and more connected banks.` (*approved 2026-11-20*)
 4. Tax code: the same one the product `Flourish Plus` uses
 5. Pricing model: Flat rate
 6. Price: `4.99`

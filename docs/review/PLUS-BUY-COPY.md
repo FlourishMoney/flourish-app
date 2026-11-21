@@ -73,23 +73,24 @@ Two notes on the reused lines:
 - "The store took the purchase, and Flourish is still waiting…" has a capital F. It is the approved line of 2026-10-20 and is also on the main plans screen; say if both should change.
 - The store disclosure says "Your subscription". On this screen that subscription is flourish Plus.
 
-## Names typed into the consoles (drafts, NOT approved, not in the code)
+## Names typed into the consoles: APPROVED (2026-11-20, ChatGPT 100, Grok 100)
 
-These are what a buyer sees in the store's own sheet, on a receipt, and under their subscriptions. `docs/ops/PLUS-ADDON-CONSOLES.md` says where each is typed. They were not part of the 20-line approval and still need review.
+These are what a buyer sees in the store's own sheet, on a receipt, and under their subscriptions. Approved by Amanda as written, word for word. They are not in the code: `docs/ops/PLUS-ADDON-CONSOLES.md` says where each is typed.
 
-| Where | Draft | Limit |
-|---|---|---|
-| App Store: the subscription group's display name | flourish Plus | the form shows it |
-| App Store: monthly, display name | flourish Plus monthly | 30 |
-| App Store: annual, display name | flourish Plus annual | 30 |
-| App Store: both, description | Net worth, investments, more banks | 45 |
-| Google Play: the subscription's name | flourish Plus | the form shows it |
-| Google Play: benefit 1 | Net worth by currency | the form shows it |
-| Google Play: benefit 2 | Investment holdings | the form shows it |
-| Google Play: benefit 3 | More connected banks | the form shows it |
-| Google Play: description | An optional add-on to any flourish plan. | the form shows it |
-| Stripe: the product's name (Checkout, receipts, the portal) | flourish Plus | none |
-| Stripe: the product's description | An optional add-on to any flourish plan: net worth, investments and more connected banks. | none |
+| # | Where | Approved name | Limit |
+|---|---|---|---|
+| C1 | App Store: the subscription group's display name | flourish Plus | the form shows it |
+| C2 | App Store: monthly, display name | flourish Plus monthly | 30 |
+| C3 | App Store: monthly, description | Net worth, investments, more banks | 45 |
+| C4 | App Store: annual, display name | flourish Plus annual | 30 |
+| C5 | App Store: annual, description | Net worth, investments, more banks | 45 |
+| C6 | Google Play: the subscription's name | flourish Plus | the form shows it |
+| C7 | Google Play: benefit 1 | Net worth by currency | the form shows it |
+| C8 | Google Play: benefit 2 | Investment holdings | the form shows it |
+| C9 | Google Play: benefit 3 | More connected banks | the form shows it |
+| C10 | Google Play: description | An optional add-on to any flourish plan. | the form shows it |
+| C11 | Stripe: the product's name (Checkout, receipts, the portal) | flourish Plus | none |
+| C12 | Stripe: the product's description | An optional add-on to any flourish plan: net worth, investments and more connected banks. | none |
 
 ## Words these screens still do not have
 

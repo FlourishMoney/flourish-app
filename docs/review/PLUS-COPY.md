@@ -113,5 +113,5 @@ These are not in the 48. Each needs words before Plus can be sold.
 2. **Settings, the line for a household over its bank limit.** The words are line 4 above; the screen that shows them is not built.
 3. **Terms of Service: the fair use sentence** for Plus's 10 banks per household, and Plus in section 7 (price, renewal, cancelling, refunds).
 4. **Privacy Policy:** whether net worth entries and the per-account sharing choice need a sentence.
-5. **App Store Connect, Play Console and Stripe:** the names a buyer sees. Drafts are in `docs/review/PLUS-BUY-COPY.md`; where each is typed is in `docs/ops/PLUS-ADDON-CONSOLES.md`.
+5. **App Store Connect, Play Console and Stripe:** the names a buyer sees. Approved 2026-11-20 (C1 to C12 in `docs/review/PLUS-BUY-COPY.md`); where each is typed is in `docs/ops/PLUS-ADDON-CONSOLES.md`.
 6. **What's New for 1.1.8**, the App Review notes for the new subscriptions, and the store description's Plus section.
