@@ -176,8 +176,8 @@ In live mode, the first Plus buyer to tap Manage subscription makes the live Plu
 
 Listed so nothing is forgotten. None of this is done by creating the products.
 
-1. Supabase SQL editor: run `0044`, then `0045`, then `0051`, then `0052`, each with its own check. Without `0052` the server sells no Plus at all: it holds a household to one Plus purchase at a time, and will not sell without that hold.
-2. Every store app in use is the 1.1.8 build (older builds write holdings where a partner can read them)
+1. Supabase SQL editor: run `0051`, then `0052`, each with its own check. **`0044` and `0045` are already applied in production** (checked 2026-11-21 in the Supabase dashboard, by looking only: `plus_addon_subscriptions` with 11 columns, `net_worth_entries` with 9 and `net_worth_shares` with 4, each with row level security on, no Data API access, no policy and no rows). `0051` (`complimentary_access`) and `0052` (`plus_purchase_attempts`) are not there yet. Without `0052` the server sells no Plus at all: it holds a household to one Plus purchase at a time, and will not sell without that hold.
+2. The store apps: 1.1.8 is the first that shows Plus. An older app is no longer a risk to privacy: the server sends net worth entries and holdings only to an app that says it is 1.1.8 or newer (2026-11-21, `PLUS_MIN_CLIENT`), so an older app shows none. Holdings an older app saved in a household's shared data before Plus stay there until a 1.1.8 app syncs and clears them
 3. The 20 purchase lines are approved and in the code (done 2026-11-20)
 4. Netlify → `PLUS_ENABLED` = `true` on Production, then a deploy
 5. One real purchase in each store and one on the website, each refunded afterwards
