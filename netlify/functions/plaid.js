@@ -173,7 +173,7 @@ exports.handler = async (event) => {
             // ADDITIONAL CONSENTED product instead, which Plaid bills only from the first /investments/holdings/get call
             // (plaid.com/docs/link/initializing-products), and that call is made only for a household with Plus
             // (get_investments below). Everyone consents once, so buying Plus later needs no new sign-in.
-            ...(plusAddon.plusEnabled()
+            ...(plusAddon.plusEnabledFor(user_id)
               ? { optional_products: ["liabilities"], additional_consented_products: ["investments"] }
               : { optional_products: ["investments", "liabilities"] }),
             country_codes:     COUNTRY_CODES,
@@ -388,8 +388,18 @@ exports.handler = async (event) => {
         // PLUS (behind PLUS_ENABLED): holdings are a Plus feature. Without Plus (or on a plan read that failed) nothing is
         // asked of Plaid at all, so nobody is billed for data nobody can see. With Plus, a partner's bank gives only the
         // holdings of the accounts its owner shared (migration 0045): private by default.
+        // THE TESTER-ONLY SWITCH: "Plus is on" is asked for THIS account (the flag, or a tester). And a bank's holdings
+        // follow its OWNER's Plus: when the owner is a tester and the one asking is not (PLUS_ENABLED off), the asker is
+        // still sent only what the owner shared, so a tester's private holdings never reach a partner who sees no Plus.
         let sharedOnly = null;
-        if (plusAddon.plusEnabled()) {
+        const plusForMe = plusAddon.plusEnabledFor(user_id);
+        if (!plusForMe && owner_id && owner_id !== user_id && plusAddon.plusEnabledFor(owner_id)) {
+          const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
+          if (sErr) return ok({ holdings: [] });
+          sharedOnly = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
+          if (!sharedOnly.size) return ok({ holdings: [] });
+        }
+        if (plusForMe) {
           // OLDER APPS (2026-11-21): an app before 1.1.8 puts the holdings it is sent into the household's shared data,
           // where the other member reads them. So none are sent to a client that does not say it is 1.1.8 or newer,
           // whoever asks and whatever their plan: nothing is read and nothing is asked of Plaid for it.
@@ -437,10 +447,10 @@ exports.handler = async (event) => {
           [...(data.accounts || []).map((a) => a && a.account_id), ...holdings.map((h) => h.account_id)]);
         // plus_mode: the app keeps these on this device only (never in the shared household blob), so a partner never
         // reads this person's private holdings from it.
-        return ok({ holdings, ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
+        return ok({ holdings, ...(plusForMe ? { plus_mode: true } : {}) });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
-        return ok({ holdings: [], ...(plusAddon.plusEnabled() ? { plus_mode: true } : {}) });
+        return ok({ holdings: [], ...(plusAddon.plusEnabledFor(user_id) ? { plus_mode: true } : {}) });
       }
     }
 

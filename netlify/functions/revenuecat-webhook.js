@@ -118,8 +118,10 @@ async function handle(event, deps = {}) {
       if (r.paid) await reconcileHouseholdBilling(admin, userId);
       // THE PLUS ADD-ON (behind PLUS_ENABLED): its own row (migration 0044), from the same subscriber record, after the
       // main plan's. It never changes the main plan's row, and the main plan's sync never changes it.
-      if (plusAddon.plusEnabled()) {
-        const p = await plusAddon.syncPlusFromStore(admin, userId, { fetchSubscriber: deps.fetchSubscriber || fetchSubscriber, acceptSandbox: acceptSandboxFor(user), now: deps.now });
+      // The tester-only switch: with PLUS_ENABLED off, only a tester's account is synced, and only a tester's sandbox
+      // purchase is accepted.
+      if (plusAddon.plusEnabledFor(userId)) {
+        const p = await plusAddon.syncPlusFromStore(admin, userId, { fetchSubscriber: deps.fetchSubscriber || fetchSubscriber, acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(userId), now: deps.now });
         if (p.conflict) notes.push("plus conflict: Plus bought in a store by a buyer who has it on the website; refund one");
       }
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");

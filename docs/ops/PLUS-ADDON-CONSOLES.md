@@ -176,8 +176,31 @@ In live mode, the first Plus buyer to tap Manage subscription makes the live Plu
 
 Listed so nothing is forgotten. None of this is done by creating the products.
 
-1. Supabase SQL editor: run `0051`, then `0052`, each with its own check. **`0044` and `0045` are already applied in production** (checked 2026-11-21 in the Supabase dashboard, by looking only: `plus_addon_subscriptions` with 11 columns, `net_worth_entries` with 9 and `net_worth_shares` with 4, each with row level security on, no Data API access, no policy and no rows). `0051` (`complimentary_access`) and `0052` (`plus_purchase_attempts`) are not there yet. Without `0052` the server sells no Plus at all: it holds a household to one Plus purchase at a time, and will not sell without that hold.
+1. Migrations: **all four are applied in production** (`0044` and `0045` earlier; `0051` and `0052` on 2026-11-21, each with its own check returning the expected values). Nothing left to run.
 2. The store apps: 1.1.8 is the first that shows Plus. An older app is no longer a risk to privacy: the server sends net worth entries and holdings only to an app that says it is 1.1.8 or newer (2026-11-21, `PLUS_MIN_CLIENT`), so an older app shows none. Holdings an older app saved in a household's shared data before Plus stay there until a 1.1.8 app syncs and clears them
 3. The 20 purchase lines are approved and in the code (done 2026-11-20)
 4. Netlify → `PLUS_ENABLED` = `true` on Production, then a deploy
 5. One real purchase in each store and one on the website, each refunded afterwards
+
+## F. Seeing Plus before it is on for everyone: the tester switch (built 2026-11-21, not set)
+
+`PLUS_TESTER_USER_IDS` is a server setting in Netlify: a comma-separated list of account ids. While `PLUS_ENABLED` is off, Plus shows and works for those accounts only, on the iPhone app, the Android app and the website. Everyone else, a tester's own partner included, sees nothing new. The ids live in Netlify only: **never put an account id in this repo.**
+
+What it takes for Amanda to see Plus on her phone, in order. Each step needs her go; none is done.
+
+1. **Merge PR #154 into `main`.** Production's server has no Plus code until then.
+2. **Let Netlify deploy `main` to production** (it builds from GitHub on the merge). After this, nobody sees Plus yet: `PLUS_ENABLED` is unset and no tester is named.
+3. **Netlify, one setting:** Site configuration → Environment variables → Add a variable → Key `PLUS_TESTER_USER_IDS` → Value: Amanda's account id (Supabase → Authentication → Users → her row → User UID) → Scope: Functions → Context: Production → Save.
+4. **Deploy production once more** (Deploys → Trigger deploy → Deploy site). Netlify functions keep the settings of the deploy they were built in, so the setting does nothing until this deploy.
+5. **Open flourish on the phone** with TestFlight build 1.1.8 (526916), or the Android internal testing build (32), signed in to that account. The net worth card shows the locked state with "See flourish Plus", and Settings has a flourish Plus card.
+
+What she will find, so nothing surprises her:
+
+- **Buying on the iPhone (TestFlight) is a sandbox purchase: no money is charged.** A tester's sandbox purchase is accepted for the tester's account only. The App Store products must be past "Missing Metadata" first, which needs the review screenshot on each (section A, steps 20 and 34); until then the screen says Plus is not available to buy yet.
+- **Buying on Android (internal testing)** is a test purchase, with no money charged, only when her Google account is listed as a licence tester (Play Console → Settings → License testing). Check that before buying.
+- **Buying on the website** says "not available yet", because Production has no Plus price ids (section D, steps 23 and 24, wait for the live Stripe product). A real purchase there would be a real charge.
+- **To see net worth with Plus without buying anything:** give her account complimentary Plus (`0051`; the steps are in `~/Documents/Flourish/COMPLIMENTARY-ACCESS.md`, not in this repo).
+- **Bank limits apply to her account** as they will for everyone: 2 banks per person without Plus, 10 per household with it. Banks already connected stay connected.
+- **Her partner's account sees nothing new**, and is sent only the holdings she chooses to share.
+
+To switch the tester view off again: delete `PLUS_TESTER_USER_IDS` in Netlify and deploy. To switch Plus on for everyone: section E.

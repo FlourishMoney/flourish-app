@@ -33,6 +33,30 @@ const { PRICE_ENV: MAIN_PRICE_ENV } = require("./billingPlans");
 
 const plusEnabled = (env = process.env) => env.PLUS_ENABLED === "true";
 
+// THE TESTER-ONLY SWITCH (2026-11-21). PLUS_TESTER_USER_IDS is a server setting in Netlify, never in this repo: a
+// comma-separated list of account ids. While PLUS_ENABLED is off, Plus is on for those accounts and for nobody else:
+// every Plus action, the net worth endpoint, the holdings rule, the bank limits and the store sync answer them as if
+// the flag were on, and answer everyone else exactly as before (404, nothing read). So Amanda can walk Plus on the
+// iPhone app, the Android app and the website in production before it is switched on for anyone.
+//   - Only a well-formed account id counts. A word, "*" or "all" is ignored: there is no way to name everyone but
+//     PLUS_ENABLED itself.
+//   - It is per ACCOUNT, not per household: a tester's partner is not a tester, and sees nothing new. (A tester's own
+//     Plus still follows Plus's rules for what a partner may be sent: plaid.js get_investments.)
+//   - A tester's store purchase may be a sandbox or licence-tester one (TestFlight, Play internal testing): it is
+//     accepted for a tester only (isPlusTester), whatever IAP_ACCEPT_SANDBOX says. Nobody else's sandbox purchase is.
+//   - With PLUS_ENABLED on the list changes nothing: Plus is on for everyone.
+// No id is ever logged.
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function plusTesterIds(env = process.env) {
+  const raw = env && typeof env.PLUS_TESTER_USER_IDS === "string" ? env.PLUS_TESTER_USER_IDS : "";
+  return [...new Set(raw.split(",").map((s) => s.trim().toLowerCase()).filter((s) => ACCOUNT_ID.test(s)))];
+}
+const isPlusTester = (userId, env = process.env) => typeof userId === "string" && plusTesterIds(env).includes(userId.trim().toLowerCase());
+/** Is Plus on for THIS account? The flag, or the tester list. Every server check that has an account asks this. */
+const plusEnabledFor = (userId, env = process.env) => plusEnabled(env) || isPlusTester(userId, env);
+/** Could Plus be on for anyone at all? False means: answer 404 before even asking who is calling. */
+const plusOnForAnyone = (env = process.env) => plusEnabled(env) || plusTesterIds(env).length > 0;
+
 const PLUS_PLAN_KEYS = Object.freeze(["plus_monthly", "plus_annual"]);
 const PLUS_PRICE_ENV = Object.freeze({
   plus_monthly: "STRIPE_PRICE_PLUS_MONTHLY_CAD",
@@ -105,7 +129,8 @@ function isLivePlusRow(row, env = process.env, now = Date.now()) {
  *   provider             where the CALLER'S OWN live Plus purchase is ("stripe", "app_store", "play_store"), so the app
  *                        can say where it is managed. null for a partner's Plus (theirs to manage), for complimentary
  *                        Plus (nothing to manage) and for no Plus.
- *   enabled false        PLUS_ENABLED is off: nothing is read, nothing is offered, nothing changes.
+ *   enabled false        Plus is off for this account (PLUS_ENABLED off, and not a tester): nothing is read, nothing is
+ *                        offered, nothing changes.
  *   status_unavailable   a read failed (or 0044 is not applied): plus is false and the caller says so plainly
  *                        (503), never "you don't have Plus" and never a limit worked out from a guess.
  * Either member's live row covers the household (the fair-use limit of 10 bank connections is per household).
@@ -124,7 +149,7 @@ async function hasComplimentaryPlus(admin, userId) {
   return !!data && data.plus_addon === true;
 }
 async function getPlusEntitlement(admin, userId, { env = process.env, now = Date.now() } = {}) {
-  if (!plusEnabled(env)) return { enabled: false, plus: false, covered_by: null, status_unavailable: false };
+  if (!plusEnabledFor(userId, env)) return { enabled: false, plus: false, covered_by: null, status_unavailable: false };
   const unavailable = { enabled: true, plus: false, covered_by: null, status_unavailable: true };
   try {
     const peers = await peerIdsOf(admin, userId);
@@ -395,6 +420,6 @@ module.exports = {
   PLUS_PORTAL_KIND, PLUS_PORTAL_FEATURES, isPlusPortalConfiguration, plusPortalConfigurationId, createPlusPortalSession,
   isAttemptId, holdPlusPurchase, holdPlusPending,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
-  plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
+  plusEnabled, plusEnabledFor, plusOnForAnyone, isPlusTester, plusTesterIds, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,
 };

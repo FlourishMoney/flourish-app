@@ -85,7 +85,7 @@ const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
     if (/link\/token\/create/.test(url)) return { ok: true, status: 200, json: async () => ({ link_token: "link-sandbox-x" }) };
     return { ok: true, status: 200, json: async () => ({}) };
   };
-  for (const k of Object.keys(process.env)) if (/^PLUS_ENABLED$|^HOUSEHOLD_ENABLED$|^STRIPE_PRICE_|^ENFORCE_PLAN_LIMITS$/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^PLUS_ENABLED$|^PLUS_TESTER_USER_IDS$|^HOUSEHOLD_ENABLED$|^STRIPE_PRICE_|^ENFORCE_PLAN_LIMITS$/.test(k)) delete process.env[k];
   Object.assign(process.env, { PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox", HOUSEHOLD_ENABLED: "true",
     STRIPE_PRICE_MONTHLY_CAD: "price_m", STRIPE_PRICE_ANNUAL_CAD: "price_a", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_f", STRIPE_PRICE_PLUS_MONTHLY_CAD: "price_pm", STRIPE_PRICE_PLUS_ANNUAL_CAD: "price_pa" });
   const N = await import("../src/lib/netWorthPlus.js");
@@ -309,6 +309,66 @@ const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
         t.ok(/callPlaid\("get_investments",\{item_id:it\.item_id, \.\.\.plusClientFields\(\)\}, \{jwt\}\)/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")) && (access.match(/JSON\.stringify\(\{ action, \.\.\.params, \.\.\.plusClientFields\(\) \}\)/g) || []).length === 2,
           "8q the app says its version on the holdings call, on every Plus action and on every net worth call");
       }
+    }
+    // ── 9. THE TESTER-ONLY SWITCH (PLUS_TESTER_USER_IDS): net worth, holdings and bank limits for a tester only ──────────
+    // B is the tester. A is B's partner in the same household, and is not a tester.
+    {
+      delete process.env.PLUS_ENABLED;
+      process.env.PLUS_TESTER_USER_IDS = B;
+      const C3 = "33333333-3333-4333-8333-333333333333";
+      const household = () => { const db = makeDb({ plus: [B] }); db.state.rows.plaid_items.push({ user_id: A, item_id: "item-a", access_token: "access-sandbox-a", status: "active", id: 1 }, { user_id: B, item_id: "item-b", access_token: "access-sandbox-b", status: "active", id: 2 }); return db; };
+      const investmentCalls = () => plaidCalls.filter((c) => /investments/.test(c.url)).length;
+      {
+        const db = household();
+        const mine = await post(load(db, B).nw, { action: "list" });
+        const r0 = db.state.reads.length;
+        const partner = await post(load(db, A).nw, { action: "list" });
+        const other = await post(load(db, C3).nw, { action: "save_entry", kind: "home", label: "x", value: 1, currency: "CAD" });
+        t.eq([mine.status, partner.status, partner.body, other.status, db.state.reads.length - r0, db.state.rows.net_worth_entries.length], [200, 404, { error: "not_found" }, 404, 0, 0],
+          "9a the tester's net worth answers; their partner and anybody else get the 404 of 'Plus is off', and nothing is read or written for them");
+        const saved = await post(load(db, B).nw, { action: "save_entry", kind: "car", label: "Car", value: 9000, currency: "CAD" });
+        t.eq([saved.status, db.state.rows.net_worth_entries.length], [200, 1], "9b …and the tester can add an entry");
+      }
+      {
+        const db = household(); plaidCalls.length = 0;
+        const own = await post(load(db, B).plaid, { action: "get_investments", item_id: "item-b" });
+        const old = await post(load(db, B).plaid, { action: "get_investments", item_id: "item-b" }, { origin: IPHONE, version: null });
+        t.eq([own.body.holdings.length, own.body.plus_mode, old.body.holdings, old.body.update_required], [2, true, [], true], "9c the tester's own holdings come as Plus's do (for this device only), and not at all to an old app");
+        plaidCalls.length = 0;
+        const none = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-b" });
+        t.eq([none.body, investmentCalls()], [{ holdings: [] }, 0], "9d the tester's partner asking for the tester's bank: nothing the tester has not shared (so nothing), and Plaid is not even asked");
+        db.state.rows.net_worth_shares.push({ user_id: B, account_id: "b-rrsp", shared: true });
+        const some = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-b" });
+        t.eq([some.body.holdings.map((h) => h.account_id), "plus_mode" in some.body, "update_required" in some.body], [["b-rrsp"], false, false], "9e …once the tester shares the RRSP, only its holdings, and no sign of Plus in the answer (the partner sees nothing new)");
+        const partnerOwn = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-a" }, { origin: ANDROID, version: null });
+        t.eq([partnerOwn.body.holdings.length, "plus_mode" in partnerOwn.body, "locked" in partnerOwn.body], [2, false, false], "9f the partner's own bank answers exactly as today, on any app: no lock, no Plus");
+      }
+      {
+        const db = household(); plaidCalls.length = 0;
+        await post(load(db, B).plaid, { action: "create_link_token", country: "CA" });
+        const tester = (plaidCalls.find((c) => /link\/token\/create/.test(c.url)) || {}).body || {};
+        plaidCalls.length = 0;
+        await post(load(db, A).plaid, { action: "create_link_token", country: "CA" });
+        const partner = (plaidCalls.find((c) => /link\/token\/create/.test(c.url)) || {}).body || {};
+        t.eq([tester.additional_consented_products, tester.optional_products, partner.additional_consented_products, partner.optional_products], [["investments"], ["liabilities"], undefined, ["investments", "liabilities"]],
+          "9g connecting a bank: the tester's link follows Plus's rule for Investments; the partner's is today's");
+        const lim = await post(load(db, B).plaid, { action: "bank_limit_status" });
+        const limP = await post(load(db, A).plaid, { action: "bank_limit_status" });
+        t.eq([lim.status, lim.body && lim.body.plus, limP.status], [200, true, 404], "9h bank limits: the tester's answer is Plus's (the household limit); the partner's is still 'not there'");
+      }
+      // PLUS_ENABLED on: everyone, as before, tester or not.
+      {
+        process.env.PLUS_ENABLED = "true";
+        const db = household();
+        const partner = await post(load(db, A).nw, { action: "list" });
+        const partnerBank = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-a" });
+        t.eq([partner.status, partnerBank.body.holdings.length, partnerBank.body.plus_mode], [200, 2, true], "9i PLUS_ENABLED on: the partner has Plus too (the household's), with the tester list still set: the flag still works for all");
+        delete process.env.PLUS_TESTER_USER_IDS;
+        const again = await post(load(household(), A).nw, { action: "list" });
+        t.eq(again.status, 200, "9j …and with no tester list at all");
+      }
+      delete process.env.PLUS_TESTER_USER_IDS;
+      process.env.PLUS_ENABLED = "true";
     }
   } finally {
     console.error = quiet.e; console.warn = quiet.w; global.fetch = realFetch;

@@ -159,7 +159,9 @@ exports.handler = async (event) => {
   const storeAction = STORE_ACTIONS.includes(body && body.action);
   const plusAction = PLUS_ACTIONS.includes(body && body.action);
   if (plusAction) {
-    if (!plusAddon.plusEnabled()) return json(404, CORS, { error: "not_found" });
+    // Off for everyone (PLUS_ENABLED off and no tester named): 404 before anyone is asked who they are. With a tester
+    // list, who is calling decides, so that check comes right after auth, below, before anything is read.
+    if (!plusAddon.plusOnForAnyone()) return json(404, CORS, { error: "not_found" });
     if ((body.action === "plus_checkout" || body.action === "plus_portal") && !billingEnabled()) return json(404, CORS, { error: "not_found" });
     if ((body.action === "plus_store_sync" || body.action === "plus_store_hold") && !iapEnabled()) return json(404, CORS, { error: "not_found" });
   } else if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
@@ -167,6 +169,10 @@ exports.handler = async (event) => {
   // Auth first, every time. Nothing below runs for an anonymous caller.
   const { user_id, error: authError } = await getUserFromRequest(event);
   if (!user_id) return unauthorized(CORS, authError || "unauthorized");
+
+  // THE TESTER-ONLY SWITCH (_lib/plusAddon.js): with PLUS_ENABLED off, a Plus action is answered for a tester's account
+  // only. Everyone else gets the same 404 as when Plus is off altogether, and nothing is read for them.
+  if (plusAction && !plusAddon.plusEnabledFor(user_id)) return json(404, CORS, { error: "not_found" });
 
   if (badJson) return json(400, CORS, { error: "invalid_json" });
   const action = body.action;
@@ -527,7 +533,9 @@ exports.handler = async (event) => {
       if (action === "plus_store_sync") {
         const user = await authUser(admin, user_id);
         try {
-          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) });
+          // A tester's purchase is a sandbox or licence-tester one (TestFlight, Play internal testing): accepted for a
+          // tester's account only.
+          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(user_id) });
           if (r && r.conflict === true) synced = { conflict: true };
         }
         catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }

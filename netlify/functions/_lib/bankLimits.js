@@ -20,7 +20,7 @@
 "use strict";
 
 const { peerIdsOf } = require("./household");
-const { plusEnabled, getPlusEntitlement } = require("./plusAddon");
+const { plusEnabledFor, getPlusEntitlement } = require("./plusAddon");
 
 const BASIC_PER_PERSON = 2;
 const PLUS_HOUSEHOLD_FAIR_USE = 10;
@@ -52,7 +52,7 @@ async function countConnections(admin, userId) {
  *               10): every one stays connected
  */
 async function bankLimitFor(admin, userId, { env = process.env, now = Date.now() } = {}) {
-  if (!plusEnabled(env)) return null;
+  if (!plusEnabledFor(userId, env)) return null;   // off for this account (the flag, and the tester list): today's rules
   const unavailable = { allowed: false, unavailable: true };
   try {
     const ent = await getPlusEntitlement(admin, userId, { env, now });

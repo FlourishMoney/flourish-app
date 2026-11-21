@@ -1,7 +1,8 @@
 // netlify/functions/networth.js
 // -----------------------------------------------------------------------------
 // NET WORTH WITH PLUS: EACH PERSON'S OWN ENTRIES AND SHARE CHOICES (2026-11-10, migration 0045). POST, signed in.
-// Answers 404 to everything while PLUS_ENABLED is unset, and reads nothing.
+// Answers 404 to everything while PLUS_ENABLED is unset, and reads nothing. The tester-only switch (_lib/plusAddon.js
+// PLUS_TESTER_USER_IDS): with the flag off, a tester's account is answered and everyone else still gets that 404.
 //
 // Plus, server-checked (_lib/plusAddon.js): no Plus is 403 plus_required; a plan read that fails is 503, never "no
 // Plus". Private by default (Amanda, 2026-11-10): a person's entries and their accounts' share choices are theirs.
@@ -21,7 +22,7 @@
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 const { corsHeadersFor } = require("./_lib/cors");
-const { plusEnabled, getPlusEntitlement, plusClientOk, updateRequired } = require("./_lib/plusAddon");
+const { plusOnForAnyone, plusEnabledFor, getPlusEntitlement, plusClientOk, updateRequired } = require("./_lib/plusAddon");
 const { peerIdsOf } = require("./_lib/household");
 
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -43,10 +44,11 @@ function cleanEntry(b) {
 async function handle(event, deps = {}) {
   const CORS = corsHeadersFor(event);
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
-  if (!plusEnabled()) return json(404, CORS, { error: "not_found" });
+  if (!plusOnForAnyone()) return json(404, CORS, { error: "not_found" });
   if (event.httpMethod !== "POST") return json(405, CORS, { error: "Method not allowed" });
   const { user_id, error: authError } = await getUserFromRequest(event);
   if (!user_id) return unauthorized(CORS, authError || "unauthorized");
+  if (!plusEnabledFor(user_id)) return json(404, CORS, { error: "not_found" });   // the flag off, and not a tester
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch { return json(400, CORS, { error: "invalid_json" }); }
 

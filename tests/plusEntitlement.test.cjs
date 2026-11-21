@@ -153,7 +153,7 @@ function loadWith(db, sm, user = U) {
   const saved = { ...process.env };
   const quiet = { e: console.error, w: console.warn }; console.error = () => {}; console.warn = () => {};
   const realFetch = global.fetch; global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ removed: true }) });
-  for (const k of Object.keys(process.env)) if (/^STRIPE_PRICE_|^PLUS_ENABLED$|^IAP_ENABLED$|^HOUSEHOLD_ENABLED$/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^STRIPE_PRICE_|^PLUS_ENABLED$|^PLUS_TESTER_USER_IDS$|^IAP_ENABLED$|^HOUSEHOLD_ENABLED$/.test(k)) delete process.env[k];
   Object.assign(process.env, {
     STRIPE_WEBHOOK_SECRET: "whsec_test", BILLING_ENABLED: "true", STRIPE_SECRET_KEY: "sk_test_mock_never_sent",
     PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret",
@@ -583,6 +583,86 @@ function loadWith(db, sm, user = U) {
         t.ok(/plusAddon\.createPlusPortalSession\(\{ stripeGet, stripePost \}, plusCustomer,/.test(blk) && !/stripePost\("\/billing_portal\/sessions"/.test(blk),
           "11m the Plus portal action has one way to open a portal, and it is the one that names Plus's configuration");
       }
+    }
+    // ── 12. THE TESTER-ONLY SWITCH (PLUS_TESTER_USER_IDS): with PLUS_ENABLED off, Plus is on for the named accounts only ──
+    {
+      const O = "33333333-3333-4333-8333-333333333333";   // somebody else: no household with the tester
+      const couple = (db) => db.state.rows.household_members.push({ user_id: U, household_id: "h1", role: "owner" }, { user_id: P, household_id: "h1", role: "partner" });
+      const NOT_FOUND = [404, { error: "not_found" }];
+      const st = async (db, sm, who, body = { action: "plus_status" }, origin) => { const r = await call(loadWith(db, sm, who).billing, body, origin); return [r.status, r.body]; };
+      const reset = () => { delete process.env.PLUS_ENABLED; delete process.env.PLUS_TESTER_USER_IDS; delete process.env.IAP_ENABLED; };
+      reset();
+      // Off for everyone.
+      {
+        const db = makeDb(); couple(db);
+        t.eq([await st(db, makeStripe(), U), await st(db, makeStripe(), P), db.state.reads.length, db.state.rpcs.length], [NOT_FOUND, NOT_FOUND, 0, 0], "12a no flag and no tester named: 404 for everyone, and nothing is read");
+      }
+      // One tester.
+      process.env.PLUS_TESTER_USER_IDS = U;
+      {
+        const db = makeDb(); couple(db); const sm = makeStripe();
+        t.eq(await st(db, sm, U), [200, { enabled: true, plus: false, covered_by: null, manage: null, min_client: "1.1.8" }], "12b the tester: Plus is on for their account, with PLUS_ENABLED off (no Plus yet, so the offer)");
+        const before = db.state.reads.length;
+        t.eq([await st(db, sm, P), await st(db, sm, O), db.state.reads.length - before], [NOT_FOUND, NOT_FOUND, 0], "12c the tester's partner, and anybody else: the same 404 as when Plus is off, and nothing is read for them");
+        const co = await call(loadWith(db, sm, U).billing, { action: "plus_checkout", plan_key: "plus_monthly" });
+        sm.stripe.subs.push(plusSub("sub_T"));
+        await send(loadWith(db, sm, U).hook, "checkout.session.completed", { customer: "cus_P", subscription: "sub_T", client_reference_id: U, metadata: { user_id: U, plan_key: "plus_monthly", kind: "plus_addon" } });
+        t.eq([co.status, await st(db, sm, U)], [200, [200, { enabled: true, plus: true, covered_by: null, manage: "stripe", min_client: "1.1.8" }]], "12d the tester can buy Plus and then has it: the whole path works for them");
+        t.eq([await st(db, sm, P), await st(db, sm, P, { action: "plus_checkout", plan_key: "plus_monthly" }), await st(db, sm, P, { action: "plus_portal" })], [NOT_FOUND, NOT_FOUND, NOT_FOUND],
+          "12e …and their partner still sees nothing of Plus, though the household now has it: the switch is per account");
+        const main = await call(loadWith(db, sm, P).billing, { action: "status" });
+        t.eq(main.status, 200, "12f the partner's main plan answers as before");
+        process.env.IAP_ENABLED = "true";
+        const NATIVE = "capacitor://localhost";
+        const db2 = makeDb(); couple(db2);
+        const hold = await st(db2, makeStripe(), U, { action: "plus_store_hold", platform: "ios", attempt_id: "plus-tester-attempt-1" }, NATIVE);
+        const holdP = await st(db2, makeStripe(), P, { action: "plus_store_hold", platform: "ios", attempt_id: "plus-partner-attempt-1" }, NATIVE);
+        t.eq([hold, holdP, db2.state.rpcs.filter(([fn]) => fn === "plus_purchase_attempt_begin").length], [[200, { held: true }], NOT_FOUND, 1], "12g in the store apps too: the tester's purchase may start, the partner's is a 404 and holds nothing");
+        delete process.env.IAP_ENABLED;
+      }
+      // What counts as naming a tester.
+      {
+        const PLUS = require(PLUS_PATH);
+        const said = [];
+        for (const v of ["*", "all", "true", "everyone", "", " ", U.replace(/-/g, ""), U.slice(0, 35), `${U}x`, "null", "undefined", "%"]) {
+          process.env.PLUS_TESTER_USER_IDS = v;
+          const db = makeDb();
+          said.push((await st(db, makeStripe(), U))[0]);
+        }
+        t.eq([...new Set(said)], [404], "12h a star, a word, an empty value or a malformed id names nobody: only PLUS_ENABLED can switch Plus on for everyone");
+        process.env.PLUS_TESTER_USER_IDS = `  ${O} ,\n ${U.toUpperCase()} , not-an-id,${O}`;
+        t.eq([(await st(makeDb(), makeStripe(), U))[0], (await st(makeDb(), makeStripe(), O))[0], (await st(makeDb(), makeStripe(), P))[0], PLUS.plusTesterIds().length], [200, 200, 404, 2],
+          "12i several ids, with spaces, new lines, capitals and a stray word: each named account, once, and nobody else");
+        t.eq([PLUS.isPlusTester(U), PLUS.isPlusTester(P), PLUS.isPlusTester(null), PLUS.isPlusTester(undefined), PLUS.isPlusTester(""), PLUS.plusEnabledFor(P), PLUS.plusOnForAnyone()], [true, false, false, false, false, false, true],
+          "12j the check itself: a named account yes; a partner, nobody and nothing no");
+      }
+      // A tester's sandbox purchase counts; nobody else's does.
+      {
+        const PLUS = require(PLUS_PATH);
+        const sandbox = { entitlements: { plus_addon: { expires_date: future, product_identifier: "app.flourishmoney.plusaddon.monthly" } },
+          subscriptions: { "app.flourishmoney.plusaddon.monthly": { store: "app_store", is_sandbox: true, expires_date: future, ownership_type: "PURCHASED" } } };
+        const no = PLUS.plusFromSubscriber(sandbox, Date.now(), { acceptSandbox: false }), yes = PLUS.plusFromSubscriber(sandbox, Date.now(), { acceptSandbox: true });
+        t.eq([no.row, no.reason, yes.row && yes.row.plan_key, yes.row && yes.row.provider], [null, "sandbox", "plus_monthly", "app_store"], "12k a sandbox purchase (TestFlight) gives Plus only when it is accepted");
+        const bsrc = fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8"), rsrc = fs.readFileSync(path.join(REPO, "netlify", "functions", "revenuecat-webhook.js"), "utf8");
+        t.ok(bsrc.includes("acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(user_id) })") && rsrc.includes("if (plusAddon.plusEnabledFor(userId)) {") && rsrc.includes("acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(userId), now: deps.now })"),
+          "12l …and it is accepted for a tester's own account only, in the app's sync and in the store's own report; the report syncs Plus for a tester only");
+        t.ok(/if \(!plusAddon\.plusOnForAnyone\(\)\) return json\(404/.test(bsrc) && bsrc.indexOf("if (plusAction && !plusAddon.plusEnabledFor(user_id)) return json(404") > bsrc.indexOf("const { user_id, error: authError } = await getUserFromRequest(event);")
+          && bsrc.indexOf("if (plusAction && !plusAddon.plusEnabledFor(user_id)) return json(404") < bsrc.indexOf("admin = getAdminClient();"),
+          "12m in the code: off for everyone is answered before auth; who is calling is checked right after auth, before the database is opened");
+      }
+      // PLUS_ENABLED on: everyone, whatever the list says.
+      {
+        process.env.PLUS_ENABLED = "true";
+        const answers = [];
+        for (const list of [undefined, "", U, "*", `${O},${U}`]) {
+          if (list === undefined) delete process.env.PLUS_TESTER_USER_IDS; else process.env.PLUS_TESTER_USER_IDS = list;
+          const db = makeDb(); couple(db);
+          answers.push([(await st(db, makeStripe(), U))[0], (await st(db, makeStripe(), P))[0], (await st(db, makeStripe(), O))[0]].join(","));
+        }
+        t.eq([...new Set(answers)], ["200,200,200"], "12n PLUS_ENABLED on: Plus answers for everyone (the tester, their partner and anybody else), whatever the tester list holds");
+      }
+      reset();
+      process.env.PLUS_ENABLED = "true";
     }
   } finally {
     console.error = quiet.e; console.warn = quiet.w; global.fetch = realFetch;
