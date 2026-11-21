@@ -141,7 +141,7 @@ const couple = (db) => db.state.rows.household_members.push({ household_id: H, u
       t.eq(off.status, 404, "6a PLUS_ENABLED unset: the Plus answers are not there at all, complimentary row or not");
       process.env.PLUS_ENABLED = "true";
       const st = await call({ action: "plus_status" });
-      t.eq([st.status, st.body], [200, { enabled: true, plus: true, covered_by: null, manage: null }], "6b on: plus_status says Plus, tells the app nothing about why, and offers nothing to manage (there is no purchase)");
+      t.eq([st.status, st.body], [200, { enabled: true, plus: true, covered_by: null, manage: null, min_client: "1.1.8" }], "6b on: plus_status says Plus, tells the app nothing about why, and offers nothing to manage (there is no purchase)");
       const buy = await call({ action: "plus_checkout", plan_key: "plus_monthly" });
       t.eq([buy.status, buy.body && buy.body.error, posts], [409, "already_plus", []], "6c Plus is never sold to an account that has it free: no Stripe customer, no checkout");
       t.ok(!db.state.writes.includes("complimentary_access") && !db.state.writes.some((w) => /^rpc:complimentary/.test(w)), "6d …and nothing the app can ask for writes the complimentary row");

@@ -31,6 +31,7 @@ import { attemptFor } from "./storeBilling.js";
 import { HOUSEHOLD_WORDS } from "./householdWords.js";
 import { UPGRADE_COPY } from "./upgradeFlow.js";
 import { PLUS_ADDON_PRICING, formatPrice } from "./pricing.js";
+import { clientTooOld } from "./plusClient.js";
 
 // The add-on's own ids. NEVER the main plan's (app.flourishmoney.plus.*, flourish_plus, entitlement "plus").
 // tests/plusBuy.test.cjs holds this table to the server's (netlify/functions/_lib/plusAddon.js PLUS_PRODUCTS).
@@ -117,6 +118,9 @@ export function plusScreenView(res, { platform = "web", selling = false } = {}) 
   if (res === null || (res && res.status === 503)) return { mode: "unavailable", line: netWorthWords("plus-status-unavailable"), manage: null, note: null };
   const b = res && res.body;
   if (!res || res.status !== 200 || !b || b.enabled !== true || typeof b.plus !== "boolean") return hidden;
+  // An app older than the server's minimum for Plus data is sent none of it, so it is offered nothing and told
+  // nothing here: selling Plus to an app that cannot show it would be wrong (lib/plusClient.js).
+  if (clientTooOld(b.min_client)) return hidden;
   if (b.plus === true) {
     if (b.covered_by) return { mode: "have", line: netWorthWords("plus-buy-have-partner"), manage: null, note: null };
     const have = { mode: "have", line: netWorthWords("plus-buy-have"), manage: null, note: null };

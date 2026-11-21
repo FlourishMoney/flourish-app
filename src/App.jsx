@@ -26,6 +26,7 @@ import { viewerNetWorth } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
+import { plusClientFields } from "./lib/plusClient.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -19393,7 +19394,9 @@ export default function FlourishApp(){
         // Phase B3: fetch investment holdings per item, merge across banks
         try {
           const invResults = await Promise.allSettled(
-            items.map(it => callPlaid("get_investments",{item_id:it.item_id}, {jwt}))
+            // client_version (lib/plusClient.js): with Plus on, the server sends holdings only to an app that says it
+            // keeps them private. An app that says nothing gets none.
+            items.map(it => callPlaid("get_investments",{item_id:it.item_id, ...plusClientFields()}, {jwt}))
           );
           const allHoldings = [];
           let plusMode = false;

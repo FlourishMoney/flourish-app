@@ -297,6 +297,29 @@ async function holdPlusPending(admin, userId, attemptId) {
   return !!data && data.result === "pending";
 }
 
+// ── PLUS DATA GOES ONLY TO AN APP THAT KEEPS IT PRIVATE (2026-11-21) ────────────────────────────────────────
+// Every app before 1.1.8 (iPhone, Android and an old copy of the website alike) puts whatever holdings the server sends
+// into the household's SHARED data, where the other member reads all of them. That was right while investments were
+// shared by everyone; with Plus they are private by default. So it never depends on the app: net worth entries and
+// investment holdings are sent only to a client that SAYS it is PLUS_MIN_CLIENT or newer (the request's client_version).
+// An older app says nothing, and gets no Plus data at all: empty holdings and "update_required", which it reads as
+// "nothing to show". The app from 1.1.8 on sends the version of its own Plus code (src/lib/plusClient.js), and knows
+// what update_required means, so raising PLUS_MIN_CLIENT later gives a too-old app a plain "update" state.
+// This is not a lock against a dishonest client: a person who fakes the version only moves their OWN holdings. It
+// keeps an honest old app from spilling them.
+const PLUS_MIN_CLIENT = "1.1.8";
+const versionParts = (v) => { const m = typeof v === "string" ? /^(\d{1,4})\.(\d{1,4})\.(\d{1,4})$/.exec(v.trim()) : null; return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null; };
+function versionAtLeast(v, min) {
+  const a = versionParts(v), b = versionParts(min);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+}
+/** May this request be sent Plus data? Only when its body says a client_version of PLUS_MIN_CLIENT or newer. */
+const plusClientOk = (body) => versionAtLeast(body && body.client_version, PLUS_MIN_CLIENT);
+/** What a too-old client is told, beside no data. */
+const updateRequired = () => ({ update_required: true, min_client: PLUS_MIN_CLIENT });
+
 // ── THE PLUS PORTAL HAS A CONFIGURATION OF ITS OWN (2026-11-21) ─────────────────────────────────────────────
 // Stripe's customer portal has one DEFAULT configuration, shared by everyone the main plan sends there. In this
 // account it lets a customer switch plans, and its product list is the main plan's prices. A Plus buyer sent to it
@@ -368,6 +391,7 @@ async function createPlusPortalSession(deps, customerId, returnUrl, { env = proc
 }
 
 module.exports = {
+  PLUS_MIN_CLIENT, versionAtLeast, plusClientOk, updateRequired,
   PLUS_PORTAL_KIND, PLUS_PORTAL_FEATURES, isPlusPortalConfiguration, plusPortalConfigurationId, createPlusPortalSession,
   isAttemptId, holdPlusPurchase, holdPlusPending,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,

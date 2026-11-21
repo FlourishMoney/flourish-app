@@ -390,6 +390,10 @@ exports.handler = async (event) => {
         // holdings of the accounts its owner shared (migration 0045): private by default.
         let sharedOnly = null;
         if (plusAddon.plusEnabled()) {
+          // OLDER APPS (2026-11-21): an app before 1.1.8 puts the holdings it is sent into the household's shared data,
+          // where the other member reads them. So none are sent to a client that does not say it is 1.1.8 or newer,
+          // whoever asks and whatever their plan: nothing is read and nothing is asked of Plaid for it.
+          if (!plusAddon.plusClientOk(body)) return ok({ holdings: [], locked: true, plus_mode: true, ...plusAddon.updateRequired() });
           const ent = await plusAddon.getPlusEntitlement(getAdminClient(), user_id);
           if (!ent.plus) return ok({ holdings: [], locked: true, plus_mode: true });
           if (owner_id && owner_id !== user_id) {

@@ -13,13 +13,15 @@
 //   save_entry    { id?, kind: home|car|pension, label, value (dollars, a number), currency: CAD|USD, shared }
 //   delete_entry  { id }
 //   set_share     { account_id, shared }: only for an account this person linked
+// OLDER APPS (2026-11-21): only a client that says it is 1.1.8 or newer is answered (_lib/plusAddon.js plusClientOk).
+// Anything else gets 426 update_required and no data, before anything is read.
 // Nothing is logged but an error code: no amount, no label, no account.
 // -----------------------------------------------------------------------------
 "use strict";
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 const { corsHeadersFor } = require("./_lib/cors");
-const { plusEnabled, getPlusEntitlement } = require("./_lib/plusAddon");
+const { plusEnabled, getPlusEntitlement, plusClientOk, updateRequired } = require("./_lib/plusAddon");
 const { peerIdsOf } = require("./_lib/household");
 
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -47,6 +49,8 @@ async function handle(event, deps = {}) {
   if (!user_id) return unauthorized(CORS, authError || "unauthorized");
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch { return json(400, CORS, { error: "invalid_json" }); }
+
+  if (!plusClientOk(body)) return json(426, CORS, { error: "update_required", ...updateRequired() });
 
   let admin;
   try { admin = getAdminClient(); }

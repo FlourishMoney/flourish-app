@@ -63,8 +63,11 @@ function load(db, user) {
   require.cache[AUTH_PATH].exports = { ...real, getAdminClient: () => db.admin, getUserFromRequest: async () => ({ user_id: user, error: null }), getUserPlan: async () => ({ plan: "plus", unlimited: true, status_unavailable: false }) };
   return { nw: require(NW_PATH), plaid: require(PLAID_PATH) };
 }
-const post = async (fn, body) => {
-  const r = await fn.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" }, body: JSON.stringify(body) });
+// Every request is the 1.1.8 app's unless a test says otherwise: it says its Plus version (src/lib/plusClient.js).
+// version null: an app from before 1.1.8, which says nothing. origin: the website, the iPhone app or the Android app.
+const WEB = "https://flourishmoney.app", IPHONE = "capacitor://localhost", ANDROID = "https://localhost";
+const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
+  const r = await fn.handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x" }, body: JSON.stringify(version === null ? body : { ...body, client_version: version }) });
   let b = null; try { b = JSON.parse(r.body); } catch { b = null; }
   return { status: r.statusCode, body: b };
 };
@@ -223,6 +226,89 @@ const post = async (fn, body) => {
       t.ok(/if \(nwState\.mode === "plus"\) return <>[\s\S]{0,300}<NetWorthPlusScreen /.test(app), "7h with Plus: the Net Worth tab is net worth with Plus");
       t.ok(/\{!nwShowW \? <div data-wrapped-networth-locked/.test(app) && /nwStateW\.mode==="today"\?\[\{label:"Invested"/.test(app), "7i Wrapped: the locked state and no 'Invested' without Plus");
       t.ok(/if \(plusMode\) \{[\s\S]{0,400}setPlusHoldings\(allHoldings\);[\s\S]{0,200}investments, \.\.\.rest/.test(app), "7j the sync keeps Plus holdings on this device and clears any copy from the shared blob");
+    }
+    // ── 8. OLDER APPS NEVER GET PLUS DATA (2026-11-21): it is the server that decides, not the app ───────────────────
+    // An app before 1.1.8 does this with the holdings it is sent (src/App.jsx at 1.1.7, word for word in effect):
+    //   if (allHoldings.length > 0) setAppData(prev => ({ ...prev, investments: allHoldings }));
+    // appData is the household's SHARED data, so the other member reads every holding, shared or not.
+    {
+      process.env.PLUS_ENABLED = "true";
+      const OLD = [["an old iPhone app", IPHONE], ["an old Android app", ANDROID], ["an old copy of the website", WEB]];
+      const household = () => { const db = makeDb(); db.state.rows.plaid_items.push({ user_id: A, item_id: "item-a", access_token: "access-sandbox-a", status: "active", id: 1 }, { user_id: B, item_id: "item-b", access_token: "access-sandbox-b", status: "active", id: 2 }); return db; };
+      const investmentCalls = () => plaidCalls.filter((c) => /investments/.test(c.url)).length;
+      const oldAppWrites = (answer) => { const shared = { accounts: [] }; const all = []; if (answer && Array.isArray(answer.holdings)) all.push(...answer.holdings); if (all.length > 0) shared.investments = all; return shared; };
+      for (const [who, origin] of OLD) {
+        const db = household(); plaidCalls.length = 0;
+        const reads0 = db.state.reads.length;
+        const r = await post(load(db, B).plaid, { action: "get_investments", item_id: "item-b" }, { origin, version: null });
+        t.eq([r.status, r.body], [200, { holdings: [], locked: true, plus_mode: true, update_required: true, min_client: "1.1.8" }], `8a ${who}, a Plus member asking for their own holdings: none are sent, only "update required"`);
+        t.eq([investmentCalls(), db.state.reads.slice(reads0).filter((x) => /plus_addon|net_worth|complimentary|household/.test(String(x))).length], [0, 0], `8b …and nothing is asked of Plaid's Investments or read about their plan for it (${who})`);
+        t.eq(oldAppWrites(r.body), { accounts: [] }, `8c …so the old app has nothing to put in the household's shared data (${who})`);
+        db.state.rows.net_worth_shares.push({ user_id: B, account_id: "b-rrsp", shared: true });
+        const partner = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-b" }, { origin, version: null });
+        t.eq([partner.body.holdings, partner.body.update_required], [[], true], `8d …and the partner on ${who} gets none of them either, the shared ones included`);
+        const nw = load(db, B).nw; const rows0 = JSON.stringify(db.state.rows), r0 = db.state.reads.length;
+        const calls = [];
+        for (const body of [{ action: "list" }, { action: "save_entry", kind: "home", label: "House", value: 1, currency: "CAD" }, { action: "delete_entry", id: "11111111-2222-4333-8444-555555555555" }, { action: "set_share", account_id: "b-rrsp", shared: true }])
+          calls.push(await post(nw, body, { origin, version: null }));
+        t.eq([calls.map((c) => c.status), calls.map((c) => c.body), JSON.stringify(db.state.rows) === rows0 ? 0 : 1, db.state.reads.length - r0],
+          [[426, 426, 426, 426], Array(4).fill({ error: "update_required", update_required: true, min_client: "1.1.8" }), 0, 0], `8e ${who}: net worth entries and share choices are neither sent nor changed (426), and nothing is read or written`);
+      }
+      // A version that is too old, or is not a version at all, is the same as none.
+      {
+        const db = household(); plaidCalls.length = 0;
+        const said = [];
+        for (const version of ["1.1.7", "1.1.0", "1.0.99", "0.9.9", "1.1", "1", "", "abc", "1.1.8-beta", "v1.1.8", 118, true, { v: "1.1.8" }, ["1.1.8"]]) {
+          const r = await post(load(db, B).plaid, { action: "get_investments", item_id: "item-b" }, { origin: IPHONE, version });
+          said.push(r.body.update_required === true && r.body.holdings.length === 0);
+        }
+        t.eq([said.every(Boolean), said.length, investmentCalls()], [true, 14, 0], "8f an app that says 1.1.7 or older, or anything that is not a version (a number, a word, a list), is sent none");
+      }
+      // The 1.1.8 app, on every platform, is sent what it is today.
+      for (const [who, origin] of [["the iPhone app", IPHONE], ["the Android app", ANDROID], ["the website", WEB]]) {
+        const db = household();
+        const got = [];
+        for (const version of ["1.1.8", "1.1.9", "1.2.0", "2.0.0"]) got.push((await post(load(db, B).plaid, { action: "get_investments", item_id: "item-b" }, { origin, version })).body);
+        t.eq([got.map((b) => b.holdings.length), got.map((b) => b.update_required), got.map((b) => b.plus_mode)], [[2, 2, 2, 2], [undefined, undefined, undefined, undefined], [true, true, true, true]], `8g ${who} at 1.1.8 or newer: its own holdings, for this device only, as before`);
+        const list = await post(load(db, B).nw, { action: "list" }, { origin });
+        t.eq(list.status, 200, `8h …and its net worth entries (${who})`);
+      }
+      // PLUS_ENABLED off: nothing changes for anyone, old apps included.
+      {
+        delete process.env.PLUS_ENABLED;
+        const db = household();
+        const r = await post(load(db, A).plaid, { action: "get_investments", item_id: "item-a" }, { origin: IPHONE, version: null });
+        t.eq([r.body.holdings.length, r.body.update_required, r.body.plus_mode], [2, undefined, undefined], "8i PLUS_ENABLED off: an old app is sent its holdings exactly as today (the rule starts with Plus, not before)");
+        process.env.PLUS_ENABLED = "true";
+      }
+      // The server's rule and the app's word for itself.
+      {
+        const P = require(PLUS_PATH);
+        const C = await import("../src/lib/plusClient.js");
+        t.eq([P.PLUS_MIN_CLIENT, C.PLUS_CLIENT_VERSION, P.versionAtLeast(C.PLUS_CLIENT_VERSION, P.PLUS_MIN_CLIENT), C.plusClientFields()], ["1.1.8", "1.1.8", true, { client_version: "1.1.8" }],
+          "8j the app says 1.1.8, which is the server's minimum: an app built from this code is always sent its Plus data");
+        t.eq(["1.1.9", "1.2.0", "2.0.0", "1.1.8", "1.1.7", "", null, undefined, "soon", 119].map((m) => C.clientTooOld(m)), [true, true, true, false, false, false, false, false, false, false],
+          "8k the app knows it is too old only when the server names a newer minimum; no minimum, or one that makes no sense, is not 'too old'");
+        const st = (body, status = 200) => X.netWorthMode({ status, body });
+        t.eq([st({ enabled: true, plus: true, min_client: "1.1.8" }), st({ enabled: true, plus: true }), st({ enabled: true, plus: false, min_client: "1.1.8" }), st({ enabled: true, plus: true, min_client: "1.1.9" }), st({ enabled: true, plus: false, min_client: "2.0.0" })],
+          ["plus", "plus", "locked", "unavailable", "unavailable"], "8l an app older than the server's minimum shows no net worth figure and asks for none; at the minimum it works as before");
+        const B2 = await import("../src/lib/plusBuy.js");
+        t.eq([B2.plusScreenView({ status: 200, body: { enabled: true, plus: false, covered_by: null, manage: null, min_client: "1.1.9" } }, { platform: "ios", selling: true }).mode,
+          B2.plusScreenView({ status: 200, body: { enabled: true, plus: false, covered_by: null, manage: null, min_client: "1.1.8" } }, { platform: "ios", selling: true }).mode], ["hidden", "offer"],
+          "8m …and Plus is not offered for sale to an app too old to show it");
+        // A SERVER FROM BEFORE THE PLUS ADD-ON (production until 1.1.8's server is live) has never heard of plus_status.
+        t.eq([st({ error: "unknown_action" }, 400), st({ error: "not_found" }, 404), st({ error: "invalid_json" }, 400), st({}, 400), st(null, 400), st({ error: "unknown_action" }, 500)],
+          ["today", "today", "unavailable", "unavailable", "unavailable", "unavailable"], "8n against a server with no Plus code at all (400 unknown_action) this app shows everything as today, never a locked or 'couldn't check' state");
+        const plaidSrc = require("fs").readFileSync(PLAID_PATH, "utf8");
+        const gate = plaidSrc.indexOf("if (!plusAddon.plusClientOk(body)) return ok({ holdings: [], locked: true, plus_mode: true, ...plusAddon.updateRequired() });");
+        t.ok(gate > 0 && gate < plaidSrc.indexOf("const ent = await plusAddon.getPlusEntitlement(getAdminClient(), user_id);") && gate < plaidSrc.indexOf('await plaid("/investments/holdings/get"'),
+          "8o on the server the version is checked before the plan is read and before Plaid is asked");
+        const nwSrc = require("fs").readFileSync(NW_PATH, "utf8");
+        t.ok(nwSrc.indexOf("if (!plusClientOk(body)) return json(426") > 0 && nwSrc.indexOf("if (!plusClientOk(body)) return json(426") < nwSrc.indexOf("const ent = await getPlusEntitlement(admin, user_id);"), "8p …and in the net worth endpoint before anything is read");
+        const access = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "netWorthAccess.js"), "utf8");
+        t.ok(/callPlaid\("get_investments",\{item_id:it\.item_id, \.\.\.plusClientFields\(\)\}, \{jwt\}\)/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")) && (access.match(/JSON\.stringify\(\{ action, \.\.\.params, \.\.\.plusClientFields\(\) \}\)/g) || []).length === 2,
+          "8q the app says its version on the holdings call, on every Plus action and on every net worth call");
+      }
     }
   } finally {
     console.error = quiet.e; console.warn = quiet.w; global.fetch = realFetch;

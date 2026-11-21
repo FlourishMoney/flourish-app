@@ -71,7 +71,8 @@ const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]
 // THE PLUS ADD-ON (2026-11-10, _lib/plusAddon.js, migration 0044). Behind PLUS_ENABLED, whatever BILLING_ENABLED
 // and IAP_ENABLED say; while it is off these answer 404 and read nothing. The website's checkout also needs
 // BILLING_ENABLED, and the store sync IAP_ENABLED. None of them reads or writes public.subscriptions.
-//   plus_status      { enabled, plus, covered_by, manage }; a read that fails is 503 status_unavailable, never "no Plus".
+//   plus_status      { enabled, plus, covered_by, manage, min_client }; a read that fails is 503 status_unavailable, never
+//                    "no Plus". min_client: the oldest app version that is sent Plus data.
 //                    manage: where the caller's OWN Plus purchase is managed ("stripe", "app_store", "play_store"), or
 //                    null (no Plus, a partner's Plus, complimentary Plus). Never a price, a date or a customer id.
 //   plus_checkout    { plan_key: "plus_monthly" | "plus_annual" }, the website only: a Stripe checkout for Plus on the
@@ -517,8 +518,11 @@ exports.handler = async (event) => {
 
     // ── THE PLUS ADD-ON ──────────────────────────────────────────────────────────────────────────────
     if (plusAction) {
+      // min_client: the oldest app that is sent Plus data (plaid.js get_investments, networth.js). An app older than it
+      // shows "update" and asks for none.
       const answer = (ent, extra = {}) => json(200, CORS, { enabled: true, plus: !!ent.plus, covered_by: ent.covered_by || null,
-        manage: ent.plus && !ent.covered_by && plusAddon.MANAGED_PROVIDERS.includes(ent.provider) ? ent.provider : null, ...extra });
+        manage: ent.plus && !ent.covered_by && plusAddon.MANAGED_PROVIDERS.includes(ent.provider) ? ent.provider : null,
+        min_client: plusAddon.PLUS_MIN_CLIENT, ...extra });
       let synced = {};
       if (action === "plus_store_sync") {
         const user = await authUser(admin, user_id);

@@ -10,8 +10,14 @@
 //   "unavailable"  the plan could not be read (503, or no answer at all): the locked state with a plain line,
 //                  never a figure, unless the last answer this device had was "today" or "plus" (kept for offline)
 //   "pending"      not asked yet: the card's shell with no figure
+// A SERVER THAT HAS NO PLUS CODE AT ALL (it answers 400 unknown_action to plus_status: any deploy from before the Plus
+// add-on, which is production until 1.1.8's server is live) is "today" too: this app must work exactly as before
+// against it, never show a locked or "couldn't check" state for something that server has never heard of.
+// AN APP OLDER THAN THE SERVER'S MINIMUM FOR PLUS DATA (plus_status min_client, lib/plusClient.js) is sent none, so
+// it shows no figure: "unavailable" for now (a line of its own is to come).
 // -----------------------------------------------------------------------------
 import { useSyncExternalStore } from "react";
+import { plusClientFields, clientTooOld } from "./plusClient.js";
 
 export const NW_MODE_KEY = "flourish_nw_mode";
 const KEEPABLE = ["today", "plus"];
@@ -21,9 +27,11 @@ export function netWorthMode(res, lastMode = null) {
   const fallback = KEEPABLE.includes(lastMode) ? lastMode : "unavailable";
   if (!res || typeof res !== "object") return fallback;              // no answer (offline)
   if (res.status === 404) return "today";
+  if (res.status === 400 && res.body && res.body.error === "unknown_action") return "today";
   if (res.status === 503) return "unavailable";
   const b = res.body;
   if (res.status !== 200 || !b || b.enabled !== true || typeof b.plus !== "boolean") return "unavailable";
+  if (clientTooOld(b.min_client)) return "unavailable";
   return b.plus ? "plus" : "locked";
 }
 /** May this screen show a net worth figure or investment holdings? Only in "today" or "plus". */
@@ -70,7 +78,7 @@ export async function askPlusStatus(opts = {}) { return askPlus("plus_status", {
 export async function askPlus(action, params = {}, { apiBase = "", jwt, fetchImpl = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
   if (!jwt || !fetchImpl) return null;
   try {
-    const res = await fetchImpl(`${apiBase}/api/billing`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
+    const res = await fetchImpl(`${apiBase}/api/billing`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params, ...plusClientFields() }) });
     let body = null; try { body = await res.json(); } catch { body = null; }
     return { status: res.status, body };
   } catch { return null; }
@@ -79,7 +87,7 @@ export async function askPlus(action, params = {}, { apiBase = "", jwt, fetchImp
 export async function callNetWorth(action, params = {}, { apiBase = "", jwt, fetchImpl = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
   if (!jwt || !fetchImpl) return null;
   try {
-    const res = await fetchImpl(`${apiBase}/api/networth`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params }) });
+    const res = await fetchImpl(`${apiBase}/api/networth`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` }, body: JSON.stringify({ action, ...params, ...plusClientFields() }) });
     let body = null; try { body = await res.json(); } catch { body = null; }
     return { status: res.status, body };
   } catch { return null; }

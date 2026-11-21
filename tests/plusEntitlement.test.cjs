@@ -283,7 +283,8 @@ function loadWith(db, sm, user = U) {
       const ps = await call(billing, { action: "plus_status" });
       const st = await call(billing, { action: "status" });
       t.eq([ps.body && ps.body.plus, st.body && st.body.paid], [true, true], "5e the household has Plus AND its monthly plan");
-      t.eq([ps.body && ps.body.manage, Object.keys(ps.body || {}).sort().join(",")], ["stripe", "covered_by,enabled,manage,plus"], "5e2 …and the answer says where the buyer's own Plus is managed (Stripe), and nothing else: no price, date or customer id");
+      t.eq([ps.body && ps.body.manage, Object.keys(ps.body || {}).sort().join(",")], ["stripe", "covered_by,enabled,manage,min_client,plus"], "5e2 …and the answer says where the buyer's own Plus is managed (Stripe) and the oldest app that is sent Plus data, and nothing else: no price, date or customer id");
+      t.eq(ps.body && ps.body.min_client, "1.1.8", "5e3 …that oldest app is 1.1.8");
       await send(hook, "customer.subscription.updated", plusSub("sub_P"));
       await send(hook, "customer.subscription.updated", { ...mainMonthly(), id: "sub_M", object: "subscription", customer: "cus_M", metadata: { user_id: U, plan_key: "monthly" }, items: { data: [{ price: { id: "price_m" }, current_period_end: now + 30 * DAY }] }, current_period_end: now + 30 * DAY });
       t.eq([(db.state.rows.subscriptions[0] || {}).provider_subscription_id, (db.state.rows.subscriptions[0] || {}).support_flag || null], ["sub_M", null], "5f later events for each go to their own row, and nothing is flagged");
