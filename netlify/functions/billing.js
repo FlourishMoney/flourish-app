@@ -86,7 +86,9 @@ const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]
 //                    person's own or the other member's ({ held: false, reason: "purchase_in_progress", mine }).
 //                    state "pending": the store said pending; the attempt keeps its 7 days. No other state is heard:
 //                    the app never ends a hold. plus_checkout records the website's attempt the same way.
-//   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's.
+//   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's, and on a portal
+//                    configuration of its own with plan switching OFF (_lib/plusAddon.js createPlusPortalSession): the
+//                    shared default lets a customer switch into the main plan's prices. No configuration, no portal.
 const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_store_hold", "plus_portal"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
@@ -563,7 +565,9 @@ exports.handler = async (event) => {
 
       if (action === "plus_portal") {
         if (!plusCustomer) return json(404, CORS, { error: "no_customer" });
-        const session = await stripePost("/billing_portal/sessions", { customer: plusCustomer, return_url: `${APP_ORIGIN()}/?plus=portal_return` });
+        // Never the shared default configuration: Plus's own, with switching off. If it can be neither found nor made
+        // this throws, and the answer below is an error, not a portal.
+        const session = await plusAddon.createPlusPortalSession({ stripeGet, stripePost }, plusCustomer, `${APP_ORIGIN()}/?plus=portal_return`);
         return json(200, CORS, { url: session.url });
       }
 

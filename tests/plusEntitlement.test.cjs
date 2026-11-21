@@ -100,11 +100,20 @@ function makeDb({ failPlusRead = false, missingPlus = false } = {}) {
 }
 
 function makeStripe() {
-  const log = []; const stripe = { subs: [], sessions: [] };
+  // portalConfigs: the account's portal configurations, as Stripe lists them. bpc_default is the shared one the main
+  // plan uses: it lets a customer switch plans. portalSessions: every portal session asked for. fail: paths that throw.
+  const log = []; const stripe = { subs: [], sessions: [], portalSessions: [], fail: {},
+    portalConfigs: [{ id: "bpc_default", active: true, is_default: true, metadata: {}, features: { subscription_update: { enabled: true }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } }] };
+  const boom = (what) => { const e = new Error("stripe said no"); e.statusCode = stripe.fail[what]; return e; };
   const get = async (p) => {
     log.push(`GET ${p}`);
     if (p.startsWith("/subscriptions?")) { const cus = decodeURIComponent((/customer=([^&]+)/.exec(p) || [])[1] || ""); return { data: stripe.subs.filter((s) => s.customer === cus) }; }
     if (p.startsWith("/checkout/sessions?")) return { data: [] };
+    if (p.startsWith("/billing_portal/configurations?")) {
+      if (stripe.fail.list) throw boom("list");
+      const want = (k) => (new RegExp(`${k}=(true|false)`).exec(p) || [])[1];
+      return { data: stripe.portalConfigs.filter((c) => (want("active") === undefined || String(c.active) === want("active")) && (want("is_default") === undefined || String(c.is_default) === want("is_default"))) };
+    }
     const id = decodeURIComponent(p.split("/").pop());
     const s = stripe.subs.find((x) => x.id === id);
     if (!s) { const e = new Error("no such subscription"); e.statusCode = 404; throw e; }
@@ -114,7 +123,16 @@ function makeStripe() {
     log.push(`POST ${p}`);
     if (p === "/customers") return { id: body && body.metadata && body.metadata.kind === "plus_addon" ? "cus_P" : "cus_M" };
     if (p === "/checkout/sessions") { stripe.sessions.push(body); return { id: "cs_plus", url: "https://stripe.test/pay" }; }
-    if (p === "/billing_portal/sessions") return { url: `https://stripe.test/portal/${body.customer}` };
+    if (p === "/billing_portal/configurations") {
+      if (stripe.fail.create) throw boom("create");
+      const made = { id: `bpc_made_${stripe.portalConfigs.length}`, active: true, is_default: false, metadata: { ...(body.metadata || {}) }, features: JSON.parse(JSON.stringify(body.features || {})), ...(stripe.madeAs || {}) };
+      stripe.portalConfigs.push(made); return made;
+    }
+    if (p === "/billing_portal/sessions") {
+      const cfg = stripe.portalConfigs.find((c) => c.id === body.configuration);
+      if (stripe.fail.session || (body.configuration && (!cfg || !cfg.active))) throw boom("session");
+      stripe.portalSessions.push({ ...body }); return { url: `https://stripe.test/portal/${body.customer}` };
+    }
     return {};
   };
   const del = async (p) => { log.push(`DELETE ${p}`); const id = decodeURIComponent(p.split("/").pop()); const s = stripe.subs.find((x) => x.id === id); if (s) s.status = "canceled"; return { id, status: "canceled" }; };
@@ -482,6 +500,88 @@ function loadWith(db, sm, user = U) {
         t.ok(blk.length > 500 && !/attempt_id:|expires_at|provider:/.test(blk.replace(/body\.attempt_id|body\.platform/g, "")), "10r a refusal never names the other attempt's id, its store or when it ends");
       }
       delete process.env.IAP_ENABLED;
+    }
+
+    // ── 11. THE PLUS PORTAL HAS A CONFIGURATION OF ITS OWN: a Plus buyer can never switch Plus into the main plan ─────────
+    {
+      process.env.PLUS_ENABLED = "true";
+      const plusRow = () => ({ user_id: U, provider: "stripe", plan_key: "plus_monthly", status: "active", product_id: "price_pm", provider_customer_id: "cus_P", provider_subscription_id: "sub_P", current_period_end: future });
+      const setup = () => { const db = makeDb(); const sm = makeStripe(); db.state.rows.plus_addon_subscriptions.push(plusRow()); db.state.rows.subscriptions.push(mainMonthly()); return { db, sm }; };
+      const portal = (billing) => call(billing, { action: "plus_portal" });
+      const PLUS = require(PLUS_PATH);
+      {
+        const { db, sm } = setup(); const { billing } = loadWith(db, sm);
+        const r = await portal(billing);
+        const made = sm.stripe.portalConfigs.find((c) => c.id !== "bpc_default");
+        t.eq([r.status, sm.stripe.portalSessions.length, sm.stripe.portalSessions[0] && sm.stripe.portalSessions[0].configuration, sm.stripe.portalSessions[0] && sm.stripe.portalSessions[0].customer], [200, 1, made && made.id, "cus_P"],
+          "11a Manage for Plus: the session names a portal configuration, on the buyer's own Plus customer");
+        t.eq([made && made.features, made && made.metadata, made && made.is_default], [{ subscription_update: { enabled: false }, subscription_cancel: { enabled: true, mode: "at_period_end" }, payment_method_update: { enabled: true }, invoice_history: { enabled: true }, customer_update: { enabled: false } }, { kind: "plus_addon_portal" }, false],
+          "11b …made for Plus the first time: switching plans OFF, cancelling on (at the end of the paid period), the card on; marked as Plus's, and not the default");
+        t.ok(sm.stripe.portalSessions[0].configuration !== "bpc_default" && sm.stripe.portalConfigs[0].features.subscription_update.enabled === true && sm.stripe.portalConfigs.length === 2,
+          "11c the shared default (switching on, the main plan's prices) is never the one used, and it is left exactly as it was");
+        const before = sm.log.length;
+        await portal(billing);
+        const again = sm.log.slice(before);
+        t.eq([again, sm.stripe.portalSessions[1].configuration, sm.stripe.portalConfigs.length], [["POST /billing_portal/sessions"], made.id, 2], "11d the next time, the same configuration is used without asking Stripe for it again, and no second one is made");
+        const cold = await portal(loadWith(db, sm).billing);
+        t.eq([cold.status, sm.stripe.portalConfigs.length, sm.stripe.portalSessions[2].configuration, sm.log.filter((l) => l === "POST /billing_portal/configurations").length], [200, 2, made.id, 1],
+          "11e a fresh server instance finds the one already made (by its mark) instead of making another");
+        const main = await call(billing, { action: "create_portal_session" });
+        const mainSession = sm.stripe.portalSessions[sm.stripe.portalSessions.length - 1];
+        t.eq([main.status, mainSession.customer, "configuration" in mainSession], [200, "cus_M", false], "11f the main plan's own portal is unchanged: its customer, and the shared default configuration");
+      }
+      // A configuration that carries Plus's mark but would let a customer switch, is inactive, or is the default, is never used.
+      {
+        const bad = [
+          { id: "bpc_switch", active: true, is_default: false, metadata: { kind: "plus_addon_portal" }, features: { subscription_update: { enabled: true }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } },
+          { id: "bpc_off", active: false, is_default: false, metadata: { kind: "plus_addon_portal" }, features: { subscription_update: { enabled: false }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } },
+          { id: "bpc_nocancel", active: true, is_default: false, metadata: { kind: "plus_addon_portal" }, features: { subscription_update: { enabled: false }, subscription_cancel: { enabled: false }, payment_method_update: { enabled: true } } },
+          { id: "bpc_other", active: true, is_default: false, metadata: { kind: "something_else" }, features: { subscription_update: { enabled: false }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } },
+          { id: "bpc_unmarked", active: true, is_default: false, metadata: null, features: { subscription_update: { enabled: false }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } },
+        ];
+        const { db, sm } = setup(); sm.stripe.portalConfigs.push(...bad);
+        sm.stripe.portalConfigs[0].metadata = { kind: "plus_addon_portal" };   // even the default, marked by mistake
+        const r = await portal(loadWith(db, sm).billing);
+        const used = sm.stripe.portalSessions[0] && sm.stripe.portalSessions[0].configuration;
+        t.ok(r.status === 200 && /^bpc_made_/.test(used) && ![...bad.map((c) => c.id), "bpc_default"].includes(used), "11g one that lets a customer switch, is switched off, cannot cancel, is someone else's or is the default is never used: a right one is made");
+        t.eq([...bad, sm.stripe.portalConfigs[0], null, undefined, {}, { id: "", active: true }].map((c) => PLUS.isPlusPortalConfiguration(c)), Array(10).fill(false), "11h …and the check itself says no to each of them, and to nothing at all");
+      }
+      // FAILS CLOSED: no configuration, no portal. Never the default.
+      {
+        for (const [what, said] of [["list", "Stripe cannot list the configurations"], ["create", "Stripe will not make one"]]) {
+          const { db, sm } = setup(); sm.stripe.fail[what] = 500;
+          const r = await portal(loadWith(db, sm).billing);
+          t.eq([r.status, r.body, sm.stripe.portalSessions.length], [502, { error: "billing_provider_error" }, 0], `11i ${said}: no portal session is made at all (an error, and never the shared portal)`);
+        }
+        const { db, sm } = setup(); sm.stripe.madeAs = { features: { subscription_update: { enabled: true }, subscription_cancel: { enabled: true }, payment_method_update: { enabled: true } } };
+        const r = await portal(loadWith(db, sm).billing);
+        t.eq([r.status, sm.stripe.portalSessions.length], [502, 0], "11j Stripe answers with a configuration that would allow switching: it is not used, and no portal opens");
+      }
+      // The remembered configuration was switched off at Stripe: looked up once more, and a right one used.
+      {
+        const { db, sm } = setup(); const { billing } = loadWith(db, sm);
+        await portal(billing);
+        const first = sm.stripe.portalSessions[0].configuration;
+        sm.stripe.portalConfigs.find((c) => c.id === first).active = false;
+        const r = await portal(billing);
+        const second = sm.stripe.portalSessions[1] && sm.stripe.portalSessions[1].configuration;
+        t.ok(r.status === 200 && second && second !== first && second !== "bpc_default" && PLUS.isPlusPortalConfiguration(sm.stripe.portalConfigs.find((c) => c.id === second)), "11k a remembered configuration that Stripe no longer accepts is replaced by a right one, not by the default");
+      }
+      // Test mode and live mode never share one.
+      {
+        const calls = []; let n = 0;
+        const deps = { stripeGet: async () => ({ data: [] }), stripePost: async (p, b) => { calls.push(p); return { id: `bpc_${++n}`, active: true, is_default: false, metadata: b.metadata, features: b.features }; } };
+        const a = await PLUS.plusPortalConfigurationId(deps, { env: { STRIPE_SECRET_KEY: "sk_test_aaaaaaaa" } });
+        const b = await PLUS.plusPortalConfigurationId(deps, { env: { STRIPE_SECRET_KEY: "sk_live_bbbbbbbb" } });
+        const a2 = await PLUS.plusPortalConfigurationId(deps, { env: { STRIPE_SECRET_KEY: "sk_test_aaaaaaaa" } });
+        t.eq([a !== b, a2 === a, calls.length], [true, true, 2], "11l a test key and a live key each get a configuration of their own");
+      }
+      {
+        const src = fs.readFileSync(path.join(REPO, "netlify", "functions", "billing.js"), "utf8");
+        const blk = src.slice(src.indexOf('if (action === "plus_portal") {'), src.indexOf("// plus_checkout: the website only"));
+        t.ok(/plusAddon\.createPlusPortalSession\(\{ stripeGet, stripePost \}, plusCustomer,/.test(blk) && !/stripePost\("\/billing_portal\/sessions"/.test(blk),
+          "11m the Plus portal action has one way to open a portal, and it is the one that names Plus's configuration");
+      }
     }
   } finally {
     console.error = quiet.e; console.warn = quiet.w; global.fetch = realFetch;

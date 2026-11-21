@@ -1,6 +1,19 @@
 # flourish Plus add-on: what to create in the four consoles (1.1.8)
 
-Written 2026-11-20. **Nothing below exists yet** (all four consoles were read that day: no add-on group, subscription, entitlement, offering or price). Until it does, the Plus screen says "not available yet" and sells nothing.
+Written 2026-11-20. **Set up by Amanda on 2026-11-21**, except the parts marked *still to do*. The steps are kept as the record of what was typed.
+
+## Where it stands (2026-11-21)
+
+| Console | Done | Ids | Still to do |
+|---|---|---|---|
+| App Store Connect | Group `Flourish Plus add-on`; monthly (CAD 4.99) and annual (CAD 49.99, 1 year, paid upfront); Canada only; both on level 1; names C1 to C5 | group `22601027`; `app.flourishmoney.plusaddon.monthly`; `app.flourishmoney.plusaddon.annual` | The review screenshot and review notes (steps 20, 21 and 34): they wait for the 1.1.8 TestFlight build. Then step 38. |
+| Play Console | Subscription `flourish_plus_addon`; base plans `monthly` (CAD 4.99) and `annual` (CAD 49.99); Canada only; both Active; names C6 to C10 | `flourish_plus_addon:monthly`; `flourish_plus_addon:annual` | Nothing |
+| RevenueCat | The 4 products; entitlement `plus_addon` with only those 4; offering `plus_addon` (`$rc_monthly`, `$rc_annual`), not Current | entitlement `entl260a511574` | Nothing |
+| Stripe, TEST mode | Product `flourish Plus`; monthly and annual prices, tax exclusive | product `prod_VfNInBBZ798oe4`; monthly `price_1Ue2Y2AXAZzlop97hv6dtKgY`; annual `price_1Ue2YcAXAZzlop97WGae34gd` | Nothing |
+| Stripe, LIVE mode | Nothing yet | none | All of section D again in live mode, then steps 23 and 24 for Production |
+| Netlify | `STRIPE_PRICE_PLUS_MONTHLY_CAD` and `STRIPE_PRICE_PLUS_ANNUAL_CAD` set to the two TEST ids, for the **Deploy previews** context only (2026-11-21) | as above | Production: both unset, on purpose, until the live prices exist |
+
+Read back on 2026-11-21: RevenueCat's entitlement `plus` has **6** products, and none is an add-on product (section C, step 8). `PLUS_ENABLED` is not set in any Netlify context, so no deploy offers Plus yet, previews included.
 
 - The ids are the ones the code expects (`src/lib/plusBuy.js`, `netlify/functions/_lib/plusAddon.js`; `tests/plusBuy.test.cjs` holds the two together). **Type each id exactly. An id cannot be changed after it is created.**
 - Prices: **CAD 4.99 a month, CAD 49.99 a year**, plus tax. No trial, no introductory price, no founding discount, no promotion code.
@@ -107,7 +120,7 @@ Project Flourish. Do this after A and B, so the products can be imported.
 5. Entitlements → **+ New** → Identifier: `plus_addon`
 6. Description: `flourish Plus add-on`
 7. Entitlement `plus_addon` → Attach → all four add-on products, and nothing else
-8. Check entitlement `plus`: it still has its six products, and **none** of the four add-on products
+8. Check entitlement `plus`: it still has its six products, and **none** of the four add-on products. **Checked 2026-11-21: 6, not 8.** They are `app.flourishmoney.plus.monthly`, `app.flourishmoney.plus.annual`, `app.flourishmoney.founding.annual` (Flourish iOS) and `flourish_plus:monthly`, `flourish_plus:annual`, `flourish_plus:founding` (Flourish Android). The Products page lists 10 in all (these 6 and the 4 add-on products), each with exactly 1 entitlement, so no product sits on both. No page showed a count of 8.
 9. Offerings → **+ New** → Identifier: `plus_addon`
 10. Description: `flourish Plus add-on`
 11. Do **not** make it Current (`default` stays Current)
@@ -145,17 +158,19 @@ Do it in **test mode** first, try it on a deploy preview, then repeat every step
 18. Add price
 19. Copy the monthly price's id (`price_…`)
 20. Copy the annual price's id (`price_…`)
-21. Settings → Billing → Customer portal → "Customers can switch plans": check that it is **off**, or that its product list has no main-plan price. A Plus buyer has a Stripe customer of their own, and must not be able to switch Plus into the main plan there.
-22. Customer portal → Cancel subscriptions and Update payment methods: on (they already are for the main plan)
+21. Settings → Billing → Customer portal: **leave it exactly as it is.** "Let customers switch plans" is ON there, with the main plan's prices ($11.99 a month, $99.99 a year), and main-plan customers use it. It is the account's shared default configuration. **Plus does not use it** (fixed in code, 2026-11-21): every Plus portal session names a portal configuration of its own, with switching plans off, cancelling on and updating the card on. The server makes that configuration through Stripe's API the first time a Plus buyer taps Manage subscription, and finds it again afterwards by its mark (`metadata.kind = plus_addon_portal`). That Dashboard page edits the shared default only, so there is nothing to click for Plus's. If it can be neither found nor made, no portal opens at all: a Plus buyer is never sent to the shared one.
+22. Nothing to set for step 21. One thing to check, once, in each mode: Settings → Billing → Customer portal → "Customer portal link" (Stripe's own no-code sign-in page). If it is switched on, anyone who pays can sign in there with their email, and the link on that page belongs to the shared default configuration, so a Plus buyer could reach plan switching that way. Keep it **off**. (Read it in the Dashboard; the code cannot see or change it.)
 
 Then in Netlify (Site configuration → Environment variables). These two are ids, not secrets:
 
-23. Add `STRIPE_PRICE_PLUS_MONTHLY_CAD` = the monthly price id. Test id for Deploy previews, live id for Production.
-24. Add `STRIPE_PRICE_PLUS_ANNUAL_CAD` = the annual price id. Same split.
+23. Add `STRIPE_PRICE_PLUS_MONTHLY_CAD` = the monthly price id. Test id for Deploy previews, live id for Production. **Deploy previews: done 2026-11-21** (`price_1Ue2Y2AXAZzlop97hv6dtKgY`). Production: not set.
+24. Add `STRIPE_PRICE_PLUS_ANNUAL_CAD` = the annual price id. Same split. **Deploy previews: done 2026-11-21** (`price_1Ue2YcAXAZzlop97WGae34gd`). Production: not set.
 
 Nothing else changes in Stripe: the webhook endpoint and its events already carry Plus (`checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`), no promotion code applies to Plus, and Stripe Tax adds tax at checkout as it does for the main plan.
 
-Until steps 23 and 24 are done the website's button answers "not available yet". A Plus price id that is also a main-plan price id is refused by the server: no Plus is ever read from it.
+Until steps 23 and 24 are done for a context, the website's button there answers "not available yet". A deploy preview also needs `PLUS_ENABLED` = `true` for the Deploy previews context before it shows Plus at all, and the database it talks to needs migrations 0044, 0045 and 0052: neither is done. A Plus price id that is also a main-plan price id is refused by the server: no Plus is ever read from it.
+
+In live mode, the first Plus buyer to tap Manage subscription makes the live Plus portal configuration (step 21). Nothing needs doing beforehand.
 
 ## E. Switching it on (not now, and only on Amanda's word)
 

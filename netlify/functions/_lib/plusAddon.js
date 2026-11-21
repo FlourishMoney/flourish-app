@@ -297,7 +297,78 @@ async function holdPlusPending(admin, userId, attemptId) {
   return !!data && data.result === "pending";
 }
 
+// ── THE PLUS PORTAL HAS A CONFIGURATION OF ITS OWN (2026-11-21) ─────────────────────────────────────────────
+// Stripe's customer portal has one DEFAULT configuration, shared by everyone the main plan sends there. In this
+// account it lets a customer switch plans, and its product list is the main plan's prices. A Plus buyer sent to it
+// could switch their Plus subscription into the main plan: they would pay the main plan's price, lose Plus (the row is
+// no longer a Plus price) and get no main plan either (the subscription is tagged as the add-on's). The shared setting
+// stays as it is, because main-plan customers use it. Instead every Plus portal session names a configuration of its
+// own, made through Stripe's API (the Dashboard edits only the default one):
+//   switching plans   OFF (features.subscription_update.enabled false)
+//   cancelling        on, at the end of the paid period
+//   the card          on
+//   invoices          shown; the customer's own details are not editable there
+// It is found by its metadata (kind: PLUS_PORTAL_KIND) among the account's active, non-default configurations, and
+// made the first time it is needed. Test mode and live mode each get their own: a configuration belongs to the mode of
+// the key that made it. Only one that still has switching off, cancelling on and the card on is ever used.
+// FAILS CLOSED: if it can be neither found nor made, this throws, and the caller opens no portal at all. A Plus
+// customer is never sent to the default configuration.
+const PLUS_PORTAL_KIND = "plus_addon_portal";
+const PLUS_PORTAL_FEATURES = Object.freeze({
+  subscription_update: Object.freeze({ enabled: false }),
+  subscription_cancel: Object.freeze({ enabled: true, mode: "at_period_end" }),
+  payment_method_update: Object.freeze({ enabled: true }),
+  invoice_history: Object.freeze({ enabled: true }),
+  customer_update: Object.freeze({ enabled: false }),
+});
+const on = (f) => !!f && f.enabled === true;
+function isPlusPortalConfiguration(c) {
+  return !!c && typeof c.id === "string" && c.id.length > 0 && c.active === true && c.is_default !== true
+    && !!c.metadata && c.metadata.kind === PLUS_PORTAL_KIND
+    && !!c.features && !!c.features.subscription_update && c.features.subscription_update.enabled === false
+    && on(c.features.subscription_cancel) && on(c.features.payment_method_update);
+}
+// One per mode, kept for the life of this function instance. Keyed by the key's public prefix (sk_test_ / sk_live_ /
+// rk_…), never the key: a test key and a live key never share a configuration.
+const portalCache = new Map();
+const modeOf = (env) => String((env && env.STRIPE_SECRET_KEY) || "").trim().slice(0, 8);
+/**
+ * The id of Plus's own portal configuration. deps: { stripeGet, stripePost }. opts.fresh: look again at Stripe (after
+ * a session it was used for failed). Throws when Stripe cannot be asked, or answers with something that is not it.
+ */
+async function plusPortalConfigurationId(deps, { env = process.env, fresh = false } = {}) {
+  const mode = modeOf(env);
+  if (!fresh && portalCache.has(mode)) return portalCache.get(mode);
+  portalCache.delete(mode);
+  const listed = await deps.stripeGet("/billing_portal/configurations?active=true&is_default=false&limit=100");
+  let found = ((listed && listed.data) || []).find(isPlusPortalConfiguration) || null;
+  if (!found) {
+    // No idempotency key on purpose: a replayed answer would describe the configuration as it was first made, not as
+    // it is now. Two made at the same moment are both right, and the next lookup uses the first it finds.
+    const made = await deps.stripePost("/billing_portal/configurations", { features: PLUS_PORTAL_FEATURES, metadata: { kind: PLUS_PORTAL_KIND } });
+    if (!isPlusPortalConfiguration(made)) throw new Error("plus portal configuration: not as asked");
+    found = made;
+  }
+  portalCache.set(mode, found.id);
+  return found.id;
+}
+/**
+ * A portal session for a Plus customer, on Plus's own configuration, and never without one. If the session is refused
+ * with a remembered configuration (it was switched off at Stripe), the configuration is looked up once more.
+ */
+async function createPlusPortalSession(deps, customerId, returnUrl, { env = process.env } = {}) {
+  const open = async (fresh) => {
+    const configuration = await plusPortalConfigurationId(deps, { env, fresh });
+    if (typeof configuration !== "string" || !configuration) throw new Error("plus portal configuration: none");
+    return deps.stripePost("/billing_portal/sessions", { customer: customerId, configuration, return_url: returnUrl });
+  };
+  const remembered = portalCache.has(modeOf(env));
+  try { return await open(false); }
+  catch (e) { if (!remembered) throw e; return open(true); }
+}
+
 module.exports = {
+  PLUS_PORTAL_KIND, PLUS_PORTAL_FEATURES, isPlusPortalConfiguration, plusPortalConfigurationId, createPlusPortalSession,
   isAttemptId, holdPlusPurchase, holdPlusPending,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
   plusEnabled, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
