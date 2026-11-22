@@ -21,7 +21,7 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
+import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
@@ -18284,8 +18284,9 @@ export default function FlourishApp(){
   // not to the phone). Nothing here runs in any other build.
   // NET WORTH BEHIND PLUS (lib/netWorthAccess.js): ask the server once per signed-in account what this household may see.
   // 404 (PLUS_ENABLED off): everything as before. With Plus: this person's entries and share choices (/api/networth), and
-  // which bank each person linked (list_items), for net worth that is private by default between partners. No answer at
-  // all is asked again after 5, 20 and 60 seconds; until then nothing about net worth shows a figure.
+  // which bank each person linked (list_items), for net worth that is private by default between partners. A check that
+  // does not get through (no answer, or a failed one) is asked again after 5, 20 and 60 seconds. Until then a device the
+  // server has never told "Plus is on" shows net worth as it does today; one that has been told shows no figure.
   // takePlusAnswer: the one place a plus_status (or plus_store_sync) answer is taken, at sign-in and after a purchase.
   const takePlusAnswer = useCallback(async (res, isCancelled = ()=>false)=>{
     const mode = setPlusAnswer(res);
@@ -18306,7 +18307,7 @@ export default function FlourishApp(){
       const res = await askPlusStatus({ apiBase: API_BASE, jwt });
       if(cancelled) return;
       await takePlusAnswer(res, ()=>cancelled);
-      if(res === null){ const wait = [5000, 20000, 60000][attempt]; if(wait) timer = setTimeout(()=>ask(attempt + 1), wait); }
+      if(plusAskAgain(res)){ const wait = [5000, 20000, 60000][attempt]; if(wait) timer = setTimeout(()=>ask(attempt + 1), wait); }
     };
     ask(0);
     return ()=>{ cancelled = true; if(timer) clearTimeout(timer); };

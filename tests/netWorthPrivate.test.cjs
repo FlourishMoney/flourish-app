@@ -217,6 +217,36 @@ const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
         ["pending", "unavailable", "today", "unavailable", "locked", "plus", "unavailable"], "7a the server's answer to the five modes");
       t.eq([X.netWorthMode(null, "plus"), X.netWorthMode(null, "today"), X.netWorthMode(null, "locked")], ["plus", "today", "unavailable"], "7b offline: the last 'today' or 'plus' this device had is kept; 'locked' never becomes a figure");
       t.eq(["today", "plus", "locked", "unavailable", "pending"].map(X.showsNetWorth), [true, true, false, false, false], "7c a figure only in 'today' or 'plus'");
+      // A DEVICE THE SERVER HAS NEVER TOLD "PLUS IS ON" (every device while PLUS_ENABLED is off): a check that does not get
+      // through takes nothing away. Net worth shows as it does today; "couldn't check" is only for a device that has been told.
+      {
+        const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); }, m }; };
+        const fresh = () => { X._resetForTests(); return mem(); };
+        const LOCKED = { status: 200, body: { enabled: true, plus: false } }, PLUS = { status: 200, body: { enabled: true, plus: true } };
+        const GONE = [null, { status: 500, body: null }, { status: 502, body: null }, { status: 503, body: null }, { status: 504, body: null }, { status: 401, body: { error: "unauthorized" } }, { status: 429, body: {} }];
+        t.eq(GONE.map((r) => X.setPlusAnswer(r, fresh())), Array(GONE.length).fill("today"), "7c1 never told Plus is on, and the check gets no answer or a failed one: net worth shows as it does today");
+        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(r, s); return s.m.size; }), Array(GONE.length).fill(0), "7c2 …and nothing is saved from a check that did not get through");
+        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer({ status: 404, body: { error: "not_found" } }, s); return [X.setPlusAnswer(r, s), s.getItem(X.NW_MODE_KEY)]; }), Array(GONE.length).fill(["today", "today"]),
+          "7c3 a device whose last answer was 'today' keeps it through a failed answer too, not only through no answer");
+        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(LOCKED, s); return X.setPlusAnswer(r, s); }), Array(GONE.length).fill("unavailable"),
+          "7c4 once the server has said Plus is on and this household has none, a failed check never becomes a figure");
+        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(PLUS, s); return X.setPlusAnswer(r, s); }), ["plus", ...Array(GONE.length - 1).fill("unavailable")],
+          "7c5 with Plus: no answer keeps 'plus' (offline), a failed answer is 'unavailable', exactly as before");
+        t.eq((() => { const s = fresh(); return [X.setPlusAnswer({ status: 503, body: { error: "status_unavailable" } }, s), X.setPlusAnswer(null, s)]; })(), ["unavailable", "unavailable"],
+          "7c6 the server's own 'the plan could not be read' means Plus is on there: no figure, on a new device too");
+        t.eq((() => { const s = fresh(); X.setPlusAnswer(LOCKED, s); const a = X.setPlusAnswer({ status: 404, body: { error: "not_found" } }, s); return [a, X.setPlusAnswer(null, s), X.setPlusAnswer({ status: 502, body: null }, s)]; })(), ["today", "today", "today"],
+          "7c7 Plus switched off again (404): the device is back to 'today', through failed checks too");
+        const broken = { getItem() { throw new Error("private window"); }, setItem() { throw new Error("private window"); }, removeItem() { throw new Error("private window"); } };
+        t.eq((() => { X._resetForTests(); const a = X.setPlusAnswer(null, broken); const b = X.setPlusAnswer(LOCKED, broken); return [a, b, X.setPlusAnswer(null, broken), X.setPlusAnswer({ status: 502, body: null }, broken)]; })(), ["today", "locked", "unavailable", "unavailable"],
+          "7c8 a device that can save nothing: the same, remembered for as long as the page is open");
+        t.eq([undefined, null, { status: 404 }, { status: 400, body: { error: "unknown_action" } }, LOCKED, PLUS, { status: 200, body: {} }, { status: 503, body: { error: "status_unavailable" } }, { status: 502, body: null }].map((r) => X.plusAskAgain(r)),
+          [false, true, false, false, false, false, false, true, true], "7c9 a check that did not get through is asked again; an answer is not");
+        const appSrc = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+        const askAt = appSrc.indexOf("const res = await askPlusStatus({ apiBase: API_BASE, jwt });");
+        const effect = appSrc.slice(askAt, appSrc.indexOf("// BUYING FLOURISH PLUS", askAt));
+        t.ok(/if\(plusAskAgain\(res\)\)\{ const wait = \[5000, 20000, 60000\]\[attempt\]; if\(wait\) timer = setTimeout\(\(\)=>ask\(attempt \+ 1\), wait\); \}/.test(effect), "7c10 the app asks again after 5, 20 and 60 seconds when the check did not get through");
+        X._resetForTests();
+      }
       const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       const today = app.slice(app.indexOf("{/* ── NET WORTH SPARKLINE"), app.indexOf("{/* ── INVESTMENT PORTFOLIO"));
       t.ok(/\{!nwShow \? <NetWorthLocked mode=\{nwState\.mode\}/.test(today), "7d Today's net worth card: the locked state first, whenever it may not show a figure");
