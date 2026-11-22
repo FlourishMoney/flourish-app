@@ -104,6 +104,11 @@ export function householdNetWorth(data = {}) {
         id: h.id ?? null, name: String(h.name || ""), ticker: h.ticker || null, quantity: given(h.quantity),
         cents: toCents(given(h.value)), currency: h.currencyKnown === false ? null : currencyOf(h.currency),   // a currency the bank did not state is not shown as CAD (review 2026-11-22, P3-05)
       }));
+      // When this account's holdings are from, if they could not be refreshed (round 3, NEW-4: lib/plusHoldings.js
+      // marks them `_stale` with `_at`): the oldest of them, so nothing shown is older than the date said. null when
+      // the bank answered, or no time is known (never a made-up date).
+      const times = holdings.filter((h) => h && h.account_id === a.id && h._stale === true && Number.isFinite(h._at) && h._at > 0).map((h) => h._at);
+      part.holdingsAsOf = times.length ? new Date(Math.min(...times)).toISOString() : null;
     }
     parts.push(part);
   }

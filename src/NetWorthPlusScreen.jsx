@@ -9,7 +9,7 @@
 import React, { useState } from "react";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";
 import { newEntryId } from "./lib/netWorthAccess.js";
-import { netWorthWords as W } from "./lib/netWorthWords.js";
+import { netWorthWords as W, holdingsAsOfLine } from "./lib/netWorthWords.js";
 
 const font = "'Plus Jakarta Sans',sans-serif";
 // A figure in its own currency, with the currency named: never a bare "$" that could be either.
@@ -22,6 +22,8 @@ export function moneyIn(cents, currency) {
 
 function Part({ p, C, onShare, canShare, onDelete }) {
   const reg = p.registration === "registered" ? W("networth-plus-registered") : p.registration === "non_registered" ? W("networth-plus-non-registered") : null;
+  // When this bank's holdings could not be refreshed: the date they are from, once its words are approved ("" until then).
+  const asOfLine = holdingsAsOfLine(p.holdingsAsOf);
   return (
     <div data-nw-part={p.id || ""} style={{ padding: "10px 0", borderTop: `1px solid ${C.border || "rgba(255,255,255,0.08)"}`, minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
@@ -38,6 +40,7 @@ function Part({ p, C, onShare, canShare, onDelete }) {
               <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{h.ticker || h.name}</span><span style={{ whiteSpace: "nowrap" }}>{moneyIn(h.cents, h.currency)}</span>
             </div>
           ))}
+          {asOfLine && <div data-nw-holdings-as-of="" style={{ color: C.muted, fontSize: 13, fontFamily: font, marginTop: 2, overflowWrap: "anywhere" }}>{asOfLine}</div>}
         </div>
       )}
       {canShare && (

@@ -15,6 +15,19 @@
 // can still see which numbers it is about.
 // -----------------------------------------------------------------------------
 
+/**
+ * "THESE HOLDINGS ARE FROM {date}" (round 3 of the Plus review, NEW-4): shown next to one bank's holdings when they
+ * could not be refreshed. ITS WORDS ARE NOT APPROVED YET, so the id is not in NET_WORTH_WORDS below and this answers
+ * "": nothing is shown. When the approved line is added under this id (carrying {date}), it shows, and only then.
+ */
+export const HOLDINGS_AS_OF_ID = "networth-plus-holdings-as-of";
+export function holdingsAsOfLine(iso, words = NET_WORTH_WORDS, locale = "en-CA") {
+  const line = words ? words[HOLDINGS_AS_OF_ID] : null;
+  const at = Date.parse(iso);
+  if (typeof line !== "string" || !line || /^\[WORDS:/.test(line) || !Number.isFinite(at)) return "";
+  return line.replace("{date}", new Date(at).toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" }));
+}
+
 export const NET_WORTH_WORDS = Object.freeze({
   // Any Plus screen, and the bank-login line, when the server could not read the household's plan.
   "plus-status-unavailable": "We couldn't check your plan just now. Nothing has changed. Please try again.",

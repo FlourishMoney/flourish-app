@@ -99,17 +99,20 @@ export function mergeHoldings(prev, items, results, now = Date.now()) {
     const kept = before.filter((h) => h && itemId && h._item === itemId);
     const bank = { item: itemId, mine: !(it && it.linked_by), got: "none", stored: false };
     banks.push(bank);
-    if (!v) { out.push(...kept); return; }                      // the call failed, or made no sense
+    // A bank's holdings that could NOT be refreshed in a round that tried are marked `_stale` (round 3, NEW-4), so the
+    // screen can say when they are from (`_at`). A live answer brings new objects, so the mark goes with the old ones.
+    const old = () => kept.map((h) => ({ ...h, _stale: true }));
+    if (!v) { out.push(...old()); return; }                     // the call failed, or made no sense
     if (v.plus_mode !== true) { if (v.unavailable !== true) { plain.push(...v.holdings); plainAnswered.push(itemId); } out.push(...kept); return; }
     plusMode = true;
     if (v.locked) { locked = true; out.push(...kept); return; }
-    if (v.unavailable) { out.push(...kept); return; }
+    if (v.unavailable) { out.push(...old()); return; }
     if (v.stale === true) {
       const asOf = Date.parse(v.as_of);
       const heldAt = kept.reduce((m, h) => (Number.isFinite(h._at) && h._at > m ? h._at : m), -Infinity);
-      if (kept.length && !(Number.isFinite(asOf) && asOf > heldAt)) { out.push(...kept); return; }   // this device's is as new, or newer
+      if (kept.length && !(Number.isFinite(asOf) && asOf > heldAt)) { out.push(...old()); return; }  // this device's is as new, or newer
       stale = true; bank.got = "stale";
-      out.push(...v.holdings.map((h) => ({ ...h, _item: itemId, _at: Number.isFinite(asOf) ? asOf : 0 })));
+      out.push(...v.holdings.map((h) => ({ ...h, _item: itemId, _at: Number.isFinite(asOf) ? asOf : 0, _stale: true })));
       return;
     }
     delivered = true; bank.got = "live"; bank.stored = v.stored === true;
