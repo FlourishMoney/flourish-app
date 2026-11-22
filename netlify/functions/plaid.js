@@ -84,6 +84,19 @@ async function removeRefusedItem(access_token, item_id, where) {
   return false;
 }
 
+// …and then its row goes. Round 2 (H3, "the clean-up can fail"): the delete used to be tried once, and a row that did not
+// go was left standing for a bank that no longer exists at Plaid. Now up to three tries, like the removal above; a row
+// that still will not go is named in one error line, as before.
+async function removeRefusedRow(admin, user_id, item_id, where) {
+  let last = null;
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try { await household.disconnectItem(admin, user_id, item_id); return true; }
+    catch (e) { last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+  }
+  console.error(`[${where}: row delete failed]`, item_id, (last && last.message) || "error");
+  return false;
+}
+
 exports.handler = async (event) => {
   logAppleConfigOnce("plaid");   // names only: whether this instance can sign for Apple (account deletion revokes with it)
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
@@ -277,11 +290,12 @@ exports.handler = async (event) => {
       // row) and refused as it would have been. Only the bank this request just added is ever undone; a household that
       // was already over its plan keeps every bank. A second look that cannot be read undoes nothing, and a bank Plaid
       // will not remove stays connected with its row rather than live at Plaid with none.
+      // Round 2 (N3): which bank is the extra is settled by one fixed order (_lib/bankLimits.js), so of two new banks
+      // at the same moment only the real extra is undone, not both.
       if (bankLimit && addsABank) {
-        const after = await overAfterAdding(admin, user_id);
+        const after = await overAfterAdding(admin, user_id, { itemId: item_id });
         if (after.over && await removeRefusedItem(access_token, item_id, "exchange_token limit recheck")) {
-          try { await household.disconnectItem(admin, user_id, item_id); }
-          catch (delErr) { console.error("[exchange_token limit recheck: row delete failed]", item_id, delErr.message); }
+          await removeRefusedRow(admin, user_id, item_id, "exchange_token limit recheck");
           return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody({ ...after.lim, used: after.lim.limit })) };
         }
       }
@@ -806,10 +820,9 @@ exports.handler = async (event) => {
           if (newBank) {
             // The same second look as exchange_token (H3): a NEW bank written past the limit is taken back out. Its row
             // only: this bank was connected on an older copy of the app, and is not removed at Plaid here.
-            const after = await overAfterAdding(admin, user_id);
+            const after = await overAfterAdding(admin, user_id, { itemId: item_id });
             if (after.over) {
-              try { await household.disconnectItem(admin, user_id, item_id); failures.push(limitBody({ ...after.lim, used: after.lim.limit })); continue; }
-              catch (delErr) { console.error("[migrate_items limit recheck: row delete failed]", item_id, delErr.message); }
+              if (await removeRefusedRow(admin, user_id, item_id, "migrate_items limit recheck")) { failures.push(limitBody({ ...after.lim, used: after.lim.limit })); continue; }
             }
             limitUsed++;
             mineIds.add(item_id);

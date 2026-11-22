@@ -24,12 +24,16 @@ const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/aut
 const { corsHeadersFor } = require("./_lib/cors");
 const { plusOnForAnyone, plusEnabledFor, getPlusEntitlement, plusClientOk, updateRequired } = require("./_lib/plusAddon");
 const { peerIdsOf } = require("./_lib/household");
+const { entriesInOrder } = require("./_lib/settleOrder");
 
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
 const KINDS = ["home", "car", "pension"];
 const CURRENCIES = ["CAD", "USD"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_ENTRIES = 50;
+// The waits between looks when a new entry lands past the cap but is not itself the extra one (save_entry, N4), and
+// the one order every save reads the entries in (_lib/settleOrder.js: when entered, then id).
+const RECHECK_WAITS_MS = [150, 300, 600];
 const ENTRY_COLS = "id, kind, label, value_cents, currency, shared, entered_at";
 
 // An entry as the household typed it, or null. Dollars to whole cents; never negative, never a word.
@@ -128,11 +132,21 @@ async function handle(event, deps = {}) {
       const id = data && data[0] ? data[0].id : null;
       // TWO SAVES AT THE SAME MOMENT (review 2026-11-22, M3): the count above was read before the write, so it is
       // read again. Past the cap, the entry just written is taken back out and refused, as it would have been.
-      const { data: now2, error: c2Err } = await admin.from("net_worth_entries").select("id").eq("user_id", user_id);
-      if (!c2Err && id && (now2 || []).length > MAX_ENTRIES) {
+      // WHICH ONE IS THE EXTRA (round 2, N4): two saves at 49 each saw 51 and both took themselves out. Now each reads
+      // the person's entries in one fixed order (when entered, then id). An entry beyond the cap in that order goes at
+      // once. One inside the cap waits a moment for the extra to go and looks again; if there are still too many
+      // after the last wait (the other save never saw this one and is staying), it goes too. An entry stays only on
+      // a look that found the cap respected, so there are never more than MAX_ENTRIES, whatever the timing.
+      for (let look = 0; id; look++) {
+        const { data: now2, error: c2Err } = await admin.from("net_worth_entries").select("id, entered_at").eq("user_id", user_id);
+        if (c2Err || (now2 || []).length <= MAX_ENTRIES) break;                 // read failed: nothing undone on a guess
+        const place = now2.slice().sort(entriesInOrder).findIndex((e) => e.id === id);
+        if (place < 0) break;
+        if (place < MAX_ENTRIES && look < RECHECK_WAITS_MS.length) { await new Promise((r) => setTimeout(r, RECHECK_WAITS_MS[look])); continue; }
         const { error: dErr } = await admin.from("net_worth_entries").delete().eq("id", id).eq("user_id", user_id);
         if (!dErr) return json(409, CORS, { error: "too_many_entries" });
         console.error("[networth] entry over the cap not removed:", dErr.code || "error");
+        break;
       }
       return json(200, CORS, { ok: true, id });
     }
@@ -163,4 +177,4 @@ async function handle(event, deps = {}) {
 }
 
 exports.handler = (event) => handle(event, {});
-exports._test = { handle, cleanEntry };
+exports._test = { handle, cleanEntry, RECHECK_WAITS_MS };
