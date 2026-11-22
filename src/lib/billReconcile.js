@@ -13,13 +13,24 @@
 //                    and once matched, learn the observed amount for future months.
 //
 // MATCH (manual bill ↔ observed transaction), ALL must hold:
+//   • the transaction is a payment: money out, not pending, not one side of a paired transfer, not a
+//     refund or reversal (the exclusions of financialCalculations.paysABill)
 //   • transaction date within ±3 days of the bill's clamped day-of-month for that month
 //   • (variable:false) transaction amount within ±5% of the manual amount
-//   • (variable:true)  amount ignored — date window only
+//   • (variable:true)  amount ignored — but the payment's name must be the bill's (billNameMatches,
+//     the name rule of paysABill), because with no amount to go by, the date alone matched ANY
+//     transaction: a $4.75 coffee on the due day became the hydro bill's stored amount, and so did a
+//     deposit (review 2026-11-22, P4-01).
+//   • ONE TO ONE: a transaction confirms at most one bill, and a bill takes at most one transaction.
+//     One $80 payment used to confirm, and re-price, every bill due within three days of it.
+//     Pairs are settled best first: a payment carrying the bill's name, then the nearest date, then the
+//     nearest amount.
 // On match: use the OBSERVED amount in the forecast (never the estimate), emit ONE entry
 // (never the manual estimate AND the observed txn), and for variable bills update the
 // stored manual amount so future forecasts improve.
 // -----------------------------------------------------------------------------
+
+import { billNameMatches, NOT_A_PAYMENT_RX } from "./financialCalculations.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MATCH_WINDOW_DAYS = 3;   // ±3 days
@@ -53,31 +64,50 @@ export function reconcileBills(manualBills = [], observedTransactions = [], mont
   const month = monthDate.getMonth();
   const dim = daysInMonth(year, month);
 
+  // Payments only: money out, settled, not a paired transfer, not a refund or reversal.
   const txns = (observedTransactions || [])
+    .filter(t => t && Number(t.amount) > 0 && !t.pending && !t.transferPairId && !NOT_A_PAYMENT_RX.test(String(t.name || "")))
     .map(t => ({ tx: t, date: toNoonDate(t.date), amt: absNum(t.amount) }))
     .filter(x => x.date);
 
   const updatedManualBills = (manualBills || []).map(b => ({ ...b }));
   const forecastBills = [];
 
-  (manualBills || []).forEach((mb, idx) => {
-    // Clamp the entered day-of-month into the real month — e.g. day 31 in a 30-day month → 30.
+  // Clamp the entered day-of-month into the real month — e.g. day 31 in a 30-day month → 30.
+  const dueOf = (mb) => {
     const dueDay = Math.min(Math.max(1, Math.floor(Number(mb.dayOfMonth) || 1)), dim);
-    const dueDate = new Date(year, month, dueDay, 12);
-    const estimate = absNum(mb.amount);
+    return { dueDay, dueDate: new Date(year, month, dueDay, 12) };
+  };
 
-    // Nearest-by-date observed transaction that satisfies the window (+ amount unless variable).
-    let match = null;
-    let bestDayDist = Infinity;
-    for (const x of txns) {
+  // Every (bill, payment) pair that satisfies the rule, then settled one to one, best first.
+  const pairs = [];
+  (manualBills || []).forEach((mb, idx) => {
+    const { dueDate } = dueOf(mb);
+    const estimate = absNum(mb.amount);
+    txns.forEach((x, ti) => {
       const dayDist = Math.abs(Math.round((x.date.getTime() - dueDate.getTime()) / DAY_MS));
-      if (dayDist > MATCH_WINDOW_DAYS) continue;
-      if (!mb.variable) {
-        if (estimate <= 0) continue;
-        if (Math.abs(x.amt - estimate) > AMOUNT_TOLERANCE * estimate) continue; // outside ±5%
+      if (dayDist > MATCH_WINDOW_DAYS) return;
+      const named = billNameMatches(x.tx.name, mb.name);
+      if (mb.variable) {
+        if (!named) return; // no amount to go by, so the name has to be the bill's
+      } else {
+        if (estimate <= 0) return;
+        if (Math.abs(x.amt - estimate) > AMOUNT_TOLERANCE * estimate) return; // outside ±5%
       }
-      if (dayDist < bestDayDist) { bestDayDist = dayDist; match = x; }
-    }
+      pairs.push({ idx, ti, named, dayDist, amtGap: Math.abs(x.amt - estimate) });
+    });
+  });
+  pairs.sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || a.dayDist - b.dayDist || a.amtGap - b.amtGap || a.idx - b.idx || a.ti - b.ti);
+  const matchOf = new Map(), used = new Set();
+  for (const p of pairs) {
+    if (matchOf.has(p.idx) || used.has(p.ti)) continue;
+    matchOf.set(p.idx, txns[p.ti]); used.add(p.ti);
+  }
+
+  (manualBills || []).forEach((mb, idx) => {
+    const { dueDay, dueDate } = dueOf(mb);
+    const estimate = absNum(mb.amount);
+    const match = matchOf.get(idx) || null;
 
     const base = {
       id: mb.id, name: mb.name,

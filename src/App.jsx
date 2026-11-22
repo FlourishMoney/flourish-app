@@ -19,7 +19,8 @@ import { retainAccounts, retainLiabilities, promoteAccounts, dropBankData, fullS
 import { afterTokenMigration, LEGACY_TOKEN_TRIES_KEY } from "./lib/legacyTokenMigration.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept, noteRevokeResult, revokePending, clearRevokePending } from "./lib/consentHeal.js";
-import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
+import { formatWrappedNetWorth, wrappedSpend } from "./lib/moneyWrapped.js";
+import { orderDebtsForMethod } from "./lib/financialCalculations.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -2762,7 +2763,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || [];
-  const neg = t.filter(x => x.amount > 0);  // expenses are positive in Plaid
+  const neg = wrappedSpend(t, { debts: (data && data.debts) || [] });  // money spent: not a card payment or a transfer (lib/moneyWrapped.js)
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
   // Real Plaid/Flourish category names
@@ -3144,7 +3145,10 @@ const WRAP_SCRIM = "linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6))";
 const WRAP_SUB = "rgba(255,255,255,0.86)";
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
-  const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
+  // What counts as spent is one rule (lib/moneyWrapped.js wrappedSpend): money out, not a transfer or income,
+  // not a credit card payment. It used to be every amount above zero.
+  const _wrapOv = getCatOvById();
+  const txns = wrappedSpend(data.transactions, { categoryOf: t => effCat(t, _wrapOv), debts: data.debts || [] });
   const _toMoW = toMonthly; // Bug 1: canonical converter
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0)) * 12; // Bug 5: no fake income fallback
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
@@ -7133,7 +7137,7 @@ function BillManager({data, setAppData, onClose}){
   const FREQS = ["weekly","biweekly","monthly","quarterly","annually"];
 
   const saveBill = name => {
-    if(!amount||!name) return;
+    if(!(parseFloat(amount)>0)||!name) return; // an amount above zero: a negative bill was ADDED to the forecast as money in
     const newBill = billType==="one_off"
       ? {name, amount, isoDate:oneOffDate, date:String(parseInt((oneOffDate||"").slice(8,10))||1), type:"one_off", manuallyAdded:true}
       : {name, amount, date:dueDate, type:billType, freq, manuallyAdded:true};
@@ -7676,7 +7680,9 @@ function ManualBillForm({data, setAppData, onClose}){
     const now = new Date();
     const clampFor = (y,m) => Math.min(dom, new Date(y, m+1, 0).getDate());
     let d = new Date(now.getFullYear(), now.getMonth(), clampFor(now.getFullYear(), now.getMonth()), 12);
-    if (d < now) d = new Date(now.getFullYear(), now.getMonth()+1, clampFor(now.getFullYear(), now.getMonth()+1), 12);
+    // By the DAY, not the hour: d sits at noon, so `d < now` sent a bill due today, entered after noon, a month ahead.
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (d < today0) d = new Date(now.getFullYear(), now.getMonth()+1, clampFor(now.getFullYear(), now.getMonth()+1), 12);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   };
 
@@ -9942,7 +9948,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {[...debts].sort((a,b)=>b.rate-a.rate).map((d,i)=>{
+        {orderDebtsForMethod(debts, method).map((d,i)=>{ // the order the chosen method pays them in
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span><span style={{color:colors[i%4],fontWeight:700}}>${d.balance.toLocaleString()} · {d.rate}%</span></div>
@@ -10798,6 +10804,9 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
+// A new chore's reward: what was typed, $0 included; the 50 cent default only when nothing usable was
+// typed. `parseFloat(x)||0.50` turned a chore set to $0 into 50 cents.
+const choreReward = (v) => { const r = parseFloat(v); return Number.isFinite(r) && r >= 0 ? r : 0.50; };
 function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null}){
   const [tab,setTab]=useState("meeting");
   const [started,setStarted]=useState(false);
@@ -10906,7 +10915,7 @@ function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null})
   };
   const addChoreToKid=(kidId)=>{
     if(!newChoreTask.trim())return;
-    const chore={id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,
+    const chore={id:Date.now(),task:newChoreTask.trim(),reward:choreReward(newChoreReward),
       done:false,freq:newChoreFreq,approved:false};
     const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...(k.chores||[]),chore]}:k);
     saveKids(updated);
