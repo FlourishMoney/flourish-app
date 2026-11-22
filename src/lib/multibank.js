@@ -185,21 +185,35 @@ export function retainLiabilities(prevLiab, fresh, acctItemMap, availableItemIds
   return { credit: pick("credit"), mortgage: pick("mortgage"), student: pick("student") };
 }
 
-// Per-ITEM investment holdings, the same rule (review 2026-11-22, P10-06 with P3-09). The banks that answered used to
-// replace the whole list, so one bank's failed read wiped its holdings whenever another bank answered.
+// Per-ITEM investment holdings, the same rule (review 2026-11-22, P10-06 with P3-09; round 2, N2). The banks that
+// answered used to replace the whole list, so one bank's failed read wiped its holdings whenever another answered.
 //   prev             the holdings held now
 //   fresh            this round's holdings, from the banks that ANSWERED only
-//   acctItemMap      Map(account_id -> owning item_id) built from the stamped accounts
+//   acctItemMap      Map(account_id -> owning item_id, or null for an account no bank linked) from the accounts
 //   availableItemIds Set of item_ids that answered (not failed, and not marked `unavailable` by the server)
-// A holding is kept when its bank did not answer this round (unknown bank: kept, as above). One whose bank answered
-// without it is gone: sold. Pure.
-export function retainHoldings(prev, fresh, acctItemMap, availableItemIds) {
+//   someBankFailed   false only when every bank of the round answered
+// A holding's BANK decides, whatever its id: kept when its bank did not answer, gone when its bank answered (what
+// that bank holds now is in `fresh`, which may be nothing: sold). Only a holding with no known bank is matched by
+// identity, so that it is not listed twice when it comes again: its id, or account + security/ticker/name when it
+// has none (an id ending in "_undefined" is none). One with no identity at all is never matched to another.
+// Of those with no known bank and not come again: on an account no bank linked, kept (not a bank's to remove); on an
+// account that is gone, kept only while some bank failed (it may be that bank's). Pure.
+const holdingKey = (h) => {
+  if (!h) return null;
+  if (typeof h.id === "string" && h.id && !/_(undefined|null)$/.test(h.id)) return `id:${h.id}`;
+  const what = h.security_id ?? h.ticker ?? h.name;
+  return h.account_id != null && what != null && what !== "" ? `at:${h.account_id}|${what}` : null;
+};
+export function retainHoldings(prev, fresh, acctItemMap, availableItemIds, someBankFailed = true) {
   const came = Array.isArray(fresh) ? fresh : [];
-  const cameIds = new Set(came.map(h => h && h.id));
+  const cameKeys = new Set(came.map(holdingKey).filter(Boolean));
   const kept = (Array.isArray(prev) ? prev : []).filter(h => {
-    if (!h || cameIds.has(h.id)) return false;
+    if (!h) return false;
     const item = acctItemMap.get(h.account_id);
-    return item == null ? true : !availableItemIds.has(item);
+    if (item != null) return !availableItemIds.has(item);
+    const key = holdingKey(h);
+    if (key && cameKeys.has(key)) return false;
+    return acctItemMap.has(h.account_id) ? true : !!someBankFailed;
   });
   return [...kept, ...came];
 }

@@ -1459,11 +1459,6 @@ with the reason. Line numbers are at `main` eec2c36.
 
 **Waiting for approved words**
 
-- **A debt that would take over 100 years to pay off** (`financialCalculations.js` simulateDebtPayoff, review P4-04).
-  It is no longer reported as paid off, but What-If shows the existing line "the payment does not cover the interest",
-  whose reason is not exact here. Needs a line, id `debt-payoff-over-100-years`.
-- **Turning the AI Coach on when the server cannot record the consent** (`src/App.jsx` Settings, AIConsentModal
-  onEnable, review P9-07). The sheet now stays open and AI stays off, with no message. Needs one line.
 - **An income added in Settings is not asked for its next payday** (`incomeSchedule.js:204-210`, Grok low). Onboarding
   asks; Settings does not, and no screen shows the "estimated" flag. Needs a new question.
 - **The gift thank-you page shows on `?bought=1` alone** (`public/gift/gift.js:19-22`, review P1-06). It shows no code
@@ -1501,6 +1496,38 @@ with the reason. Line numbers are at `main` eec2c36.
   other's bank transactions (review P1-03). Leaving is now covered by the leaver's phone.
 - **The Canadian student-loan interest tip** shows only at the student life stage, as the US one did (review P7-05
   fixed the US tip, which is what it named).
+
+**Round 2 of the same review (on 4032405): called "partly", and why each is left**
+
+Fixed in round 2: the webhook takeover race (N1), holdings identity and the all-empty round (N2, which was the open
+half of P3-09), the AI Coach switch waiting on both ways of turning it on (P9-07), the purchase guards reading the
+dates (P2-02), and a second try at taking a Plaid webhook's mark back (P3-01). The three lines that were waiting for
+words went in as approved on 2026-11-22 (`src/lib/reviewWords.js`). Left:
+
+- **P1-03, a leave goes ahead when the clean-up save before it failed.** On purpose: nothing may stop a person leaving
+  a household. The member who stays still removes what their phone holds.
+- **P2-01, instant sign-up confirms an address nobody proved.** The decision of 2026-11-11, with its guards.
+- **P2-07, a gift whose row cannot be re-read is still emailed.** On purpose: a paid gift that is never delivered is
+  the worse failure; the window between that read and the send is milliseconds.
+- **P2-08, not every way of writing an address or phone number is cut.** Best effort by nature; each new pattern risks
+  cutting ordinary sentences.
+- **P3-01, a mark that cannot be taken back in two tries waits for the 15-minute cleanup.** Plaid keeps retrying for
+  about a day, so a later retry lands.
+- **P3-04, the unpaid, incomplete and trialing paths have not met real Stripe.** They are tested against stand-ins;
+  a pass in Stripe's test mode needs test keys and is worth doing before a bank-debit method is ever switched on.
+- **P3-10, the reminder sweep keeps no cursor between runs.** Due trials are read soonest first, so the next run takes
+  up where the last stopped.
+- **P4-01, a fixed bill with no name match can still pair with another payment of the same amount.** Requiring the
+  name would unmatch real payments whose bank text differs from what was typed; the effect is at most 5% of one bill.
+- **P4-02, a list whose records cannot be told apart is merged as a whole.** On purpose: never guess which is which.
+- **P6-01 group, each screen keeps its own list of what is not spending.** All now use the household's corrections;
+  making the lists one changes totals on three screens and is a product pass.
+- **P7-01, an old device token that fails five times is cleared.** A bank token kept for ever in the browser's
+  storage is the worse outcome; these are pre-migration tokens only.
+- **P8-02, the method changes the order, not the payoff math.** The simulator pays one debt at a time; a true
+  two-method plan is a feature with its own words.
+- **P10-08, the retry of a person's own keys stops after three tries.** The next change, or the next sign-in, sends
+  them again.
 
 **Seen in passing, outside the review's findings**
 

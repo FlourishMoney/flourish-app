@@ -69,6 +69,7 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, cancelAllScheduled } from "./lib/notifications.js";
 import { latestOnly } from "./lib/latestOnly.js";
+import { bankDisconnectTitle, BANK_DISCONNECT_BODY, DEBT_OVER_100_YEARS, AI_TURN_ON_FAILED } from "./lib/reviewWords.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
@@ -2217,6 +2218,9 @@ const _payoffMonth = (iso) => { const [y, m] = String(iso || "").split("-").map(
 function debtResultSentence(r, extraPayment, currentPayment) {
   const x = formatMoney(extraPayment), b = r.baseline, a = r.boosted;
   const fin = (v) => Number.isFinite(v);
+  // The payment being looked at covers the interest but would still take over 100 years: no date, no interest total,
+  // and the line approved for it (lib/reviewWords.js). "Does not cover the interest" is not true of it.
+  if (!fin(a.monthsToPayoff) && a.beyondHorizon) return DEBT_OVER_100_YEARS;
   if (!fin(b.monthsToPayoff) && !fin(a.monthsToPayoff))
     return `At ${formatMoney(currentPayment)} a month, or ${x} more, the payment does not cover the interest, so the balance is not paid off.`;
   if (!fin(b.monthsToPayoff))
@@ -12775,6 +12779,8 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // to Anthropic, so anyone without current consent (declined at the disclosure, or revoked here)
   // must re-see the terms before the grant happens.
   const [pendingAIConsent,setPendingAIConsent]=useState(false);
+  // The server could not record the consent, so the coach stayed off: the approved line is shown (lib/reviewWords.js).
+  const [aiTurnOnFailed,setAiTurnOnFailed]=useState(false);
   const hasAIConsent=()=>{ try { return localStorage.getItem("flourish_ai_third_party_consent")==="1"; } catch { return false; } };
   // granted: the server has already recorded the consent for this turn-on (the Enable AI Coach sheet below waits for
   // it, review of 2026-11-22 P9-07), so it is not sent a second time.
@@ -12897,15 +12903,24 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
-        <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
+        <Toggle label="AI Coach" on={aiCoachEnabled} onChange={async (v)=>{
           // Turning ON without current consent would grant third-party sharing silently — re-disclose
           // first and let the modal apply it. Users who already consented (and just switched AI off
           // for quiet) keep their consent, so they are not re-prompted. Toggle is controlled, so
           // returning early leaves it visually off.
-          if (v && !hasAIConsent()) { setPendingAIConsent(true); return; }
-          applyAICoachEnabled(v);
+          setAiTurnOnFailed(false);
+          if (!v) { applyAICoachEnabled(false); return; }
+          if (!hasAIConsent()) { setPendingAIConsent(true); return; }
+          // Already consented: the consent is sent to the server again, and the switch turns on only once the server
+          // has it (round 2 of the 2026-11-22 review, P9-07). It used to turn on first and send without waiting, so it
+          // could read "on" with nothing on file. When it cannot be recorded the switch stays off and says so.
+          let ok = true;
+          try { ok = await onAcceptAIConsent?.(); } catch { ok = false; }
+          if (ok === false) { setAiTurnOnFailed(true); return; }
+          applyAICoachEnabled(true, true);
         }} />
       </div>
+      {aiTurnOnFailed&&!pendingAIConsent&&<div role="alert" data-ai-turn-on-failed="" style={{color:C.orange,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:8}}>{AI_TURN_ON_FAILED}</div>}
       {/* COPY-CHANGES §12: static trust lines */}
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:10}}>Flourish is read-only. It cannot move, send or hold money.</div>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:4}}>Flourish is not a licensed financial adviser. It explains and coaches; you decide.</div>
@@ -12921,10 +12936,12 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
           // recorded it; if that fails the sheet stays open, AI stays off, and Enable is a real retry.
           let ok = true;
           try { ok = await onAcceptAIConsent?.(); } catch { ok = false; }
+          setAiTurnOnFailed(ok === false);
           if (ok === false) return;
           applyAICoachEnabled(true, true); setPendingAIConsent(false);
         }}
-        onCancel={()=>setPendingAIConsent(false)}/>}
+        onCancel={()=>{ setAiTurnOnFailed(false); setPendingAIConsent(false); }}
+        failed={aiTurnOnFailed}/>}
     </div>
     {/* ── Notifications (Stage 1: permission + per-type toggles; NOTHING is scheduled yet) ── */}
     <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
@@ -13043,7 +13060,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
             </div>
             {b.linked_by ? <span data-bank-linked-by="partner" style={{color:C.muted,fontSize:13,textAlign:"right",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{HOUSEHOLD_WORDS.bankLinkedByPartner}</span> :
             <button onClick={async () => {
-              if (!(await confirmModal({title:`Disconnect ${b.institution_name || "this bank"}?`,confirmLabel:"Disconnect",destructive:true}))) return;
+              if (!(await confirmModal({title:bankDisconnectTitle(b.institution_name || "this bank"),message:BANK_DISCONNECT_BODY,confirmLabel:"Disconnect",destructive:true}))) return;
               const jwt = await getJwt();
               if (!jwt) { alertModal({message:"Please sign in again."}); return; }
               let removed = false;
@@ -15241,7 +15258,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
 // Apple 5.1.2(i): re-disclosure for the Settings "AI Coach enabled" toggle. Turning it on grants
 // third-party sharing consent, so a user who declined at the first-run disclosure — or revoked it
 // here — sees the terms again before any grant. Cancel leaves the toggle off and consent ungranted.
-function AIConsentModal({ onEnable, onCancel }){
+function AIConsentModal({ onEnable, onCancel, failed = false }){
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,...overlaySafe(24, { bottom: true })}}
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
@@ -15255,6 +15272,7 @@ function AIConsentModal({ onEnable, onCancel }){
             This enables AI coaching powered by <strong style={{color:C.cream}}>Claude (Anthropic)</strong>. Your conversations may be processed by Anthropic to generate responses. <strong style={{color:C.cream}}>This is not financial advice.</strong>
           </div>
         </div>
+        {failed&&<div role="alert" data-ai-turn-on-failed="" style={{color:C.orange,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12,textAlign:"center"}}>{AI_TURN_ON_FAILED}</div>}
         <button onClick={onEnable} style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Enable AI Coach</button>
         <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
@@ -19385,8 +19403,13 @@ export default function FlourishApp(){
               allHoldings.push(...r.value.holdings);
             }
           });
-          if (allHoldings.length > 0) {
-            setAppData(prev => ({ ...prev, investments: retainHoldings(prev.investments, allHoldings, new Map((prev.accounts || []).map(a => [a.id, a._item || null])), answered) }));
+          // Whenever a bank ANSWERED, also when every one answered with nothing (all sold): the old guard waited for
+          // a holding to come, so those stayed for ever (round 2 review, N2). Nothing answered: nothing changes.
+          if (answered.size > 0) {
+            setAppData(prev => {
+              const next = retainHoldings(prev.investments, allHoldings, new Map((prev.accounts || []).map(a => [a.id, a._item || null])), answered, answered.size < items.length);
+              return (!next.length && !(prev.investments || []).length) ? prev : { ...prev, investments: next };
+            });
           }
         } catch(e) { /* silent — institution may not support investments */ }
         } catch(e) { /* silent — cached balances still shown */ }

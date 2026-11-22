@@ -73,13 +73,18 @@ exports.handler = async (event) => {
   // Plaid sends the webhook again, and the mark must not be left behind to turn that retry into "duplicate,
   // skip": the bank's update would be lost. So every failure below takes the mark back first. Best-effort: if
   // even that cannot be written, the cleanup above removes the mark within 15 minutes.
+  // Tried twice (round 2 of the review): one blink of the database should not leave Plaid's next retries skipped
+  // until the cleanup runs.
   const unmark = async () => {
     if (!verification.jti) return;
-    try {
-      const { error: unmarkErr } = await admin.from("webhook_seen").delete().eq("jti", verification.jti);
-      if (unmarkErr) console.error("[webhook] could not take the replay mark back:", unmarkErr.message);
-    } catch (e) {
-      console.error("[webhook] could not take the replay mark back:", e?.message || e);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { error: unmarkErr } = await admin.from("webhook_seen").delete().eq("jti", verification.jti);
+        if (!unmarkErr) return;
+        console.error("[webhook] could not take the replay mark back:", unmarkErr.message);
+      } catch (e) {
+        console.error("[webhook] could not take the replay mark back:", e?.message || e);
+      }
     }
   };
 

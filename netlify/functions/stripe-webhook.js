@@ -290,7 +290,7 @@ exports.handler = async (event) => {
   const otherLiveStripe = async (user_id, subId) => {
     if (!user_id || !subId) return null;
     const { data, error } = await admin
-      .from("subscriptions").select("provider, provider_subscription_id, status, current_period_end, support_flag")
+      .from("subscriptions").select("provider, provider_subscription_id, status, current_period_end, support_flag, plan_key, last_event_at, updated_at")
       .eq("user_id", user_id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data || (data.provider || "stripe") !== "stripe" || !data.provider_subscription_id) return null;

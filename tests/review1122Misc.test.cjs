@@ -103,12 +103,18 @@ const fakeStorage = (init = {}) => {
   // ── P9-07. The AI Coach switch turns on only once the server has the consent ─────────────────────────────────
   {
     const settings = fnText("Settings");
-    const modal = settings.slice(settings.indexOf("{pendingAIConsent&&<AIConsentModal"), settings.indexOf("{pendingAIConsent&&<AIConsentModal") + 500);
+    const modal = settings.slice(settings.indexOf("{pendingAIConsent&&<AIConsentModal"), settings.indexOf("{pendingAIConsent&&<AIConsentModal") + 700);
     t.ok(/onEnable=\{async\s*\(\)\s*=>\s*\{[^}]*await onAcceptAIConsent\?\.\(\)/.test(modal) && /if\s*\(ok === false\) return;/.test(modal),
       "P9-07a Enable AI Coach waits for the server to record the consent, and stays where it is when that fails");
     t.ok(/applyAICoachEnabled\(true, true\); setPendingAIConsent\(false\);/.test(modal), "P9-07b …and only then turns the switch on and closes");
     const apply = settings.slice(settings.indexOf("const applyAICoachEnabled="), settings.indexOf("const applyAICoachEnabled=") + 420);
-    t.ok(/if \(v && !granted\) onAcceptAIConsent\?\.\(\);/.test(apply), "P9-07c someone who already consented and only switched AI off keeps the quick switch (the consent is sent again as before)");
+    // Changed 2026-11-22 (round 2, P9-07 "partly"): this held the quick, un-awaited switch for someone who had already
+    // consented. That path now waits for the server as well, so the switch never reads "on" with no consent on file.
+    const toggle = settings.slice(settings.indexOf('<Toggle label="AI Coach"'), settings.indexOf('<Toggle label="AI Coach"') + 1500);
+    t.ok(/if \(!hasAIConsent\(\)\) \{ setPendingAIConsent\(true\); return; \}/.test(toggle), "P9-07c turning on with no consent on this device still opens the disclosure first");
+    t.ok(/try \{ ok = await onAcceptAIConsent\?\.\(\); \} catch \{ ok = false; \}\s*if \(ok === false\) \{ setAiTurnOnFailed\(true\); return; \}\s*applyAICoachEnabled\(true, true\);/.test(toggle),
+      "P9-07d someone who already consented: the switch turns on only once the server has the consent again, and stays off with the approved line when it does not");
+    t.ok(/if \(!v\) \{ applyAICoachEnabled\(false\); return; \}/.test(toggle), "P9-07e turning it off is immediate, as before");
   }
 
   // ── P10-07 (and Grok's medium). A revoke the server never got is sent again ───────────────────────────────────

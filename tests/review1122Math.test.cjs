@@ -265,13 +265,13 @@ const sliceFrom = (start, end) => { const i = APP.indexOf(start); if (i < 0) ret
     const usual = F.simulateDebtPayoff({ balance: 1000, apr: 12, monthlyPayment: 100 });
     t.eq([usual.monthsToPayoff, usual.totalPaid, usual.totalInterest], [11, 1058.98, 58.98], "P4-04g the usual case is untouched: $1,000 at 12% and $100 a month is 11 months, $58.98 of interest");
     // What-If's sentence. Both the current payment and the boosted one run past 100 years, so no payoff
-    // date and no interest total may be printed. The sentence it falls to is the existing "is not paid
-    // off" one; its reason ("does not cover the interest") is not exact for this case, and exact words
-    // for it need approval before they can be added (no placeholder may sit in App.jsx).
+    // date and no interest total may be printed. Changed 2026-11-22 (round 2): the words for this case were approved
+    // that day, so the sentence is now exactly that line (it used to fall to "does not cover the interest", whose
+    // reason was not exact here).
     if (A.debtResultSentence) {
       const r = F.simulateDebtPayoffBoost({ balance: 20000, apr: 0.99, currentPayment: 20, extraPayment: 1 });
       const said = A.debtResultSentence(r, 1, 20);
-      t.ok(/is not paid off/.test(said) && !/total interest|payoff date/.test(said), `P4-04h What-If says the balance is not paid off, with no payoff date or interest total (it printed a date 100 years out and $4,000 of interest). Said: ${said}`);
+      t.eq(said, "This payment would take over 100 years to pay off the debt. Try a bigger payment to see a payoff date.", "P4-04h What-If says so in the approved words, with no payoff date or interest total (it printed a date 100 years out and $4,000 of interest)");
       t.ok(!/\[WORDS:/.test(said), "P4-04i and shows no placeholder");
       const r2 = F.simulateDebtPayoffBoost({ balance: 20000, apr: 0.99, currentPayment: 20, extraPayment: 200 });
       t.ok(/^At the current \$20 a month the balance is not paid off\. Paying \$200 more a month pays it off by /.test(A.debtResultSentence(r2, 200, 20)), "P4-04j with $200 more a month it does clear, and the sentence says so against a current payment that does not");

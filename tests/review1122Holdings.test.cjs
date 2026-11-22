@@ -33,9 +33,23 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
   const before = [A1, B1]; safe(() => M.retainHoldings(before, [B1new], acct, new Set(["item-B"])));
   t.eq(ids(before), ["a-tfsa_s1:12000", "b-rrsp_s1:8000"], "P10-06g the list handed in is not changed (pure)");
 
+  // ── N2 (round 2 review): identity and the all-empty round ──────────────────────────────────────────────────
+  const noId = ({ id, ...rest }) => rest;
+  t.eq(keep([noId(A1), noId(B1)], [noId(B1new)], acct, new Set(["item-B"]), true), ["undefined:12000", "undefined:8100"], "N2h holdings with no id: bank A's (failed) stays, bank B's is replaced, by their BANK, not by an id that neither has");
+  t.eq(keep([A1, B1], [], acct, new Set(["item-A", "item-B"]), false), [], "N2i every bank answered with nothing: nothing is held");
+  t.eq(keep([A1, B1], [], acct, new Set(["item-B"]), true), ["a-tfsa_s1:12000"], "N2j one answered with nothing, one failed: the failed bank's stays");
+  const manualAcct = new Map([...acct, ["m-1", null]]);
+  const typed = { id: "m-1_x", account_id: "m-1", name: "Typed in by hand", value: 50 };
+  t.eq(keep([typed, B1], [B1new], manualAcct, new Set(["item-A", "item-B"]), false), ["b-rrsp_s1:8100", "m-1_x:50"], "N2k a holding on an account no bank linked is not a bank's to remove");
+  t.eq(keep([{ id: "x_s1", account_id: "gone", name: "Orphan", value: 5 }], [B1new], acct, new Set(["item-A", "item-B"]), false), ["b-rrsp_s1:8100"], "N2l a holding whose account is gone, in a round where every bank answered: it is no failed bank's, so it goes");
+  t.eq(keep([{ id: "acc_undefined", account_id: "gone", name: "One", value: 1 }, { id: "acc_undefined", account_id: "gone", name: "Two", value: 2 }], [{ id: "acc_undefined", account_id: "b-rrsp", name: "Three", value: 3 }], acct, new Set(["item-B"]), true),
+    ["acc_undefined:1", "acc_undefined:2", "acc_undefined:3"], "N2m an id made from a missing security is no identity: different holdings are never matched on it");
+
   const i = app.indexOf("// Phase B3: fetch investment holdings per item"); const block = i < 0 ? "" : app.slice(i, i + 1800);
   t.ok(/retainHoldings\(prev\.investments,/.test(block), "P10-06h the app's holdings sync uses it");
   t.ok(/r\.value\.unavailable !== true/.test(block), "P3-09e …and an answer marked unavailable (the server could not read that bank) counts as a failed read, not as \"holds nothing\"");
   t.ok(!/investments: allHoldings \}/.test(block), "P10-06i the whole list is no longer replaced by the banks that happened to answer");
+  t.ok(/if \(answered\.size > 0\)/.test(block) && !/if \(allHoldings\.length > 0\)/.test(block), "N2n the app applies a round whenever a bank ANSWERED, also when all of them answered with nothing");
+  t.ok(/answered\.size < items\.length/.test(block), "N2o …and tells the rule whether any bank failed");
   t.summary("review1122Holdings");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -71,7 +71,7 @@ function webhookWorld() {
   const db = fakeDb((c) => {
     if (c.table === "webhook_seen") {
       if (c.op === "insert") { if (seen.has(c.payload.jti)) return { data: null, error: { code: "23505", message: "duplicate key" } }; seen.add(c.payload.jti); return { data: null, error: null }; }
-      if (c.op === "delete") { const jti = eqOf(c, "jti"); if (jti) seen.delete(jti); return { data: null, error: null }; }
+      if (c.op === "delete") { if (eqOf(c, "jti") && state.failDelete > 0) { state.failDelete--; return { data: null, error: { message: "delete down" } }; } const jti = eqOf(c, "jti"); if (jti) seen.delete(jti); return { data: null, error: null }; }
     }
     if (c.table === "plaid_items" && c.op === "select") return state.failLookup ? { data: null, error: { message: "lookup down" } } : { data: { user_id: "u-owner" }, error: null };
     if (c.table === "plaid_items" && c.op === "update") {
@@ -314,6 +314,47 @@ function memStore(init = {}) {
     t.eq(down.body.unavailable, true, "P3-09c …and now says unavailable:true, so \"could not fetch\" can be told apart from \"none\"");
     const none = await plaidCall({ action: "get_investments", item_id: "item-1" }, { plaid: { "/investments/holdings/get": { accounts: [], securities: [], holdings: [] } } });
     t.ok(Array.isArray(none.body.holdings) && none.body.holdings.length === 0 && none.body.unavailable === undefined, "P3-09d a bank that truly holds nothing is NOT marked unavailable");
+  }
+
+  // ════ P3-01, round 2 ══ taking the mark back is tried twice ══════════════════════════════════════════════════
+  {
+    const w = webhookWorld();
+    w.state.failUpdate = true; w.state.failDelete = 1;
+    const r = await w.deliver("jti-R2");
+    t.ok(r.status === 500 && !w.seen.has("jti-R2"), "P3-01k the bank update failed AND the first try at taking the mark back failed: the second try takes it back (was: left for the 15-minute cleanup)");
+    w.state.failUpdate = false;
+    const again = await w.deliver("jti-R2");
+    t.ok(again.status === 200 && again.body.duplicate !== true && w.state.item.transactions_pending === true, "P3-01l …so Plaid's retry is applied, not skipped");
+    const w2 = webhookWorld();
+    w2.state.failUpdate = true; w2.state.failDelete = 5;
+    const r2 = await w2.deliver("jti-R3");
+    t.eq(r2.status, 500, "P3-01m when the mark cannot be taken back at all the answer is still 500 (the cleanup removes the mark within 15 minutes, and Plaid keeps retrying for a day)");
+  }
+
+  // ════ N2 (round 2 review, 2026-11-22) ══ the server's REAL holding shape through the app's keep rule ═════════════
+  // The reviewer read the holding as having no id. It has one (account + security), made by plaid.js; these holdings
+  // are that function's own output, not a hand-written copy. The rule must also hold for a saved copy with no id.
+  {
+    const bank = (acct, rows) => ({
+      accounts: [{ account_id: acct, subtype: "tfsa", balances: { iso_currency_code: "CAD" } }],
+      securities: rows.map(([sid, name]) => ({ security_id: sid, name, ticker_symbol: null, type: "etf", close_price: 1, iso_currency_code: "CAD" })),
+      holdings: rows.map(([sid, , value]) => ({ account_id: acct, security_id: sid, quantity: 1, institution_value: value, iso_currency_code: "CAD" })),
+    });
+    const fromServer = async (item, acct, rows) => (await plaidCall({ action: "get_investments", item_id: item }, { plaid: { "/investments/holdings/get": bank(acct, rows) } })).body.holdings;
+    const a = await fromServer("item-A", "acc-A", [["s1", "Fund One", 100], ["s2", "Fund Two", 200]]);
+    const b = await fromServer("item-B", "acc-B", [["s1", "Fund One", 300]]);          // the same security, at another bank
+    const bNew = await fromServer("item-B", "acc-B", [["s1", "Fund One", 310]]);
+    t.eq(a.map((h) => [h.id, h.account_id]), [["acc-A_s1", "acc-A"], ["acc-A_s2", "acc-A"]], "N2a the server's holding carries account_id and an id of its own (account + security)");
+    t.ok(a[0].id !== b[0].id, "N2b the same security at two banks is two holdings, told apart");
+    const map = new Map([["acc-A", "item-A"], ["acc-B", "item-B"]]);
+    const show = (l) => (Array.isArray(l) ? l.map((h) => `${h.account_id}:${h.name}:${h.value}`).sort() : l);
+    const keep = (...args) => { try { return show(M.retainHoldings(...args)); } catch (e) { return "THREW " + e.message; } };
+    t.eq(keep([...a, ...b], bNew, map, new Set(["item-B"]), true), ["acc-A:Fund One:100", "acc-A:Fund Two:200", "acc-B:Fund One:310"], "N2c bank A failed, bank B answered: A's two holdings stay, B's is the new figure");
+    const bare = (l) => l.map(({ id, ...rest }) => rest);
+    t.eq(keep(bare([...a, ...b]), bare(bNew), map, new Set(["item-B"]), true), ["acc-A:Fund One:100", "acc-A:Fund Two:200", "acc-B:Fund One:310"], "N2d the same with NO id on any holding: the failed bank's holdings still stay (was: all dropped, undefined matched undefined)");
+    t.eq(keep([...a, ...b], [], map, new Set(["item-A", "item-B"]), false), [], "N2e every bank answered and holds nothing now: the old holdings go (was: kept for ever)");
+    t.eq(keep([...a, ...b], [], map, new Set(["item-A"]), true), ["acc-B:Fund One:300"], "N2f A answered with nothing and B failed: A's go, B's stay");
+    t.eq(keep(bare([...a, ...b]), bare([...a, ...bNew]), new Map(), new Set(["item-A", "item-B"]), false), ["acc-A:Fund One:100", "acc-A:Fund Two:200", "acc-B:Fund One:310"], "N2g accounts not stamped with their bank, every bank answered: what came, once, nothing twice");
   }
 
   // ════ P3-07 ══ liabilities: unknown is not zero ══════════════════════════════════════════════════════════════

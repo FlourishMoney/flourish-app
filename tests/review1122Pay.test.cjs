@@ -194,6 +194,38 @@ const DAY = 86400000;
     const i = fakeDb({ billing_events: [{ event_id: "rc:done", provider: "revenuecat", type: "RENEWAL", status: "processed", attempts: 1, received_at: iso(NOW - 10 * 60000) }] });
     const r10 = await wh.handle(rcEvent("done"), depsFor(i));
     t.eq([r10.statusCode, JSON.parse(r10.body).replay, synced], [200, true, 0], "P3-02o a store event already processed is acknowledged and not repeated");
+
+    // ── N1 (round 2 review, 2026-11-22): TWO RETRIES OF THE SAME FAILED EVENT AT THE SAME MOMENT ──────────────
+    // The takeover of a row marked failed was an unconditional update, so both retries did the work. It is now the
+    // same compare-and-swap the stuck row has: the one whose write lands does the work, the other is not acknowledged.
+    const { reclaimEvent } = require("../netlify/functions/_lib/eventClaim.js");
+    const failedRow = (id, attempts = 1) => ({ billing_events: [{ event_id: id, provider: "stripe", type: "checkout.session.completed", status: "failed", attempts, received_at: iso(NOW - 5000), error: "x" }] });
+    const two = fakeDb(failedRow("evt_n1"));
+    const both = await Promise.all([reclaimEvent(two, "evt_n1"), reclaimEvent(two, "evt_n1")]);
+    t.eq(both.slice().sort(), ["busy", "run"], "N1a two retries of one failed event at once: one takes it, the other is told it is busy (was: both ran it)");
+    t.eq([two.db.billing_events[0].status, two.db.billing_events[0].attempts], ["received", 2], "N1b …and the row is taken once: attempts went from 1 to 2, not to 3");
+    const three = fakeDb(failedRow("evt_n1c"));
+    const all3 = await Promise.all([1, 2, 3].map(() => reclaimEvent(three, "evt_n1c")));
+    t.eq([all3.filter((x) => x === "run").length, all3.filter((x) => x === "busy").length], [1, 2], "N1c three at once: still exactly one");
+    const lone = fakeDb(failedRow("evt_n1d", 4));
+    t.eq([await reclaimEvent(lone, "evt_n1d"), lone.db.billing_events[0].attempts], ["run", 5], "N1d a failed event retried on its own is done again, as before");
+    const refused = fakeDb(failedRow("evt_n1e"), { failUpdate: (table) => table === "billing_events" });
+    t.eq(await reclaimEvent(refused, "evt_n1e"), "busy", "N1e a takeover whose write was refused is not treated as taken (was: run)");
+    const lost = fakeDb(failedRow("evt_n1f"), { raceLoses: (table, patch) => table === "billing_events" && patch.status === "received" });
+    t.eq(await reclaimEvent(lost, "evt_n1f"), "busy", "N1f a row another delivery changed between the read and the write is not taken");
+    const noCount = fakeDb({ billing_events: [{ event_id: "evt_n1g", provider: "stripe", type: "x", status: "failed", attempts: null, received_at: iso(NOW - 5000) }] });
+    t.eq([await reclaimEvent(noCount, "evt_n1g"), noCount.db.billing_events[0].attempts], ["run", 2], "N1g a failed row with no attempt count is still taken (and by one delivery only)");
+    // The whole webhook, twice at once: one payment is applied once, and Stripe is told to send the other again.
+    const pair = fakeDb(failedRow("evt_n1h"));
+    const [p1, p2] = await Promise.all([deliver(loadHook(pair), checkout("evt_n1h")), deliver(loadHook(pair), checkout("evt_n1h"))]);
+    const writes = pair.calls.filter((c) => c.table === "subscriptions" && (c.op === "upsert" || c.op === "update" || c.op === "insert")).length;
+    t.eq([p1.statusCode, p2.statusCode].sort(), [200, 503], "N1h the Stripe webhook, two retries of a failed event at once: one 200, one 503 (was: both 200)");
+    t.eq([(pair.db.subscriptions || []).length, pair.db.billing_events[0].attempts, pair.db.billing_events[0].status], [1, 2, "processed"], "N1i …the plan is written by one of them and the event ends processed on its second attempt");
+    t.ok(writes >= 1, "N1j (the plan really was written)");
+    synced = 0;
+    const rcPair = fakeDb({ billing_events: [{ event_id: "rc:n1", provider: "revenuecat", type: "RENEWAL", status: "failed", attempts: 1, received_at: iso(NOW - 5000) }] });
+    const [q1, q2] = await Promise.all([wh.handle(rcEvent("n1"), depsFor(rcPair)), wh.handle(rcEvent("n1"), depsFor(rcPair))]);
+    t.eq([[q1.statusCode, q2.statusCode].sort(), synced], [[200, 503], 1], "N1k the store webhook, the same: one sync, one 503 (was: two syncs)");
   }
 
   // ── P3-04  what a completed checkout grants ─────────────────────────────────────────────────────────

@@ -14,8 +14,9 @@
 // was acknowledged as a replay on every retry and the payment it described was never applied.
 //
 // received_at is the time of the latest delivery that took the row (it is set again on every takeover), so "long
-// after" is measured from the attempt that may still be running. A takeover of a stuck row is a compare-and-swap on
-// attempts: of two retries at the same moment, one does the work.
+// after" is measured from the attempt that may still be running. Every takeover, of a failed row or a stuck one, is a
+// compare-and-swap on the status and attempts that were read: of two retries at the same moment, one does the work
+// (round 2 review, N1: the failed row's takeover used to be an unconditional update, so both did).
 // -----------------------------------------------------------------------------
 "use strict";
 
@@ -27,16 +28,20 @@ async function reclaimEvent(admin, eventId, { now = Date.now() } = {}) {
   if (error) return "busy";
   if (!prior) return "done";
   const next = { status: "received", attempts: (prior.attempts || 1) + 1, error: null, received_at: new Date(now).toISOString() };
-  if (prior.status === "failed") {
-    await admin.from("billing_events").update(next).eq("event_id", eventId);
-    return "run";
-  }
+  // The takeover, for a failed row and a stuck one alike: only over the very row that was read (its status and its
+  // attempts), and only if exactly one row was changed. Anything else (another delivery got there first, the write
+  // was refused) is "busy": this delivery does no work and the provider is asked to send the event again.
+  const take = async (status) => {
+    let q = admin.from("billing_events").update(next).eq("event_id", eventId).eq("status", status);
+    q = prior.attempts == null ? q.is("attempts", null) : q.eq("attempts", prior.attempts);
+    const { data: took, error: takeErr } = await q.select("event_id");
+    return !takeErr && Array.isArray(took) && took.length === 1 ? "run" : "busy";
+  };
+  if (prior.status === "failed") return take("failed");
   if (prior.status !== "received") return "done";
   const at = Date.parse(prior.received_at || "");
   if (!Number.isFinite(at) || now - at < STUCK_MS) return "busy";
-  const { data: took, error: takeErr } = await admin.from("billing_events").update(next)
-    .eq("event_id", eventId).eq("status", "received").eq("attempts", prior.attempts).select("event_id");
-  return !takeErr && Array.isArray(took) && took.length > 0 ? "run" : "busy";
+  return take("received");
 }
 
 module.exports = { STUCK_MS, reclaimEvent };
