@@ -205,8 +205,11 @@ const call = async (fn, body) => {
       const stuck = makeDb({ items: { [A]: 1 } });
       meanwhile(stuck, { user_id: A, item_id: "a-item-other" });
       const st = await call(load(stuck, A).plaid, NEW_BANK);
-      t.eq([st.status, banks(stuck, A), removes().length, stuck.state.rows.plaid_items.some((x) => x.item_id === "item-new")], [200, 3, 3, true],
-        "2e Plaid cannot remove the extra one (three tries): it stays connected with its row, never live at Plaid with no row");
+      // Changed 2026-11-22 (round 3, M3: "a failed rollback must not return success"). This expected 200 and the bank
+      // connected, one past the limit. It is still never live at Plaid with no row: the row is kept, marked refused
+      // (not connected, not counted, not listed), and the removal is finished the next time the banks are listed.
+      t.eq([st.status, banks(stuck, A), removes().length, (stuck.state.rows.plaid_items.find((x) => x.item_id === "item-new") || {}).status], [402, 3, 3, "refused"],
+        "2e Plaid cannot remove the extra one (three tries): it is still refused, never reported as connected; its row is kept, marked refused, as the record of what is still to be removed");
       reset(); P.nextItem = "item-relink";
       const over = makeDb({ items: { [A]: 4 } });
       const re = await call(load(over, A).plaid, { ...NEW_BANK, institution_id: "ins_a_1", institution_name: "Bank a1" });

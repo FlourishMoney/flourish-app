@@ -119,7 +119,36 @@ async function handle(event, deps = {}) {
         if (error) return fail("entry update", error);
         return data && data.length ? json(200, CORS, { ok: true, id: clientId }) : null;
       };
-      if (clientId) { const again = await saveAgain(); if (again) return again; }
+      // AFTER THE WRITE: IS THIS ENTRY PAST THE CAP? Returns the answer to send when it is (and was taken back out, or
+      // could not be), or null when the entry stays.
+      //   An entry beyond the cap in the fixed order goes at once. One inside it waits a moment for the extra to go
+      //   and looks again; if there are still too many after the last wait, it goes too (a new entry is cheap to send
+      //   again, and the cap is never passed). `resend`: the same entry sent again (its client_id) is only ever taken
+      //   out when it is itself beyond the cap, never because another entry is.
+      // ROUND 3 (M3: "a failed rollback must not return success"): taking it out is tried three times. If it still
+      // will not go, the answer is a failure, never "saved": the entry is past the cap. The app's next send of that
+      // same entry comes back here and the removal is tried again.
+      const settleCap = async (id, resend) => {
+        for (let look = 0; id; look++) {
+          const { data: now2, error: c2Err } = await admin.from("net_worth_entries").select("id, entered_at").eq("user_id", user_id);
+          if (c2Err || (now2 || []).length <= MAX_ENTRIES) return null;         // read failed: nothing undone on a guess
+          const place = now2.slice().sort(entriesInOrder).findIndex((e) => e.id === id);
+          if (place < 0) return null;
+          if (place < MAX_ENTRIES) {
+            if (resend) return null;
+            if (look < RECHECK_WAITS_MS.length) { await new Promise((r) => setTimeout(r, RECHECK_WAITS_MS[look])); continue; }
+          }
+          let dErr = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            ({ error: dErr } = await admin.from("net_worth_entries").delete().eq("id", id).eq("user_id", user_id));
+            if (!dErr) return json(409, CORS, { error: "too_many_entries" });
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+          }
+          return fail("entry over the cap not removed", dErr);
+        }
+        return null;
+      };
+      if (clientId) { const again = await saveAgain(); if (again) return (again.statusCode === 200 && await settleCap(clientId, true)) || again; }
       const { data: have, error: cErr } = await admin.from("net_worth_entries").select("id").eq("user_id", user_id);
       if (cErr) return fail("entries count", cErr);
       if ((have || []).length >= MAX_ENTRIES) return json(409, CORS, { error: "too_many_entries" });
@@ -137,18 +166,7 @@ async function handle(event, deps = {}) {
       // once. One inside the cap waits a moment for the extra to go and looks again; if there are still too many
       // after the last wait (the other save never saw this one and is staying), it goes too. An entry stays only on
       // a look that found the cap respected, so there are never more than MAX_ENTRIES, whatever the timing.
-      for (let look = 0; id; look++) {
-        const { data: now2, error: c2Err } = await admin.from("net_worth_entries").select("id, entered_at").eq("user_id", user_id);
-        if (c2Err || (now2 || []).length <= MAX_ENTRIES) break;                 // read failed: nothing undone on a guess
-        const place = now2.slice().sort(entriesInOrder).findIndex((e) => e.id === id);
-        if (place < 0) break;
-        if (place < MAX_ENTRIES && look < RECHECK_WAITS_MS.length) { await new Promise((r) => setTimeout(r, RECHECK_WAITS_MS[look])); continue; }
-        const { error: dErr } = await admin.from("net_worth_entries").delete().eq("id", id).eq("user_id", user_id);
-        if (!dErr) return json(409, CORS, { error: "too_many_entries" });
-        console.error("[networth] entry over the cap not removed:", dErr.code || "error");
-        break;
-      }
-      return json(200, CORS, { ok: true, id });
+      return (await settleCap(id, false)) || json(200, CORS, { ok: true, id });
     }
 
     if (body.action === "delete_entry") {

@@ -42,7 +42,7 @@ function makeDb({ items = {}, partner = false, plus = null, entries = {} } = {})
   let clock = Date.parse("2026-11-01T12:00:00.000Z");
   const tick = () => new Date((clock += 1000)).toISOString();
   const state = { rows: { plaid_items: [], household_members: [], plus_addon_subscriptions: [], complimentary_access: [], net_worth_entries: [], net_worth_shares: [], plaid_account_owners: [] },
-    writes: [], hold: null, waiting: [], tick, afterWrite: null, disconnectFails: 0 };
+    writes: [], hold: null, waiting: [], tick, afterWrite: null, disconnectFails: 0, deleteFails: {} };
   for (const [user, n] of Object.entries(items)) for (let i = 0; i < n; i++) state.rows.plaid_items.push({ id: newId(), user_id: user, item_id: `${user.slice(0, 1)}-item-${i}`, status: "active", access_token: `access-${user.slice(0, 1)}-${i}`, institution_id: `ins_${user.slice(0, 1)}_${i}`, institution_name: `Bank ${user.slice(0, 1)}${i}`, created_at: tick() });
   for (const [user, n] of Object.entries(entries)) for (let i = 0; i < n; i++) state.rows.net_worth_entries.push({ id: newId(), user_id: user, kind: "home", label: `e${i}`, value_cents: 100, currency: "CAD", shared: false, entered_at: tick() });
   if (partner) state.rows.household_members.push({ user_id: A, household_id: "h1", role: "owner" }, { user_id: B, household_id: "h1", role: "partner" });
@@ -62,7 +62,7 @@ function makeDb({ items = {}, partner = false, plus = null, entries = {} } = {})
     const filtered = (f) => rows().filter((r) => f.every((fn) => fn(r)));
     const q = {
       f: [],
-      select() { return q; }, eq(c, v) { q.f.push((r) => r[c] === v); return q; }, in(c, vs) { q.f.push((r) => vs.includes(r[c])); return q; }, not() { return q; },
+      select() { return q; }, eq(c, v) { q.f.push((r) => r[c] === v); return q; }, in(c, vs) { q.f.push((r) => vs.includes(r[c])); return q; }, not() { return q; }, order() { return q; },
       async maybeSingle() { return { data: filtered(q.f)[0] || null, error: null }; },
       async single() { const h = filtered(q.f)[0]; return h ? { data: h, error: null } : { data: null, error: { message: "none" } }; },
       then(res, rej) { const h = filtered(q.f).map((r) => ({ ...r })); return Promise.resolve({ data: h, error: null, count: h.length }).then(res, rej); },
@@ -97,7 +97,9 @@ function makeDb({ items = {}, partner = false, plus = null, entries = {} } = {})
       },
       delete() {
         const d = { f: [], eq(c, v) { d.f.push((r) => r[c] === v); return d; },
-          then(res, rej) { state.writes.push([table, "delete"]); state.rows[table] = rows().filter((r) => !d.f.every((fn) => fn(r))); return Promise.resolve({ error: null }).then(res, rej); } };
+          then(res, rej) {
+            if (state.deleteFails[table] > 0) { state.deleteFails[table]--; state.writes.push([table, "delete failed"]); return Promise.resolve({ error: { code: "57014", message: "timeout" } }).then(res, rej); }
+            state.writes.push([table, "delete"]); state.rows[table] = rows().filter((r) => !d.f.every((fn) => fn(r))); return Promise.resolve({ error: null }).then(res, rej); } };
         return d;
       },
     };
@@ -163,6 +165,8 @@ const call = async (fn, body) => {
     STRIPE_PRICE_MONTHLY_CAD: "price_m", STRIPE_PRICE_ANNUAL_CAD: "price_a", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_f", STRIPE_PRICE_PLUS_MONTHLY_CAD: "price_pm", STRIPE_PRICE_PLUS_ANNUAL_CAD: "price_pa" });
   const src = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   const banks = (db, user) => db.state.rows.plaid_items.filter((r) => !user || r.user_id === user).map((r) => r.item_id);
+  // The banks that count toward a limit and show in the app: not one that was refused and is on its way out.
+  const counted = (db, user) => db.state.rows.plaid_items.filter((r) => (!user || r.user_id === user) && !["revoked", "refused"].includes(r.status)).map((r) => r.item_id);
   const newBank = (x) => ({ action: "exchange_token", public_token: `pt-${x}`, institution_name: `New Bank ${x}`, institution_id: `ins_new_${x}` });
   const statuses = (rs) => rs.map((r) => r.status).sort();
   // n requests at the same moment: every one has written before any of them counts again.
@@ -215,15 +219,23 @@ const call = async (fn, body) => {
         late.state.rows.plaid_items.push({ id: newId(), user_id: B, item_id: "b-item-settled", status: "active", access_token: "access-settled", institution_id: "ins_settled", institution_name: "Settled Bank", created_at: new Date(Date.parse(late.state.tick()) + 3600000).toISOString() });
       };
       const lone = await call(load(late, A).plaid, newBank("a"));
-      t.eq([lone.status, banks(late).length, banks(late).includes("b-item-settled"), banks(late).includes("item-a"), removes()], [402, 10, true, false, ["access-a"]],
-        "N3i a bank that has already settled but carries a LATER time: this request does not trust the order alone; it looks again, and when the count is still 11 it takes itself out (10 stay, never 11)");
+      // Changed 2026-11-22 (round 3, NEW-3; Amanda: "never remove an in-limit bank because another bank's cleanup is
+      // slow. Return unresolved and reconcile later."). This used to expect 402 and the bank gone: the request could
+      // not tell "the other is slow to go" from "the other is staying", and took its own in-limit bank out.
+      t.eq([lone.status, banks(late).length, banks(late).includes("b-item-settled"), banks(late).includes("item-a"), removes()], [200, 11, true, true, []],
+        "N3i a bank that has already settled but carries a LATER time: this request's bank is inside the limit by the order, so it is never removed; the household sits one over, unresolved");
+      t.ok(errors.some((e) => /\[bank-limits\] unresolved/.test(e)), "N3i2 …and one line says so, for a person");
+      const next = await call(load(late, A).plaid, newBank("z"));
+      t.eq([next.status, next.body && next.body.error, banks(late).length], [402, "bank_limit", 11], "N3i3 …and while it is over, no further bank is accepted: it can only come back down");
 
       // The extra one is slow to go (Plaid takes longer than the waits): the one inside the limit gives up and goes
       // too. One fewer than the limit, never one more, and a retry connects.
       reset(); P.removeDelayMs = 250;
       const slow = makeDb({ items: { [A]: 5, [B]: 4 }, partner: true, plus: A });
       const rs2 = await together(slow, "plaid_items", [() => call(load(slow, A).plaid, newBank("a")), () => call(load(slow, B).plaid, newBank("b"))]);
-      t.ok(banks(slow).length <= 10 && rs2.every((r) => r.status === 200 || r.status === 402), `N3j the extra one's removal outlasts the waits: still never more than 10 (${banks(slow).length} here), and every answer is a save or the known refusal`);
+      // Changed 2026-11-22 (round 3, NEW-3): it used to allow 9 here (the in-limit one gave up and went too).
+      t.eq([banks(slow).length, counted(slow).length, statuses(rs2)], [10, 10, [200, 402]],
+        "N3j the extra one's removal at Plaid is slow (longer than every wait): it steps out of the count at once, so the one inside the limit stays. Exactly 10, one saved and one refused (was: both could go, 9 left)");
 
       // H3 (was "partly": the clean-up can fail). The extra one cannot be removed at Plaid at all: it keeps its row
       // (never live at Plaid with no row), so its request answers 200. The household is then one past the limit, and
@@ -231,8 +243,21 @@ const call = async (fn, body) => {
       reset(); P.neverRemoves = true;
       const stuck = makeDb({ items: { [A]: 5, [B]: 4 }, partner: true, plus: A });
       const rs3 = await together(stuck, "plaid_items", [() => call(load(stuck, A).plaid, newBank("a")), () => call(load(stuck, B).plaid, newBank("b"))]);
-      t.ok(banks(stuck).length <= 11 && rs3.every((r) => r.status === 200) && errors.some((e) => /still live at Plaid, remove it by hand/.test(e)),
-        `H3a Plaid will not remove either extra: each bank keeps its row (${banks(stuck).length} connected, none live at Plaid without a row), and an error line names each for a person`);
+      // Changed 2026-11-22 (round 3, M3: "a failed rollback must not return success"). This used to expect 200 for the
+      // bank Plaid would not remove, connected and one over the limit.
+      const left = stuck.state.rows.plaid_items.filter((r) => r.status === "refused");
+      t.eq([statuses(rs3), counted(stuck).length, left.length, banks(stuck).length], [[200, 402], 10, 1, 11],
+        "H3a Plaid will not remove the extra: it is still refused (402, never a success), it does not count and is not connected, and its row is kept as the record of what is still to be removed");
+      t.ok(errors.some((e) => /still live at Plaid/.test(e)), "H3a2 …and an error line names it for a person");
+      // …and it is finished later: the next time its owner's banks are listed, with Plaid answering again.
+      P.neverRemoves = false; P.calls.length = 0;
+      const owner = left[0] ? left[0].user_id : A;
+      const listed = await call(load(stuck, owner).plaid, { action: "list_items" });
+      t.ok(listed.status === 200 && Array.isArray(listed.body.items) && !listed.body.items.some((i) => i.item_id === (left[0] && left[0].item_id)) && !listed.body.items.some((i) => i.status === "refused"), "H3a3 a refused bank is never in the list the app is sent");
+      t.eq([removes(), stuck.state.rows.plaid_items.some((r) => r.status === "refused"), banks(stuck).length], [[left[0] && left[0].access_token], false, 10],
+        "H3a4 listing the banks finishes the job: the bank is removed at Plaid and its row goes (was: a line in a log, for a person to act on by hand)");
+      const other = await call(load(stuck, owner === A ? B : A).plaid, { action: "list_items" });
+      t.eq(((other.body && other.body.items) || []).length, 10, "H3a5 the partner's list never held it either");
       // Plaid removed the extra, and then the table would not let its row go at the first try: it is tried again.
       // (Another device's bank landed first here, so this request's bank is the extra and goes at once.)
       const otherFirst = (db) => { db.state.afterWrite = (table, row) => { if (table !== "plaid_items" || row.item_id !== "item-x") return; db.state.afterWrite = null;
@@ -267,7 +292,8 @@ const call = async (fn, body) => {
       t.eq((await L.overAfterAdding(over.admin, A, { itemId: "a-item-2" })).over, true, "N3m the newest of three on the basic plan (limit 2) is the extra: it goes at once");
       let waited = 0;
       const first = await L.overAfterAdding(over.admin, A, { itemId: "a-item-0", sleep: async () => { waited++; }, waits: [1, 1] });
-      t.eq([first.over, waited], [true, 2], "N3n the oldest is inside the limit, so it waits and looks again (twice here); nobody goes, so in the end it does");
+      // Changed 2026-11-22 (round 3, NEW-3): it used to end "over" (the in-limit bank went too).
+      t.eq([first.over, first.unresolved, waited], [false, true, 2], "N3n the oldest is inside the limit, so it waits and looks again (twice here); nobody goes, and it is still never removed: unresolved");
       const leaves = makeDb({ items: { [A]: 3 } });
       const stays = await L.overAfterAdding(leaves.admin, A, { itemId: "a-item-0", waits: [1, 1], sleep: async () => { leaves.state.rows.plaid_items = leaves.state.rows.plaid_items.filter((r) => r.item_id !== "a-item-2"); } });
       t.eq(stays.over, false, "N3o …and when the extra one has gone by the next look, it stays");
@@ -278,6 +304,57 @@ const call = async (fn, body) => {
       const plaid = src("netlify", "functions", "plaid.js");
       t.eq((plaid.match(/overAfterAdding\(admin, user_id, \{ itemId: item_id \}\)/g) || []).length, 2, "N3r both ways a new bank is written (exchange_token and migrate_items) name the bank they just wrote");
       void t0;
+    }
+
+    // ── ROUND 3 (2026-11-22): NEW-3, Grok's low, and M3 for banks ───────────────────────────────────────────────────
+    {
+      reset();
+      const { lim: L } = load(makeDb(), A);
+      const at = (n) => new Date(Date.parse("2026-11-01T12:00:00.000Z") + n * 1000).toISOString();
+      const row = (user, item, n, status = "active") => ({ id: newId(), user_id: user, item_id: item, status, access_token: `access-${item}`, institution_id: `ins_${item}`, institution_name: item, created_at: at(n) });
+      const hhWith = (extra) => { const d = makeDb({ partner: true, plus: A }); for (let i = 0; i < 9; i++) d.state.rows.plaid_items.push(row(i % 2 ? A : B, `old-${i}`, i)); d.state.rows.plaid_items.push(...extra); return d; };
+      const noWait = { waits: [1, 1, 1], settleMs: 1 };
+      // this request's bank is inside the limit, the other never goes
+      const d1 = hhWith([row(A, "mine", 20), row(B, "theirs-later", 30)]);
+      const r1 = await L.overAfterAdding(d1.admin, A, { itemId: "mine", ...noWait });
+      t.eq([r1.over, r1.unresolved, r1.unavailable], [false, true, false], "NEW3-a a bank inside the limit is never \"over\", however long the other one stays: the answer is unresolved (was: over, and it was removed)");
+      const r2 = await L.overAfterAdding(d1.admin, B, { itemId: "theirs-later", ...noWait });
+      t.eq([r2.over, !!r2.unresolved], [true, false], "NEW3-b the bank beyond the limit in the fixed order is the extra, at once");
+      // the extra has stepped out of the count (refused, its removal at Plaid still running): resolved, nothing to wait for
+      const d3 = hhWith([row(A, "mine", 20), row(B, "extra", 30, "refused")]);
+      const r3 = await L.overAfterAdding(d3.admin, A, { itemId: "mine", ...noWait });
+      t.eq([r3.over, !!r3.unresolved], [false, false], "NEW3-c an extra that was refused does not count while it is being removed: the bank inside the limit is simply kept");
+      t.ok(L.NOT_COUNTED.includes("refused") && L.NOT_COUNTED.includes("revoked"), "NEW3-d a refused bank counts toward no limit");
+      // exactly at the limit: looked at once more after a short pause, so a bank that was landing is seen
+      const d4 = hhWith([row(A, "mine-later", 30)]);
+      let pauses = 0;
+      const r4 = await L.overAfterAdding(d4.admin, A, { itemId: "mine-later", waits: [1, 1, 1], settleMs: 1, sleep: async () => { if (pauses++ === 0) d4.state.rows.plaid_items.push(row(B, "landed-earlier", 20)); } });
+      t.eq([r4.over, pauses >= 1], [true, true], "NEW3-e a count exactly at the limit is confirmed after a short pause: a bank that was landing at that moment is seen, and the real extra goes (so \"unresolved\" needs both requests to miss each other twice)");
+      const d5 = hhWith([row(A, "mine", 20)]);
+      const r5 = await L.overAfterAdding(d5.admin, A, { itemId: "mine", ...noWait });
+      t.eq([r5.over, !!r5.unresolved], [false, false], "NEW3-f exactly at the limit and nothing else lands: kept, resolved");
+      const r6 = await L.overAfterAdding(hhWith([]).admin, A, { itemId: "anything", ...noWait });
+      t.eq([r6.over, !!r6.unresolved], [false, false], "NEW3-g below the limit: no pause, no second look needed");
+      // Grok's low: the second look cannot be read
+      const d7 = hhWith([row(A, "mine", 20), row(B, "theirs", 30)]);
+      let reads = 0; const realFrom = d7.admin.from;
+      d7.admin.from = (table) => { const q = realFrom(table); if (table === "plaid_items") { const then = q.then; q.then = (res, rej) => (++reads > 2 ? Promise.resolve({ data: null, error: { code: "57014", message: "timeout" } }).then(res, rej) : then.call(q, res, rej)); } return q; };
+      const r7 = await L.overAfterAdding(d7.admin, B, { itemId: "theirs", ...noWait });
+      t.eq([r7.over, r7.unavailable, r7.unresolved], [false, true, true], "GROK-a a second look that cannot be read undoes nothing, and now says unresolved (it used to look like a clean \"not over\")");
+      t.ok(errors.some((e) => /\[bank-limits\] unresolved/.test(e)), "GROK-b …with a line for a person");
+      // M3 for migrate_items: the extra's row will not delete
+      reset();
+      P.byToken["access-legacy-8"] = { item_id: "item-legacy-8", institution_id: "ins_l8" }; P.byToken["access-legacy-9"] = { item_id: "item-legacy-9", institution_id: "ins_l9" };
+      const mig3 = makeDb({ items: { [A]: 1 } }); mig3.state.disconnectFails = 9;
+      const m3 = await together(mig3, "plaid_items", [
+        () => call(load(mig3, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-8", institution_name: "Legacy 8" }] }),
+        () => call(load(mig3, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-9", institution_name: "Legacy 9" }] }),
+      ]);
+      const done3 = m3.map((r) => [r.body.successes.length, r.body.failures.length]).sort();
+      t.eq([done3, counted(mig3, A).length, mig3.state.rows.plaid_items.filter((r) => r.status === "refused").length], [[[0, 1], [1, 0]], 2, 1],
+        "M3-a migrate_items, two devices at once at 1 of 2, and the extra's row will not delete: it is NOT reported as saved (was: both \"saved\", 3 banks), it does not count, and its row is kept refused to be finished later");
+      const src3 = src("netlify", "functions", "plaid.js");
+      t.ok(!/if \(after\.over && await removeRefusedItem\(/.test(src3), "M3-b exchange_token no longer makes the refusal depend on Plaid's removal working");
     }
 
     // ── N4. TWO NEW NET WORTH ENTRIES AT THE SAME MOMENT, AT 49 OF 50 ───────────────────────────────────────────
@@ -316,6 +393,30 @@ const call = async (fn, body) => {
       const pair = makeDb({ plus: A, partner: true, entries: { [A]: 49, [B]: 49 } });
       const rp = await together(pair, "net_worth_entries", [() => call(load(pair, A).nw, entry("A's")), () => call(load(pair, B).nw, entry("B's"))]);
       t.eq([count(pair), statuses(rp)], [100, [200, 200]], "N4h two partners each saving their fiftieth at the same moment: both saved (the cap is per person)");
+
+      // ROUND 3, M3: "a failed rollback must not return success". The extra entry cannot be deleted.
+      const CID = "99999999-9999-4999-8999-999999999999";
+      const stuckE = makeDb({ plus: A, entries: { [A]: 49 } });
+      stuckE.state.afterWrite = (table, row) => {
+        if (table !== "net_worth_entries" || row.label !== "Mine") return;
+        stuckE.state.afterWrite = null;
+        stuckE.state.rows.net_worth_entries.push({ id: newId(), user_id: A, kind: "home", label: "Landed first", value_cents: 1, currency: "CAD", shared: false, entered_at: "2026-11-01T12:00:30.000Z" });
+      };
+      stuckE.state.deleteFails.net_worth_entries = 9;
+      const e1 = await call(load(stuckE, A).nw, { ...entry("Mine"), client_id: CID });
+      t.eq([e1.status, e1.body && e1.body.error, e1.body && e1.body.ok, stuckE.state.writes.filter((w) => w[0] === "net_worth_entries" && w[1] === "delete failed").length],
+        [503, "unavailable", undefined, 3], "M3-c the entry past the cap cannot be taken back out (three tries): the answer is a failure, never \"saved\" (was: 200 ok, with 51 entries)");
+      t.eq(count(stuckE), 51, "M3-d (the entry is still there: the database would not let it go)");
+      // the app sends the same entry again (same client_id): it is not waved through as a save; the removal is tried again
+      stuckE.state.deleteFails.net_worth_entries = 0;
+      const e2 = await call(load(stuckE, A).nw, { ...entry("Mine"), client_id: CID });
+      t.eq([e2.status, e2.body && e2.body.error, count(stuckE), stuckE.state.rows.net_worth_entries.some((e) => e.id === CID)], [409, "too_many_entries", 50, false],
+        "M3-e the same entry sent again is not waved through as a save: the removal is tried again, it goes, and the refusal is the one the app knows");
+      // an ordinary second send of an entry that is inside the cap is still one entry, saved
+      const fine = makeDb({ plus: A, entries: { [A]: 10 } });
+      const f1 = await call(load(fine, A).nw, { ...entry("Car"), client_id: CID });
+      const f2 = await call(load(fine, A).nw, { ...entry("Car, corrected"), client_id: CID });
+      t.eq([f1.status, f2.status, count(fine), fine.state.rows.net_worth_entries.find((e) => e.id === CID).label], [200, 200, 11, "Car, corrected"], "M3-f an ordinary second send of the same entry is still one entry, saved, as before");
     }
   } finally {
     global.fetch = realFetch; console.error = quiet.e; console.warn = quiet.w;
