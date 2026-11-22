@@ -348,7 +348,7 @@ async function plusStripeSubsFor(customerId, deps = {}) {
   return ((listed && listed.data) || []).filter((sub) => sub && sub.id && !!plusRowFromStripe(sub, env));
 }
 // A website Plus subscription the server set to end because it was the extra one: Stripe is told it will not renew,
-// and its metadata says why, so it can be put back if it becomes the buyer's only Plus.
+// and its metadata says why (for support).
 const EXTRA_MARK = "flourish_plus_extra";
 async function endExtraStripePlus(sub, deps = {}) {
   if (!sub || !sub.id || typeof deps.stripePost !== "function") return false;
@@ -357,14 +357,9 @@ async function endExtraStripePlus(sub, deps = {}) {
     { idempotencyKey: `plus-extra:${sub.id}` });
   return true;
 }
-// A website Plus that has become the buyer's ONLY one: if the server had set it to end as the extra, it is put back
-// (it renews again), and the row says so. If Stripe cannot be told it stays set to end; the row is still its.
-async function putBackIfExtra(web, deps = {}) {
-  if (!web || !web.sub || !web.sub.metadata || !web.sub.metadata[EXTRA_MARK] || !web.sub.cancel_at_period_end || typeof deps.stripePost !== "function") return web;
-  try { await deps.stripePost(`/subscriptions/${encodeURIComponent(web.sub.id)}`, { cancel_at_period_end: false, metadata: { [EXTRA_MARK]: "" } }); web.row.cancel_at_period_end = false; }
-  catch (e) { console.error("[plus] could not put the website Plus back:", e && e.statusCode ? e.statusCode : "no_status"); }
-  return web;
-}
+// A website Plus that was set to end as the extra and then becomes the buyer's ONLY one is NOT put back (Amanda,
+// 2026-11-22, after round 3): it keeps Plus to its paid date and ends there. No charge the person did not choose:
+// the first one may have ended because they cancelled on purpose. The row carries Stripe's own "will not renew".
 // THE BUYER'S OTHER LIVE WEBSITE PLUS (round 2 review, 2026-11-22, N1). A buyer can end up paying for two website
 // Plus subscriptions: the second is refused wherever it can be, and when it happens anyway it is set to end and told
 // to support, and the row stays the first one's. When the subscription ON THE ROW then stops being live (cancelled
@@ -377,8 +372,7 @@ async function putBackIfExtra(web, deps = {}) {
 // one from this same second cannot be ordered, and the webhook then asks Stripe what is true (its own rule).
 const readAtIso = (now = Date.now()) => new Date(Math.floor(nowMs(now) / 1000) * 1000).toISOString();
 async function otherLiveStripePlus(customerId, exceptSubId, deps = {}) {
-  const web = await liveStripePlusFor(customerId, { ...deps, exceptSubId: exceptSubId || null });
-  return web ? putBackIfExtra(web, deps) : null;
+  return (await liveStripePlusFor(customerId, { ...deps, exceptSubId: exceptSubId || null })) || null;
 }
 // "Stripe shows a live Plus this buyer's row does not" (the checkout's guard found one): the row takes it, so
 // "already has Plus" is true and not a dead end. Best effort, never throws; a row that is live is never touched.
@@ -420,7 +414,7 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
       }
       next = { ...row, last_event_at: nowIso };
     } else if (existing && STORE_PROVIDERS.includes(existing.provider) && isLivePlusRow(existing, env, now)) {
-      // The website Plus is now the buyer's only one: if the server had set it to end as the extra, it is put back.
+      // The website Plus is now the buyer's only one. It is taken as Stripe has it: one set to end stays set to end.
       const web = await otherLiveStripePlus(existing.provider_customer_id, null, { ...deps, env, now });
       if (web) {
         next = { ...web.row, last_event_at: readAtIso(now) };

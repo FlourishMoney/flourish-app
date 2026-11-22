@@ -337,8 +337,9 @@ function loadWith(db, sm, alerts, user = U) {
       const r = await B2.plus.syncPlusFromStore(db2.admin, U, { fetchSubscriber: async () => none, stripeGet: sm2.exports.stripeGet, stripePost: sm2.exports.stripePost });
       t.eq([r.plus, rowOf(db2).provider, rowOf(db2).provider_subscription_id, rowOf(db2).status], [true, "stripe", "sub_w", "active"],
         "6c B3 the store Plus ends: the live website Plus the buyer pays for becomes the row, and the household keeps Plus");
-      t.eq([sm2.stripe.subs[0].cancel_at_period_end, sm2.stripe.subs[0].metadata.flourish_plus_extra, rowOf(db2).cancel_at_period_end], [false, "", false],
-        "6d …and it is no longer set to end: it is the buyer's only Plus now");
+      // Changed 2026-11-22 (Amanda, after round 3): it is NOT un-cancelled; it runs to its paid date and ends.
+      t.eq([sm2.stripe.subs[0].cancel_at_period_end, sm2.stripe.subs[0].metadata.flourish_plus_extra, rowOf(db2).cancel_at_period_end, sm2.log.filter((l) => /^POST \/subscriptions\/sub_w/.test(l)).length], [true, "1", true, 0],
+        "6d …and it stays set to end at its paid date: nothing is posted to Stripe to make it renew");
       // No website Plus: the store row ends now, as before, and Stripe is not asked for a buyer with no Stripe customer.
       const db3 = makeDb(), sm3 = makeStripe(); const B3 = loadWith(db3, sm3, alerts2);
       db3.state.rows[T].push(storeRow());

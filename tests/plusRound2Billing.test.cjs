@@ -203,8 +203,10 @@ function loadWith(db, sm, alerts, user = U) {
         "N1b the first one ends while the second is paid: the second becomes the row at once, and the payer keeps Plus (was: the row said canceled, and nothing ever promoted B)");
       const ent = await B.plus.getPlusEntitlement(db.admin, U);
       t.eq([ent.plus, ent.provider], [true, "stripe"], "N1c …the household's Plus answer is yes");
-      t.eq([sm.stripe.subs[1].cancel_at_period_end, sm.stripe.subs[1].metadata.flourish_plus_extra, row.cancel_at_period_end], [false, "", false],
-        "N1d …and it is no longer set to end: it is the buyer's only Plus now (the same as when a store Plus ends beside a website one)");
+      // Changed 2026-11-22 (Amanda, after round 3): it is NOT un-cancelled. It keeps Plus to its paid date and ends
+      // there: no charge the person did not choose (the first may have ended because they cancelled on purpose).
+      t.eq([sm.stripe.subs[1].cancel_at_period_end, sm.stripe.subs[1].metadata.flourish_plus_extra, row.cancel_at_period_end], [true, "1", true],
+        "N1d …and it stays set to end at its paid date: Stripe is not told to renew it, and the row says it will not renew");
       t.eq(row.provider_customer_id, "cus_P", "N1e the Stripe customer is kept");
       // Step 4: B's own later events are now events for the row's subscription.
       // (Stripe dates an event to the second; these come after the promotion, so they are dated after it.)
@@ -292,8 +294,8 @@ function loadWith(db, sm, alerts, user = U) {
       sm2.stripe.subs.push(webSub("sub_A", "active"), subB());
       const refundA = await send(B2.hook, "charge.refunded", { id: "ch_A", object: "charge", customer: "cus_P", refunded: true, amount: 499, amount_refunded: 499, created: now - 2 * DAY }, now - 30);
       t.eq([refundA.status, sm2.log.filter((l) => l.startsWith("DELETE")), rowOf(db2).provider_subscription_id, B2.plus.isLivePlusRow(rowOf(db2)), sm2.stripe.subs[1].cancel_at_period_end],
-        [200, ["DELETE /subscriptions/sub_A"], "sub_B", true, false],
-        "N1p the row's own payment is refunded while the other is paid: that subscription ends, and the paid one becomes the row");
+        [200, ["DELETE /subscriptions/sub_A"], "sub_B", true, true],   // changed 2026-11-22 (Amanda): the last was false, the un-cancel
+        "N1p the row's own payment is refunded while the other is paid: that subscription ends, and the paid one becomes the row, still set to end at its paid date");
       // When the charge says which invoice it paid, that decides, whatever the dates look like.
       const db3 = makeDb(), sm3 = makeStripe(); const B3 = loadWith(db3, sm3, alerts);
       db3.state.rows[T].push(webRow("sub_A", "active"));
