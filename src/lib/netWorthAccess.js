@@ -130,6 +130,10 @@ export function setItemOwners(items, forUser = undefined, storage = deviceStore(
   if (notFor(forUser)) return;
   const owners = {};
   for (const it of Array.isArray(items) ? items : []) if (it && it.item_id) owners[it.item_id] = it.linked_by ? "partner" : "me";
+  // An EMPTY list never replaces owners already known: the app's bank read answers [] when it FAILED, and blanking
+  // the map would hide every linked account until the next read. (No banks at all: the old entries name banks no
+  // account refers to any more, so they change nothing.) Round 2 of the Plus review, M5.
+  if (!Object.keys(owners).length && Object.keys(state.owners).length) return;
   state = { ...state, owners };
   savePrivateOwners(storage, state.user, owners);
   emit();

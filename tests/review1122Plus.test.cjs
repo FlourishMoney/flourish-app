@@ -104,7 +104,10 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq(after([ok([]), ok([{ ...B1, value: 8100 }])]), ["b-rrsp_s1:8100"], "P10-06b bank A answered and holds nothing now: its holding goes");
     t.eq(after([ok([{ ...A1, value: 12500 }]), ok([{ ...B1, value: 8100 }])]), ["a-tfsa_s1:12500", "b-rrsp_s1:8100"], "P10-06c both answered: both new, nothing twice");
     t.eq(after([failed, failed]), null, "P10-06d nothing came at all: nothing to change (null)");
-    t.eq(after([failed, ok([])]), null, "P10-06e …and the same when the only answer holds nothing, as before");
+    // Changed 2026-11-22 (Plus review round 2, N2 as on fix-review-1122): this expected null ("nothing changes") when
+    // the only bank that answered holds nothing. That was the all-sold defect: bank B answered, so ITS holding goes;
+    // bank A failed, so its holding stays.
+    t.eq(after([failed, ok([])]), ["a-tfsa_s1:12000"], "P10-06e the only bank that answered holds nothing now: its holding goes, and the failed bank's stays");
     const sync = (() => { const i = app.indexOf("const syncHoldings = useCallback("); return i < 0 ? "" : app.slice(i, i + 2600); })();
     t.ok(/plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(sync) && !/investments: allHoldings \}/.test(sync), "P10-06f the app's sync uses it on the path without Plus");
   }

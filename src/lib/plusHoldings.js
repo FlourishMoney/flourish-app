@@ -54,6 +54,12 @@ export function loadPrivateCopy(storage, userId) {
 export const loadPrivateHoldings = (storage, userId) => loadPrivateCopy(storage, userId).holdings;
 /** true only when the holdings are on the device after the write (read back). */
 export const savePrivateHoldings = (storage, userId, holdings, now = Date.now()) => Array.isArray(holdings) && write(storage, userId, { holdings, at: now });
+/**
+ * A list that is NOT a fresh answer from the banks (the server's kept copy, shown when a bank could not be read) is
+ * saved without touching `at`: the screen has it after a reload, and the banks are still asked again at the next
+ * plan check. true only when it is on the device.
+ */
+export const keepPrivateHoldings = (storage, userId, holdings) => Array.isArray(holdings) && write(storage, userId, { holdings });
 export const savePrivateList = (storage, userId, list) => !!list && typeof list === "object" && write(storage, userId, { list });
 export const savePrivateOwners = (storage, userId, owners) => !!owners && typeof owners === "object" && write(storage, userId, { owners });
 /** Fetch the holdings again? Never delivered to this account on this device, or HOLDINGS_REFRESH_MS ago or more. */
@@ -64,55 +70,118 @@ export function holdingsStale(storage, userId, now = Date.now()) {
 
 /**
  * The holdings after one round of get_investments, one answer per bank (Promise.allSettled, in the order of `items`).
- *   prev      what this person had (each holding stamped `_item` with its bank)
- * Returns { holdings, plain, plusMode, delivered, locked }:
+ *   prev      what this person had (each holding stamped `_item` with its bank, and `_at` with when it came)
+ *   items     the banks (list_items: `linked_by` is set on the other member's)
+ * Returns { holdings, plain, plainAnswered, plusMode, delivered, stale, locked, banks }:
  *   plusMode   an answer was Plus's (plus_mode): the holdings are private, and `holdings` is the list to show
- *   delivered  at least one bank's holdings really came (Plus's answer, not locked, not unavailable). Only then may
- *              anything saved change.
+ *   delivered  at least one bank's holdings really came from the bank (Plus's answer, not locked, not unavailable,
+ *              not stale). Only then may anything saved change.
+ *   stale      a bank could not be read and the list the SERVER kept for it (migration 0055) is shown in its place.
+ *              Shown, never "delivered": nothing is cleared on it.
  *   locked     an answer said locked (no Plus, or the app must update): nothing came, and nothing changes
  *   plain      Plus off: every holding as it came, for today's path (plainAnswered: the banks they came from)
+ *   banks      one per bank: { item, mine, got: "live" | "stale" | "none", stored }. stored: the server says that
+ *              bank's list is kept there in its OWNER's name. withoutCoveredSharedCopy reads these.
  * A bank that answered replaces its own holdings (none, if it holds none now). A bank that FAILED (the call threw,
- * or the server said `unavailable`) keeps what it had. A bank no longer in `items` is dropped.
+ * or the server said `unavailable`) keeps what it had. The server's kept list replaces what this device holds for
+ * that bank only when the device holds nothing for it or the kept list is the newer. A bank no longer in `items`
+ * is dropped. A holding's BANK decides, never its id.
  */
-export function mergeHoldings(prev, items, results) {
+export function mergeHoldings(prev, items, results, now = Date.now()) {
   const before = Array.isArray(prev) ? prev : [];
-  const out = [], plain = [];
-  let plusMode = false, delivered = false, locked = false;
+  const out = [], plain = [], banks = [];
+  let plusMode = false, delivered = false, locked = false, stale = false;
   const plainAnswered = [];
   (Array.isArray(items) ? items : []).forEach((it, i) => {
     const itemId = it && it.item_id;
     const r = Array.isArray(results) ? results[i] : null;
     const v = r && r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings) ? r.value : null;
     const kept = before.filter((h) => h && itemId && h._item === itemId);
+    const bank = { item: itemId, mine: !(it && it.linked_by), got: "none", stored: false };
+    banks.push(bank);
     if (!v) { out.push(...kept); return; }                      // the call failed, or made no sense
     if (v.plus_mode !== true) { if (v.unavailable !== true) { plain.push(...v.holdings); plainAnswered.push(itemId); } out.push(...kept); return; }
     plusMode = true;
     if (v.locked) { locked = true; out.push(...kept); return; }
     if (v.unavailable) { out.push(...kept); return; }
-    delivered = true;
-    out.push(...v.holdings.map((h) => ({ ...h, _item: itemId })));
+    if (v.stale === true) {
+      const asOf = Date.parse(v.as_of);
+      const heldAt = kept.reduce((m, h) => (Number.isFinite(h._at) && h._at > m ? h._at : m), -Infinity);
+      if (kept.length && !(Number.isFinite(asOf) && asOf > heldAt)) { out.push(...kept); return; }   // this device's is as new, or newer
+      stale = true; bank.got = "stale";
+      out.push(...v.holdings.map((h) => ({ ...h, _item: itemId, _at: Number.isFinite(asOf) ? asOf : 0 })));
+      return;
+    }
+    delivered = true; bank.got = "live"; bank.stored = v.stored === true;
+    out.push(...v.holdings.map((h) => ({ ...h, _item: itemId, _at: now })));
   });
-  return { holdings: out, plain, plainAnswered, plusMode, delivered, locked };
+  return { holdings: out, plain, plainAnswered, plusMode, delivered, stale, locked, banks };
 }
 
 /**
- * Plus off: the household's holdings after a round (full-app review 2026-11-22, P10-06 with P3-09). The banks that
- * answered used to replace the whole list, so one bank's failed read wiped its holdings whenever another answered.
- * A holding is kept when its bank did not answer (the call failed, or the server said `unavailable`); one whose bank
- * answered without it is gone. A holding whose bank is not known is kept, as the app does for liabilities.
+ * THE OLD SHARED COPY (appData.investments, from before Plus), after a round with Plus. Round 2 of the Plus review,
+ * Gemini G-N1 with ChatGPT B1, and Amanda's rule for both: private holdings must never be in the household's shared
+ * data, AND a person must never lose their holdings.
+ *
+ * So a bank's old holdings leave the shared copy when, and only when, that bank's holdings have a LASTING PRIVATE
+ * HOME FOR THEIR OWNER:
+ *   - the bank answered this round (really, from the bank), AND
+ *   - the server says it keeps that bank's list (stored), OR it is this person's own bank and this device saved it
+ *     (savedOnDevice: written and read back). This device's copy is no home for a PARTNER's holdings, so a
+ *     partner's bank counts only on the server's word.
+ * A bank that failed, was locked, or was answered from the server's kept copy clears nothing. When every bank is
+ * covered the key itself goes (with anything in it that no bank owns); until then a holding whose bank is not known
+ * stays. What is left is only ever a part of what was already there: nothing Plus sent is ever put here.
+ * Returns the same object when nothing changes.
+ */
+export function withoutCoveredSharedCopy(appData, merged, savedOnDevice) {
+  if (!appData || typeof appData !== "object" || !("investments" in appData)) return appData;
+  const banks = merged && Array.isArray(merged.banks) ? merged.banks : [];
+  const covered = new Set(banks.filter((b) => b && b.item && b.got === "live" && (b.stored === true || (savedOnDevice === true && b.mine === true))).map((b) => b.item));
+  if (!covered.size) return appData;
+  if (banks.every((b) => b && covered.has(b.item))) { const { investments, ...rest } = appData; return rest; }
+  const old = Array.isArray(appData.investments) ? appData.investments : [];
+  const itemOf = new Map((Array.isArray(appData.accounts) ? appData.accounts : []).map((a) => [a && a.id, (a && a._item) || null]));
+  const left = old.filter((h) => !(h && covered.has(itemOf.get(h.account_id))));
+  return left.length === old.length ? appData : { ...appData, investments: left };
+}
+
+// A holding's identity, for one with NO known bank only: its id, or its account and security when it has none. An id
+// made from a missing security ("acct_undefined") is none. null: it is never matched to another.
+const holdingKey = (h) => {
+  if (!h) return null;
+  if (typeof h.id === "string" && h.id && !/_(undefined|null)$/.test(h.id)) return `id:${h.id}`;
+  const what = h.security_id ?? h.ticker ?? h.name;
+  return h.account_id != null && what != null && what !== "" ? `at:${h.account_id}|${what}` : null;
+};
+
+/**
+ * Plus off: the household's holdings after a round (full-app review 2026-11-22, P10-06 with P3-09; round 2, N2, as
+ * lib/multibank.js retainHoldings on fix-review-1122). The banks that answered used to replace the whole list, so one
+ * bank's failed read wiped its holdings whenever another answered.
+ * A holding's BANK decides, whatever its id: kept when its bank did not answer (the call failed, or the server said
+ * `unavailable`), gone when its bank answered (what that bank holds now came with the answer, which may be nothing:
+ * sold). Only a holding with no known bank is matched by identity, so it is not listed twice when it comes again. Of
+ * those not come again: on an account no bank linked, kept (not a bank's to remove); on an account that is gone,
+ * kept only while some bank failed (it may be that bank's).
  *   prev      appData.investments now      merged   mergeHoldings' answer      accounts   appData.accounts (_item)
- * Returns the new list, or null when no holding came at all (nothing changes, as before).
+ * Returns the new list, or null when NO bank answered (nothing changes). A round where every bank answered with
+ * nothing is applied: the list is then what is left, which may be empty.
  */
 export function plainHoldingsAfter(prev, merged, accounts) {
   const came = merged && Array.isArray(merged.plain) ? merged.plain : [];
-  if (!came.length) return null;
-  const answered = new Set(merged.plainAnswered || []);
+  const answered = new Set((merged && merged.plainAnswered) || []);
+  if (!answered.size) return null;
+  const someBankFailed = !(merged && Array.isArray(merged.banks)) || merged.banks.some((b) => !answered.has(b && b.item));
   const itemOf = new Map((Array.isArray(accounts) ? accounts : []).map((a) => [a && a.id, (a && a._item) || null]));
-  const cameIds = new Set(came.map((h) => h && h.id));
+  const cameKeys = new Set(came.map(holdingKey).filter(Boolean));
   const kept = (Array.isArray(prev) ? prev : []).filter((h) => {
-    if (!h || cameIds.has(h.id)) return false;
+    if (!h) return false;
     const item = itemOf.get(h.account_id);
-    return item == null ? true : !answered.has(item);
+    if (item != null) return !answered.has(item);
+    const key = holdingKey(h);
+    if (key && cameKeys.has(key)) return false;
+    return itemOf.has(h.account_id) ? true : someBankFailed;
   });
   return [...kept, ...came];
 }

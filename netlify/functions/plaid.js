@@ -33,6 +33,8 @@ const { planWords } = require("./_lib/planWords");
 const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
 const household = require("./_lib/household");
+// PLUS, round 2 of the review: a bank's holdings kept privately on the server (migration 0055).
+const holdingsStore = require("./_lib/plusHoldingsStore");
 const { revokeForAccount: revokeAppleTokens, logAppleConfigOnce } = require("./_lib/appleTokens");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
@@ -427,6 +429,11 @@ exports.handler = async (event) => {
     if (action === "get_investments") {
       const { access_token, user_id, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
+      // sharedOnly: the accounts of a partner's bank its owner shared (null: the asker's own bank, all of it).
+      // plusLive: this request has Plus, an app that keeps holdings private, and (for a partner's bank) the owner's
+      // sharing choices were read. Only then is anything kept on the server, or answered from what was kept.
+      let sharedOnly = null, plusLive = false;
+      const visible = (list) => (Array.isArray(list) ? list : []).filter((h) => h && (!sharedOnly || sharedOnly.has(h.account_id)));
       try {
         // PLUS (behind PLUS_ENABLED): holdings are a Plus feature. Without Plus (or on a plan read that failed) nothing is
         // asked of Plaid at all, so nobody is billed for data nobody can see. With Plus, a partner's bank gives only the
@@ -434,7 +441,6 @@ exports.handler = async (event) => {
         // THE TESTER-ONLY SWITCH: "Plus is on" is asked for THIS account (the flag, or a tester). And a bank's holdings
         // follow its OWNER's Plus: when the owner is a tester and the one asking is not (PLUS_ENABLED off), the asker is
         // still sent only what the owner shared, so a tester's private holdings never reach a partner who sees no Plus.
-        let sharedOnly = null;
         const plusForMe = plusAddon.plusEnabledFor(user_id);
         if (!plusForMe && owner_id && owner_id !== user_id && plusAddon.plusEnabledFor(owner_id)) {
           const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
@@ -455,8 +461,12 @@ exports.handler = async (event) => {
             const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
             if (sErr) return ok({ holdings: [], locked: true, plus_mode: true, unavailable: true });
             sharedOnly = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
-            if (!sharedOnly.size) return ok({ holdings: [], plus_mode: true });
+            // Nothing shared: no holdings, and Plaid is not asked. stored says whether the OWNER's list is kept on
+            // the server, so the asker's app never clears the owner's old shared copy before the owner has a
+            // lasting private one (round 2 of the review, B1).
+            if (!sharedOnly.size) return ok({ holdings: [], plus_mode: true, stored: await holdingsStore.hasPlusHoldings(getAdminClient(), owner_id, body.item_id) });
           }
+          plusLive = true;
         }
         const data = await plaid("/investments/holdings/get", { access_token });
         const securities = data.securities || [];
@@ -468,7 +478,9 @@ exports.handler = async (event) => {
         const acctMap = {};
         (data.accounts || []).forEach(a => { acctMap[a.account_id] = a; });
 
-        const holdings = (data.holdings || []).filter((h) => !sharedOnly || sharedOnly.has(h.account_id)).map(h => {
+        // The bank's whole list first (it is what the server keeps, in its owner's name); what is SENT is that list
+        // through `visible`: all of it for its owner, the shared accounts only for a partner.
+        const everything = (data.holdings || []).map(h => {
           const s = secMap[h.security_id] || {};
           return {
             account_id:      h.account_id,
@@ -485,16 +497,28 @@ exports.handler = async (event) => {
             gainPct:  null,
           };
         });
+        const holdings = visible(everything);
 
         // Couple mode (audit round 4): who linked every account these holdings name is recorded before any of them
         // is returned, as get_accounts does. A record that cannot be written answers 503 and no holdings.
         await household.recordAccountOwners(getAdminClient(), owner_id, body.item_id,
           [...(data.accounts || []).map((a) => a && a.account_id), ...holdings.map((h) => h.account_id)]);
-        // plus_mode: the app keeps these on this device only (never in the shared household blob), so a partner never
-        // reads this person's private holdings from it.
+        // plus_mode: the app never puts these in the shared household blob, so a partner never reads this person's
+        // private holdings from it. stored (round 2 of the review, G-N1 with B1): the bank's list is now kept on the
+        // server in its owner's name (migration 0055), so the app may clear the old shared copy of it even on a
+        // device that can save nothing. false when it could not be kept (or 0055 is not run yet): the app then
+        // clears only on its own device copy, as before.
+        if (plusLive) return ok({ holdings, plus_mode: true, stored: await holdingsStore.savePlusHoldings(getAdminClient(), owner_id, body.item_id, everything) });
         return ok({ holdings, ...(plusForMe ? { plus_mode: true } : {}) });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
+        // THE BANK COULD NOT BE READ. With Plus, the list the server kept for this bank is answered instead, through
+        // the same filter as a live one, marked stale with when it came: a person never has "no holdings" because a
+        // bank blinked. It is never marked stored (the app clears nothing on it). Nothing kept: unavailable, as before.
+        if (plusLive) {
+          const kept = await holdingsStore.loadPlusHoldings(getAdminClient(), owner_id, body.item_id);
+          if (kept) return ok({ holdings: visible(kept.holdings), plus_mode: true, stale: true, as_of: kept.fetched_at });
+        }
         return ok({ holdings: [], ...(plusAddon.plusEnabledFor(user_id) ? { unavailable: true, plus_mode: true } : {}) });
       }
     }
@@ -697,6 +721,9 @@ exports.handler = async (event) => {
         console.error("[delete_item]", delErr.message);
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to disconnect bank." }) };
       }
+      // PLUS: the bank's holdings kept on the server go with it (migration 0055's trigger does the same when the row
+      // goes; this is the same thing said here). Never fails the disconnect.
+      await holdingsStore.dropPlusHoldings(admin, user_id, item_id);
       return ok({ removed: true });
     }
 
@@ -737,6 +764,7 @@ exports.handler = async (event) => {
         // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
         try { await household.disconnectItem(admin, user_id, r.item_id); }
         catch (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
+        await holdingsStore.dropPlusHoldings(admin, user_id, r.item_id);   // PLUS: its kept holdings go with it (as delete_item)
         collapsed.push({ item_id: r.item_id, institution_name: r.institution_name });
       }
       return ok({ collapsed, kept });

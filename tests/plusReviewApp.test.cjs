@@ -114,14 +114,19 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
 
     const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
     t.ok(sync.length > 200 && /callPlaid\("get_investments",\{item_id:it\.item_id, \.\.\.plusClientFields\(\)\}, \{jwt\}\)/.test(sync) && /const merged = mergeHoldings\(/.test(sync), "2n one holdings sync, used at first load and when Plus is confirmed");
-    t.ok(/if \(plusMode\) \{[\s\S]{0,400}if \(!merged\.delivered \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
+    // 2o, 2p and 2q changed 2026-11-22 (Plus review round 2; tests/plusRound2Holdings.test.cjs holds the new rules in
+    // full). 2o: a round is also taken when the server answered the list it KEEPS for a bank that could not be read
+    // (stale), so the person is shown it. 2p: the old shared copy is cleared by one rule in lib/plusHoldings.js, bank
+    // by bank, on the server's word as well as this device's (it used to be all of it, on this device's word only).
+    // 2q: a round is applied whenever a bank ANSWERED (it used to wait for a holding to come, so all-sold stayed).
+    t.ok(/if \(plusMode\) \{[\s\S]{0,500}if \(!\(merged\.delivered \|\| merged\.stale\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
       "2o with Plus: a locked or failed answer changes nothing at all, and an answer for someone else is dropped");
-    t.ok(/if \(savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\)\) setAppData\(prev => \(prev && "investments" in prev\) \? \(\(\{ investments, \.\.\.rest \}\) => rest\)\(prev\) : prev\);/.test(sync)
-      && (app.match(/investments, \.\.\.rest/g) || []).length === 1, "2p the old shared copy is cleared in one place only, and only after the private copy is saved and read back");
+    t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);[\s\S]{0,700}setAppData\(prev => withoutCoveredSharedCopy\(prev, merged, onDevice\)\);/.test(sync)
+      && (app.match(/withoutCoveredSharedCopy\(/g) || []).length === 1 && !/investments, \.\.\.rest/.test(app), "2p the old shared copy is cleared in one place only, and only once a lasting private copy exists (saved on this device and read back, or kept on the server)");
     // Changed 2026-11-22 (full-app review, P10-06): this used to hold the exact line `investments: allHoldings`, which
     // was the defect (the banks that answered replaced the whole list). What it guards is unchanged: holdings go into
     // the shared data in ONE place, on the path without Plus only, and never from a Plus answer.
-    t.ok(/\} else if \(allHoldings\.length > 0\) \{[^}]*setAppData\(prev => \{ const next = plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\); return next \? \{ \.\.\.prev, investments: next \} : prev; \}\);/.test(sync)
+    t.ok(/\} else if \(merged\.plainAnswered\.length > 0\) \{[^}]*setAppData\(prev => \{ const next = plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\); return next \? \{ \.\.\.prev, investments: next \} : prev; \}\);/.test(sync)
       && (sync.match(/investments: /g) || []).length === 1 && !/investments: allHoldings/.test(app),
       "2q Plus off: the household's holdings as today (a failed bank keeps its own), and Plus holdings are never written into the shared data");
     const take = app.slice(app.indexOf("const takePlusAnswer = useCallback("), app.indexOf("// BUYING FLOURISH PLUS", app.indexOf("const takePlusAnswer = useCallback(")));
@@ -169,7 +174,7 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
 
   // ── 6. GEMINI LOW, NOT REAL: a holding always has an id ───────────────────────────────────────────────────
   {
-    t.ok(/id:\s+h\.account_id \+ "_" \+ h\.security_id,/.test(plaid) && (plaid.match(/const holdings = \(data\.holdings \|\| \[\]\)/g) || []).length === 1 && (plaid.match(/"\/investments\/holdings\/get"/g) || []).length === 1, "6a the server gives every holding an id (its account and its security): the only place holdings are built");
+    t.ok(/id:\s+h\.account_id \+ "_" \+ h\.security_id,/.test(plaid) && (plaid.match(/const everything = \(data\.holdings \|\| \[\]\)\.map\(/g) || []).length === 1 && /const holdings = visible\(everything\);/.test(plaid) && (plaid.match(/"\/investments\/holdings\/get"/g) || []).length === 1, "6a the server gives every holding an id (its account and its security): the only place holdings are built");
     const v = N.viewerNetWorth({ data: { profile: { country: "CA" }, accounts: [{ id: "acc-i", type: "investment", subtype: "tfsa", name: "TFSA", balance: 300, currency: "CAD" }] },
       holdings: [{ id: "acc-i_s1", account_id: "acc-i", name: "Fund", value: 200, currency: "CAD" }, { id: "acc-i_s2", account_id: "acc-i", name: "Other", value: 100, currency: "CAD" }], list: { mine: { entries: [], shared_accounts: [] }, partner: null } });
     const hs = (v.household[0] && v.household[0].holdings) || (v.mine[0] && v.mine[0].holdings) || [];

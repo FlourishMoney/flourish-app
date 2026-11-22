@@ -27,7 +27,7 @@ import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { plusClientFields } from "./lib/plusClient.js";
-import { mergeHoldings, plainHoldingsAfter, loadPrivateHoldings, savePrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
+import { mergeHoldings, plainHoldingsAfter, withoutCoveredSharedCopy, loadPrivateHoldings, savePrivateHoldings, keepPrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
 // This device's own storage, or null where there is none (a private window): lib/plusHoldings.js reads and writes through it.
 const deviceStore = () => { try { return localStorage; } catch { return null; } };
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
@@ -965,11 +965,19 @@ async function fetchItemTxns(item_id, jwt, fullResync) {
 // Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
 // Used by multi-bank fan-out sites to drive get_transactions/accounts/etc. via item_id + JWT.
 async function getUserItems() {
+  // With Plus, who linked each bank decides whose an account is (private by default between partners). It is read
+  // here, with the banks themselves, every time they are read: a bank connected later in the session used to stay
+  // "unknown" (left out of net worth) until the next plan check (round 2 of the Plus review, M5). forUser is noted
+  // before anything is asked, so a read that lands after another account signed in is dropped. A read that FAILS
+  // changes nothing.
+  const forUser = getNetWorthState().user;
   const jwt = await getJwt();
   if (!jwt) return [];
   try {
     const resp = await callPlaid("list_items", {}, { jwt });
-    return resp.items || [];
+    const items = resp.items || [];
+    if (getNetWorthState().mode === "plus") setItemOwners(items, forUser);
+    return items;
   } catch (err) {
     console.warn("[getUserItems] failed", err.message);
     return [];
@@ -18315,13 +18323,22 @@ export default function FlourishApp(){
       const merged = mergeHoldings(held.length ? held : loadPrivateHoldings(deviceStore(), forUser), items, invResults);
       const plusMode = merged.plusMode, allHoldings = plusMode ? merged.holdings : merged.plain;
       if (plusMode) {
-        // Nothing changes unless a bank's holdings really came, for the person still signed in. The old copy in the
-        // shared blob is cleared only once the private copy is on this device (saved and read back).
-        if (!merged.delivered || getNetWorthState().user !== forUser) return;
+        // Nothing changes unless a round brought something, for the person still signed in: a bank's holdings really
+        // came, or a bank could not be read and the server answered the list it keeps for it (stale: shown, and
+        // nothing more).
+        if (!(merged.delivered || merged.stale) || getNetWorthState().user !== forUser) return;
         setPlusHoldings(allHoldings);
-        if (savePrivateHoldings(deviceStore(), forUser, allHoldings)) setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
-      } else if (allHoldings.length > 0) {
-        // A bank whose read failed keeps what it had (lib/plusHoldings.js plainHoldingsAfter, review 2026-11-22 P10-06).
+        // On this device: a round with a live answer is saved with its time (read back: onDevice). The server's kept
+        // list alone is saved without a time, so the banks are asked again at the next plan check; it never counts.
+        const onDevice = merged.delivered ? savePrivateHoldings(deviceStore(), forUser, allHoldings) : (keepPrivateHoldings(deviceStore(), forUser, allHoldings), false);
+        // THE OLD SHARED COPY (round 2 of the Plus review, G-N1 with B1): a bank's old holdings leave the household's
+        // data once that bank's holdings have a lasting private home for their owner: the server (stored), or this
+        // device for one's own bank. So a device that can save nothing still clears them, and nothing is ever cleared
+        // on a hope. Nothing Plus sent is ever written there (lib/plusHoldings.js withoutCoveredSharedCopy).
+        setAppData(prev => withoutCoveredSharedCopy(prev, merged, onDevice));
+      } else if (merged.plainAnswered.length > 0) {
+        // Whenever a bank ANSWERED, also when every one answered with nothing (all sold). A bank whose read failed keeps
+        // what it had (lib/plusHoldings.js plainHoldingsAfter; review 2026-11-22 P10-06, and round 2, N2).
         setAppData(prev => { const next = plainHoldingsAfter(prev.investments, merged, prev.accounts); return next ? { ...prev, investments: next } : prev; });
       }
     } catch(e) { /* silent — institution may not support investments */ }

@@ -164,7 +164,10 @@ const call = async (fn, body) => {
       P.holdings = "some";
       const some = await call(load(makeDb({ items: { [A]: 1 }, plus: A }), A).plaid, GET);
       t.eq([locked.body, unshared.body, none.body, some.body.holdings.length, "unavailable" in some.body],
-        [{ holdings: [], locked: true, plus_mode: true }, { holdings: [], plus_mode: true }, { holdings: [], plus_mode: true }, 1, false],
+        // Changed 2026-11-22 (Plus review round 2): a Plus answer now also says whether the bank's list is kept on the
+        // server (stored; migration 0055). Nothing shared: is the OWNER's kept (not yet: false). The bank holds none: the
+        // empty list is kept (true). Nothing else in these answers changed.
+        [{ holdings: [], locked: true, plus_mode: true }, { holdings: [], plus_mode: true, stored: false }, { holdings: [], plus_mode: true, stored: true }, 1, false],
         "1d a real 'none' (no Plus, nothing shared, the bank holds none) and a real answer never say unavailable");
       delete process.env.PLUS_ENABLED; reset(); P.holdings = "fail";
       const off = await call(load(makeDb({ items: { [A]: 1 } }), A).plaid, GET);

@@ -257,7 +257,10 @@ const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
       t.ok(/const nwLocked = !showsNetWorth\(nwState\.mode\);/.test(app) && /\(nwLocked \? allItems\.filter\(item=>item\.type!=="investment"\) : allItems\)\.map/.test(app) && /explainNetWorth&&!nwLocked&&/.test(app), "7g Goals' Net Worth tab locked: no total and no investments, but every bank, card and loan balance still listed");
       t.ok(/if \(nwState\.mode === "plus"\) return <>[\s\S]{0,300}<NetWorthPlusScreen /.test(app), "7h with Plus: the Net Worth tab is net worth with Plus");
       t.ok(/\{!nwShowW \? <div data-wrapped-networth-locked/.test(app) && /nwStateW\.mode==="today"\?\[\{label:"Invested"/.test(app), "7i Wrapped: the locked state and no 'Invested' without Plus");
-      t.ok(/if \(plusMode\) \{[\s\S]{0,400}setPlusHoldings\(allHoldings\);[\s\S]{0,200}investments, \.\.\.rest/.test(app), "7j the sync keeps Plus holdings on this device and clears any copy from the shared blob");
+      // Changed 2026-11-22 (Plus review round 2, G-N1 with B1): this held the inline `investments, ...rest` that cleared the
+      // whole old copy on this device's word alone. The clearing is now one rule in lib/plusHoldings.js
+      // (withoutCoveredSharedCopy: bank by bank, once its owner has a lasting private copy); tests/plusRound2Holdings.
+      t.ok(/if \(plusMode\) \{[\s\S]{0,500}setPlusHoldings\(allHoldings\);[\s\S]{0,1200}setAppData\(prev => withoutCoveredSharedCopy\(prev, merged, onDevice\)\);/.test(app), "7j the sync keeps Plus holdings out of the shared blob and clears the old copy from it");
     }
     // ── 8. OLDER APPS NEVER GET PLUS DATA (2026-11-21): it is the server that decides, not the app ───────────────────
     // An app before 1.1.8 does this with the holdings it is sent (src/App.jsx at 1.1.7, word for word in effect):
