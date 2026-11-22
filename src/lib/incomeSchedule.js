@@ -44,7 +44,8 @@ function _amountBounds(inc, incAmt, loose = false) {
   return loose ? [incAmt * 0.6, incAmt * 1.5] : [incAmt * 0.92, incAmt * 1.08];
 }
 const _escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function _incomeDepositDates(inc, incAmt, transactions, loose = false) {
+// named: only the deposits that carry this income's own label (see findAnchor's "its own employer first").
+function _incomeDepositDates(inc, incAmt, transactions, loose = false, named = false) {
   const bounds = _amountBounds(inc, incAmt, loose);
   if (!bounds) return [];
   const label = String((inc && inc.label) || "").toLowerCase().trim();
@@ -57,6 +58,7 @@ function _incomeDepositDates(inc, incAmt, transactions, loose = false) {
       if (a < bounds[0] || a > bounds[1]) return false; // bounded, always
       const name = String(t.name || "").toLowerCase();
       const labelOk = (labelRx && labelRx.test(name)) || (label.length > 3 && name.includes(label.substring(0, 6)));
+      if (named) return !!labelOk;
       const isInc = t.cat === "Income" || name.includes("payroll") || name.includes("direct deposit") || name.includes("deposit");
       return labelOk || isInc;
     })
@@ -110,13 +112,32 @@ function _bestChain(dates, F, tol) {
 // a phase: with no chain the cycle is unknown and the forecast counts forward from today, "estimated".
 //
 // Monthly and semimonthly: the newest of this income's (bounded) deposits.
+//
+// ITS OWN EMPLOYER FIRST (review of 2026-11-22, P5-09). Two incomes paying similar amounts (two jobs within 8%
+// of each other, paid on alternate Fridays) were both phased from whichever employer paid last: every pay-like
+// deposit in the amount band counted for both, so Acme's $2,000 due November 27 was forecast on December 4 with
+// Globex's. When deposits carry THIS income's label, the answer comes from those alone. Only while that name is
+// still current: if it has stopped appearing (the newest deposit under it is more than a cycle older than the
+// newest pay cycle in the band, or more than _OWN_STALE_DAYS for calendar-day pay), everything in the band counts,
+// as before. An income whose label is on no deposit, or on all of them, is phased exactly as before.
+const _OWN_STALE_DAYS = 35;
 export function findAnchor(inc, incAmt, transactions) {
   const F = _freqDays((inc && inc.freq) || "biweekly");
-  if (!F) return _incomeDepositDates(inc, incAmt, transactions)[0] || null;
+  if (!F) {
+    const all = _incomeDepositDates(inc, incAmt, transactions)[0] || null;
+    const own = all ? _incomeDepositDates(inc, incAmt, transactions, false, true)[0] || null : null;
+    return own && _dayGap(own, all) <= _OWN_STALE_DAYS ? own : all;
+  }
   const tol = _PHASE_TOL[F];
-  const tight = _bestChain(_incomeDepositDates(inc, incAmt, transactions), F, tol);
+  const pick = (loose) => {
+    const all = _bestChain(_incomeDepositDates(inc, incAmt, transactions, loose), F, tol);
+    if (!all) return null;
+    const own = _bestChain(_incomeDepositDates(inc, incAmt, transactions, loose, true), F, tol);
+    return own && _dayGap(own.date, all.date) <= F + tol ? own : all;
+  };
+  const tight = pick(false);
   if (tight) return tight.date;
-  const loose = _bestChain(_incomeDepositDates(inc, incAmt, transactions, true), F, tol);
+  const loose = pick(true);
   return loose ? loose.date : null;
 }
 

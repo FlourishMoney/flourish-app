@@ -381,6 +381,13 @@ function expectedOccurrences(item, ed, today, days, minDay) {
   return out;
 }
 
+// The same question for one due date, for callers outside the forecast (notificationPlanner.js: a reminder is
+// for one occurrence, and a payment of an earlier one does not cancel it; review of 2026-11-22, P5-05).
+export function billOccurrencePaid(bill, due, transactions, today = new Date()) {
+  if (!bill || !due) return false;
+  return billArrived(bill, noon(due), noon(due), transactions || [], today);
+}
+
 // ── Overdue: due in the last few days and not seen paid (audit of 2026-11-13, finding 3) ────────────────────────
 // A bill used to leave the list the day after its due date, paid or not: rent due on a Sunday and still in the
 // account on Monday was in neither safe to spend nor the forecast, so the number rose by the rent while the money

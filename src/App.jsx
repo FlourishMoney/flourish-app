@@ -29,7 +29,8 @@ import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDai
          nextDepositFor, daysToNextDepositFor, isDepositTodayFor, needsOnFileStamp, stampOnFile, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
-import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
+import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill, withBillOverride } from "./lib/billReeval.js";
+import { transactionsFingerprint } from "./lib/reconcileLoop.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance, splitCsvLine } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
@@ -385,7 +386,7 @@ const CC = {
 // Returns a filtered + enriched tax tip array based on profile.
 // Surfaces only credits that apply to the user's life stage, province/state,
 // income types, and family situation.
-function getPersonalizedTaxCredits(profile) {
+function getPersonalizedTaxCredits(profile, { debts = [] } = {}) {
   const country   = profile?.country   || "CA";
   const province  = profile?.province  || "";   // unset: federal tips only (2026-10-23)
   const rawLifeStage = profile?.lifeStages || profile?.lifeStage || ["t4"];
@@ -400,6 +401,9 @@ function getPersonalizedTaxCredits(profile) {
   const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
   const isSenior  = (age&&age>=65)||hasStage("senior","retired");
   const isStudent = hasStage("student");
+  // The interest tip follows the loan, not the life stage: most people paying a student loan have graduated
+  // (review of 2026-11-22, P7-05). A debt the household named or typed as a student loan, or one the bank reported as one.
+  const hasStudentLoan = (debts||[]).some(d => d && (d.debtType === "student" || /student|osap|nslsc/i.test(`${d.name||""} ${d.type||""}`)));
   const cfg = CC[country] || CC.CA;
 
   // Start with base country tips, then add life-stage + province specific ones
@@ -413,7 +417,7 @@ function getPersonalizedTaxCredits(profile) {
     if (t.includes("fhsa") && (isHomeowner || isSenior)) return false;
     if (t.includes("first home") && isHomeowner) return false;
     if (t.includes("resp") && !hasKids) return false;
-    if (t.includes("student loan interest") && !isStudent) return false;
+    if (t.includes("student loan interest") && !isStudent && !hasStudentLoan) return false;
     if (t.includes("home office") && isStudent && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     // Self-employment tips — only for self-employed
@@ -1926,6 +1930,8 @@ function lowStretchLine(forecast, ev) {
     : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in ${rangePhrase(Math.max(0, list.length - 1))}.`;
 }
 
+// The what-if being shown, in words: the Time Machine's banner and the matching line in a day's breakdown.
+const scenarioPhrase = (sc) => sc.type === "purchase" ? `$${sc.amount} purchase` : sc.type === "debt" ? `+$${sc.extraPayment}/mo on debt` : `$${sc.monthlyContribution}/mo invested`;
 function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
@@ -1964,7 +1970,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
         <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:14}}>🔮</span>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>
-            Showing impact of: <strong style={{color:C.teal}}>{activeScenario.type === "purchase" ? `$${activeScenario.amount} purchase` : activeScenario.type === "debt" ? `+$${activeScenario.extraPayment}/mo on debt` : `$${activeScenario.monthlyContribution}/mo invested`}</strong>
+            Showing impact of: <strong style={{color:C.teal}}>{scenarioPhrase(activeScenario)}</strong>
           </div>
           {setActiveScenario && (
             <button aria-label="Remove" onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
@@ -2035,9 +2041,12 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                         deposits: ev.income>0 ? depositLines(ev) : null,
                         bills: ev.bills, avgDailySpend: avgDaily,
                         closing: baseBalance, isToday: ev.day===0,
+                        // A what-if amount leaving that day is its own line, in the banner's words, never part of
+                        // "Est. daily spend" (review of 2026-11-22, P4-05).
+                        scenario: ev.scenario, scenarioLabel: activeScenario ? scenarioPhrase(activeScenario) : "",
                       });
-                      const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, spend:C.muted };
-                      const DOT   = { opening:null, income:C.green, bill:C.gold, spend:C.muted };
+                      const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, scenario:C.teal, spend:C.muted };
+                      const DOT   = { opening:null, income:C.green, bill:C.gold, scenario:C.teal, spend:C.muted };
                       const ICON  = { income:"💰 ", bill:"📅 ", spend:"🛒 " };
                       return (<>
                         {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
@@ -3076,7 +3085,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   // tab renders. Reading it here means the card can only ever name credits the user is about to see,
   // and the card disappears when there are none rather than inventing something to say.
   {
-    const topCredits = getPersonalizedTaxCredits(data.profile)
+    const topCredits = getPersonalizedTaxCredits(data.profile, { debts: buildDebtListForSimulator(data.debts, data.liabilities, data) })
       .filter(t => t.priority === "high")
       .slice(0, 3)
       .map(t => t.title.replace(/\s*\([^)]*\)\s*$/, "").split(/\s+[—:]\s*/)[0].trim());
@@ -5369,6 +5378,17 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts
 }
 
 
+// The panel's Spending tab: this month's charges, split into what counts as spending and what is left out
+// (a transfer, income, a fee, a card payment). catOf is the category AS THE HOUSEHOLD CORRECTED IT (effCat);
+// the split used to read the category each transaction arrived with, so a card payment the household had
+// moved to Transfer was still in "Total included spending" (review of 2026-11-22, P7-04).
+function transparencySpendSplit(thisMonthTxns, catOf = (t) => t.cat) {
+  const isCardPay = (t) => CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+  const leftOut = (t) => { const c = catOf(t); return c === "Transfer" || c === "Income" || c === "Fees" || isCardPay(t); };
+  const charges = (thisMonthTxns||[]).filter(t => t.amount > 0);
+  return { included: charges.filter(t => !leftOut(t)), excluded: charges.filter(leftOut) };
+}
+
 // ─── DATA TRANSPARENCY PANEL ─────────────────────────────────────────────────
 // Shows exactly how every key number is calculated — income, spending, balance,
 // what was excluded and why (credit card payments, transfers, etc.)
@@ -5379,19 +5399,27 @@ function DataTransparencyPanel({data, onClose}) {
   // ── Rebuild calc data with full audit trail ──────────────────────────────
   const profile   = data.profile || {};
   const accounts  = data.accounts || [];
-  const incomes   = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+  // The same incomes cashFlow counts (a "My pay varies" income may carry only its expected amount).
+  const incomes   = (data.incomes || []).filter(i => num(i.amount) > 0 || (i.isVariable && num(i.expectedAmount) > 0));
   const bills     = data.bills || [];
   const txns      = data.transactions || [];
   const now       = new Date();
 
   // Income inputs
   // Bug 1: canonical toMonthly import (handles annually).
-  const incomeRows = incomes.map(i => ({
-    label: i.label || i.type || "Income",
-    entered: parseFloat(i.amount||0),
-    freq: i.freq || "biweekly",
-    monthly: toMonthly(i.amount, i.freq),
-  }));
+  // Each income at its GOING RATE (forecastEdits.monthlyIncomeBasis, the helper cashFlow reads): the amount
+  // entered, unless the household changed it from a date on, stopped it, or said the pay varies (then its low
+  // end). This panel explains the app's income figure, so it must be that figure: it used to convert the typed
+  // amount, and disagreed with every other screen for exactly those households (review of 2026-11-22, G4).
+  const incomeRows = incomes.map(i => {
+    const perDeposit = num(monthlyIncomeBasis(i, data, now));
+    return {
+      label: i.label || i.type || "Income",
+      entered: perDeposit,
+      freq: i.freq || "biweekly",
+      monthly: toMonthly(perDeposit, i.freq),
+    };
+  });
   const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0); // Bug 5: no fake income fallback
 
   // Spending audit — this month
@@ -5400,21 +5428,10 @@ function DataTransparencyPanel({data, onClose}) {
     const d = new Date(t.date + "T12:00:00");
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
-  const included = thisMonthTxns.filter(t =>
-    t.amount > 0 &&
-    t.cat !== "Transfer" &&
-    t.cat !== "Income" &&
-    t.cat !== "Fees" &&
-    !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-  );
-  const excluded = thisMonthTxns.filter(t =>
-    t.amount > 0 && (
-      t.cat === "Transfer" ||
-      t.cat === "Income" ||
-      t.cat === "Fees" ||
-      CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-    )
-  );
+  // By the category the household corrected each transaction to (P7-04), as Spending and the budgets read it.
+  const _catOvById = getCatOvById();
+  const catOf = (t) => effCat(t, _catOvById);
+  const { included, excluded } = transparencySpendSplit(thisMonthTxns, catOf);
   const totalSpend = included.reduce((s,t) => s+t.amount, 0);
 
   // Balance audit — this panel exists to EXPLAIN the Today balance, so it must read the same owner,
@@ -5439,7 +5456,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   // Category breakdown
   const catBreakdown = {};
-  included.forEach(t => { catBreakdown[t.cat] = (catBreakdown[t.cat]||0) + t.amount; });
+  included.forEach(t => { const c = catOf(t); catBreakdown[c] = (catBreakdown[c]||0) + t.amount; });
   const catRows = Object.entries(catBreakdown).sort((a,b) => b[1]-a[1]);
 
   const TabBtn = ({id, label}) => (
@@ -5550,16 +5567,16 @@ function DataTransparencyPanel({data, onClose}) {
               {excluded.slice(0,8).map((t,i)=>(
                 <Row key={i}
                   label={t.name}
-                  sub={`${t.cat} · excluded: ${
+                  sub={`${catOf(t)} · excluded: ${
                     CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment" :
-                    t.cat==="Transfer"?(()=>{
+                    catOf(t)==="Transfer"?(()=>{
                       const matched = (data.debts||[]).find(d=>{
                         const min=parseFloat(d.min||0), bal=parseFloat(d.balance||0);
                         return (min>0&&Math.abs(t.amount-min)<5)||(bal>0&&Math.abs(t.amount-bal)<50);
                       });
                       return matched?`CC payment → ${matched.name}`:"account transfer";
                     })():
-                    t.cat==="Fees"?"bank fee":"income"
+                    catOf(t)==="Fees"?"bank fee":"income"
                   }`}
                   value={`$${(t.amount||0).toFixed(0)}`}
                   color={C.muted}
@@ -5951,7 +5968,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
   const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
   const [checklistDismissed,setChecklistDismissed]=useState(()=>{ try{return localStorage.getItem(CHECKLIST_DISMISSED_KEY)==="1";}catch{return false;} });
-  const showsNumber = hasCashAccount && !SafeSpendEngine.calculate(data).noIncome;
+  const showsNumber = hasCashAccount && !_ss.noIncome;   // _ss above is this same calculation: not made twice
   useEffect(()=>{ if(showsNumber && !data.demo && !numberSeen){ try{localStorage.setItem(NUMBER_SEEN_KEY,"1");}catch{} setNumberSeen(true); } },[showsNumber,data.demo,numberSeen]);
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -7161,18 +7178,17 @@ function BillManager({data, setAppData, onClose}){
     if (field!=="freq") return {...prev, bills};
     // Sprint Q item 2: persist the cadence correction (keyed by name) so detection won't revert it.
     const norm = String((prev.bills||[])[i]?.name||"").toLowerCase().trim();
-    const ov = prev.userBillOverrides || {};
-    return { ...prev, bills, userBillOverrides: { removed: ov.removed||[], typed: ov.typed||{}, cadence: { ...(ov.cadence||{}), [norm]: val } } };
+    // withBillOverride keeps every other correction (this used to drop the corrected amounts; review 2026-11-22, P8-01).
+    return { ...prev, bills, userBillOverrides: withBillOverride(prev.userBillOverrides, "cadence", norm, val) };
   });
   // Tier 4: type toggle updates the bill AND records userBillOverrides.typed (for re-detection).
   const setBillCatType = (i, name, tp) => {
     const norm = String(name||"").toLowerCase().trim();
     setAppData(prev=>{
-      const ov = prev.userBillOverrides || {};
       return {
         ...prev,
         bills:(prev.bills||[]).map((b,x)=>x===i?{...b,type:tp}:b),
-        userBillOverrides: { removed: ov.removed||[], typed: { ...(ov.typed||{}), [norm]: tp }, cadence: ov.cadence||{} },
+        userBillOverrides: withBillOverride(prev.userBillOverrides, "typed", norm, tp),
       };
     });
   };
@@ -10048,7 +10064,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       // them (Family Settings); unset is no kids, as it is for the tax tips.
       const _hasKids=!!data.profile?.hasKids||((data.profile?.kids||[]).length>0);
       const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>(!b.province||b.province===(data.profile?.province||""))&&(!b.kids||_hasKids));
-      const tips=getPersonalizedTaxCredits(data.profile);
+      const tips=getPersonalizedTaxCredits(data.profile, { debts: buildDebtListForSimulator(data.debts, data.liabilities, data) });
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
@@ -10504,7 +10520,9 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
   // screen renders and what the facilitator receives stay the same object: displayed === sent.
   const agenda = useMemo(() => {
     try {
-      const full = meetAgendaFor(data);
+      // The week is read by the categories the household corrected (review of 2026-11-22, P6-01): the corrections
+      // live in two device keys, so they are handed to the agenda with the data. The demo has none of its own.
+      const full = meetAgendaFor(data.demo ? data : { ...data, catOverrides: getCatOv() });
       // Meeting memory: when the household's meetings could not be read, their "no" answers are unknown, so no
       // question is asked (on screen or by the coach) rather than one they already declined being asked again.
       if (!data.demo && !Array.isArray(data.meetingRecords)) full.questions = [];
@@ -10807,6 +10825,21 @@ function familyDebtMetric(totalDebt, data) {
 // A new chore's reward: what was typed, $0 included; the 50 cent default only when nothing usable was
 // typed. `parseFloat(x)||0.50` turned a chore set to $0 into 50 cents.
 const choreReward = (v) => { const r = parseFloat(v); return Number.isFinite(r) && r >= 0 ? r : 0.50; };
+
+// The Family screen's spending check: every charge by category, with transfers, income and fees left out.
+// catOf is the category as the household corrected it (effCat); it used to be the one the transaction
+// arrived with (review of 2026-11-22, P8-03).
+function familyTopSpend(transactions, catOf = (t) => t.cat) {
+  const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
+  return (transactions||[])
+    .filter(t=>t.amount>0 && !SKIP_FAM.has(catOf(t)))
+    .reduce((acc,t)=>{
+      const cat=catOf(t)||"Other";
+      acc[cat]=(acc[cat]||0)+t.amount;
+      return acc;
+    },{});
+}
+
 function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null}){
   const [tab,setTab]=useState("meeting");
   const [started,setStarted]=useState(false);
@@ -10968,14 +11001,8 @@ function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null})
   const _ss=SafeSpendEngine.calculate(data);
   const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data, getCatOv());
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
-  const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
-  const topSpend=(data.transactions||[])
-    .filter(t=>t.amount>0 && !SKIP_FAM.has(t.cat))
-    .reduce((acc,t)=>{
-      const cat=t.cat||"Other";
-      acc[cat]=(acc[cat]||0)+t.amount;
-      return acc;
-    },{});
+  const _famCatOv = getCatOvById();
+  const topSpend=familyTopSpend(data.transactions, t => effCat(t, _famCatOv));
   const topCat=Object.entries(topSpend).sort((a,b)=>b[1]-a[1])[0];
   const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
   const healthNote=healthPartial?` (${HEALTH_SCORE_PARTIAL_SHORT})`:""; // prompt 3d: say when a score is on 5 of 6 parts
@@ -12429,7 +12456,16 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   }
 
   if(sectionKey==="bills") {
-    const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
+    // The amount is saved on the bill. For a bill the bank found it is also remembered as a correction, as Manage
+    // Bills does (overrideObserved): the detector then reports the household's amount, and the money meeting does
+    // not ask whether a bill "changed" back to the bank's figure (review of 2026-11-22, P9-06).
+    const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>{
+      const cur=(prev.bills||[])[i], amt=parseFloat(val);
+      const found=!!cur && cur.origin !== "manual" && cur.type!=="one_off" && amt>0;
+      const bills=(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val,...(found?{amountOverride:true}:{})}:b);
+      if(!found) return {...prev,bills};
+      return {...prev,bills,userBillOverrides:withBillOverride(prev.userBillOverrides, "amounts", String(cur.name||"").toLowerCase().trim(), amt)};
+    }); };
     const removeBillS = async (i, name) => { if(await confirmModal({title:"Remove this bill?",message:"It won't be auto-detected again.",confirmLabel:"Remove",destructive:true})) removeBillWithOverride(setAppData, i, name); }; // Tier 5: shared remove (records override)
     const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
     return (
@@ -13348,6 +13384,16 @@ function SegTabs({ tabs, value, onChange }) {
   );
 }
 
+// What the coach is told about recent spending: the total and the five largest categories, each charge in the
+// category the household corrected it to (effCat), with transfers, income and fees left out as on the Spending
+// screen. It used to read the category each transaction arrived with, so a correction never reached the coach
+// and a card payment could be its "top category" (review of 2026-11-22, P9-04).
+function coachRecentSpend(txns, catOf = (t) => t.cat) {
+  const spent = (txns||[]).filter(t => t.amount>0 && !t.isTransfer && !NON_SPEND_CATS.has(catOf(t)));
+  const byCat = spent.reduce((acc,t)=>{ const c = catOf(t); acc[c]=(acc[c]||0)+t.amount; return acc; },{});
+  return { spending: spent.reduce((s,t)=>s+t.amount,0), topCats: Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,5) };
+}
+
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo coach's last line and button follow the switch
@@ -13414,7 +13460,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     // pay at its low end), from the same cashFlow every other surface reads. Bug 5: no fake fallback.
     const income = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome || 0;
     const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || 0; // Sprint 1: no fake DEMO.balance in Coach context
-    const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
+    const _coachCatOv = getCatOvById();
+    const _recent = coachRecentSpend(txns, t => effCat(t, _coachCatOv));
+    const spending = _recent.spending;
 
     // ── PHASE 1C: pre-computed engine values for affordability reasoning ──
     // The Coach must see these so it can answer "can I afford X" honestly.
@@ -13426,10 +13474,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const _upcomingBills   = _safeSpend.upcomingBills || 0;
     const _monthlySurplus  = _cashFlow.cashFlow || 0;
     const _monthlyExpenses = _cashFlow.totalExpenses || 0;
-    const topCats = Object.entries(
-      txns.filter(t=>t.amount>0 && t.cat!=="Income")
-        .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
-    ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
+    const topCats = _recent.topCats.map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
     const goals = (data.goals||[]).map(g=>`${sanitizeField(g.name,80)}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${parseFloat(g.monthly)||0}/mo contribution`:""}`).join("; ")||"none set";
     const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${billMonthlyAmount(b).toFixed(0)}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
     // demo-fixes C8d: each debt once, from What-If's pair-aware list (a linked card is one debt; an unanswered
@@ -19419,7 +19464,9 @@ export default function FlourishApp(){
   // The signature dep means this settles: it only writes when the SUGGESTION actually changes, so
   // setAppData → re-render → effect cannot loop.
   const incomeDetectSig = useMemo(() => JSON.stringify({
-    n: (appData?.transactions || []).length,
+    // What the transactions SAY, not how many there are: an edited or re-posted deposit is looked at again
+    // (lib/reconcileLoop.js transactionsFingerprint; review of 2026-11-22, P10-04).
+    n: transactionsFingerprint(appData?.transactions),
     i: (appData?.incomes || []).map(x => [x.amount, x.freq, x.anchorDay ?? null]),
     d: appData?.incomeSuggestionDismissed || null,
     demo: !!appData?.demo,
@@ -19457,7 +19504,7 @@ export default function FlourishApp(){
   // pure filter, so a stored amount (including one typed directly in Settings ▸ Bills, which does
   // not record an override), the nextDueDate anchor, and array order all survive untouched.
   const billHealSig = useMemo(() => JSON.stringify({
-    n: (appData?.transactions || []).length,
+    n: transactionsFingerprint(appData?.transactions),   // content, not count (P10-05)
     b: autoBillKeys(appData?.bills),
     o: appData?.userBillOverrides || null,
     demo: !!appData?.demo,
