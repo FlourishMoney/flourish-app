@@ -442,6 +442,72 @@ const call = async (fn, body, version = "1.1.8") => {
       t.eq(X.getNetWorthState().owners, {}, "M5g with nothing known yet an empty list is simply empty");
       X._resetForTests();
     }
+
+    // ── ROUND 3 (2026-11-22), NEW-2: THE BANK'S OWN ROW CANNOT BE READ ─────────────────────────────
+    // The kept list was answered only when Plaid failed. When the bank's row itself could not be read (the database
+    // blinked on plaid_items), the request stopped before that with "item not found", so a device with no copy of
+    // its own showed no holdings though the server had them. Now, for someone signed in, with Plus, on 1.1.8: the
+    // kept list in their own name, or a household partner's through the same share filter. Nobody else's, ever.
+    {
+      process.env.PLUS_ENABLED = "true";
+      const C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      P.by = { "access-a-0": A_HOLDS, "access-b-0": B_HOLDS };
+      const db = makeDb({ items: { [A]: 1, [B]: 1 }, partner: true, plus: A, shares: [[A, "acct-a1", true], [A, "acct-a2", false]] });
+      const liveA = await call(load(db, A), GET_A);
+      const liveForB = await call(load(db, B), GET_A);                      // the partner, live: A's shared account only
+      t.eq([liveA.body.stored, show(liveForB.body.holdings)], [true, ["acct-a1:S1:100", "acct-a1:S2:200"]], "NEW2-0 (set-up: A's list is kept; live, the partner is sent A's shared account only)");
+      const asOf = db.state.rows.plus_holdings.find((r) => r.user_id === A).fetched_at;
+      db.state.fail.plaid_items = true; P.calls.length = 0;
+      const mine = await call(load(db, A), GET_A);
+      t.eq([mine.status, show(mine.body.holdings), mine.body.stale, mine.body.as_of, mine.body.plus_mode, "stored" in mine.body, "error" in mine.body],
+        [200, ["acct-a1:S1:100", "acct-a1:S2:200", "acct-a2:S1:50"], true, asOf, true, false, false],
+        "NEW2-a the bank's row cannot be read: its owner is answered the kept list, stale, with when it came (was: 400 item not found, and nothing)");
+      const theirs = await call(load(db, B), GET_A);
+      t.eq([theirs.status, show(theirs.body.holdings), theirs.body.stale, theirs.body.as_of], [200, show(liveForB.body.holdings), true, asOf],
+        "NEW2-b the partner is answered exactly what a live answer would send them: the shared account, never the private one");
+      t.ok(!JSON.stringify(theirs.body).includes("acct-a2"), "NEW2-c …the owner's private account is nowhere in it");
+      t.eq(P.calls.filter((c) => /holdings\/get/.test(c.url)).length, 0, "NEW2-d Plaid is not asked: there is no token to ask with");
+      t.eq(db.state.writes.filter((w) => w[0] === "plus_holdings").length, 2, "NEW2-e nothing is written to the store by it (the two saves are the set-up's)");
+      // somebody outside the household, with Plus of their own
+      const dbC = makeDb({ items: { [A]: 1 }, plus: C });
+      dbC.state.rows.plus_holdings.push({ user_id: A, item_id: "a-item-0", holdings: liveA.body.holdings, fetched_at: asOf });
+      dbC.state.fail.plaid_items = true;
+      const stranger = await call(load(dbC, C), GET_A);
+      t.eq([stranger.status, stranger.body.error, "holdings" in stranger.body], [400, "item not found for this user", false], "NEW2-f someone who is neither the owner nor their partner is refused as before, whatever the store holds");
+      // nothing shared with the partner
+      const dbN = makeDb({ items: { [A]: 1 }, partner: true, plus: A, shares: [[A, "acct-a1", false]] });
+      dbN.state.rows.plus_holdings.push({ user_id: A, item_id: "a-item-0", holdings: liveA.body.holdings, fetched_at: asOf });
+      dbN.state.fail.plaid_items = true;
+      const unshared = await call(load(dbN, B), GET_A);
+      t.eq([unshared.status, "holdings" in unshared.body], [400, false], "NEW2-g a partner with nothing shared is sent nothing");
+      // the sharing choices cannot be read: nothing, never a guess
+      db.state.fail.net_worth_shares = true;
+      const blind = await call(load(db, B), GET_A);
+      t.eq([blind.status, "holdings" in blind.body], [400, false], "NEW2-h the owner's sharing choices cannot be read: the partner is sent nothing");
+      db.state.fail.net_worth_shares = false;
+      // an older app, and an account without Plus
+      const old = await call(load(db, A), GET_A, null);
+      t.eq([old.status, "holdings" in old.body], [400, false], "NEW2-i an app before 1.1.8 is never sent the kept list (it would put it in the household's shared data)");
+      const dbNoPlus = makeDb({ items: { [A]: 1 } });
+      dbNoPlus.state.rows.plus_holdings.push({ user_id: A, item_id: "a-item-0", holdings: liveA.body.holdings, fetched_at: asOf });
+      dbNoPlus.state.fail.plaid_items = true;
+      const noPlus = await call(load(dbNoPlus, A), GET_A);
+      t.eq([noPlus.status, "holdings" in noPlus.body], [400, false], "NEW2-j without Plus nothing kept is read or sent");
+      // nothing kept, the table not there yet, and Plus off: as before
+      const dbEmpty = makeDb({ items: { [A]: 1 }, plus: A }); dbEmpty.state.fail.plaid_items = true;
+      t.eq((await call(load(dbEmpty, A), GET_A)).status, 400, "NEW2-k nothing kept for that bank: the same 400 as before");
+      const dbMissing = makeDb({ items: { [A]: 1 }, plus: A }); dbMissing.state.fail.plaid_items = true; dbMissing.state.missing.plus_holdings = true;
+      t.eq((await call(load(dbMissing, A), GET_A)).status, 400, "NEW2-l before 0055 is run: the same 400 as before, no crash");
+      delete process.env.PLUS_ENABLED;
+      const off = await call(load(db, A), GET_A);
+      t.eq([off.status, "holdings" in off.body], [400, false], "NEW2-m with Plus switched off nothing changes at all");
+      process.env.PLUS_ENABLED = "true";
+      t.eq((await call(load(db, A), { action: "get_investments" })).status, 400, "NEW2-n no bank named: 400, as before");
+      // NEW-1, the server's side: a save the database refuses because the bank is gone is "not stored", never an error
+      const dbGone = makeDb({ items: { [A]: 1 }, plus: A }); dbGone.state.failWrite.plus_holdings = true;
+      const gone = await call(load(dbGone, A), GET_A);
+      t.eq([gone.status, gone.body.stored, show(gone.body.holdings).length], [200, false, 3], "NEW1-a a save the database refuses answers stored: false; the read itself is not failed");
+    }
   } finally {
     global.fetch = realFetch; console.error = quiet.e; console.warn = quiet.w;
     for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];

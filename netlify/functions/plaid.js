@@ -428,7 +428,12 @@ exports.handler = async (event) => {
     // 5. get_investments
     if (action === "get_investments") {
       const { access_token, user_id, owner_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body, { ctx: reqCtx });
-      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
+      if (!access_token) {
+        // The bank's row could not be read: with Plus, the list the server kept is answered instead (NEW-2, above).
+        const keptAnswer = user_id ? await keptHoldingsWithoutToken(user_id, body) : null;
+        if (keptAnswer) return ok(keptAnswer);
+        return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
+      }
       // sharedOnly: the accounts of a partner's bank its owner shared (null: the asker's own bank, all of it).
       // plusLive: this request has Plus, an app that keeps holdings private, and (for a partner's bank) the owner's
       // sharing choices were read. Only then is anything kept on the server, or answered from what was kept.
@@ -1170,7 +1175,40 @@ async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } =
       }
     } catch (e) { console.error("[resolveAccessToken] household:", e.message); }
   }
-  return { access_token: null, error: "item not found for this user", statusCode: 400 };
+  // user_id: who asked (they are signed in). Only get_investments reads it, for the kept-holdings answer below.
+  return { access_token: null, user_id, error: "item not found for this user", statusCode: 400 };
+}
+
+// PLUS: THE KEPT HOLDINGS WHEN THE BANK'S OWN ROW CANNOT BE READ (round 3 of the review, NEW-2). get_investments
+// already answers the list the server kept when PLAID cannot be read. When the bank's row itself could not be read
+// (so there is no token to ask Plaid with), the request used to stop with "item not found", and a device with no copy
+// of its own showed no holdings though the server had them. This is that same answer for that case, and only for
+// someone who would have been sent a live one:
+//   signed in; Plus is on for them; their app is 1.1.8 or newer; their household has Plus;
+//   the list is kept in THEIR name (a row exists only for a bank its owner has connected: 0055), all of it;
+//   or in a household partner's name, and then only the accounts that partner shared, by the same choices a live
+//   answer reads (net_worth_shares). Nothing shared, or the choices cannot be read: nothing.
+// Anyone else, and any fault: null, and the request answers exactly as it did before.
+async function keptHoldingsWithoutToken(userId, body) {
+  try {
+    if (!userId || !body || !body.item_id || !plusAddon.plusEnabledFor(userId) || !plusAddon.plusClientOk(body)) return null;
+    const admin = getAdminClient();
+    const ent = await plusAddon.getPlusEntitlement(admin, userId);
+    if (!ent || !ent.plus) return null;
+    const stale = (kept, list) => ({ holdings: list, plus_mode: true, stale: true, as_of: kept.fetched_at });
+    const mine = await holdingsStore.loadPlusHoldings(admin, userId, body.item_id);
+    if (mine) return stale(mine, mine.holdings);
+    for (const peer of await household.peerIdsOf(admin, userId)) {
+      const theirs = await holdingsStore.loadPlusHoldings(admin, peer, body.item_id);
+      if (!theirs) continue;
+      const { data: shares, error } = await admin.from("net_worth_shares").select("account_id, shared").eq("user_id", peer);
+      if (error) return null;
+      const shared = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
+      if (!shared.size) return null;
+      return stale(theirs, theirs.holdings.filter((h) => h && shared.has(h.account_id)));
+    }
+    return null;
+  } catch (e) { console.error("[plaid] kept holdings:", e && e.message); return null; }
 }
 
 // list_items' rows, oldest first. balance-truth adds transactions_pending (the webhook's "new transactions are
