@@ -21,7 +21,7 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
+import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, portfolioStartFor, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
 import { viewerNetWorth, totalsTone } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
@@ -2256,6 +2256,9 @@ function debtScenarioResult(targetDebt, extraPayment, debts) {
 }
 
 function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange, onUpgrade, setAppData}) {
+  // With Plus on, "your portfolio today" is this person's own holdings, and nothing without Plus (lib/netWorthAccess.js
+  // portfolioStartFor): it used to be the old shared copy's total in every mode.
+  const nwWhatIf = useNetWorthState();
   const [rateDraft, setRateDraft] = useState(null); // an assumed debt rate being replaced (null = not editing)
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2370,7 +2373,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       // "Invest $300/month"   → 300 is monthly, principal is current portfolio.
       const parsedAmount = parseAmountFromQuery(qText);
       const isLumpSum = detectLumpSum(qText);
-      const portfolioValue = (data.investments || []).reduce((s, h) => s + (h.value || 0), 0);
+      const portfolioValue = portfolioStartFor(data.demo ? { mode: "today" } : nwWhatIf, data.investments);
       let monthlyContribution, initialPrincipal;
       if (isLumpSum && parsedAmount > 0) {
         monthlyContribution = 0;

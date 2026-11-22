@@ -149,6 +149,24 @@ export const getNetWorthState = () => state;
  */
 export const showsAccountBalanceCard = (mode) => mode === "today";
 /**
+ * What the invest What-If starts from ("your portfolio today"). Plus round 2, 2026-11-22: it read the old shared
+ * copy's total in every mode, which without Plus is a figure from behind Plus, and with Plus had a partner's holdings
+ * in it (and was $0 once that copy was cleared).
+ *   today                         the household's holdings, as before
+ *   locked, unavailable, pending  0: no figure from behind Plus
+ *   plus                          this person's own holdings (a bank they linked), when they are in one stated currency;
+ *                                 otherwise 0 (currencies are never added together, and an owner is never guessed)
+ */
+export function portfolioStartFor(s, investments) {
+  const sum = (list) => (Array.isArray(list) ? list : []).reduce((t, h) => t + (Number(h && h.value) || 0), 0);
+  if (!s || s.mode === "today") return sum(investments);
+  if (s.mode !== "plus") return 0;
+  const mineOf = ownerOfFrom(s.owners);
+  const mine = (Array.isArray(s.holdings) ? s.holdings : []).filter((h) => mineOf(h) === "me");
+  const currencies = new Set(mine.map((h) => (h.currencyKnown !== false && h.currency) || "?"));
+  return currencies.size === 1 && !currencies.has("?") ? sum(mine) : 0;
+}
+/**
  * What Plus keeps apart from the household's data, for Settings' "Export my data": this person's own holdings (a
  * bank they linked) and the net worth entries they typed. A partner's are the partner's to export, shared or not.
  * null without Plus: there is nothing apart to add. Full-app review 2026-11-22, P9-03.
