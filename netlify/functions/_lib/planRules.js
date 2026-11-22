@@ -104,11 +104,31 @@ const SUBSCRIPTION_PAID_STATUSES = Object.freeze(["active", "trialing"]);
 //
 // current_period_end is checked as well as status. An 'active' row whose period ended is a webhook
 // we never received, and trusting status alone would hand out the product on a delivery failure.
+//
+// NO PERIOD END ON THE ROW (review of 2026-11-22, P2-02). A row a checkout wrote before Stripe could be asked for the
+// period has none until the next subscription event, and used to count as paid for as long as no event arrived: for
+// ever, if the cancellation was the event that went missing. It now counts for the one billing period the checkout
+// paid for (a month, or a year for the annual plans and for a row with no plan key), plus the three days Stripe keeps
+// retrying a webhook, measured from the last word Stripe gave on that row (last_event_at, else updated_at). The same
+// reasoning as the line above: past that point a renewal would have set the period, so silence is a webhook we never
+// received. A caller that did not read those dates gets the old answer (status alone), and so does a store row: the
+// stores always give an end. The status read fills the real end in from Stripe (_lib/stripeLive.js fillMissingPeriod).
+const NO_PERIOD_GRACE_MS = 3 * 86400000;
+const NO_PERIOD_MS = Object.freeze({ monthly: 31 * 86400000, annual: 366 * 86400000 });
+function impliedPeriodEndMs(sub) {
+  if (!sub || STORE_PROVIDERS.includes(sub.provider)) return null;
+  const from = _time(sub.last_event_at) !== null ? _time(sub.last_event_at) : _time(sub.updated_at);
+  if (from === null) return null;
+  return from + (sub.plan_key === "monthly" ? NO_PERIOD_MS.monthly : NO_PERIOD_MS.annual) + NO_PERIOD_GRACE_MS;
+}
 function isPaidSubscription(sub, now = Date.now()) {
   if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
-  const end = _time(sub.current_period_end);
-  if (end === null) return true;               // no period on the row yet: status is all we have
   const t = now instanceof Date ? now.getTime() : now;
+  const end = _time(sub.current_period_end);
+  if (end === null) {
+    const implied = impliedPeriodEndMs(sub);
+    return implied === null ? true : t < implied;   // no dates read: status is all we have
+  }
   return t < end;
 }
 
@@ -143,5 +163,5 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
 
 module.exports = {
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile, trialPlanFirstSince, accountTrialApplies,
-  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
+  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, impliedPeriodEndMs, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
 };

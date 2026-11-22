@@ -526,6 +526,15 @@ async function redeemGift({ admin, userId, rawCode, now = new Date() }) {
 // ── THE RECIPIENT'S EMAIL ON ITS DAY (gift-send-sweep.js, every 5 minutes) ─────────────────────────────────────────────
 const MAX_ATTEMPTS = 10;
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+// "voided" | "redeemed" when the gift's own row says so now; null otherwise (including when it cannot be read).
+async function withdrawnSinceClaim(admin, code) {
+  try {
+    const { data, error } = await admin.from("gift_codes").select("voided_at, redeemed_at").eq("code", code).maybeSingle();
+    if (error || !data) return null;
+    return data.voided_at ? "voided" : (data.redeemed_at ? "redeemed" : null);
+  } catch { return null; }
+}
+
 /**
  * One run: every recipient email whose day has reached 07:00 Eastern, claimed five at a time (gift_claim_due_sends:
  * one atomic UPDATE ... RETURNING, so two runs never take the same row), sent with the key gift-recipient/<code>, and
@@ -545,6 +554,16 @@ async function runSendSweep({ admin, now = () => new Date(), env = process.env, 
     if (!Array.isArray(batch) || !batch.length) break;
     for (let i = 0; i < batch.length; i++) {
       const g = batch[i];
+      // REFUNDED OR REDEEMED SINCE THE CLAIM (review of 2026-11-22, P2-07). The claim skips such a gift, but a batch is
+      // five rows sent one after another, so a refund can land between a row's claim and its send. The row is read
+      // again right before the send: a gift that is now void or already redeemed gets no email, and its claim stays so
+      // no later run takes it. A read that fails, or finds nothing, changes nothing: the email goes as before.
+      const gone = await withdrawnSinceClaim(admin, g.code);
+      if (gone) {
+        await rpc(admin, "gift_mark_send_failed", { p_code: g.code, p_error: `withdrawn_${gone}` }).catch(() => 0);
+        out.withdrawn = (out.withdrawn || 0) + 1;      // only present when it happened: the answer's shape is otherwise as it was
+        continue;
+      }
       const mail = recipientEmailPayload({ code: g.code, plan: g.plan, recipient_email: g.recipient_email, buyer_name: g.buyer_name,
         recipient_name: g.recipient_name, message: g.gift_message, start_on: g.start_on }, { env, words });
       let r;

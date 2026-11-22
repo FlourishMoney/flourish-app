@@ -164,7 +164,7 @@ async function householdCover(admin, userId, now = Date.now()) {
     for (const peer of peers) {
       const prof = await admin.from("profiles").select("plan, trial_started_at, trial_ends_at, founder_flag").eq("user_id", peer).maybeSingle();
       if (prof.error) return { covered: false, unavailable: true };
-      const sub = await admin.from("subscriptions").select("provider, status, current_period_end").eq("user_id", peer).maybeSingle();
+      const sub = await admin.from("subscriptions").select("provider, status, current_period_end, plan_key, last_event_at, updated_at").eq("user_id", peer).maybeSingle();
       if (sub.error) return { covered: false, unavailable: true };
       const ent = deriveEntitlement(prof.data, sub.data, now);
       if (isPaidSubscription(sub.data, now)) {

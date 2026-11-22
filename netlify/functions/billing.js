@@ -26,7 +26,7 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost, stripeGet } = require("./_lib/stripeApi");
-const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
+const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold, fillMissingPeriod } = require("./_lib/stripeLive");
 const { isPaidSubscription } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
@@ -152,9 +152,12 @@ exports.handler = async (event) => {
     if (action === "status") {
       // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
       // shown the plans because the database blinked. Retried first, as getUserPlan does.
-      const { data: row, error: rowErr } = await readWithRetry(() => admin
-        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end").eq("user_id", user_id).maybeSingle());
+      const { data: readRow, error: rowErr } = await readWithRetry(() => admin
+        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // A website row with no period end (review of 2026-11-22, P2-02): Stripe is asked about that one subscription and
+      // its own status and end are written on. Never throws; when Stripe cannot be asked the row is as it was read.
+      const row = await fillMissingPeriod(admin, user_id, readRow);
       // TRIAL_PLAN_FIRST (_lib/trialPlanFirst.js): only while it is on is there a trial_plan_first key; off, every
       // answer below is as it was. A profile read that fails is a 503, never a guess about a trial.
       const tpfState = await trialPlanFirstState(admin, user_id, { row, web: !isNativeRequest(event) });

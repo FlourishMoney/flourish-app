@@ -15651,6 +15651,10 @@ function ResetPasswordScreen({ onDone, onCancel }) {
     setBusy(true); setErr("");
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) { setErr(error.message || "Couldn't update password. The reset link may have expired. Request a new one below."); setBusy(false); return; }
+    // Every other session of this account is signed out (review of 2026-11-22, P2-01). With instant signup an account
+    // can be made with an address its maker does not own; the owner takes it back with this emailed link, and whoever
+    // made it must not stay signed in. This session stays. Best effort: the password is already changed.
+    try { await supabase.auth.signOut({ scope: "others" }); } catch {}
     stripHash();
     setBusy(false);
     setDone(true);

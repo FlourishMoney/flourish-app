@@ -14,7 +14,8 @@
 // IDEMPOTENCY. The INSERT into billing_events is the lock, claimed BEFORE the work:
 // the first delivery inserts and processes, a replay hits the primary key and is
 // acknowledged without repeating anything. A row left 'failed' may be retried — that is
-// a delivery that never completed, not one that completed twice.
+// a delivery that never completed, not one that completed twice. So may a row still
+// 'received' a minute on (the function was stopped mid-work): _lib/eventClaim.js.
 //
 // Stripe retries until it gets a 2xx, so a 200 means "this is finished with".
 // -----------------------------------------------------------------------------
@@ -31,12 +32,17 @@ const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripe
 // The full funnel (migration 0042): the website's payment, cancellation or refund, first time only.
 const { stripeMilestone, recordMilestone } = require("./_lib/funnel");
 const { trialPlanFirstSince } = require("./_lib/planRules");
+const { reclaimEvent } = require("./_lib/eventClaim");
 const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
 // GIFTS (migration 0050): a paid gift checkout makes its one code; a refunded gift voids it while unused.
 const gifts = require("./_lib/gifts");
 
+// A checkout whose payment was still to clear when it completed (a bank debit) says so later with this event; it is
+// read exactly as the completed one is (review of 2026-11-22, P3-04).
+const CHECKOUT_PAID_LATER = "checkout.session.async_payment_succeeded";
 const HANDLED = Object.freeze([
   "checkout.session.completed",
+  CHECKOUT_PAID_LATER,
   "customer.subscription.updated",
   "customer.subscription.deleted",
   "charge.refunded",
@@ -112,6 +118,32 @@ function endedInTrialUnpaid(sub) {
   return Number.isFinite(trialEnd) && trialEnd > 0 && endedAt > 0 && endedAt <= trialEnd;
 }
 
+// The end of the period a subscription is paid to, as Stripe reports it (on the subscription, or on its items from API
+// 2025-03-31), or null.
+function paidThrough(sub) {
+  const item = sub?.items?.data?.[0] || {};
+  return isoOrNull(Number.isFinite(sub?.current_period_end) ? sub.current_period_end : item.current_period_end);
+}
+
+// A FOUNDING TRIAL WHOSE FIRST CHARGE NEVER WENT THROUGH (review of 2026-11-22, P2-05). The card was declined when the
+// 14 days ended, Stripe retried for a while and then ended the subscription: it ended AFTER its trial, so the test
+// above does not see it, and the seat stayed held by a household that never paid (and the founding price was marked
+// as ended for them). Stripe is asked for the subscription's paid invoices: a trial always has its own, for $0; if
+// none is above $0, nothing was ever paid, and it is treated as the unpaid trial it was. Anything else keeps the rule
+// as it was: no trial, a discount on the subscription (a code that covers the price holds the seat all the same), an
+// empty or unreadable list, or Stripe not answering.
+async function neverPaidAfterTrial(sub) {
+  const trialEnd = Number(sub && sub.trial_end);
+  if (!sub || !sub.id || !(Number.isFinite(trialEnd) && trialEnd > 0)) return false;
+  if (sub.discount || (Array.isArray(sub.discounts) && sub.discounts.length)) return false;
+  try {
+    const res = await stripeApi.stripeGet(`/invoices?subscription=${encodeURIComponent(sub.id)}&status=paid&limit=100`);
+    const paid = res && Array.isArray(res.data) ? res.data : [];
+    if (!paid.length || res.has_more === true) return false;
+    return !paid.some((inv) => Number(inv && inv.amount_paid) > 0);
+  } catch { console.error("[stripe-webhook] invoices read:", "no_status"); return false; }
+}
+
 function userIdFrom(object) {
   return object?.metadata?.user_id || object?.client_reference_id || null;
 }
@@ -174,15 +206,12 @@ exports.handler = async (event) => {
     return reply(500, { error: "claim_failed" });          // 5xx so Stripe retries
   }
   if (!claimed || claimed.length === 0) {
-    // Already seen. Unless the earlier attempt failed, in which case let it run again.
-    const { data: prior } = await admin
-      .from("billing_events").select("status, attempts").eq("event_id", evt.id).maybeSingle();
-    if (!prior || prior.status !== "failed") {
-      return reply(200, { received: true, replay: true });
-    }
-    await admin.from("billing_events")
-      .update({ status: "received", attempts: (prior.attempts || 1) + 1, error: null })
-      .eq("event_id", evt.id);
+    // Already seen (_lib/eventClaim.js). Finished: acknowledged, nothing repeated. Never finished (marked failed, or
+    // left "received" by a delivery that died mid-work): this delivery does the work. Possibly still at work: a 5xx,
+    // so Stripe sends it again later; a 200 would be the last anyone heard of the event.
+    const earlier = await reclaimEvent(admin, evt.id);
+    if (earlier === "done") return reply(200, { received: true, replay: true });
+    if (earlier === "busy") return reply(503, { error: "in_progress" });
   }
 
   const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();
@@ -197,6 +226,10 @@ exports.handler = async (event) => {
       .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
     return reply(200, { received: true, ignored: true });
   }
+
+  // The payment clearing later is the same news as the completed checkout, and from here on is read as one (the
+  // ledger row above keeps the event's own type).
+  if (evt.type === CHECKOUT_PAID_LATER) evt = { ...evt, type: "checkout.session.completed" };
 
   // ORDERING. Stripe does not guarantee the order events arrive in, and it retries a failed
   // delivery for days. Without this check a stale customer.subscription.updated landing after a
@@ -360,17 +393,33 @@ exports.handler = async (event) => {
         ...amounts,
         updated_at: new Date().toISOString(),
       };
-      // TRIAL_PLAN_FIRST (review round, M3): a checkout that charged nothing may be a 14-day trial. Stripe is asked for
-      // the subscription, so the row says trialing with the trial's end from the start (the chip, the status). If Stripe
-      // cannot be asked, the row is "active" as before and the next subscription event corrects it.
-      if (trialPlanFirstSince() !== null && object.payment_status === "no_payment_required" && sessionSubId) {
-        try {
-          const live = await stripeApi.stripeGet(`/subscriptions/${encodeURIComponent(sessionSubId)}`);
-          if (live && live.status === "trialing" && Number.isFinite(Number(live.trial_end))) {
-            patch.status = "trialing";
-            patch.current_period_end = new Date(Number(live.trial_end) * 1000).toISOString();
-          }
-        } catch { console.error("[stripe-webhook] trial read:", "no_status"); }
+      // WHAT WAS PAID, AND UNTIL WHEN (review of 2026-11-22, P3-04). The session says whether the first payment was
+      // made; Stripe is asked for the subscription itself, so the row carries the end of the period that was paid for
+      // (without it the row would count as paid until some later event happened to arrive).
+      //   paid, or nothing to pay   "active" as before, plus Stripe's period end when it can be asked
+      //   unpaid (a debit still to clear)   never assumed paid: Stripe's own status for the subscription, or, when
+      //                             Stripe cannot be asked, "incomplete" until the payment is heard of
+      //                             (async_payment_succeeded, a subscription event, or the status read's fill-in)
+      // An answer is used only if it is about this subscription.
+      let live = null;
+      if (sessionSubId) {
+        try { live = await stripeApi.stripeGet(`/subscriptions/${encodeURIComponent(sessionSubId)}`); }
+        catch { live = null; console.error("[stripe-webhook] subscription read:", "no_status"); }
+        if (!live || typeof live.status !== "string" || (live.id != null && live.id !== sessionSubId)) live = null;
+      }
+      if (object.payment_status === "unpaid") {
+        patch.status = live ? live.status : "incomplete";
+        if (live && paidThrough(live)) patch.current_period_end = paidThrough(live);
+      } else if (live && ["active", "trialing"].includes(live.status) && paidThrough(live)) {
+        patch.current_period_end = paidThrough(live);
+      }
+      // TRIAL_PLAN_FIRST (review round, M3): a checkout that charged nothing may be a 14-day trial. The row says
+      // trialing with the trial's end from the start (the chip, the status). If Stripe cannot be asked, the row is
+      // "active" as before and the next subscription event corrects it.
+      if (trialPlanFirstSince() !== null && object.payment_status === "no_payment_required" && live
+          && live.status === "trialing" && Number.isFinite(Number(live.trial_end))) {
+        patch.status = "trialing";
+        patch.current_period_end = new Date(Number(live.trial_end) * 1000).toISOString();
       }
       // DECISIONS.md item 1: the founding price is locked WHILE CONTINUOUSLY SUBSCRIBED. The
       // clock starts here and is cleared on deletion, so "continuously" stays checkable.
@@ -408,7 +457,7 @@ exports.handler = async (event) => {
 
     if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted" || trialCreated) {
       const user_id = userIdFrom(object);
-      const trialOnly = foundingSubscriptionEnded(evt.type, object) && endedInTrialUnpaid(object);
+      const trialOnly = foundingSubscriptionEnded(evt.type, object) && (endedInTrialUnpaid(object) || await neverPaidAfterTrial(object));
       const foundingEnded = foundingSubscriptionEnded(evt.type, object) && !trialOnly;
       const patch = subscriptionPatch(object,
         evt.type === "customer.subscription.deleted"
