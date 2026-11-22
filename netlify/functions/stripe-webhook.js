@@ -36,6 +36,8 @@ const { trialPlanFirstSince } = require("./_lib/planRules");
 const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
 // GIFTS (migration 0050): a paid gift checkout makes its one code; a refunded gift voids it while unused.
 const gifts = require("./_lib/gifts");
+// The stores, asked the moment a website Plus ends (applyPlusEvent).
+const { fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
 
 const HANDLED = Object.freeze([
   "checkout.session.completed",
@@ -126,50 +128,106 @@ function foundingCheckoutPaid(session) {
     && ["paid", "no_payment_required"].includes(session?.payment_status);
 }
 
-// THE PLUS ADD-ON'S STRIPE EVENTS (migration 0044). Written to public.plus_addon_subscriptions only, ordered by the
-// event's own time as the main plan's are. A checkout is read back from Stripe (its subscription, for the price and
-// the period), never from the session alone. Anything that is not a real Plus price is acknowledged and grants nothing.
+// THE PLUS ADD-ON'S STRIPE EVENTS (migration 0044). Written to public.plus_addon_subscriptions only. A checkout is read
+// back from Stripe (its subscription, for the price and the period), never from the session alone. Anything that is not
+// a real Plus price is acknowledged and grants nothing.
+//
+// ORDER AND TWO AT ONCE (review 2026-11-22). Stripe does not promise the order events arrive in, two can be handled at
+// the same moment, and an event's time is to the second, so "created" and "updated" for one checkout often carry the
+// same one. So:
+//   - events are ordered by their own time ONLY against the row of the SAME subscription. An older one changes nothing.
+//   - the SAME second cannot be ordered at all: then the subscription is read from Stripe, and what Stripe says now is
+//     written, whichever event arrived last.
+//   - every write goes through plusAddon.writePlusRow: it lands only if the row is still as this handler read it. If
+//     another handler wrote in between, this one reads the row again, reads Stripe again, and decides again.
+//   - an event for ANOTHER subscription than the one on the row never takes a live row away: one that is not live is
+//     ignored; one that is live beside a live row is a second purchase (below); one that is live when the row is not
+//     becomes the row.
+// A SECOND PLUS (the buyer already has a live one in a store, or a second live website subscription): the row is kept,
+// the extra website subscription is set to end at its period end so it is never charged again (as the main plan does
+// for a household's extra one), and support is told once (plusAddon.flagSecondPlus). If Stripe cannot be told, the
+// event fails and Stripe sends it again.
+// WHEN A WEBSITE PLUS ENDS, the stores are asked at once (when the store apps sell): a store Plus the same buyer also
+// pays for must count from that moment, not from its next renewal.
 async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
   const T = plusAddon.TABLE;
   const settle = (status, error = null) => admin.from("billing_events")
     .update({ status, processed_at: new Date().toISOString(), error }).eq("event_id", evt.id);
   const eventAtIso = isoOrNull(evt.created);
+  const deps = { stripeGet: get, stripePost: stripeApi.stripePost, alertSupport };
   try {
     let sub = object;
     let userId = userIdFrom(object);
-    if (evt.type === "checkout.session.completed") {
-      const subId = typeof object.subscription === "string" ? object.subscription : object.subscription?.id;
+    const isCheckout = evt.type === "checkout.session.completed";
+    let subId = object && object.id;
+    if (isCheckout) {
+      subId = typeof object.subscription === "string" ? object.subscription : object.subscription?.id;
       if (!subId) { await settle("ignored", "plus: a checkout with no subscription"); return reply(200, { received: true, ignored: true }); }
       sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
     }
     const deleted = evt.type === "customer.subscription.deleted";
-    const row = plusAddon.plusRowFromStripe(sub, process.env, deleted ? { status: "canceled" } : {});
-    if (!row) { await settle("ignored", "plus: not a Plus price, nothing granted"); return reply(200, { received: true, ignored: true }); }
-    // The account: our own row for this subscription first, then the metadata the server put on it.
-    const { data: bySub, error: subErr } = await admin.from(T).select("user_id, last_event_at").eq("provider_subscription_id", row.provider_subscription_id).maybeSingle();
-    if (subErr) throw Object.assign(new Error(`plus read: ${subErr.code || "error"}`), { pg: subErr });
-    if (bySub && bySub.user_id) userId = bySub.user_id;
-    if (!userId) userId = sub && sub.metadata && sub.metadata.user_id;
-    if (!userId) throw new Error("plus: no account for the subscription");
-    const { data: cur, error: curErr } = bySub ? { data: bySub, error: null }
-      : await admin.from(T).select("user_id, last_event_at, provider, plan_key, status, product_id, current_period_end").eq("user_id", userId).maybeSingle();
-    if (curErr) throw Object.assign(new Error(`plus read: ${curErr.code || "error"}`), { pg: curErr });
-    const applied = Date.parse((cur && cur.last_event_at) || "");
-    if (Number.isFinite(evt.created) && Number.isFinite(applied) && evt.created * 1000 < applied) {
-      await settle("ignored", "stale: a newer event has already been applied to this Plus subscription");
-      return reply(200, { received: true, stale: true });
+    for (let attempt = 0; attempt < plusAddon.WRITE_TRIES; attempt++) {
+      // After another handler wrote in between, Stripe is asked again: this write must not carry an older answer.
+      if (attempt > 0) sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
+      let row = plusAddon.plusRowFromStripe(sub, process.env, deleted ? { status: "canceled" } : {});
+      if (!row) { await settle("ignored", "plus: not a Plus price, nothing granted"); return reply(200, { received: true, ignored: true }); }
+      // The account: our own row for this subscription first, then the metadata the server put on it.
+      const { data: bySub, error: subErr } = await admin.from(T).select(`user_id, ${plusAddon.ROW_COLS}`).eq("provider_subscription_id", row.provider_subscription_id).maybeSingle();
+      if (subErr) throw Object.assign(new Error(`plus read: ${subErr.code || "error"}`), { pg: subErr });
+      if (bySub && bySub.user_id) userId = bySub.user_id;
+      if (!userId) userId = sub && sub.metadata && sub.metadata.user_id;
+      if (!userId) throw new Error("plus: no account for the subscription");
+      const { data: cur, error: curErr } = bySub ? { data: bySub, error: null }
+        : await admin.from(T).select(`user_id, ${plusAddon.ROW_COLS}`).eq("user_id", userId).maybeSingle();
+      if (curErr) throw Object.assign(new Error(`plus read: ${curErr.code || "error"}`), { pg: curErr });
+      if (bySub) {
+        const applied = Date.parse(bySub.last_event_at || "");
+        if (Number.isFinite(evt.created) && Number.isFinite(applied)) {
+          if (evt.created * 1000 < applied) {
+            await settle("ignored", "stale: a newer event has already been applied to this Plus subscription");
+            return reply(200, { received: true, stale: true });
+          }
+          if (evt.created * 1000 === applied && attempt === 0 && !isCheckout) {
+            // The same second as the event already applied: no order between them. Stripe says what is true now.
+            sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
+            row = plusAddon.plusRowFromStripe(sub, process.env, deleted ? { status: "canceled" } : {});
+            if (!row) { await settle("ignored", "plus: not a Plus price, nothing granted"); return reply(200, { received: true, ignored: true }); }
+          }
+        }
+      } else if (cur) {
+        const liveNew = plusAddon.isLivePlusRow(row);
+        const liveCur = plusAddon.isLivePlusRow(cur);
+        const store = cur.provider !== "stripe";
+        const otherWebSub = !store && !!cur.provider_subscription_id;     // the row is another website subscription's
+        if ((store && liveCur) || (otherWebSub && liveCur && liveNew)) {
+          // One Plus per buyer: the live row is never written over. A live second one is set to end, and support is told.
+          if (liveNew) {
+            console.error(store ? "[stripe-webhook] plus conflict: a website Plus subscription for a buyer whose Plus is in a store"
+              : "[stripe-webhook] plus conflict: a second website Plus subscription for a buyer who has one");
+            await plusAddon.endExtraStripePlus(sub, deps);
+            await plusAddon.flagSecondPlus(admin, userId, "stripe", deps);
+          }
+          await settle("ignored", store ? "plus conflict: the buyer already has Plus through a store; refund the website one"
+            : "plus conflict: the buyer already has a website Plus subscription; refund the second one");
+          return reply(200, { received: true, conflict: true });
+        }
+        if (otherWebSub && !liveNew) {
+          await settle("ignored", "plus: an event for another Plus subscription that is not live; the row is a different subscription's");
+          return reply(200, { received: true, ignored: true });
+        }
+      }
+      if (eventAtIso) row.last_event_at = eventAtIso;
+      if (!(await plusAddon.writePlusRow(admin, userId, cur || null, row))) continue;
+      if (plusAddon.isLivePlusRow(row)) await plusAddon.flagHouseholdSecondPlus(admin, userId, "stripe", deps);
+      else if (process.env.IAP_ENABLED === "true") {
+        // The website Plus is not live any more: a store Plus the same buyer pays for takes its place now.
+        try { await plusAddon.syncPlusFromStore(admin, userId, { ...deps, fetchSubscriber, acceptSandbox: acceptSandboxFor(null) || plusAddon.isPlusTester(userId) }); }
+        catch (e) { console.error("[stripe-webhook] plus: the stores could not be asked after a website Plus ended:", e.message); }
+      }
+      await settle("processed");
+      return reply(200, { received: true });
     }
-    // One Plus per buyer: a live store Plus row is never written over by a website one (logged for support).
-    if (!bySub && cur && cur.provider !== "stripe" && plusAddon.isLivePlusRow(cur)) {
-      console.error("[stripe-webhook] plus conflict: a website Plus subscription for a buyer whose Plus is in a store");
-      await settle("ignored", "plus conflict: the buyer already has Plus through a store; refund the website one");
-      return reply(200, { received: true, conflict: true });
-    }
-    if (eventAtIso) row.last_event_at = eventAtIso;
-    const { error } = await admin.from(T).upsert({ user_id: userId, ...row }, { onConflict: "user_id" });
-    if (error) throw Object.assign(new Error(`plus write: ${error.code || "error"}`), { pg: error });
-    await settle("processed");
-    return reply(200, { received: true });
+    throw new Error("plus write: busy");
   } catch (e) {
     // 0044 not applied while Plus is off: nothing of ours could have sold this; acknowledged, not retried for days.
     if (e && e.pg && plusAddon.isMissing(e.pg) && !plusAddon.plusEnabled()) {
@@ -180,6 +238,41 @@ async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
     await settle("failed", String(e.message).slice(0, 500));
     return reply(500, { error: "processing_failed" });
   }
+}
+
+// A PLUS PAYMENT TAKEN BACK ENDS PLUS (review 2026-11-22). A charge refunded IN FULL, or lost to a chargeback, for a
+// Plus customer (the add-on has a Stripe customer of its own, so its charges are never the main plan's): when it is
+// the charge for the period the subscription is in now, the subscription is cancelled at Stripe, so it is not left
+// live and charging, and the row ends now. A partial refund, or a refund of an earlier period, changes nothing: that
+// is support's call. Returns true when Plus was ended. Throws when Stripe or the row could not be reached, so the
+// event is sent again.
+async function endPlusForChargeBack(admin, evt, object, deps = {}) {
+  if (!plusAddon.plusOnForAnyone()) return false;
+  const get = deps.stripeGet || stripeGet, del = deps.stripeDelete || stripeApi.stripeDelete;
+  let charge = object;
+  if (evt.type === "charge.dispute.closed") {
+    if (object.status !== "lost") return false;
+    const chargeId = typeof object.charge === "string" ? object.charge : object.charge?.id;
+    if (!chargeId) return false;
+    charge = typeof object.charge === "object" && object.charge ? object.charge : await get(`/charges/${encodeURIComponent(chargeId)}`);
+  } else if (!(evt.type === "charge.refunded" && object.refunded === true)) return false;
+  const customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id;
+  if (!customerId) return false;
+  for (let attempt = 0; attempt < plusAddon.WRITE_TRIES; attempt++) {
+    const { data: row, error } = await admin.from(plusAddon.TABLE).select(`user_id, ${plusAddon.ROW_COLS}`).eq("provider_customer_id", customerId).maybeSingle();
+    if (error) { if (plusAddon.isMissing(error)) return false; throw new Error(`plus read: ${error.code || "error"}`); }
+    if (!row || row.provider !== "stripe" || !row.provider_subscription_id) return false;
+    const sub = await get(`/subscriptions/${encodeURIComponent(row.provider_subscription_id)}`);
+    const item = (sub && sub.items && sub.items.data && sub.items.data[0]) || {};
+    const periodStart = Number.isFinite(sub && sub.current_period_start) ? sub.current_period_start : item.current_period_start;
+    // A day's slack: the first charge can be made a moment before the period Stripe records. An earlier period's is a month older.
+    if (!Number.isFinite(periodStart) || !Number.isFinite(charge.created) || charge.created < periodStart - 86400) return false;
+    if (sub.status !== "canceled") await del(`/subscriptions/${encodeURIComponent(sub.id)}`);
+    if (!plusAddon.isLivePlusRow(row)) return true;
+    const nowIso = new Date().toISOString();
+    if (await plusAddon.writePlusRow(admin, row.user_id, row, { status: "canceled", current_period_end: nowIso, cancel_at_period_end: false })) return true;
+  }
+  throw new Error("plus write: busy");
 }
 
 exports.handler = async (event) => {
@@ -253,6 +346,18 @@ exports.handler = async (event) => {
     return await applyPlusEvent(admin, evt, object, reply, { stripeGet });
   }
 
+  // A Plus payment taken back (endPlusForChargeBack). Beside everything below, never instead of it: the same event
+  // still reaches the gift, the founding seat and the creator handling.
+  let plusEnded = false;
+  if (evt.type === "charge.refunded" || evt.type === "charge.dispute.closed") {
+    try { plusEnded = await endPlusForChargeBack(admin, evt, object); }
+    catch (e) {
+      console.error("[stripe-webhook] plus", evt.type, e.message);
+      await admin.from("billing_events").update({ status: "failed", error: String(e.message).slice(0, 500) }).eq("event_id", evt.id);
+      return reply(500, { error: "processing_failed" });
+    }
+  }
+
   const creatorInvoice = evt.type === CREATOR_EVENT && creatorsEnabled();
   const creatorDispute = CREATOR_DISPUTE_EVENTS.includes(evt.type) && creatorsEnabled();
   // TRIAL_PLAN_FIRST: a Stripe trial starts as "trialing" with its end date on customer.subscription.created, which
@@ -262,8 +367,9 @@ exports.handler = async (event) => {
   // converts): customer.subscription.trial_will_end is not handled here, and we send none for it.
   if (!HANDLED.includes(evt.type) && !creatorInvoice && !creatorDispute && !trialCreated) {
     await admin.from("billing_events")
-      .update({ status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
-    return reply(200, { received: true, ignored: true });
+      .update(plusEnded ? { status: "processed", processed_at: new Date().toISOString(), error: "plus: ended, the payment was lost to a chargeback" }
+        : { status: "ignored", processed_at: new Date().toISOString() }).eq("event_id", evt.id);
+    return reply(200, { received: true, ...(plusEnded ? {} : { ignored: true }) });
   }
 
   // ORDERING. Stripe does not guarantee the order events arrive in, and it retries a failed

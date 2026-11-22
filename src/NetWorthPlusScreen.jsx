@@ -8,6 +8,7 @@
 // -----------------------------------------------------------------------------
 import React, { useState } from "react";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";
+import { newEntryId } from "./lib/netWorthAccess.js";
 import { netWorthWords as W } from "./lib/netWorthWords.js";
 
 const font = "'Plus Jakarta Sans',sans-serif";
@@ -53,7 +54,7 @@ function Part({ p, C, onShare, canShare, onDelete }) {
 
 /**
  * props: data, holdings, list, ownerOf, C (theme), and the three calls, each resolving true when the server took it:
- *   onSaveEntry({ id?, kind, label, value, currency, shared }), onDeleteEntry(id), onShareAccount(account_id, shared)
+ *   onSaveEntry({ id?, client_id?, kind, label, value, currency, shared }), onDeleteEntry(id), onShareAccount(account_id, shared)
  */
 export default function NetWorthPlusScreen({ data, holdings, list, ownerOf, C, onSaveEntry, onDeleteEntry, onShareAccount }) {
   const v = viewerNetWorth({ data, holdings, list, ownerOf });
@@ -68,7 +69,8 @@ export default function NetWorthPlusScreen({ data, holdings, list, ownerOf, C, o
   const save = async () => {
     const value = Number(String(draft.value || "").replace(/,/g, ""));
     if (!Number.isFinite(value) || value < 0 || !draft.kind || !draft.currency) { setFailed(true); return; }
-    if (await run(onSaveEntry({ kind: draft.kind, label: draft.label || "", value, currency: draft.currency, shared: draft.shared === true }))) setDraft(null);
+    // client_id: this form's own id, made when it opened. A second tap after a lost answer is the same entry, not another.
+    if (await run(onSaveEntry({ client_id: draft.client_id, kind: draft.kind, label: draft.label || "", value, currency: draft.currency, shared: draft.shared === true }))) setDraft(null);
   };
   const card = { background: C.card || "rgba(255,255,255,0.04)", borderRadius: 18, padding: "14px 16px", marginBottom: 12, minWidth: 0, boxSizing: "border-box", width: "100%" };
   const h = { color: C.muted, fontFamily: font, fontSize: 13, fontWeight: 700, marginBottom: 4 };
@@ -108,7 +110,7 @@ export default function NetWorthPlusScreen({ data, holdings, list, ownerOf, C, o
             <button onClick={save} style={{ marginTop: 8, minHeight: 44, width: "100%", borderRadius: 12, border: "none", background: C.teal, color: "#fff", fontFamily: font, fontWeight: 700, cursor: "pointer" }}>{W("networth-plus-save")}</button>
           </div>
         ) : (
-          <button onClick={() => setDraft({ kind: "home", label: "", value: "", currency: (data && data.profile && data.profile.country === "US") ? "USD" : "CAD", shared: false })}
+          <button onClick={() => setDraft({ client_id: newEntryId(), kind: "home", label: "", value: "", currency: (data && data.profile && data.profile.country === "US") ? "USD" : "CAD", shared: false })}
             style={{ marginTop: 10, minHeight: 44, width: "100%", borderRadius: 12, border: `1px solid ${C.teal}`, background: "none", color: C.tealBright || C.teal, fontFamily: font, fontWeight: 700, cursor: "pointer" }}>{W("networth-plus-add")}</button>
         )}
         {failed && <div role="alert" style={{ color: C.redBright, fontSize: 13, fontFamily: font, marginTop: 6 }}>{W("networth-plus-error")}</div>}

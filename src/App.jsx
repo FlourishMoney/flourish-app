@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useId, useSyncExternalStore } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useId, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
@@ -21,12 +21,15 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
+import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
 import { viewerNetWorth } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { plusClientFields } from "./lib/plusClient.js";
+import { mergeHoldings, loadPrivateHoldings, savePrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
+// This device's own storage, or null where there is none (a private window): lib/plusHoldings.js reads and writes through it.
+const deviceStore = () => { try { return localStorage; } catch { return null; } };
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -9681,11 +9684,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
   // Behind Plus (lib/netWorthAccess.js): the Net Worth tab is net worth with Plus, the locked state, or (PLUS_ENABLED off) as before.
   const nwState = (s => data.demo ? { ...s, mode: "today" } : s)(useNetWorthState());   // the demo: sample data, as today
   const nwCall = async (action, params) => {
+    const forUser = getNetWorthState().user;   // whose list this is: an answer that lands after another account signs in is dropped
     const jwt = await getJwt();
     const r = await callNetWorth(action, params, { apiBase: API_BASE, jwt });
     if (!(r && r.status === 200)) return false;
-    if (action !== "list") { const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt }); if (l && l.status === 200) setNetWorthList(l.body); }
-    else setNetWorthList(r.body);
+    if (action !== "list") { const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt }); if (l && l.status === 200) setNetWorthList(l.body, forUser); }
+    else setNetWorthList(r.body, forUser);
     return true;
   };
   // manual-balances: the account whose entered balance is being updated from net worth's How we got this.
@@ -18287,18 +18291,52 @@ export default function FlourishApp(){
   // which bank each person linked (list_items), for net worth that is private by default between partners. A check that
   // does not get through (no answer, or a failed one) is asked again after 5, 20 and 60 seconds. Until then a device the
   // server has never told "Plus is on" shows net worth as it does today; one that has been told shows no figure.
+  // INVESTMENT HOLDINGS, ONE SYNC (code review 2026-11-22; lib/plusHoldings.js). Asked at the first load after a bank is
+  // connected and, with Plus, when the plan is confirmed and this device's copy is 30 minutes old or more (before, a
+  // person with Plus had holdings only in the session that first connected the bank).
+  // Plus off: exactly as before, the holdings go in the household's data. With Plus (the server says plus_mode) they are
+  // this person's own and their partner's shared ones: they stay on this device, for this account, and never go in the
+  // shared household blob. A bank that fails keeps what it had; a locked answer changes nothing saved.
+  const syncHoldings = useCallback(async (items, jwt, forUser)=>{
+    try {
+      const invResults = await Promise.allSettled(
+        // client_version (lib/plusClient.js): with Plus on, the server sends holdings only to an app that says it
+        // keeps them private. An app that says nothing gets none.
+        items.map(it => callPlaid("get_investments",{item_id:it.item_id, ...plusClientFields()}, {jwt}))
+      );
+      const held = getNetWorthState().holdings;
+      const merged = mergeHoldings(held.length ? held : loadPrivateHoldings(deviceStore(), forUser), items, invResults);
+      const plusMode = merged.plusMode, allHoldings = plusMode ? merged.holdings : merged.plain;
+      if (plusMode) {
+        // Nothing changes unless a bank's holdings really came, for the person still signed in. The old copy in the
+        // shared blob is cleared only once the private copy is on this device (saved and read back).
+        if (!merged.delivered || getNetWorthState().user !== forUser) return;
+        setPlusHoldings(allHoldings);
+        if (savePrivateHoldings(deviceStore(), forUser, allHoldings)) setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
+      } else if (allHoldings.length > 0) {
+        setAppData(prev => ({ ...prev, investments: allHoldings }));
+      }
+    } catch(e) { /* silent — institution may not support investments */ }
+  },[]);
   // takePlusAnswer: the one place a plus_status (or plus_store_sync) answer is taken, at sign-in and after a purchase.
+  // Every answer says whose it is (forUser): one that lands after another account has signed in is dropped.
   const takePlusAnswer = useCallback(async (res, isCancelled = ()=>false)=>{
-    const mode = setPlusAnswer(res);
+    const forUser = user?.id || null;
+    const mode = setPlusAnswer(res, undefined, forUser);
     if(mode === "plus"){
       const jwt = await getJwt();
       const l = await callNetWorth("list", {}, { apiBase: API_BASE, jwt });
-      if(!isCancelled() && l && l.status === 200) setNetWorthList(l.body);
+      if(!isCancelled() && l && l.status === 200) setNetWorthList(l.body, forUser);
       const items = await getUserItems();
-      if(!isCancelled()) setItemOwners(items);
+      if(!isCancelled()) setItemOwners(items, forUser);
+      // Not waited for: the plan's answer is not held up by the banks.
+      if(!isCancelled() && holdingsStale(deviceStore(), forUser)) syncHoldings(items, jwt, forUser);
     }
     return mode;
-  },[]);
+  },[user?.id]);
+  // ONE ACCOUNT AT A TIME (lib/netWorthAccess.js setPlusUser): before anything is painted for a newly signed-in account,
+  // the page holds nothing of the last person's private net worth, and nothing shows until this account's own answer.
+  useLayoutEffect(()=>{ setPlusUser(user?.id || null); },[user?.id]);
   useEffect(()=>{
     let cancelled = false, timer = null;
     if(!user?.id) return;
@@ -19288,6 +19326,7 @@ export default function FlourishApp(){
         const jwt = await getJwt();
         if(!jwt) return;
         const items = await getUserItems();
+        if(getNetWorthState().mode === "plus") setItemOwners(items, getNetWorthState().user);
         if(items.length === 0) return;
         // Sprint Z #1: incremental sync — request full_resync when the local store is empty (fresh
         // device / cleared cache) or weekly (B1 self-heal) so the server ignores the stored cursor.
@@ -19392,30 +19431,8 @@ export default function FlourishApp(){
             return { ...prev, liabilities: retainLiabilities(prev.liabilities, fresh, acctItem, availableItemIds) };
           });
         } catch(e) { /* silent — institution may not support liabilities */ }
-        // Phase B3: fetch investment holdings per item, merge across banks
-        try {
-          const invResults = await Promise.allSettled(
-            // client_version (lib/plusClient.js): with Plus on, the server sends holdings only to an app that says it
-            // keeps them private. An app that says nothing gets none.
-            items.map(it => callPlaid("get_investments",{item_id:it.item_id, ...plusClientFields()}, {jwt}))
-          );
-          const allHoldings = [];
-          let plusMode = false;
-          invResults.forEach(r => {
-            if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings)) {
-              allHoldings.push(...r.value.holdings);
-              if (r.value.plus_mode) plusMode = true;
-            }
-          });
-          if (plusMode) {
-            // PLUS (the server says so): holdings are this person's own and their partner's shared ones, so they stay on
-            // this device (lib/netWorthAccess.js) and never go in the shared household blob; an old copy there is cleared.
-            setPlusHoldings(allHoldings);
-            setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
-          } else if (allHoldings.length > 0) {
-            setAppData(prev => ({ ...prev, investments: allHoldings }));
-          }
-        } catch(e) { /* silent — institution may not support investments */ }
+        // Phase B3: fetch investment holdings per item, merge across banks (syncHoldings, above: one path with Plus's).
+        await syncHoldings(items, jwt, getNetWorthState().user);
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from the MERGED transaction set (Sprint Z #1).
         setAppData(prev=>{

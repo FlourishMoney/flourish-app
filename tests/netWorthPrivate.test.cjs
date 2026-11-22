@@ -230,8 +230,10 @@ const post = async (fn, body, { origin = WEB, version = "1.1.8" } = {}) => {
           "7c3 a device whose last answer was 'today' keeps it through a failed answer too, not only through no answer");
         t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(LOCKED, s); return X.setPlusAnswer(r, s); }), Array(GONE.length).fill("unavailable"),
           "7c4 once the server has said Plus is on and this household has none, a failed check never becomes a figure");
-        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(PLUS, s); return X.setPlusAnswer(r, s); }), ["plus", ...Array(GONE.length - 1).fill("unavailable")],
-          "7c5 with Plus: no answer keeps 'plus' (offline), a failed answer is 'unavailable', exactly as before");
+        // Code review 2026-11-22 (H8): a person with Plus paid for the figure, so a failed answer keeps 'plus' as no answer
+        // always did. Before: every failed answer was 'unavailable'. (tests/plusReviewApp.test.cjs section 3 holds the rest.)
+        t.eq(GONE.map((r) => { const s = fresh(); X.setPlusAnswer(PLUS, s); return X.setPlusAnswer(r, s); }), Array(GONE.length).fill("plus"),
+          "7c5 with Plus: no answer and a failed answer alike keep 'plus', until a real answer says otherwise");
         t.eq((() => { const s = fresh(); return [X.setPlusAnswer({ status: 503, body: { error: "status_unavailable" } }, s), X.setPlusAnswer(null, s)]; })(), ["unavailable", "unavailable"],
           "7c6 the server's own 'the plan could not be read' means Plus is on there: no figure, on a new device too");
         t.eq((() => { const s = fresh(); X.setPlusAnswer(LOCKED, s); const a = X.setPlusAnswer({ status: 404, body: { error: "not_found" } }, s); return [a, X.setPlusAnswer(null, s), X.setPlusAnswer({ status: 502, body: null }, s)]; })(), ["today", "today", "today"],

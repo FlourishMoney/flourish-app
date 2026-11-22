@@ -67,7 +67,11 @@ There are no paying households yet, so nothing is grandfathered.
 - **Website and iPhone.** Both read the same row.
   - **Bought on the website:** the iPhone app has Plus, offers none, and is never handed a website checkout. It is managed and cancelled on the website (`plus_portal`).
   - **Bought on the iPhone:** the website reads the store's row, has Plus, and sells none (409). It is cancelled in the Apple account.
-  - **Bought in both:** the first row is kept, the second is logged as a conflict for support to refund, and the household keeps Plus.
+  - **Bought in both:** the first row is kept and the household keeps Plus. Support is emailed once per account (`plus_second_purchase`). A website subscription that is the extra one is set to end at its period end, so it is not charged again; a store one can only be refunded by support.
+  - **When one ends, the other counts at once:** a website Plus ending asks the stores, and a store Plus ending asks Stripe, so a buyer who pays for both never waits for a renewal to get Plus back.
+  - **Order of Stripe's events:** events are ordered by their own time only against the same subscription. Two in the same second are settled by asking Stripe what is true now. Every write lands only if the row has not changed since it was read (`writePlusRow`), for the store sync too.
+  - **A refund in full, or a lost chargeback,** of the current period's Plus payment cancels the subscription at Stripe and ends Plus. A partial refund, or one for an earlier period, changes nothing.
+  - **The store's billing grace period** keeps Plus until it ends.
 - **Not built:** the Plus purchase screens on the website and in the apps. The store products don't exist yet, and item 4 stops the screens.
 
 ## Bank logins (item 2)

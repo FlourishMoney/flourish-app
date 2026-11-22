@@ -22,6 +22,7 @@ const WHAT = Object.freeze({
   two_store_subscriptions: "two live store subscriptions at once (for example a regular plan and the founding annual, which Apple bills as separate groups)",
   founding_not_eligible: "the founding price bought in a store by a household the server did not offer it to",
   two_stripe_subscriptions: "two live Stripe subscriptions at once (two checkouts completed); the row keeps the first",
+  plus_second_purchase: "a second flourish Plus purchase in a household that already has one (the same buyer on the website and in a store, or each member bought one)",
   creator_amounts_unknown: "a payment by a household with a creator, whose amounts could not be read (no tax or store fee given): no commission was recorded",
   creator_refund_unmatched: "a refund for a household with a creator that matches no commission: nothing was clawed back",
   creator_chargeback_unmatched: "a lost chargeback for a household with a creator that matches no commission: nothing was clawed back",
@@ -40,7 +41,9 @@ function supportAlertMessage({ flag, userId, provider }) {
       `The server flagged a household: ${what}.`,
       `Account: ${userId}`,
       `Store: ${provider || "unknown"}`,
-      flag.startsWith("creator_")
+      flag === "plus_second_purchase"
+        ? "The household keeps flourish Plus. Find both purchases by the account id (Stripe: the Plus customer, metadata kind plus_addon and user_id; the stores: RevenueCat, entitlement plus_addon) and refund the extra one. A website Plus subscription the server found to be the extra one is already set to end at its period end, so it is not charged again."
+        : flag.startsWith("creator_")
         ? "Nothing about the household's access changed. Check the payment, and correct creator_commissions by hand if it should count (docs/ops/CREATOR-PAYOUTS.md)."
         : provider === "stripe"
         ? "The household keeps its access. Find the customer in Stripe by the account id (subscription metadata user_id), cancel and refund the extra subscription, then clear support_flag on its subscriptions row."

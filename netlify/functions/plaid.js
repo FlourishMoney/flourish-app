@@ -28,7 +28,7 @@ const PLAID_BASE = {
 const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
-const { bankLimitFor, limitBody } = require("./_lib/bankLimits");
+const { bankLimitFor, overAfterAdding, limitBody } = require("./_lib/bankLimits");
 const { planWords } = require("./_lib/planWords");
 const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -68,6 +68,20 @@ async function plaid(endpoint, body) {
     throw err;
   }
   return data;
+}
+
+// A NEW BANK THAT WAS REFUSED IS REMOVED AT PLAID, so nothing is left connected or billed (review 2026-11-22, M2). Three
+// tries. One that still cannot be removed has no row here (its token is never kept for a bank the person was refused),
+// so one error line names the item, never the token, for it to be removed by hand in Plaid's dashboard.
+const REMOVE_TRIES = 3;
+async function removeRefusedItem(access_token, item_id, where) {
+  let last = null;
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try { await plaid("/item/remove", { access_token }); return true; }
+    catch (e) { last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+  }
+  console.error(`[${where}] /item/remove failed ${REMOVE_TRIES} times: item ${item_id} is still live at Plaid, remove it by hand:`, (last && (last.errorCode || last.message)) || "error");
+  return false;
 }
 
 exports.handler = async (event) => {
@@ -219,9 +233,10 @@ exports.handler = async (event) => {
       const item_id = data.item_id;
 
       const admin = getAdminClient();
+      let addsABank = false;
       if (bankLimit) {
         // A NEW bank only: not one of this person's items, and not a bank (by institution) they already hold.
-        let addsABank = true;
+        addsABank = true;
         try {
           const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id, institution_id, institution_name").eq("user_id", user_id);
           if (mineErr) throw new Error(mineErr.code || "error");
@@ -231,8 +246,7 @@ exports.handler = async (event) => {
         } catch { addsABank = true; }
         if (addsABank && (bankLimit.unavailable || !bankLimit.allowed)) {
           // Refused: the item Plaid just made is removed, so nothing is left connected or billed.
-          try { await plaid("/item/remove", { access_token }); }
-          catch (rmErr) { console.warn("[exchange_token limit /item/remove failed]", rmErr.message); }
+          await removeRefusedItem(access_token, item_id, "exchange_token limit");
           if (bankLimit.unavailable) return statusUnavailable(CORS);
           return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
         }
@@ -255,6 +269,21 @@ exports.handler = async (event) => {
         try { await plaid("/item/remove", { access_token }); }
         catch (rbErr) { console.warn("[exchange_token rollback /item/remove failed]", rbErr.message); }
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
+      }
+
+      // TWO NEW BANKS AT THE SAME MOMENT (review 2026-11-22, H3). The limit was read before Plaid's exchange, so two
+      // people finishing together (or one person on two devices) could each see room for one more. So a NEW bank is
+      // counted again now it is written: if the count is past the limit, THIS bank is undone (removed at Plaid, then its
+      // row) and refused as it would have been. Only the bank this request just added is ever undone; a household that
+      // was already over its plan keeps every bank. A second look that cannot be read undoes nothing, and a bank Plaid
+      // will not remove stays connected with its row rather than live at Plaid with none.
+      if (bankLimit && addsABank) {
+        const after = await overAfterAdding(admin, user_id);
+        if (after.over && await removeRefusedItem(access_token, item_id, "exchange_token limit recheck")) {
+          try { await household.disconnectItem(admin, user_id, item_id); }
+          catch (delErr) { console.error("[exchange_token limit recheck: row delete failed]", item_id, delErr.message); }
+          return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody({ ...after.lim, used: after.lim.limit })) };
+        }
       }
 
       // Server-side dedupe backstop. A re-link of an already-connected bank mints a FRESH item_id, so
@@ -404,11 +433,13 @@ exports.handler = async (event) => {
           // where the other member reads them. So none are sent to a client that does not say it is 1.1.8 or newer,
           // whoever asks and whatever their plan: nothing is read and nothing is asked of Plaid for it.
           if (!plusAddon.plusClientOk(body)) return ok({ holdings: [], locked: true, plus_mode: true, ...plusAddon.updateRequired() });
+          // unavailable (review 2026-11-22, B1): this answer is "could not fetch", not "there are none", so the app
+          // keeps the holdings it already has on the device instead of showing none. An older app ignores it.
           const ent = await plusAddon.getPlusEntitlement(getAdminClient(), user_id);
-          if (!ent.plus) return ok({ holdings: [], locked: true, plus_mode: true });
+          if (!ent.plus) return ok({ holdings: [], locked: true, plus_mode: true, ...(ent.status_unavailable ? { unavailable: true } : {}) });
           if (owner_id && owner_id !== user_id) {
             const { data: shares, error: sErr } = await getAdminClient().from("net_worth_shares").select("account_id, shared").eq("user_id", owner_id);
-            if (sErr) return ok({ holdings: [], locked: true, plus_mode: true });
+            if (sErr) return ok({ holdings: [], locked: true, plus_mode: true, unavailable: true });
             sharedOnly = new Set((shares || []).filter((r) => r.shared === true).map((r) => r.account_id));
             if (!sharedOnly.size) return ok({ holdings: [], plus_mode: true });
           }
@@ -450,7 +481,7 @@ exports.handler = async (event) => {
         return ok({ holdings, ...(plusForMe ? { plus_mode: true } : {}) });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
-        return ok({ holdings: [], ...(plusAddon.plusEnabledFor(user_id) ? { plus_mode: true } : {}) });
+        return ok({ holdings: [], ...(plusAddon.plusEnabledFor(user_id) ? { unavailable: true, plus_mode: true } : {}) });
       }
     }
 
@@ -751,10 +782,10 @@ exports.handler = async (event) => {
             failures.push({ error: "plan_limit", message: planWords("plan-server-one-bank-migrate") });
             continue;
           }
+          let newBank = false;
           if (bankLimit && !mineIds.has(item_id)) {
             if (limitUsed >= bankLimit.limit) { failures.push(limitBody({ ...bankLimit, used: limitUsed })); continue; }
-            limitUsed++;
-            mineIds.add(item_id);
+            newBank = true;
           }
           // Upsert (idempotent — re-running migration is safe)
           const { error: upsertErr } = await admin
@@ -771,6 +802,17 @@ exports.handler = async (event) => {
             console.error("[migrate_items upsert]", upsertErr.message);
             failures.push({ error: "Could not save this bank." });
             continue;
+          }
+          if (newBank) {
+            // The same second look as exchange_token (H3): a NEW bank written past the limit is taken back out. Its row
+            // only: this bank was connected on an older copy of the app, and is not removed at Plaid here.
+            const after = await overAfterAdding(admin, user_id);
+            if (after.over) {
+              try { await household.disconnectItem(admin, user_id, item_id); failures.push(limitBody({ ...after.lim, used: after.lim.limit })); continue; }
+              catch (delErr) { console.error("[migrate_items limit recheck: row delete failed]", item_id, delErr.message); }
+            }
+            limitUsed++;
+            mineIds.add(item_id);
           }
           if (!existingIds.has(item_id)) { existingIds.add(item_id); activeCount++; }
           successes.push({ item_id });

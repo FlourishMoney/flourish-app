@@ -71,7 +71,21 @@ async function bankLimitFor(admin, userId, { env = process.env, now = Date.now()
   }
 }
 
+/**
+ * AFTER a new bank has been written: is its scope now past the limit? (review 2026-11-22, H3: the limit is read before
+ * Plaid's exchange, so two new banks finishing at the same moment could each see room for one more.)
+ * { over, unavailable, lim }. over is true only on a count that was read: a failed read is never "over", so nothing is
+ * undone on a guess. lim is the fresh answer (null while Plus is off for this account).
+ */
+async function overAfterAdding(admin, userId, opts) {
+  const lim = await bankLimitFor(admin, userId, opts);
+  if (!lim) return { over: false, unavailable: false, lim: null };
+  if (lim.unavailable) return { over: false, unavailable: true, lim };
+  const used = lim.scope === "household" ? lim.household_used : lim.person_used;
+  return { over: Number.isInteger(used) && used > lim.limit, unavailable: false, lim };
+}
+
 // The 402 body for a refused new link: numbers from the server only, never a message the app shows as is.
 const limitBody = (lim) => ({ error: "bank_limit", scope: lim.scope, used: lim.used, limit: lim.limit });
 
-module.exports = { BASIC_PER_PERSON, PLUS_HOUSEHOLD_FAIR_USE, NOT_COUNTED, mayAddBank, bankLimitFor, limitBody };
+module.exports = { BASIC_PER_PERSON, PLUS_HOUSEHOLD_FAIR_USE, NOT_COUNTED, mayAddBank, bankLimitFor, overAfterAdding, limitBody };

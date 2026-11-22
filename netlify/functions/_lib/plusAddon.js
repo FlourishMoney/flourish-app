@@ -30,6 +30,7 @@
 const { isPaidSubscription } = require("./planRules");
 const { peerIdsOf, isMissing, isAttemptId, HOLD_MINUTES, PENDING_BACKSTOP_DAYS } = require("./household");
 const { PRICE_ENV: MAIN_PRICE_ENV } = require("./billingPlans");
+const supportAlert = require("./supportAlert");
 
 const plusEnabled = (env = process.env) => env.PLUS_ENABLED === "true";
 
@@ -231,7 +232,10 @@ function storeProductKey(key, sub) {
 function plusFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = false } = {}) {
   const t = nowMs(now);
   const ent = subscriber && subscriber.entitlements && subscriber.entitlements[PLUS_ENTITLEMENT_ID];
-  const entExpires = ent ? ms(ent.expires_date) : null;
+  // A BILLING GRACE PERIOD KEEPS PLUS (review 2026-11-22): the store is still retrying the card, and RevenueCat gives the
+  // entitlement a grace_period_expires_date of its own. Read with the entitlement, as it is with the purchase below, so
+  // a payer inside the grace period is never locked out because the entitlement's first date has passed.
+  const entExpires = ent ? (Math.max(ms(ent.expires_date) || 0, ms(ent.grace_period_expires_date) || 0) || null) : null;
   if (!ent || entExpires === null || t >= entExpires) return { row: null, reason: "no_entitlement" };
   const subs = (subscriber && subscriber.subscriptions) || {};
   const entProduct = String(ent.product_identifier || "");
@@ -266,35 +270,132 @@ function plusFromSubscriber(subscriber, now = Date.now(), { acceptSandbox = fals
   return { row: null, reason: "not_a_store_purchase" };
 }
 
+// ── ONE WRITER AT A TIME, WITHOUT A LOCK (review 2026-11-22) ─────────────────────────────────────────────────
+// The row has two writers (Stripe's webhook and the store sync) and each can run twice at once. Each of them reads the
+// row, asks its provider, and only then writes; so a slow one could write an old answer over a newer one (a refund
+// turned back into "active"). writePlusRow writes ONLY IF THE ROW IS STILL AS IT WAS READ: updated_at is stamped
+// afresh on every write (to the microsecond, with three random digits, so no two writes share one) and the update names
+// the stamp that was read. A row that was not there is inserted, and only if it is still not there. false means
+// "someone wrote in between": the caller reads again, ASKS ITS PROVIDER AGAIN, and tries again, so the write that
+// lands last always carries an answer asked for after the write before it. No migration: one statement each.
+const ROW_COLS = "provider, plan_key, status, product_id, current_period_end, cancel_at_period_end, provider_subscription_id, provider_customer_id, last_event_at, updated_at";
+const WRITE_TRIES = 4;
+const stamp = (t = Date.now()) => new Date(t).toISOString().replace("Z", `${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}Z`);
+async function writePlusRow(admin, userId, seen, next) {
+  const row = { ...next, updated_at: stamp() };
+  let res;
+  if (!seen) {
+    res = await admin.from(TABLE).upsert({ user_id: userId, ...row }, { onConflict: "user_id", ignoreDuplicates: true }).select("user_id");
+  } else {
+    let q = admin.from(TABLE).update(row).eq("user_id", userId);
+    q = seen.updated_at ? q.eq("updated_at", seen.updated_at) : q.is("updated_at", null);
+    res = await q.select("user_id");
+  }
+  if (res && res.error) throw Object.assign(new Error(`plus write: ${res.error.code || "error"}`), { pg: res.error });
+  return !!res && Array.isArray(res.data) && res.data.length === 1;
+}
+
+// ── A SECOND PLUS PURCHASE IS NEVER SILENT (review 2026-11-22) ───────────────────────────────────────────────
+// One Plus per household. A second one (the same buyer on the website and in a store, or each member buying one) is
+// refused wherever the server can refuse it; when it happens anyway, support is told ONCE per account, by the same
+// internal mail the main plan uses (_lib/supportAlert.js), and the household keeps Plus. Once: a row in billing_events
+// keyed by the account is the marker (insert-or-nothing), so a renewal or a retry never sends it again. If the marker
+// cannot be written the mail is sent anyway: twice is better than never.
+async function flagSecondPlus(admin, userId, provider, deps = {}) {
+  try {
+    const { data, error } = await admin.from("billing_events").upsert({
+      event_id: `plus-second:${userId}`, provider: provider === "stripe" ? "stripe" : "revenuecat", type: "plus.second_purchase",
+      status: "processed", user_id: userId, processed_at: new Date().toISOString(),
+    }, { onConflict: "event_id", ignoreDuplicates: true }).select("event_id");
+    if (error) console.error("[plus] second purchase marker:", error.code || "error");
+    else if (!Array.isArray(data) || data.length === 0) return false;     // support has been told already
+  } catch (e) { console.error("[plus] second purchase marker:", e.message); }
+  await (deps.alertSupport || supportAlert.alertSupport)({ flag: "plus_second_purchase", userId, provider });
+  return true;
+}
+// The other member's live Plus beside this buyer's own: told to support, nothing else changes (either covers both).
+async function flagHouseholdSecondPlus(admin, userId, provider, deps = {}) {
+  try {
+    const env = deps.env || process.env;
+    const now = deps.now != null ? deps.now : Date.now();
+    for (const peer of await peerIdsOf(admin, userId)) {
+      const { data } = await admin.from(TABLE).select("provider, plan_key, status, product_id, current_period_end").eq("user_id", peer).maybeSingle();
+      if (isLivePlusRow(data, env, now)) { console.error("[plus] conflict: both members of a household hold Plus"); return await flagSecondPlus(admin, userId, provider, deps); }
+    }
+  } catch (e) { console.error("[plus] household check:", e.message); }
+  return false;
+}
+
+// The buyer's live website Plus subscription, read from Stripe itself: { row, sub } or null. For the moment a store
+// Plus ends: a website one the same buyer also pays for must count from that moment, not from its next renewal.
+async function liveStripePlusFor(customerId, deps = {}) {
+  if (!customerId || typeof deps.stripeGet !== "function") return null;
+  const env = deps.env || process.env;
+  const now = deps.now != null ? deps.now : Date.now();
+  const listed = await deps.stripeGet(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=20`);
+  for (const sub of (listed && listed.data) || []) {
+    const row = plusRowFromStripe(sub, env);
+    if (row && isLivePlusRow(row, env, now)) return { row, sub };
+  }
+  return null;
+}
+// A website Plus subscription the server set to end because it was the extra one: Stripe is told it will not renew,
+// and its metadata says why, so it can be put back if it becomes the buyer's only Plus.
+const EXTRA_MARK = "flourish_plus_extra";
+async function endExtraStripePlus(sub, deps = {}) {
+  if (!sub || !sub.id || typeof deps.stripePost !== "function") return false;
+  if (sub.cancel_at_period_end || (Number.isFinite(sub.cancel_at) && sub.cancel_at > 0)) return false;   // already ending
+  await deps.stripePost(`/subscriptions/${encodeURIComponent(sub.id)}`, { cancel_at_period_end: true, metadata: { [EXTRA_MARK]: "1" } },
+    { idempotencyKey: `plus-extra:${sub.id}` });
+  return true;
+}
+
 /**
  * Bring this buyer's Plus row up to date from RevenueCat (never from anything the app says). Returns
  * { plus, conflict }. A live Stripe Plus row is never written over by a store record (one Plus per buyer: paying
- * twice is logged for support, and the household keeps Plus). A store row the store no longer reports ends now.
- * deps: fetchSubscriber (from _lib/storeSubscriptions.js), acceptSandbox, env, now.
+ * twice is told to support, and the household keeps Plus). A store row the store no longer reports ends now, unless
+ * the same buyer also pays for a live website Plus: then that one becomes the row, at once.
+ * deps: fetchSubscriber (from _lib/storeSubscriptions.js), acceptSandbox, env, now, stripeGet, stripePost, alertSupport.
+ * The row is read BEFORE RevenueCat is asked and written only if it has not changed since (writePlusRow).
  */
 async function syncPlusFromStore(admin, userId, deps = {}) {
   const env = deps.env || process.env;
-  const now = deps.now != null ? deps.now : Date.now();
-  const nowIso = new Date(now).toISOString();
-  const subscriber = await deps.fetchSubscriber(userId);
-  const { row } = plusFromSubscriber(subscriber, now, { acceptSandbox: !!deps.acceptSandbox });
-  const { data: existing, error } = await admin.from(TABLE)
-    .select("provider, plan_key, status, product_id, current_period_end").eq("user_id", userId).maybeSingle();
-  if (error) throw new Error(`plus read: ${error.code || "error"}`);
-  let next = null;
-  if (row) {
-    if (existing && existing.provider === "stripe" && isLivePlusRow(existing, env, now)) {
-      console.error("[plus] conflict: a store Plus purchase for a buyer whose Plus is on the website");
-      return { plus: true, conflict: true };
+  for (let attempt = 0; attempt < WRITE_TRIES; attempt++) {
+    const { data: existing, error } = await admin.from(TABLE).select(ROW_COLS).eq("user_id", userId).maybeSingle();
+    if (error) throw new Error(`plus read: ${error.code || "error"}`);
+    const subscriber = await deps.fetchSubscriber(userId);
+    const now = deps.now != null ? deps.now : Date.now();
+    const nowIso = new Date(now).toISOString();
+    const { row } = plusFromSubscriber(subscriber, now, { acceptSandbox: !!deps.acceptSandbox });
+    let next = null;
+    if (row) {
+      if (existing && existing.provider === "stripe" && isLivePlusRow(existing, env, now)) {
+        console.error("[plus] conflict: a store Plus purchase for a buyer whose Plus is on the website");
+        await flagSecondPlus(admin, userId, row.provider, deps);
+        return { plus: true, conflict: true };
+      }
+      next = { ...row, last_event_at: nowIso };
+    } else if (existing && STORE_PROVIDERS.includes(existing.provider) && isLivePlusRow(existing, env, now)) {
+      const web = await liveStripePlusFor(existing.provider_customer_id, { ...deps, env, now });
+      if (web) {
+        // The website Plus is now the buyer's only one: if the server had set it to end as the extra, it is put back.
+        if (web.sub && web.sub.metadata && web.sub.metadata[EXTRA_MARK] && web.sub.cancel_at_period_end && typeof deps.stripePost === "function") {
+          try { await deps.stripePost(`/subscriptions/${encodeURIComponent(web.sub.id)}`, { cancel_at_period_end: false, metadata: { [EXTRA_MARK]: "" } }); web.row.cancel_at_period_end = false; }
+          catch (e) { console.error("[plus] could not put the website Plus back:", e && e.statusCode ? e.statusCode : "no_status"); }
+        }
+        next = { ...web.row, last_event_at: nowIso };
+      } else {
+        next = { provider: existing.provider, plan_key: existing.plan_key, product_id: existing.product_id, status: "canceled", current_period_end: nowIso, last_event_at: nowIso };
+      }
     }
-    next = { ...row, last_event_at: nowIso };
-  } else if (existing && STORE_PROVIDERS.includes(existing.provider) && isLivePlusRow(existing, env, now)) {
-    next = { provider: existing.provider, plan_key: existing.plan_key, product_id: existing.product_id, status: "canceled", current_period_end: nowIso, updated_at: nowIso, last_event_at: nowIso };
+    if (!next) return { plus: isLivePlusRow(existing, env, now), conflict: false };
+    if (await writePlusRow(admin, userId, existing, next)) {
+      const live = isLivePlusRow(next, env, now);
+      if (live && row) await flagHouseholdSecondPlus(admin, userId, next.provider, { ...deps, env, now });
+      return { plus: live, conflict: false };
+    }
   }
-  if (!next) return { plus: isLivePlusRow(existing, env, now), conflict: false };
-  const { error: wErr } = await admin.from(TABLE).upsert({ user_id: userId, ...next }, { onConflict: "user_id" });
-  if (wErr) throw new Error(`plus write: ${wErr.code || "error"}`);
-  return { plus: isLivePlusRow(next, env, now), conflict: false };
+  throw new Error("plus write: busy");
 }
 
 // ── ONE PLUS PURCHASE AT A TIME (migration 0052) ─────────────────────────────────────────────────────────
@@ -320,6 +421,19 @@ async function holdPlusPending(admin, userId, attemptId) {
   const { data, error } = await admin.rpc("plus_purchase_attempt_pending", { p_user: userId, p_attempt: attemptId, p_backstop: `${PENDING_BACKSTOP_DAYS} days` });
   if (error) throw new Error(`plus pending: ${error.code || "error"}`);
   return !!data && data.result === "pending";
+}
+
+// The website's attempt is given back when its checkout could not be opened (review 2026-11-22): nothing was made at
+// Stripe, so nothing can charge, and the other member (or this person in a store app) is not kept waiting 32 minutes
+// for a purchase that does not exist. Only the attempt this request recorded; never a store attempt, never a
+// checkout that was opened. Best effort: a hold that is not given back lapses on its own.
+const ATTEMPTS_TABLE = "plus_purchase_attempts";
+async function releasePlusPurchase(admin, userId, attemptId) {
+  try {
+    const { error } = await admin.from(ATTEMPTS_TABLE).delete().eq("user_id", userId).eq("attempt_id", attemptId).eq("provider", "stripe");
+    if (error) { console.error("[plus] hold not given back:", error.code || "error"); return false; }
+    return true;
+  } catch (e) { console.error("[plus] hold not given back:", e.message); return false; }
 }
 
 // ── PLUS DATA GOES ONLY TO AN APP THAT KEEPS IT PRIVATE (2026-11-21) ────────────────────────────────────────
@@ -418,7 +532,8 @@ async function createPlusPortalSession(deps, customerId, returnUrl, { env = proc
 module.exports = {
   PLUS_MIN_CLIENT, versionAtLeast, plusClientOk, updateRequired,
   PLUS_PORTAL_KIND, PLUS_PORTAL_FEATURES, isPlusPortalConfiguration, plusPortalConfigurationId, createPlusPortalSession,
-  isAttemptId, holdPlusPurchase, holdPlusPending,
+  isAttemptId, holdPlusPurchase, holdPlusPending, releasePlusPurchase, ATTEMPTS_TABLE,
+  ROW_COLS, WRITE_TRIES, writePlusRow, flagSecondPlus, flagHouseholdSecondPlus, liveStripePlusFor, endExtraStripePlus, EXTRA_MARK,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
   plusEnabled, plusEnabledFor, plusOnForAnyone, isPlusTester, plusTesterIds, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,

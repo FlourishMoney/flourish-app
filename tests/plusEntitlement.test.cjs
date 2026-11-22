@@ -54,14 +54,38 @@ function makeDb({ failPlusRead = false, missingPlus = false } = {}) {
         const dup = rows.some((r) => r[pk] === row[pk]); if (!dup) rows.push({ ...row });
         return { select: async () => ({ data: dup ? [] : [row], error: null }) };
       },
-      async upsert(row) {
+      // Writes as the service-role client answers them: awaited as they are, or with .select() for the rows written.
+      // upsert's ignoreDuplicates (insert only if the row is not there) and update's further filters (eq, is) are what
+      // plusAddon.writePlusRow uses to write a row only if it is still as it was read (review 2026-11-22).
+      upsert(row, opts = {}) {
         state.writes.push(table);
-        const e = q._err(); if (e) return { error: e };
-        const rows = state.rows[table]; const i = rows.findIndex((r) => r.user_id === row.user_id);
-        if (i >= 0) rows[i] = { ...rows[i], ...row }; else rows.push({ ...row }); return { error: null };
+        let done = null;
+        const go = async () => {
+          const e = q._err(); if (e) return { data: null, error: e };
+          const pk = table === "billing_events" ? "event_id" : "user_id";
+          const rows = state.rows[table] = state.rows[table] || []; const i = rows.findIndex((r) => r[pk] === row[pk]);
+          if (i >= 0) { if (opts.ignoreDuplicates) return { data: [], error: null }; rows[i] = { ...rows[i], ...row }; return { data: [rows[i]], error: null }; }
+          rows.push({ ...row }); return { data: [row], error: null };
+        };
+        const run = () => (done = done || go());
+        return { select: () => run(), then: (res, rej) => run().then(res, rej) };
       },
-      update(p) { state.writes.push(table); return { eq: async (c, v) => { (state.rows[table] || []).forEach((r) => { if (r[c] === v) Object.assign(r, p); }); return { error: null }; } }; },
-      delete() { state.writes.push(table); return { eq: async (c, v) => { state.rows[table] = (state.rows[table] || []).filter((r) => r[c] !== v); return { error: null }; }, in: async () => ({ error: null }) }; },
+      update(p) {
+        state.writes.push(table);
+        const f = []; let done = null;
+        const go = async () => { const hit = (state.rows[table] || []).filter((r) => f.every((x) => x(r))); hit.forEach((r) => Object.assign(r, p)); return { data: hit.map((r) => ({ ...r })), error: null }; };
+        const run = () => (done = done || go());
+        const w = { eq(c, v) { f.push((r) => r[c] === v); return w; }, is(c, v) { f.push((r) => (r[c] === undefined ? null : r[c]) === v); return w; }, select: () => run(), then: (res, rej) => run().then(res, rej) };
+        return w;
+      },
+      delete() {
+        state.writes.push(table);
+        const f = []; let done = null;
+        const go = async () => { state.rows[table] = (state.rows[table] || []).filter((r) => !f.every((x) => x(r))); return { error: null }; };
+        const run = () => (done = done || go());
+        const w = { eq(c, v) { f.push((r) => r[c] === v); return w; }, in: async () => ({ error: null }), then: (res, rej) => run().then(res, rej) };
+        return w;
+      },
     };
     return q;
   };

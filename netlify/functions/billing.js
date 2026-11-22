@@ -535,7 +535,7 @@ exports.handler = async (event) => {
         try {
           // A tester's purchase is a sandbox or licence-tester one (TestFlight, Play internal testing): accepted for a
           // tester's account only.
-          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(user_id) });
+          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, stripeGet, stripePost, acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(user_id) });
           if (r && r.conflict === true) synced = { conflict: true };
         }
         catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }
@@ -614,13 +614,19 @@ exports.handler = async (event) => {
       // member's purchase (in a store app or here) is refused while it is open, and this one is refused while theirs
       // is. This person's own earlier checkout was expired just above, so its attempt is replaced. A hold that cannot
       // be recorded sells nothing.
+      // A CHECKOUT THAT IS NEVER OPENED GIVES ITS ATTEMPT BACK (review 2026-11-22): if anything below fails before
+      // Stripe has made a checkout, nothing can charge, so the attempt is removed and the other member (or this person
+      // in a store app) is not held 32 minutes for a purchase that does not exist. An OPENED checkout keeps its attempt.
+      const webAttempt = `plusweb-${crypto.randomUUID()}`;
       let webHold;
-      try { webHold = await plusAddon.holdPlusPurchase(admin, user_id, "stripe", `plusweb-${crypto.randomUUID()}`); }
+      try { webHold = await plusAddon.holdPlusPurchase(admin, user_id, "stripe", webAttempt); }
       catch (e) { console.error("[billing] plus hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
       if (!webHold.held) return json(409, CORS, { error: "purchase_in_progress", mine: webHold.mine === true });
-      const held = await plusAddon.getPlusEntitlement(admin, user_id);
-      if (held.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
-      if (held.plus) return json(409, CORS, { error: "already_plus", covered_by: held.covered_by || null });
+      let held;
+      try { held = await plusAddon.getPlusEntitlement(admin, user_id); }
+      catch (e) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); throw e; }
+      if (held.status_unavailable) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); return json(503, CORS, { error: "status_unavailable" }); }
+      if (held.plus) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); return json(409, CORS, { error: "already_plus", covered_by: held.covered_by || null }); }
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",
         customer: customerId,
@@ -633,7 +639,8 @@ exports.handler = async (event) => {
         allow_promotion_codes: false,
         success_url: `${APP_ORIGIN()}/?plus=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${APP_ORIGIN()}/?plus=cancelled`,
-      }, { idempotencyKey: `plus-checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` });
+      }, { idempotencyKey: `plus-checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` })
+        .catch(async (e) => { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); throw e; });
       return json(200, CORS, { url: session.url });
     }
 

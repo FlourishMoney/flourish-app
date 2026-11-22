@@ -101,12 +101,40 @@ async function handle(event, deps = {}) {
         if (!data || !data.length) return json(404, CORS, { error: "not_found" });
         return json(200, CORS, { ok: true, id: body.id });
       }
+      // A NEW ENTRY SAVED TWICE IS ONE ENTRY (review 2026-11-22, M4). The app gives each new entry an id of its own
+      // (client_id) and sends it again if the first answer was lost: the second send finds the first and updates it,
+      // instead of adding the same home or car again. Only one's own: an id that is somebody else's entry is refused
+      // and changes nothing. An app that sends no client_id saves as before.
+      let clientId = null;
+      if (body.client_id != null) {
+        if (typeof body.client_id !== "string" || !UUID.test(body.client_id)) return json(400, CORS, { error: "invalid_entry" });
+        clientId = body.client_id.toLowerCase();
+      }
+      const saveAgain = async () => {
+        const { data, error } = await admin.from("net_worth_entries").update({ ...row, updated_at: now }).eq("id", clientId).eq("user_id", user_id).select("id");
+        if (error) return fail("entry update", error);
+        return data && data.length ? json(200, CORS, { ok: true, id: clientId }) : null;
+      };
+      if (clientId) { const again = await saveAgain(); if (again) return again; }
       const { data: have, error: cErr } = await admin.from("net_worth_entries").select("id").eq("user_id", user_id);
       if (cErr) return fail("entries count", cErr);
       if ((have || []).length >= MAX_ENTRIES) return json(409, CORS, { error: "too_many_entries" });
-      const { data, error } = await admin.from("net_worth_entries").insert({ ...row, user_id, entered_at: now, updated_at: now }).select("id");
-      if (error) return fail("entry insert", error);
-      return json(200, CORS, { ok: true, id: data && data[0] ? data[0].id : null });
+      const { data, error } = await admin.from("net_worth_entries").insert({ ...(clientId ? { id: clientId } : {}), ...row, user_id, entered_at: now, updated_at: now }).select("id");
+      if (error) {
+        // The id is taken: this person's own first send landed a moment ago (saved again), or it is not theirs.
+        if (clientId && error.code === "23505") return (await saveAgain()) || json(409, CORS, { error: "invalid_entry" });
+        return fail("entry insert", error);
+      }
+      const id = data && data[0] ? data[0].id : null;
+      // TWO SAVES AT THE SAME MOMENT (review 2026-11-22, M3): the count above was read before the write, so it is
+      // read again. Past the cap, the entry just written is taken back out and refused, as it would have been.
+      const { data: now2, error: c2Err } = await admin.from("net_worth_entries").select("id").eq("user_id", user_id);
+      if (!c2Err && id && (now2 || []).length > MAX_ENTRIES) {
+        const { error: dErr } = await admin.from("net_worth_entries").delete().eq("id", id).eq("user_id", user_id);
+        if (!dErr) return json(409, CORS, { error: "too_many_entries" });
+        console.error("[networth] entry over the cap not removed:", dErr.code || "error");
+      }
+      return json(200, CORS, { ok: true, id });
     }
 
     if (body.action === "delete_entry") {
