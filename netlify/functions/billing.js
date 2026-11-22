@@ -573,7 +573,11 @@ exports.handler = async (event) => {
       const { data: plusRow, error: plusErr } = await admin.from(plusAddon.TABLE)
         .select("provider, provider_customer_id").eq("user_id", user_id).maybeSingle();
       if (plusErr) { console.error("[billing] plus row read:", plusErr.code || "error"); return json(503, CORS, { error: "status_unavailable" }); }
-      const plusCustomer = plusRow && plusRow.provider === "stripe" ? plusRow.provider_customer_id : null;
+      // ONE Stripe customer per buyer, whatever the row's provider says now (round 2 review, N2). A store purchase
+      // that takes the row keeps the Stripe customer on it (plusAddon.plusFromSubscriber), so it is read from any row:
+      // read only from a row that said "stripe", a buyer who had moved to a store got a SECOND customer at their next
+      // website checkout, and Stripe was then asked about the wrong one before Plus was sold.
+      const plusCustomer = (plusRow && typeof plusRow.provider_customer_id === "string" && plusRow.provider_customer_id) || null;
 
       if (action === "plus_portal") {
         if (!plusCustomer) return json(404, CORS, { error: "no_customer" });
@@ -604,7 +608,12 @@ exports.handler = async (event) => {
       // Stripe itself is asked, as the main checkout does: a live Plus subscription the row does not show yet is a 409.
       try {
         const live = await liveSubscriptionsFor(customerId);
-        if (live.length) return json(409, CORS, { error: "already_plus" });
+        if (live.length) {
+          // "Already has Plus" must be true, not a dead end: a live Plus subscription the row does not show becomes
+          // the row (best effort; a row that is live is never touched).
+          await plusAddon.adoptLiveStripePlus(admin, user_id, customerId, { stripeGet, stripePost });
+          return json(409, CORS, { error: "already_plus" });
+        }
         await expireOpenCheckouts(customerId);
       } catch (e) {
         console.error("[billing] plus live check:", e && e.statusCode ? e.statusCode : "no_status");

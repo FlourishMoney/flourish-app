@@ -201,6 +201,18 @@ async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
         const otherWebSub = !store && !!cur.provider_subscription_id;     // the row is another website subscription's
         if ((store && liveCur) || (otherWebSub && liveCur && liveNew)) {
           // One Plus per buyer: the live row is never written over. A live second one is set to end, and support is told.
+          // "Live" is what Stripe says NOW, not what this event carried: an old event for a subscription that has
+          // since ended (it arrives late, after that one stopped being the row) is no second purchase (round 2, N1).
+          let stillLive = liveNew;
+          if (liveNew && !isCheckout) {
+            sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
+            const fresh = plusAddon.plusRowFromStripe(sub, process.env);
+            stillLive = !!fresh && plusAddon.isLivePlusRow(fresh);
+          }
+          if (liveNew && !stillLive) {
+            await settle("ignored", "plus: an old event for another Plus subscription that is no longer live");
+            return reply(200, { received: true, ignored: true });
+          }
           if (liveNew) {
             console.error(store ? "[stripe-webhook] plus conflict: a website Plus subscription for a buyer whose Plus is in a store"
               : "[stripe-webhook] plus conflict: a second website Plus subscription for a buyer who has one");
@@ -216,7 +228,16 @@ async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
           return reply(200, { received: true, ignored: true });
         }
       }
-      if (eventAtIso) row.last_event_at = eventAtIso;
+      // THE ROW'S OWN SUBSCRIPTION IS NO LONGER LIVE (round 2 review, N1): if the same buyer pays for another live
+      // website Plus (the extra one, set to end), that one becomes the row now. Stripe is asked; if it cannot be, this
+      // throws and the event is sent again, rather than writing "Plus ended" for someone who is paying. The new row
+      // is as Stripe has it at this moment, so it is dated now: any event of that subscription's from before is older.
+      let promoted = false;
+      if (bySub && !plusAddon.isLivePlusRow(row)) {
+        const other = await plusAddon.otherLiveStripePlus(row.provider_customer_id || bySub.provider_customer_id, row.provider_subscription_id, deps);
+        if (other) { row = { ...other.row, last_event_at: plusAddon.readAtIso() }; promoted = true; }
+      }
+      if (eventAtIso && !promoted) row.last_event_at = eventAtIso;
       if (!(await plusAddon.writePlusRow(admin, userId, cur || null, row))) continue;
       if (plusAddon.isLivePlusRow(row)) await plusAddon.flagHouseholdSecondPlus(admin, userId, "stripe", deps);
       else if (process.env.IAP_ENABLED === "true") {
@@ -262,17 +283,49 @@ async function endPlusForChargeBack(admin, evt, object, deps = {}) {
     const { data: row, error } = await admin.from(plusAddon.TABLE).select(`user_id, ${plusAddon.ROW_COLS}`).eq("provider_customer_id", customerId).maybeSingle();
     if (error) { if (plusAddon.isMissing(error)) return false; throw new Error(`plus read: ${error.code || "error"}`); }
     if (!row || row.provider !== "stripe" || !row.provider_subscription_id) return false;
-    const sub = await get(`/subscriptions/${encodeURIComponent(row.provider_subscription_id)}`);
-    const item = (sub && sub.items && sub.items.data && sub.items.data[0]) || {};
-    const periodStart = Number.isFinite(sub && sub.current_period_start) ? sub.current_period_start : item.current_period_start;
-    // A day's slack: the first charge can be made a moment before the period Stripe records. An earlier period's is a month older.
-    if (!Number.isFinite(periodStart) || !Number.isFinite(charge.created) || charge.created < periodStart - 86400) return false;
+    // WHICH subscription the charge paid for (round 2 review, N1). A buyer can have two website Plus subscriptions,
+    // and support is told to refund the second: that refund must end the second one, never the one the buyer keeps.
+    let subs = await plusAddon.plusStripeSubsFor(customerId, { stripeGet: get });
+    if (!subs.some((x) => x.id === row.provider_subscription_id)) {
+      const own = await get(`/subscriptions/${encodeURIComponent(row.provider_subscription_id)}`);
+      if (own && own.id) subs = [...subs, own];
+    }
+    const sub = await chargedPlusSubscription(charge, subs, get);
+    if (!sub) return false;
     if (sub.status !== "canceled") await del(`/subscriptions/${encodeURIComponent(sub.id)}`);
+    if (sub.id !== row.provider_subscription_id) return true;        // the extra one ended; the row is not its
     if (!plusAddon.isLivePlusRow(row)) return true;
+    // The row's own payment was taken back. Another live website Plus the buyer pays for becomes the row; else Plus ends.
     const nowIso = new Date().toISOString();
-    if (await plusAddon.writePlusRow(admin, row.user_id, row, { status: "canceled", current_period_end: nowIso, cancel_at_period_end: false })) return true;
+    const other = await plusAddon.otherLiveStripePlus(customerId, sub.id, { stripeGet: get, stripePost: deps.stripePost || stripeApi.stripePost });
+    const next = other ? { ...other.row, last_event_at: plusAddon.readAtIso() } : { status: "canceled", current_period_end: nowIso, cancel_at_period_end: false };
+    if (await plusAddon.writePlusRow(admin, row.user_id, row, next)) return true;
   }
   throw new Error("plus write: busy");
+}
+// The Plus subscription a charge paid for, out of the customer's Plus subscriptions; null when it paid for none of
+// them, or it cannot be told which.
+//   The charge's invoice says, when the charge names one (it is read from Stripe).
+//   Otherwise by the period: the charge is not from before the subscription's current period (a day's slack: the
+//   first charge can be made a moment before the period Stripe records; an earlier period's is a month older), and of
+//   two that fit, the one whose period began nearest the charge. Two that began at the same moment cannot be told
+//   apart: null, and nothing is ended (support's call), rather than ending the wrong one.
+async function chargedPlusSubscription(charge, subs, get) {
+  let named = null;
+  try {
+    const inv = charge.invoice;
+    const invoice = inv && typeof inv === "object" ? inv : (typeof inv === "string" && inv ? await get(`/invoices/${encodeURIComponent(inv)}`) : null);
+    const of = invoice && (invoice.subscription || (invoice.parent && invoice.parent.subscription_details && invoice.parent.subscription_details.subscription));
+    named = typeof of === "string" ? of : (of && of.id) || null;
+  } catch { named = null; }
+  if (named) return subs.find((x) => x.id === named) || null;
+  const startOf = (x) => { const item = (x.items && x.items.data && x.items.data[0]) || {}; return Number.isFinite(x.current_period_start) ? x.current_period_start : item.current_period_start; };
+  const fit = subs.map((x) => ({ x, gap: Math.abs(startOf(x) - charge.created), start: startOf(x) }))
+    .filter((c) => Number.isFinite(c.start) && Number.isFinite(charge.created) && charge.created >= c.start - 86400)
+    .sort((p, q) => p.gap - q.gap);
+  if (!fit.length) return null;
+  if (fit.length > 1 && fit[0].gap === fit[1].gap) { console.error("[stripe-webhook] plus: a refunded charge fits two subscriptions; neither was ended"); return null; }
+  return fit[0].x;
 }
 
 exports.handler = async (event) => {

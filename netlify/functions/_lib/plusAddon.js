@@ -328,16 +328,24 @@ async function flagHouseholdSecondPlus(admin, userId, provider, deps = {}) {
 
 // The buyer's live website Plus subscription, read from Stripe itself: { row, sub } or null. For the moment a store
 // Plus ends: a website one the same buyer also pays for must count from that moment, not from its next renewal.
+// deps.exceptSubId: a subscription that is not to be the answer (the one that has just ended).
 async function liveStripePlusFor(customerId, deps = {}) {
   if (!customerId || typeof deps.stripeGet !== "function") return null;
   const env = deps.env || process.env;
   const now = deps.now != null ? deps.now : Date.now();
-  const listed = await deps.stripeGet(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=20`);
-  for (const sub of (listed && listed.data) || []) {
+  for (const sub of await plusStripeSubsFor(customerId, deps)) {
+    if (deps.exceptSubId && sub.id === deps.exceptSubId) continue;
     const row = plusRowFromStripe(sub, env);
     if (row && isLivePlusRow(row, env, now)) return { row, sub };
   }
   return null;
+}
+// Every subscription of this Stripe customer that carries a Plus price, whatever its status, as Stripe has it now.
+async function plusStripeSubsFor(customerId, deps = {}) {
+  if (!customerId || typeof deps.stripeGet !== "function") return [];
+  const env = deps.env || process.env;
+  const listed = await deps.stripeGet(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=20`);
+  return ((listed && listed.data) || []).filter((sub) => sub && sub.id && !!plusRowFromStripe(sub, env));
 }
 // A website Plus subscription the server set to end because it was the extra one: Stripe is told it will not renew,
 // and its metadata says why, so it can be put back if it becomes the buyer's only Plus.
@@ -348,6 +356,42 @@ async function endExtraStripePlus(sub, deps = {}) {
   await deps.stripePost(`/subscriptions/${encodeURIComponent(sub.id)}`, { cancel_at_period_end: true, metadata: { [EXTRA_MARK]: "1" } },
     { idempotencyKey: `plus-extra:${sub.id}` });
   return true;
+}
+// A website Plus that has become the buyer's ONLY one: if the server had set it to end as the extra, it is put back
+// (it renews again), and the row says so. If Stripe cannot be told it stays set to end; the row is still its.
+async function putBackIfExtra(web, deps = {}) {
+  if (!web || !web.sub || !web.sub.metadata || !web.sub.metadata[EXTRA_MARK] || !web.sub.cancel_at_period_end || typeof deps.stripePost !== "function") return web;
+  try { await deps.stripePost(`/subscriptions/${encodeURIComponent(web.sub.id)}`, { cancel_at_period_end: false, metadata: { [EXTRA_MARK]: "" } }); web.row.cancel_at_period_end = false; }
+  catch (e) { console.error("[plus] could not put the website Plus back:", e && e.statusCode ? e.statusCode : "no_status"); }
+  return web;
+}
+// THE BUYER'S OTHER LIVE WEBSITE PLUS (round 2 review, 2026-11-22, N1). A buyer can end up paying for two website
+// Plus subscriptions: the second is refused wherever it can be, and when it happens anyway it is set to end and told
+// to support, and the row stays the first one's. When the subscription ON THE ROW then stops being live (cancelled
+// at once, unpaid, its payment taken back) while the other is still paid for, that one must become the row there and
+// then: no later event of its own would do it before its period ends. Stripe itself is asked (never our own record
+// of the second purchase), so only a subscription that is live now, at a real Plus price, can be the answer.
+// Returns { row, sub } or null. THROWS when Stripe cannot be asked: the caller must not write "Plus ended" on a guess.
+// The row it gives was read from Stripe just now, so the caller dates it readAtIso(): to the whole second, as Stripe
+// dates its events. An event of that subscription's from an earlier second is older than the row and changes nothing;
+// one from this same second cannot be ordered, and the webhook then asks Stripe what is true (its own rule).
+const readAtIso = (now = Date.now()) => new Date(Math.floor(nowMs(now) / 1000) * 1000).toISOString();
+async function otherLiveStripePlus(customerId, exceptSubId, deps = {}) {
+  const web = await liveStripePlusFor(customerId, { ...deps, exceptSubId: exceptSubId || null });
+  return web ? putBackIfExtra(web, deps) : null;
+}
+// "Stripe shows a live Plus this buyer's row does not" (the checkout's guard found one): the row takes it, so
+// "already has Plus" is true and not a dead end. Best effort, never throws; a row that is live is never touched.
+async function adoptLiveStripePlus(admin, userId, customerId, deps = {}) {
+  try {
+    const env = deps.env || process.env;
+    const now = deps.now != null ? deps.now : Date.now();
+    const { data: existing, error } = await admin.from(TABLE).select(ROW_COLS).eq("user_id", userId).maybeSingle();
+    if (error || isLivePlusRow(existing, env, now)) return false;
+    const web = await otherLiveStripePlus(customerId, null, { ...deps, env, now });
+    if (!web) return false;
+    return await writePlusRow(admin, userId, existing || null, { ...web.row, last_event_at: readAtIso(now) });
+  } catch (e) { console.error("[plus] adopt:", e && e.message); return false; }
 }
 
 /**
@@ -376,14 +420,10 @@ async function syncPlusFromStore(admin, userId, deps = {}) {
       }
       next = { ...row, last_event_at: nowIso };
     } else if (existing && STORE_PROVIDERS.includes(existing.provider) && isLivePlusRow(existing, env, now)) {
-      const web = await liveStripePlusFor(existing.provider_customer_id, { ...deps, env, now });
+      // The website Plus is now the buyer's only one: if the server had set it to end as the extra, it is put back.
+      const web = await otherLiveStripePlus(existing.provider_customer_id, null, { ...deps, env, now });
       if (web) {
-        // The website Plus is now the buyer's only one: if the server had set it to end as the extra, it is put back.
-        if (web.sub && web.sub.metadata && web.sub.metadata[EXTRA_MARK] && web.sub.cancel_at_period_end && typeof deps.stripePost === "function") {
-          try { await deps.stripePost(`/subscriptions/${encodeURIComponent(web.sub.id)}`, { cancel_at_period_end: false, metadata: { [EXTRA_MARK]: "" } }); web.row.cancel_at_period_end = false; }
-          catch (e) { console.error("[plus] could not put the website Plus back:", e && e.statusCode ? e.statusCode : "no_status"); }
-        }
-        next = { ...web.row, last_event_at: nowIso };
+        next = { ...web.row, last_event_at: readAtIso(now) };
       } else {
         next = { provider: existing.provider, plan_key: existing.plan_key, product_id: existing.product_id, status: "canceled", current_period_end: nowIso, last_event_at: nowIso };
       }
@@ -428,12 +468,16 @@ async function holdPlusPending(admin, userId, attemptId) {
 // for a purchase that does not exist. Only the attempt this request recorded; never a store attempt, never a
 // checkout that was opened. Best effort: a hold that is not given back lapses on its own.
 const ATTEMPTS_TABLE = "plus_purchase_attempts";
+// Tried twice (round 2 review): one blink of the database should not cost the other member 32 minutes.
 async function releasePlusPurchase(admin, userId, attemptId) {
-  try {
-    const { error } = await admin.from(ATTEMPTS_TABLE).delete().eq("user_id", userId).eq("attempt_id", attemptId).eq("provider", "stripe");
-    if (error) { console.error("[plus] hold not given back:", error.code || "error"); return false; }
-    return true;
-  } catch (e) { console.error("[plus] hold not given back:", e.message); return false; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { error } = await admin.from(ATTEMPTS_TABLE).delete().eq("user_id", userId).eq("attempt_id", attemptId).eq("provider", "stripe");
+      if (!error) return true;
+      console.error("[plus] hold not given back:", error.code || "error");
+    } catch (e) { console.error("[plus] hold not given back:", e.message); }
+  }
+  return false;
 }
 
 // ── PLUS DATA GOES ONLY TO AN APP THAT KEEPS IT PRIVATE (2026-11-21) ────────────────────────────────────────
@@ -534,6 +578,7 @@ module.exports = {
   PLUS_PORTAL_KIND, PLUS_PORTAL_FEATURES, isPlusPortalConfiguration, plusPortalConfigurationId, createPlusPortalSession,
   isAttemptId, holdPlusPurchase, holdPlusPending, releasePlusPurchase, ATTEMPTS_TABLE,
   ROW_COLS, WRITE_TRIES, writePlusRow, flagSecondPlus, flagHouseholdSecondPlus, liveStripePlusFor, endExtraStripePlus, EXTRA_MARK,
+  plusStripeSubsFor, otherLiveStripePlus, adoptLiveStripePlus, readAtIso,
   TABLE, COMP_TABLE, PLUS_PLAN_KEYS, PLUS_PRICE_ENV, PLUS_ENTITLEMENT_ID, PLUS_PRODUCTS, STORE_PROVIDERS, MANAGED_PROVIDERS,
   plusEnabled, plusEnabledFor, plusOnForAnyone, isPlusTester, plusTesterIds, isPlusPlanKey, isPlusStoreProductId, plusPriceIds, plusPlanForPrice, plusPriceIdFor, isLivePlusRow, hasComplimentaryPlus, getPlusEntitlement,
   stripePricesOf, isPlusStripeObject, plusRowFromStripe, plusFromSubscriber, syncPlusFromStore, isMissing,
