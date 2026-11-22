@@ -17,7 +17,35 @@ import { FALLBACK_CATEGORY } from "./categoryOverrides.js";
 export const IMPORT_SOURCE = "statement-import";
 export const RECONCILE_TOLERANCE = 0.02; // dollars — a missed/duplicated row should break this
 
-const _num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+// Review 2026-11-22 (P5-08): only a number, or text that is a number, is one. Number(null), Number("") and
+// Number(false) are all 0, which turned a total the reader did not send into a printed total of $0 (a false
+// anchor every statement then failed against) and a row with no amount into a $0 row.
+const _num = (v) => {
+  if (typeof v === "string") { if (v.trim() === "") return NaN; }
+  else if (typeof v !== "number") return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// Review 2026-11-22 (G9): one CSV line into its fields, minding quotes. A separator inside a quoted field
+// ("UBER EATS, TORONTO", "1,234.56") stays in the field, and "" inside quotes is one quote. line.split(sep)
+// shifted every later column, so the description was cut and the amount read from the wrong column as $0.
+export function splitCsvLine(line, sep = ",") {
+  const src = String(line == null ? "" : line);
+  const out = [];
+  let cur = "", quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"') { if (src[i + 1] === '"') { cur += '"'; i++; } else quoted = false; }
+      else cur += ch;
+    } else if (ch === '"' && cur.trim() === "") { quoted = true; cur = ""; }
+    else if (ch === sep) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
 
 // Does the amount's magnitude appear VERBATIM in the source substring the model claims it read?
 // Strips currency symbols, thousands separators and spaces before matching, so "$1,234.56" matches
@@ -216,11 +244,11 @@ export function csvClosingBalance(text = "") {
   if (lines.length < 2) return null;
   const sep = lines[0].includes("\t") ? "\t" : ",";
   const clean = s => String(s == null ? "" : s).trim().replace(/^["']|["']$/g, "");
-  const headers = lines[0].split(sep).map(h => clean(h).toLowerCase());
+  const headers = splitCsvLine(lines[0], sep).map(h => clean(h).toLowerCase());
   const dateIdx = headers.findIndex(h => /date|posted|trans/.test(h));
   const balIdx = headers.findIndex(h => /balance/.test(h));
   if (dateIdx < 0 || balIdx < 0) return null;
-  const rows = lines.slice(1).map(l => l.split(sep).map(clean));
+  const rows = lines.slice(1).map(l => splitCsvLine(l, sep).map(clean));
   const first = parseRowDate(rows[0][dateIdx]), last = parseRowDate(rows[rows.length - 1][dateIdx]);
   if (!first || !last || first.getTime() === last.getTime()) return null;
   const newest = first > last ? rows[0] : rows[rows.length - 1];

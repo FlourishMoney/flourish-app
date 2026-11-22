@@ -15,7 +15,8 @@ import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch, debtAccountKindWord } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount, LOAN_ACTIVITY_KEY } from "./lib/loanActivity.js";
-import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
+import { retainAccounts, retainLiabilities, promoteAccounts, dropBankData, fullSyncOwedAfter, FULL_SYNC_OWED_KEY } from "./lib/multibank.js";
+import { afterTokenMigration, LEGACY_TOKEN_TRIES_KEY } from "./lib/legacyTokenMigration.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept, noteRevokeResult, revokePending, clearRevokePending } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
@@ -28,7 +29,7 @@ import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDai
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
-import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
+import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance, splitCsvLine } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, formatPrice } from "./lib/pricing.js";
@@ -815,7 +816,7 @@ async function callCreator(action, params = {}) {
 // Round-3: once the tokens are safely server-side, the device copies go. A Plaid access token left in
 // localStorage after migration is a live bank credential sitting where any script on the page can read it.
 function clearLegacyPlaidTokens() {
-  try { localStorage.removeItem("flourish_plaid_token"); localStorage.removeItem("flourish_plaid_tokens"); } catch {}
+  try { localStorage.removeItem("flourish_plaid_token"); localStorage.removeItem("flourish_plaid_tokens"); localStorage.removeItem(LEGACY_TOKEN_TRIES_KEY); } catch {}
 }
 async function migrateLocalStorageTokensToSupabase() {
   // Already migrated in an earlier session: the tokens are server-side, so any device copy left
@@ -849,8 +850,16 @@ async function migrateLocalStorageTokensToSupabase() {
     const successes = resp.successes || [];
     const failures = resp.failures || [];
     console.log(`[d1e] migrated ${successes.length} tokens, ${failures.length} failures`);
-    // Mark done regardless — failures are recorded server-side as status:active rows that
-    // failed /item/get, OR they're tokens that revoked at the bank. User will re-link if needed.
+    // Review 2026-11-22 (P7-01): a token leaves this device only once the server holds it, or once it can never be
+    // saved (lib/legacyTokenMigration.js). One the server could not save this time (the bank's lookup timed out, a
+    // write failed) is the only copy there is: it stays, alone, for the next session, a few times at most.
+    const plan = afterTokenMigration(merged, resp, parseInt(localStorage.getItem(LEGACY_TOKEN_TRIES_KEY) || "0", 10) || 0);
+    if (!plan.done) {
+      localStorage.setItem("flourish_plaid_tokens", JSON.stringify(plan.keep));
+      localStorage.removeItem("flourish_plaid_token");
+      localStorage.setItem(LEGACY_TOKEN_TRIES_KEY, String(plan.tries));
+      return;
+    }
     localStorage.setItem("flourish_d1e_migrated", "1");
     clearLegacyPlaidTokens();
   } catch (err) {
@@ -921,6 +930,15 @@ function isFullSyncStale() {
 }
 function stampFullSync() {
   try { localStorage.setItem("flourish_last_full_sync", Date.now().toString()); } catch {}
+}
+// Review 2026-11-22 (P7-02): the stamp above is one for every bank, so a bank whose full read FAILED in that round
+// waited another week for it. Such a bank is remembered here (its id only) and read in full on the next refresh,
+// until it works (lib/multibank.js fullSyncOwedAfter).
+function readFullSyncOwed() {
+  try { const v = JSON.parse(localStorage.getItem(FULL_SYNC_OWED_KEY) || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
+}
+function noteFullSyncRound(owed, items, results, fullResync) {
+  try { localStorage.setItem(FULL_SYNC_OWED_KEY, JSON.stringify(fullSyncOwedAfter(owed, items, results, fullResync))); } catch {}
 }
 
 // Sprint Z #3: drain a truncated sync within one cycle. The server caps pages per call and flags
@@ -3802,7 +3820,7 @@ function parseCSVStatement(text) {
   if (lines.length < 2) return null;
   const sep = lines[0].includes('\t') ? '\t' : ',';
   const clean = s => s.trim().replace(/^["']|["']$/g,'');
-  const headers = lines[0].split(sep).map(h => clean(h).toLowerCase());
+  const headers = splitCsvLine(lines[0], sep).map(h => clean(h).toLowerCase()); // G9: quote-aware (lib/statementImport.js)
   const dateIdx = headers.findIndex(h => /date|posted|trans/.test(h));
   const descIdx = headers.findIndex(h => /desc|merchant|narr|name|payee|detail|memo/.test(h));
   const amtIdx  = headers.findIndex(h => /^amount$|^amt$/.test(h));
@@ -3810,7 +3828,7 @@ function parseCSVStatement(text) {
   const creditIdx=headers.findIndex(h => /credit|deposit|^in$/.test(h));
   if (dateIdx < 0 || descIdx < 0) return null;
   return lines.slice(1).map((line, i) => {
-    const cols = line.split(sep).map(clean);
+    const cols = splitCsvLine(line, sep).map(clean);
     let amount = 0;
     if (amtIdx >= 0) {
       amount = parseFloat(cols[amtIdx]?.replace(/[$, ]/g,'') || 0);
@@ -5230,10 +5248,12 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts
   learned.ran = true;
   try {
     // Fan out: fetch accounts + transactions for each item in parallel
+    const owed = readFullSyncOwed(); // P7-02: banks whose last full read failed
     const [acctResults, txnResults] = await Promise.all([
       Promise.allSettled(items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt }))),
-      Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))),
+      Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, fullResync || owed.includes(it.item_id)))),
     ]);
+    noteFullSyncRound(owed, items, txnResults, fullResync);
 
     // Sprint 1b: track per-item success and stamp each fresh account with its item_id, so a
     // PARTIAL multi-bank failure no longer wipes the bank that failed this round. Previously
@@ -13004,11 +13024,11 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
               // One of several banks: delete_item removed the plaid_items row + revoked the token, but
               // this bank's account objects still linger in appData.accounts. Drop the accounts tied to
               // this item (matched on _item — the field that ties an account to its plaid_item, kept on
-              // the stored blob) so they don't orphan. bankConnected reflects any non-Manual remainder.
-              setAppData(prev => {
-                const kept = (prev.accounts || []).filter(a => a._item !== b.item_id);
-                return { ...prev, accounts: kept, bankConnected: kept.some(a => a.institution !== "Manual") };
-              });
+              // the stored blob) so they don't orphan.
+              // Review 2026-11-22 (P9-02): and what came from them. Only the accounts used to go, so the bank's
+              // transactions and card debts stayed, frozen, and doubled when the bank was connected again. One
+              // rule now, the household's (lib/multibank.js dropBankData); bankConnected is worked out from the rest.
+              setAppData(prev => dropBankData(prev, a => a._item === b.item_id));
             }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>}
           </div>
         ))}
@@ -19165,9 +19185,11 @@ export default function FlourishApp(){
         // Sprint Z #1: incremental sync — request full_resync when the local store is empty (fresh
         // device / cleared cache) or weekly (B1 self-heal) so the server ignores the stored cursor.
         const fullResync = (appData?.transactions?.length || 0) === 0 || isFullSyncStale();
+        const owed = readFullSyncOwed(); // P7-02: banks whose last full read failed
         const results = await Promise.allSettled(
-          items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))
+          items.map(it => fetchItemTxns(it.item_id, jwt, fullResync || owed.includes(it.item_id)))
         );
+        noteFullSyncRound(owed, items, results, fullResync);
         const fulfilled = results.filter(r => r.status === "fulfilled").map(r => r.value);
         const allTxns = fulfilled.flatMap(v => normaliseTxns(v.transactions||[]));
         const allRemovedIds = fulfilled.flatMap(v => v.removed || []);
@@ -20000,10 +20022,13 @@ export default function FlourishApp(){
     setNeedsReconnect(false);
     if (theirs.size) {
       // The other member's banks stay in the household; only this person's accounts go.
-      setAppData(d=>{ const kept=(d.accounts||[]).filter(a=>!a._item||theirs.has(a._item)); return {...d, accounts: kept, bankConnected: kept.some(a=>a.institution!=="Manual")}; });
+      // P9-02: with what came from them (lib/multibank.js dropBankData), as Settings does for one of several banks.
+      setAppData(d=>dropBankData(d, a=>!!a._item&&!theirs.has(a._item)));
       return;
     }
-    setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
+    // P9-02: every bank account goes with its transactions, card debts, liabilities and holdings; what the household
+    // entered by hand stays. (They used to stay too, and were there twice once a bank was connected again.)
+    setAppData(d=>{ const left=dropBankData(d)||{}; return {...left, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: left.transactions||[], bankConnected:false }; });
   };
 
   // A function DECLARATION, so it exists for the whole render: the plans screen that cannot be closed returns before
