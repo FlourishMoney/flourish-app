@@ -102,7 +102,7 @@ export function householdNetWorth(data = {}) {
       part.registration = registrationOf(a);
       part.holdings = holdings.filter((h) => h && h.account_id === a.id).map((h) => ({
         id: h.id ?? null, name: String(h.name || ""), ticker: h.ticker || null, quantity: given(h.quantity),
-        cents: toCents(given(h.value)), currency: currencyOf(h.currency),
+        cents: toCents(given(h.value)), currency: h.currencyKnown === false ? null : currencyOf(h.currency),   // a currency the bank did not state is not shown as CAD (review 2026-11-22, P3-05)
       }));
     }
     parts.push(part);
@@ -154,6 +154,17 @@ export function totalsOf(parts) {
 // it as part of anything else. An RDSP is open only to a person eligible for the disability tax credit.
 export const SENSITIVE_SUBTYPES = Object.freeze(["rdsp", "hsa", "health reimbursement arrangement"]);
 export const isSensitiveAccount = (a) => SENSITIVE_SUBTYPES.includes(lower(a && a.subtype));
+
+/**
+ * The colour a net worth figure made of these totals takes: "up" (none below zero, or no figure at all), "down"
+ * (every one below zero), "mixed" (one currency up and another down: neither colour is true of the whole).
+ * The app's gain colour on "-$14.5k" says the opposite of the fact (full-app review 2026-11-22, P8-07).
+ */
+export function totalsTone(totals) {
+  const list = Array.isArray(totals) ? totals : [];
+  const below = list.filter((x) => x && x.netCents < 0).length;
+  return below === 0 ? "up" : below === list.length ? "down" : "mixed";
+}
 
 /**
  * Net worth with Plus as ONE person sees it.

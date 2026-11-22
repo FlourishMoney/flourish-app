@@ -21,13 +21,13 @@ import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
-import { viewerNetWorth } from "./lib/netWorthPlus.js";
+import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
+import { viewerNetWorth, totalsTone } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { plusClientFields } from "./lib/plusClient.js";
-import { mergeHoldings, loadPrivateHoldings, savePrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
+import { mergeHoldings, plainHoldingsAfter, loadPrivateHoldings, savePrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
 // This device's own storage, or null where there is none (a private window): lib/plusHoldings.js reads and writes through it.
 const deviceStore = () => { try { return localStorage; } catch { return null; } };
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
@@ -6565,7 +6565,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
             !nwShow
               ? {label:"Net worth",value:netWorthWords(nwState.mode==="unavailable"?"networth-locked-unavailable":"networth-locked-short"),sub:"",color:C.muted,icon:"chartUp",screen:"goals",tab:"worth"}
               : nwPlus
-              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):netWorthWords("networth-plus-no-total"),sub:"",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"}
+              ? {label:"Net worth",value:nwPlus.totals?nwPlus.totals.map(t=>`${t.currency} ${formatCompactMoney(t.netCents/100)}`).join(" · "):netWorthWords("networth-plus-no-total"),sub:"",color:({up:C.teal,down:C.red,mixed:C.cream})[totalsTone(nwPlus.totals)],icon:"chartUp",screen:"goals",tab:"worth"}
               : {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>s.noDebts?(
             <div key={i} style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",boxSizing:"border-box",
@@ -12864,6 +12864,9 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         _meta: { app: "Flourish Money", schema: 1, exportedAt: new Date().toISOString(),
                  note: "Your Flourish data, exported for your records / portability." },
         profile: data.profile || null,
+        // With Plus, holdings and the net worth entries a person typed are kept apart from the household's data
+        // (private between partners), so they are added here: this person's own only. Absent without Plus.
+        ...(plusExport(getNetWorthState()) ? { plus: plusExport(getNetWorthState()) } : {}),
         incomes: data.incomes || [],
         bills: data.bills || [],
         debts: data.debts || [],
@@ -13226,7 +13229,11 @@ function DesktopSidebar({data,setScreen}){
   // Its day-of-month filter never wrapped the month end, so it said nothing was due beside a Due soon
   // tile counting the Phone bill on the 5th.
   const dueSoon=dueSoonList(SafeSpendEngine.calculate(data));
-  const investments=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
+  // This card adds every investment account in the household, so it is shown only where net worth is as it is today
+  // (and in the demo's sample data). With Plus on: behind Plus without it, and on the Net Worth tab with it, where a
+  // partner's private account is in no figure (full-app review 2026-11-22, P9-01).
+  const nwSide = useNetWorthState();
+  const investments=showsAccountBalanceCard(data.demo ? "today" : nwSide.mode) ? (data.accounts||[]).filter(a=>isInvestmentAccount(a)) : [];
   const totalInvested=investments.reduce((a,i)=>a+(i.balance||0),0);
   const totalGain=investments.reduce((a,i)=>a+(i.gain||0),0);
 
@@ -18314,7 +18321,8 @@ export default function FlourishApp(){
         setPlusHoldings(allHoldings);
         if (savePrivateHoldings(deviceStore(), forUser, allHoldings)) setAppData(prev => (prev && "investments" in prev) ? (({ investments, ...rest }) => rest)(prev) : prev);
       } else if (allHoldings.length > 0) {
-        setAppData(prev => ({ ...prev, investments: allHoldings }));
+        // A bank whose read failed keeps what it had (lib/plusHoldings.js plainHoldingsAfter, review 2026-11-22 P10-06).
+        setAppData(prev => { const next = plainHoldingsAfter(prev.investments, merged, prev.accounts); return next ? { ...prev, investments: next } : prev; });
       }
     } catch(e) { /* silent — institution may not support investments */ }
   },[]);

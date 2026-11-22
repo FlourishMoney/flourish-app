@@ -70,7 +70,7 @@ export function holdingsStale(storage, userId, now = Date.now()) {
  *   delivered  at least one bank's holdings really came (Plus's answer, not locked, not unavailable). Only then may
  *              anything saved change.
  *   locked     an answer said locked (no Plus, or the app must update): nothing came, and nothing changes
- *   plain      Plus off: every holding as it came, for today's path
+ *   plain      Plus off: every holding as it came, for today's path (plainAnswered: the banks they came from)
  * A bank that answered replaces its own holdings (none, if it holds none now). A bank that FAILED (the call threw,
  * or the server said `unavailable`) keeps what it had. A bank no longer in `items` is dropped.
  */
@@ -78,18 +78,41 @@ export function mergeHoldings(prev, items, results) {
   const before = Array.isArray(prev) ? prev : [];
   const out = [], plain = [];
   let plusMode = false, delivered = false, locked = false;
+  const plainAnswered = [];
   (Array.isArray(items) ? items : []).forEach((it, i) => {
     const itemId = it && it.item_id;
     const r = Array.isArray(results) ? results[i] : null;
     const v = r && r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings) ? r.value : null;
     const kept = before.filter((h) => h && itemId && h._item === itemId);
     if (!v) { out.push(...kept); return; }                      // the call failed, or made no sense
-    if (v.plus_mode !== true) { plain.push(...v.holdings); out.push(...kept); return; }
+    if (v.plus_mode !== true) { if (v.unavailable !== true) { plain.push(...v.holdings); plainAnswered.push(itemId); } out.push(...kept); return; }
     plusMode = true;
     if (v.locked) { locked = true; out.push(...kept); return; }
     if (v.unavailable) { out.push(...kept); return; }
     delivered = true;
     out.push(...v.holdings.map((h) => ({ ...h, _item: itemId })));
   });
-  return { holdings: out, plain, plusMode, delivered, locked };
+  return { holdings: out, plain, plainAnswered, plusMode, delivered, locked };
+}
+
+/**
+ * Plus off: the household's holdings after a round (full-app review 2026-11-22, P10-06 with P3-09). The banks that
+ * answered used to replace the whole list, so one bank's failed read wiped its holdings whenever another answered.
+ * A holding is kept when its bank did not answer (the call failed, or the server said `unavailable`); one whose bank
+ * answered without it is gone. A holding whose bank is not known is kept, as the app does for liabilities.
+ *   prev      appData.investments now      merged   mergeHoldings' answer      accounts   appData.accounts (_item)
+ * Returns the new list, or null when no holding came at all (nothing changes, as before).
+ */
+export function plainHoldingsAfter(prev, merged, accounts) {
+  const came = merged && Array.isArray(merged.plain) ? merged.plain : [];
+  if (!came.length) return null;
+  const answered = new Set(merged.plainAnswered || []);
+  const itemOf = new Map((Array.isArray(accounts) ? accounts : []).map((a) => [a && a.id, (a && a._item) || null]));
+  const cameIds = new Set(came.map((h) => h && h.id));
+  const kept = (Array.isArray(prev) ? prev : []).filter((h) => {
+    if (!h || cameIds.has(h.id)) return false;
+    const item = itemOf.get(h.account_id);
+    return item == null ? true : !answered.has(item);
+  });
+  return [...kept, ...came];
 }

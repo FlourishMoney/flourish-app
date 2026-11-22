@@ -137,6 +137,24 @@ export function setItemOwners(items, forUser = undefined, storage = deviceStore(
 /** An account's owner from its stamped bank (`_item`): "me", "partner", or null (no bank linked it, or not stamped). */
 export const ownerOfFrom = (owners) => (a) => (a && a._item && owners && owners[a._item]) || null;
 export const getNetWorthState = () => state;
+/**
+ * The desktop sidebar's old investment card adds up EVERY investment account in the household's data, with no idea
+ * who linked which. That is right only where net worth is as it is today. Once Plus is on it is never shown: without
+ * Plus the balances are behind Plus, and with Plus a partner's private account must not be in a figure (the Net Worth
+ * tab shows each person their own). Full-app review 2026-11-22, P9-01.
+ */
+export const showsAccountBalanceCard = (mode) => mode === "today";
+/**
+ * What Plus keeps apart from the household's data, for Settings' "Export my data": this person's own holdings (a
+ * bank they linked) and the net worth entries they typed. A partner's are the partner's to export, shared or not.
+ * null without Plus: there is nothing apart to add. Full-app review 2026-11-22, P9-03.
+ */
+export function plusExport(s) {
+  if (!s || s.mode !== "plus") return null;
+  const mineOf = ownerOfFrom(s.owners);
+  const entries = s.list && s.list.mine && Array.isArray(s.list.mine.entries) ? s.list.mine.entries : [];
+  return { holdings: (Array.isArray(s.holdings) ? s.holdings : []).filter((h) => mineOf(h) === "me"), netWorthEntries: entries };
+}
 export function useNetWorthState() {
   return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => state);
 }

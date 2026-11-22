@@ -118,8 +118,12 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
       "2o with Plus: a locked or failed answer changes nothing at all, and an answer for someone else is dropped");
     t.ok(/if \(savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\)\) setAppData\(prev => \(prev && "investments" in prev\) \? \(\(\{ investments, \.\.\.rest \}\) => rest\)\(prev\) : prev\);/.test(sync)
       && (app.match(/investments, \.\.\.rest/g) || []).length === 1, "2p the old shared copy is cleared in one place only, and only after the private copy is saved and read back");
-    t.ok(/\} else if \(allHoldings\.length > 0\) \{\s+setAppData\(prev => \(\{ \.\.\.prev, investments: allHoldings \}\)\);/.test(sync) && (app.match(/investments: allHoldings/g) || []).length === 1,
-      "2q Plus off: exactly as today, and Plus holdings are never written into the shared data");
+    // Changed 2026-11-22 (full-app review, P10-06): this used to hold the exact line `investments: allHoldings`, which
+    // was the defect (the banks that answered replaced the whole list). What it guards is unchanged: holdings go into
+    // the shared data in ONE place, on the path without Plus only, and never from a Plus answer.
+    t.ok(/\} else if \(allHoldings\.length > 0\) \{[^}]*setAppData\(prev => \{ const next = plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\); return next \? \{ \.\.\.prev, investments: next \} : prev; \}\);/.test(sync)
+      && (sync.match(/investments: /g) || []).length === 1 && !/investments: allHoldings/.test(app),
+      "2q Plus off: the household's holdings as today (a failed bank keeps its own), and Plus holdings are never written into the shared data");
     const take = app.slice(app.indexOf("const takePlusAnswer = useCallback("), app.indexOf("// BUYING FLOURISH PLUS", app.indexOf("const takePlusAnswer = useCallback(")));
     t.ok(/if\(mode === "plus"\)\{[\s\S]{0,1200}if\(!isCancelled\(\) && holdingsStale\(deviceStore\(\), forUser\)\) syncHoldings\(items, jwt, forUser\);/.test(take),
       "2r with Plus the holdings are fetched when the plan is confirmed (before: only on the first load after a bank was connected), at most every 30 minutes");
