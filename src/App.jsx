@@ -12830,7 +12830,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
       const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
       const file = { json: JSON.stringify(payload, null, 2), text: JSON.stringify(payload), filename: `flourish-export-${stamp}.json` };
       const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
-      const asFile = (f) => new File([f.json], f.filename, { type: "application/json" });
+      const asFile = (f) => new window.File([f.json], f.filename, { type: "application/json" });
       const canShareFile = (()=>{ try { return typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [asFile({ json: "{}", filename: file.filename })] }); } catch { return false; } })();
       const how = await deliverExport(file, {
         platform,
