@@ -85,7 +85,38 @@ function redactAccountNumbers(text) {
 
 const EMAIL_RX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 
-const redactText = (text, names) => redactNames(redactAccountNumbers(String(text).replace(EMAIL_RX, "[email]")), names);
+// CONTACT DETAILS THE ACCOUNT RULE DOES NOT REACH (review of 2026-11-22, P2-08). The rule above cuts any long run of
+// digits to its last 4, which covers a SIN and a phone number written with dashes or spaces. These went out as typed:
+//   a US social security number (3-2-4: a group of 2 never joins, so that a date is never taken for an account)
+//   a phone number written with dots, or with its area code in brackets
+//   a Canadian postal code
+//   a street address: a house number, one to three words, and a street word. A Capitalised or CAPITAL street word of
+//   any kind ("45 KING ST W", "9 Elm Court"); in small letters only the four that are not everyday words ("22 maple
+//   avenue"), and never across a small word, so "5 for the road", "3 payments this way" and "2 cars and the street
+//   is quiet" stay as they are.
+// Only ever removes: nothing here adds to what is sent. Best effort by its nature: an address written some other way
+// is not recognised, and the app still tells people not to type such things to the coach.
+const SSN_RX = /(?<![\d$.,\-])\d{3}-\d{2}-\d{4}(?![\d\-]|[.,]\d)/g;
+const PHONE_RX = /(?<![\d$.,])(?:\+?1[ .\-]?)?(?:\(\d{3}\)[ ]?|\d{3}\.)\d{3}[ .\-]\d{4}(?![\d]|[.,]\d)/g;
+const POSTAL_RX = new RegExp(`(?<![${_letters}])[ABCEGHJ-NPRSTVXY]\\d[ABCEGHJ-NPRSTV-Z][ \\-]?\\d[ABCEGHJ-NPRSTV-Z]\\d(?![${_letters}])`, "giu");
+const _STREET_ANY = "Street|St|Avenue|Ave|Av|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Crescent|Cres|Way|Place|Pl|Terrace|Trail|Circle|Highway|Hwy|Parkway|Pkwy|Square|Sq";
+// Small words a street's name is never made of, so "2 cars and the street is quiet" is not an address.
+const _NOT_A_NAME = "the|and|a|an|of|or|for|on|in|to|is|are|was|at|by|my|our|your|their|this|that|down|up|per|each|every|across|along|from|with|near";
+const _DIR = "(?:[ ](?:North|South|East|West|N|S|E|W|NE|NW|SE|SW)\\b)?";
+const ADDRESS_RX = new RegExp(
+  // Capitalised or CAPITALS: the words of the street's name start with a capital, the street word too.
+  `(?<![${_letters}$.,])\\d{1,6}[A-Za-z]?(?:[ ]\\p{Lu}[\\p{L}'.\\-]*){1,3}[ ](?:${_STREET_ANY}|${_STREET_ANY.toUpperCase()})\\b\\.?${_DIR}`
+  // small letters: only a street word that is nothing else.
+  + `|(?<![${_letters}$.,])\\d{1,6}[a-z]?(?:[ ](?!(?:${_NOT_A_NAME})\\b)[\\p{Ll}'.\\-]+){1,3}[ ](?:street|avenue|boulevard|crescent)\\b`, "gu");
+function redactContactDetails(text) {
+  return String(text == null ? "" : text)
+    .replace(SSN_RX, "[id number]")
+    .replace(PHONE_RX, "[phone]")
+    .replace(POSTAL_RX, "[postal code]")
+    .replace(ADDRESS_RX, "[address]");
+}
+
+const redactText = (text, names) => redactNames(redactAccountNumbers(redactContactDetails(String(text).replace(EMAIL_RX, "[email]"))), names);
 
 // WHAT THE APP MAY SEND (audit round 2 b). Only text: payload.context and payload.prompt are strings when present,
 // and payload.messages is a list of { role: "user" | "assistant", content }, where content is a string or a list
@@ -152,4 +183,4 @@ async function coachNamesFor(admin, userId) {
   return householdNames(asker);
 }
 
-module.exports = { householdNames, redactNames, redactAccountNumbers, redactProviderBody, invalidCoachPayload, coachNamesFor };
+module.exports = { householdNames, redactNames, redactAccountNumbers, redactContactDetails, redactProviderBody, invalidCoachPayload, coachNamesFor };

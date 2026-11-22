@@ -17,7 +17,7 @@ import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBill
 import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount, LOAN_ACTIVITY_KEY } from "./lib/loanActivity.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
-import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
+import { decideConsentAction, canProceedAfterAccept, noteRevokeResult, revokePending, clearRevokePending } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
@@ -65,6 +65,7 @@ import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, cancelAllScheduled } from "./lib/notifications.js";
+import { latestOnly } from "./lib/latestOnly.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
@@ -1099,7 +1100,9 @@ const NOTIF_DEFAULTS = { permissionAsked:false, billDue:true, lowBalance:true, u
 // reschedule the desired set. Because planNotifications derives every fire time from stored data
 // (never from `now`) and ids are stable (notifId), this is idempotent — an edit overwrites, a removed
 // bill's reminder disappears, and re-running with unchanged data produces the identical schedule.
-async function reconcileNotifications(data) {
+// One run at a time and the newest data wins (lib/latestOnly.js, review of 2026-11-22 P7-03): a run still working
+// through its list can no longer schedule out-of-date reminders after a newer run's cancel, or cancel a newer run's.
+const reconcileNotifications = latestOnly(async function reconcileNotificationsNow(data) {
   const TYPES = ["billDue", "lowBalance", "unusualAmount", "meetingReminder"];
   const perm = await getNotificationPermission();
   const toggles = { ...NOTIF_DEFAULTS, ...(data?.profile?.notifications || {}) };
@@ -1113,7 +1116,7 @@ async function reconcileNotifications(data) {
       await scheduleNotification({ id: n.id, type: n.type, title: n.title, body: n.body, at: n.at });
     }
   }
-}
+});
 
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
@@ -12055,7 +12058,7 @@ function InlineGoalEditor({data, setAppData, color}){
 
   const saveGoal = () => {
     if(!form.name||!form.target) return;
-    setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {...form}]}));
+    setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {...form, id:Date.now()}]})); // an id, as the Goals screen gives (review of 2026-11-22)
     setForm({name:"",target:"",saved:""});
     setAdding(false);
   };
@@ -12707,10 +12710,12 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // must re-see the terms before the grant happens.
   const [pendingAIConsent,setPendingAIConsent]=useState(false);
   const hasAIConsent=()=>{ try { return localStorage.getItem("flourish_ai_third_party_consent")==="1"; } catch { return false; } };
-  const applyAICoachEnabled=(v)=>{
+  // granted: the server has already recorded the consent for this turn-on (the Enable AI Coach sheet below waits for
+  // it, review of 2026-11-22 P9-07), so it is not sent a second time.
+  const applyAICoachEnabled=(v, granted=false)=>{
     try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
     setAiCoachEnabled(v);
-    if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
+    if (v && !granted) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
   };
 
   // Notifications (Stage 1): read-only permission check on mount (NEVER prompts). The system prompt is
@@ -12852,7 +12857,14 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",minHeight:LAYOUT.minTap,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
       {pendingAIConsent&&<AIConsentModal
-        onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
+        onEnable={async()=>{
+          // P9-07: someone with no consent on file is granting it here. The switch turns on only once the server has
+          // recorded it; if that fails the sheet stays open, AI stays off, and Enable is a real retry.
+          let ok = true;
+          try { ok = await onAcceptAIConsent?.(); } catch { ok = false; }
+          if (ok === false) return;
+          applyAICoachEnabled(true, true); setPendingAIConsent(false);
+        }}
         onCancel={()=>setPendingAIConsent(false)}/>}
     </div>
     {/* ── Notifications (Stage 1: permission + per-type toggles; NOTHING is scheduled yet) ── */}
@@ -13585,7 +13597,11 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         const limitMsg = isNativeApp()
           ? coachLimitLine()
           : (j.message || "You've hit today's Coach message limit. It resets tomorrow.");
-        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: limitMsg}]);
+        // One exception (review of 2026-11-22, P2-09): reason "unavailable" is the server saying it could not count,
+        // not that a limit was reached. A subscriber on a store app was told they had used this week's messages. That
+        // answer's own line ("Coach is briefly unavailable…") names no plan, no price and no website, so it is shown.
+        const refusal = isNativeApp() && j.reason === "unavailable" && j.message ? j.message : limitMsg;
+        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: refusal}]);
         setLoading(false);
         return;
       }
@@ -17775,6 +17791,7 @@ export default function FlourishApp(){
       localStorage.setItem("flourish_ai_third_party_consent", "1"); // Sprint Z2 #8: explicit consent to share summary+messages with Anthropic
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
     } catch {}
+    clearRevokePending(deviceStorage()); // a newer consent: an older revoke still waiting to be sent must not undo it
     setAiDisclosureSeen(true);
     return true;
   };
@@ -17791,13 +17808,16 @@ export default function FlourishApp(){
     // Tell the server too, so a decline is durable and enforceable rather than a localStorage-only
     // fact. Without this the server sees both consent columns NULL — indistinguishable from "never
     // saw the screen" — so a decliner who clears localStorage would not be gated by /api/coach.
-    postCoachConsent("revoke_consent"); // fire-and-forget — demo has no JWT → no-op
+    // Not awaited (the screen moves on, and the demo has no JWT, so it is a no-op there). If a signed-in revoke does
+    // not reach the server it is remembered and sent again (lib/consentHeal.js, review of 2026-11-22 P10-07).
+    postCoachConsent("revoke_consent").then(res=>noteRevokeResult(res, deviceStorage(), user?.id));
   };
   // Sprint Z2 #8 / Z3 #2: revoke third-party AI consent from Settings — withdraws consent AND turns AI
   // off. The SERVER revoke goes FIRST (so /api/coach blocks even if localStorage is bypassed); the
   // local flip follows best-effort so the client AI goes off regardless of the network result.
   const revokeAIConsent = async ()=>{
-    await postCoachConsent("revoke_consent"); // server revoke FIRST — blocks /api/coach even if localStorage is bypassed
+    const res = await postCoachConsent("revoke_consent"); // server revoke FIRST — blocks /api/coach even if localStorage is bypassed
+    noteRevokeResult(res, deviceStorage(), user?.id); // P10-07: a revoke the server did not get is sent again, not forgotten
     try {
       localStorage.setItem("flourish_ai_third_party_consent", "0");
       localStorage.setItem("flourish_ai_coach_enabled", "0");
@@ -17813,6 +17833,7 @@ export default function FlourishApp(){
     // Otherwise the toggle would read "on" while the gate has nothing on file.
     if (!canProceedAfterAccept(res)) return false;
     try { localStorage.setItem("flourish_ai_third_party_consent", "1"); } catch {}
+    clearRevokePending(deviceStorage()); // a newer consent: an older revoke still waiting to be sent must not undo it
     return true;
   };
   // Self-heal fallback target: re-show the AI disclosure so the user can re-consent (which re-posts to
@@ -18120,6 +18141,14 @@ export default function FlourishApp(){
   const [activeScenario, setActiveScenario] = useState(null);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
+  // P10-07 (review of 2026-11-22): a revoke of AI consent that never reached the server is sent again, for the
+  // account it belongs to, once that account is signed in and the device is online.
+  useEffect(()=>{
+    if (!user?.id || !isOnline || !revokePending(deviceStorage(), user.id)) return;
+    const uid = user.id;
+    postCoachConsent("revoke_consent").then(res=>noteRevokeResult(res, deviceStorage(), uid));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id, isOnline]);
   const [dashLayout,setDashLayout]=useState(()=>{
     try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
     return DASH_TILES.map(t=>({id:t.id,visible:true,locked:false}));
