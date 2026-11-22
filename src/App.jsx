@@ -135,11 +135,12 @@ import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportC
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin, linkFailDetail } from "./lib/onboardingCounts.js";
-import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
+import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys, flushPendingSave, beaconRequest } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
 import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
 import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
-import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval } from "./lib/household.js";
+import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval, withoutOwnBankAnswers, PERSONAL_RETRY_MS } from "./lib/household.js";
+import { buildExport, readExportStores, deliverExport } from "./lib/dataExport.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -12775,37 +12776,30 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // everything the user has entered as a timestamped JSON file. Client-side blob
   // download — works on web; Capacitor iOS (WKWebView) will need a Share/Filesystem
   // follow-up since a blob <a download> often won't trigger a save there.
-  const exportMyData = () => {
+  // lib/dataExport.js (review 2026-11-22): every part of the data, not a fixed list (P9-03); and in a store app the
+  // file goes to the system share sheet, because the WebView there ignores a download link (G6).
+  const exportMyData = async () => {
     try {
-      const _ls = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || fb); } catch { return JSON.parse(fb); } };
-      const payload = {
-        _meta: { app: "Flourish Money", schema: 1, exportedAt: new Date().toISOString(),
-                 note: "Your Flourish data, exported for your records / portability." },
-        profile: data.profile || null,
-        incomes: data.incomes || [],
-        bills: data.bills || [],
-        debts: data.debts || [],
-        goals: data.goals || [],
-        budgets: data.budgets || {},
-        accounts: data.accounts || [],
-        transactions: data.transactions || [],
-        // The household's forecast corrections: edited or skipped deposits and bills, "from this date on"
-        // changes, expected money in or out, their daily spend figure, and which deposits are not income.
-        forecastEdits: data.forecastEdits || {},
-        depositDecisions: data.depositDecisions || {},
-        depositRules: data.depositRules || {},
-        customCategories: _ls("flourish_custom_cats", "[]"),
-        categoryOverrides: _ls("flourish_cat_overrides", "{}"),
-        coachHistory: _ls("flourish_coach_history", "null"),
-      };
+      const payload = buildExport(data, readExportStores(localStorage, { loanActivityKey: LOAN_ACTIVITY_KEY }));
       const d = new Date();
       const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `flourish-export-${stamp}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const file = { json: JSON.stringify(payload, null, 2), text: JSON.stringify(payload), filename: `flourish-export-${stamp}.json` };
+      const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
+      const asFile = (f) => new File([f.json], f.filename, { type: "application/json" });
+      const canShareFile = (()=>{ try { return typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [asFile({ json: "{}", filename: file.filename })] }); } catch { return false; } })();
+      const how = await deliverExport(file, {
+        platform,
+        download: (f) => {
+          const url = URL.createObjectURL(new Blob([f.json], { type: "application/json" }));
+          const a = document.createElement("a");
+          a.href = url; a.download = f.filename;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        shareFile: canShareFile ? (f) => navigator.share({ files: [asFile(f)], title: f.filename }) : null,
+        shareText: async (p) => { const { Share } = await import("@capacitor/share"); return Share.share(p); },
+      });
+      if (how === "failed") alertModal({message:"Could not export your data. Please try again."});
     } catch { alertModal({message:"Could not export your data. Please try again."}); }
   };
   return <div style={{color:C.cream}}>
@@ -18618,15 +18612,30 @@ export default function FlourishApp(){
     clearAllUserLocal();
     try { window.location.reload(); } catch {}
   };
+  // This person's own keys did not save (review 2026-11-22, P10-08): try again by itself after a wait, a few times
+  // (lib/household.js PERSONAL_RETRY_MS). Before, they went again only with the next change to the household's
+  // data, and if none came, the next sign-in put the server's older copy back over this device's.
+  const personalRetryRef = useRef({ n: 0, timer: null });
+  const retryPersonalKeysLater = (userId) => {
+    const st = personalRetryRef.current;
+    const wait = PERSONAL_RETRY_MS[st.n];
+    if (wait == null || st.timer) return;
+    st.n += 1;
+    st.timer = setTimeout(() => {
+      st.timer = null;
+      if (!householdRef.current || saverRef.current?.hasPending?.()) return;   // left, or a save is already on its way
+      getSaver().schedule(householdPayload(latestStateRef.current, userId));
+    }, wait);
+  };
   const saveHousehold = async ({ userId, householdId, blob, personal }) => {
     // This person's own keys go to their own private row, and only when they changed. A failure there is reported
-    // (and tried again with the next save) but never holds up the household's own save.
+    // (and tried again: with the next save, or by retryPersonalKeysLater) but never holds up the household's own save.
     const start = householdRef.current;
     let personalErr = null;
     if (personal && start && start.id === householdId && JSON.stringify(personal) !== JSON.stringify(start.personal ?? null)) {
       const mine = await savePersonalKeys(supabase, userId, personal);
-      if (!mine.ok) personalErr = mine.error || new Error("personal_keys");
-      else if (householdRef.current && householdRef.current.id === householdId) householdRef.current = { ...householdRef.current, personal };
+      if (!mine.ok) { personalErr = mine.error || new Error("personal_keys"); retryPersonalKeysLater(userId); }
+      else { personalRetryRef.current.n = 0; if (householdRef.current && householdRef.current.id === householdId) householdRef.current = { ...householdRef.current, personal }; }
     }
     let toWrite = blob;
     for (let i = 0; i < 3; i++) {
@@ -18647,12 +18656,9 @@ export default function FlourishApp(){
     return { ok: false, error: new Error("household_conflict") };
   };
   // The pending save, sent now and awaited (before the server copies this account's data into a new household).
-  const flushSaveNow = async () => {
-    const pending = saverRef.current?.peek?.();
-    if (!pending) return;
-    saverRef.current?.discard?.();
-    if (pending.householdId) await saveHousehold(pending); else await upsertUserData(supabase, pending.userId, pending.blob);
-  };
+  // Answers { ok }: a save that failed is put back to wait, and the caller must not go on as if it had landed
+  // (lib/persistence.js flushPendingSave, review 2026-11-22 P10-02).
+  const flushSaveNow = () => flushPendingSave(saverRef.current, (pending) => (pending.householdId ? saveHousehold(pending) : upsertUserData(supabase, pending.userId, pending.blob)));
   const getSaver = () => {
     if (!saverRef.current) {
       saverRef.current = makeDebouncedSaver(async ({ userId, blob, householdId, personal }) => {
@@ -19026,9 +19032,37 @@ export default function FlourishApp(){
     clearAllUserLocal();
     try { window.location.reload(); } catch {}
   };
+  // Leaving while someone stays (review 2026-11-22, P1-03): the category corrections and deposit answers made on
+  // THIS person's banks' transactions go first (lib/household.js withoutOwnBankAnswers). The database removes their
+  // bank accounts in the leave itself but cannot find these (it never stores a bank's transactions), and the one
+  // who stays could only remove the ones their own phone held. Answers a function that puts them back, for a
+  // leave the server then refuses (this person is still a member, and the answers are still theirs).
+  const takeOwnBankAnswers = async () => {
+    const nothing = () => {};
+    try {
+      const hh = householdRef.current, st = latestStateRef.current;
+      const members = householdInfo?.household?.members || [];
+      if (!hh || !st?.appData || members.length < 2) return nothing;
+      const mine = (await getUserItems()).filter(it => !it.linked_by).map(it => it.item_id);
+      let raw = null, cat = null;
+      try { raw = localStorage.getItem("flourish_cat_overrides"); cat = JSON.parse(raw || "null"); } catch { cat = null; }
+      const out = withoutOwnBankAnswers({ appData: st.appData, catOverrides: cat }, mine);
+      if (!out.removed) return nothing;
+      try { if (out.catOverrides && typeof out.catOverrides === "object") localStorage.setItem("flourish_cat_overrides", JSON.stringify(out.catOverrides)); } catch {}
+      try { saverRef.current?.discard?.(); } catch {}
+      await saveHousehold(householdPayload({ ...st, appData: out.appData }, user.id));
+      return () => {
+        try { if (raw != null) localStorage.setItem("flourish_cat_overrides", raw); } catch {}
+        try { if (householdRef.current) getSaver().schedule(householdPayload(latestStateRef.current, user.id)); } catch {}
+      };
+    } catch { /* the leave goes ahead: the one who stays still removes what their phone holds */ return nothing; }
+  };
   const householdActions = {
     onInvite: async (email)=>{
-      await flushSaveNow();                                   // the server copies this account's saved data
+      // The server copies this account's SAVED data into the household. If the last change did not save, stop:
+      // the copy would be without it, and this device would then load that older copy over it.
+      const saved = await flushSaveNow();
+      if (!saved.ok) return { error: "generic" };
       const r = await callHousehold("create_invite", { email, consent: true });
       if (r.status !== 200) return { error: r.data?.error || "generic" };
       if (!householdRef.current && r.data.household_id) {
@@ -19055,8 +19089,9 @@ export default function FlourishApp(){
       return { ok: true };
     },
     onLeave: async ()=>{
+      const putBack = await takeOwnBankAnswers();
       const r = await callHousehold("leave");
-      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      if (r.status !== 200) { putBack(); return { error: r.data?.error || "generic" }; }
       restartForHousehold();
       return { ok: true };
     },
@@ -19119,28 +19154,18 @@ export default function FlourishApp(){
       if (isBlobEmpty(payload.blob)) return false;          // never beacon empty/demo: the read-then-decide safety net can't run one-shot
       const token = accessTokenRef.current;
       if (!token) return false;                              // no JWT → would 401; let the normal flush handle it
-      if (payload.householdId) {
-        // Couple mode: only over the version this device read (a newer one is merged by the awaited flush).
-        const hh = householdRef.current;
-        if (!hh || hh.id !== payload.householdId) return false;
-        fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/household_data?household_id=eq.${encodeURIComponent(hh.id)}&version=eq.${encodeURIComponent(hh.version)}`, {
-          method: "PATCH",
-          keepalive: true,
-          headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-          body: JSON.stringify({ data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
-        }).catch(()=>{});
-        return true;
-      }
-      fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_data?on_conflict=user_id`, {
-        method: "POST",
+      // Couple mode: only over the version this device read (a newer one is merged by the awaited flush).
+      const hh = householdRef.current;
+      if (payload.householdId && (!hh || hh.id !== payload.householdId)) return false;
+      // One's own row: only over an OLDER saved copy (lib/persistence.js beaconRequest, review 2026-11-22 P10-03).
+      // This request can arrive late; it used to be an unconditional upsert, so a late one replaced a newer save.
+      const req = beaconRequest(payload, { baseUrl: import.meta.env.VITE_SUPABASE_URL, householdVersion: hh ? hh.version : null });
+      if (!req) return false;
+      fetch(req.url, {
+        method: req.method,
         keepalive: true,
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        },
-        body: JSON.stringify({ user_id: payload.userId, data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: req.prefer },
+        body: req.body,
       }).catch(()=>{});                                      // fire-and-forget; localStorage is the durable floor
       return true;
     } catch { return false; }
