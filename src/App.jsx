@@ -15,7 +15,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch, debtAccountKindWord } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount, LOAN_ACTIVITY_KEY } from "./lib/loanActivity.js";
-import { retainAccounts, retainLiabilities, promoteAccounts, dropBankData, fullSyncOwedAfter, FULL_SYNC_OWED_KEY } from "./lib/multibank.js";
+import { retainAccounts, retainLiabilities, retainHoldings, promoteAccounts, dropBankData, fullSyncOwedAfter, FULL_SYNC_OWED_KEY } from "./lib/multibank.js";
 import { afterTokenMigration, LEGACY_TOKEN_TRIES_KEY } from "./lib/legacyTokenMigration.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept, noteRevokeResult, revokePending, clearRevokePending } from "./lib/consentHeal.js";
@@ -19326,14 +19326,18 @@ export default function FlourishApp(){
           const invResults = await Promise.allSettled(
             items.map(it => callPlaid("get_investments",{item_id:it.item_id}, {jwt}))
           );
+          // A bank whose read failed (the call threw, or the server said `unavailable`) keeps what it had: the banks
+          // that answered no longer replace the whole list (lib/multibank.js retainHoldings, review 2026-11-22 P10-06).
           const allHoldings = [];
-          invResults.forEach(r => {
-            if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings)) {
+          const answered = new Set();
+          invResults.forEach((r, idx) => {
+            if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings) && r.value.unavailable !== true) {
+              answered.add(items[idx].item_id);
               allHoldings.push(...r.value.holdings);
             }
           });
           if (allHoldings.length > 0) {
-            setAppData(prev => ({ ...prev, investments: allHoldings }));
+            setAppData(prev => ({ ...prev, investments: retainHoldings(prev.investments, allHoldings, new Map((prev.accounts || []).map(a => [a.id, a._item || null])), answered) }));
           }
         } catch(e) { /* silent — institution may not support investments */ }
         } catch(e) { /* silent — cached balances still shown */ }

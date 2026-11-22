@@ -184,3 +184,22 @@ export function retainLiabilities(prevLiab, fresh, acctItemMap, availableItemIds
   };
   return { credit: pick("credit"), mortgage: pick("mortgage"), student: pick("student") };
 }
+
+// Per-ITEM investment holdings, the same rule (review 2026-11-22, P10-06 with P3-09). The banks that answered used to
+// replace the whole list, so one bank's failed read wiped its holdings whenever another bank answered.
+//   prev             the holdings held now
+//   fresh            this round's holdings, from the banks that ANSWERED only
+//   acctItemMap      Map(account_id -> owning item_id) built from the stamped accounts
+//   availableItemIds Set of item_ids that answered (not failed, and not marked `unavailable` by the server)
+// A holding is kept when its bank did not answer this round (unknown bank: kept, as above). One whose bank answered
+// without it is gone: sold. Pure.
+export function retainHoldings(prev, fresh, acctItemMap, availableItemIds) {
+  const came = Array.isArray(fresh) ? fresh : [];
+  const cameIds = new Set(came.map(h => h && h.id));
+  const kept = (Array.isArray(prev) ? prev : []).filter(h => {
+    if (!h || cameIds.has(h.id)) return false;
+    const item = acctItemMap.get(h.account_id);
+    return item == null ? true : !availableItemIds.has(item);
+  });
+  return [...kept, ...came];
+}
