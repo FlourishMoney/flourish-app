@@ -1448,3 +1448,64 @@ the entitlement read returns `plus: true`), but nothing reads that yet, so it gi
 
 **Fix** When #128 merges, have its add-on entitlement (`_lib/plusAddon.js`) count `giftCover(...).plus`. Do not sell
 the Plus gift before then.
+
+---
+
+## 68. Left from the full-app review of 2026-11-22 (ChatGPT, Grok and Gemini; branch fix-review-1122)
+
+Every finding of that review was checked against the code. The real blockers, highs and mediums were fixed on
+`fix-review-1122` (tests `tests/review1122*.test.cjs`). These are what was found real and deliberately left, each
+with the reason. Line numbers are at `main` eec2c36.
+
+**Waiting for approved words**
+
+- **A debt that would take over 100 years to pay off** (`financialCalculations.js` simulateDebtPayoff, review P4-04).
+  It is no longer reported as paid off, but What-If shows the existing line "the payment does not cover the interest",
+  whose reason is not exact here. Needs a line, id `debt-payoff-over-100-years`.
+- **Turning the AI Coach on when the server cannot record the consent** (`src/App.jsx` Settings, AIConsentModal
+  onEnable, review P9-07). The sheet now stays open and AI stays off, with no message. Needs one line.
+- **An income added in Settings is not asked for its next payday** (`incomeSchedule.js:204-210`, Grok low). Onboarding
+  asks; Settings does not, and no screen shows the "estimated" flag. Needs a new question.
+- **The gift thank-you page shows on `?bought=1` alone** (`public/gift/gift.js:19-22`, review P1-06). It shows no code
+  and asks the server for nothing; the code only ever comes by email from the paid webhook. A check needs a new
+  endpoint and words for "still confirming".
+
+**Low, not quick**
+
+- **A $0 budget is removed, not saved** (`src/App.jsx:17201`, review P9-08). Every reader treats a zero budget as
+  none (`:17696`, `:8396`), so saving it alone changes nothing visible.
+- **Switching accounts on the gift redeem page removes the session key instead of signing out**
+  (`public/gift/redeem.js:50-54`, review P1-07). The page has no Supabase client; the next sign-in clears the other
+  account's data.
+- **The nightly "iPhone" and "Android" walks are the store bundle in Chromium** (`.github/workflows/nightly-e2e.yml`,
+  review P1-08). Real simulators in CI are a project of their own.
+- **Public counters can be inflated** (`attribution.js:14-29`, `beta.js:313-324`, review P3-08). They keep nothing
+  about the visitor on purpose; no money or access depends on them.
+- **The trial reminder sweep's first read is capped at 1,000 rows by the database API** (`trial-reminder-sweep.js`,
+  rest of review P3-10). Due trials are now read soonest first; nothing is near that size.
+- **A large export on Android** (`src/lib/dataExport.js` deliverExport, review G6). The Android WebView cannot share a
+  file and text is capped at 200,000 characters, so a large export shows the existing "Could not export" message. A
+  full fix needs `@capacitor/filesystem` in a store build.
+
+**The rest of a finding that was fixed in part**
+
+- **Short income names in `variablePay`** (`forecastEdits.js:116`): labels of 3 letters or fewer are still skipped
+  there. Review G8 named, and the fix covers, `depositOwners`.
+- **A negative amount in the inline bill edit** (`src/App.jsx:7181` updateBill). Review P8-05's fix covers Add Bill.
+  A negative bill already saved still adds money to the forecast.
+- **"autopay" in the engine's own monthly spend** (`financialCalculations.js:1606`, `:1669`). Review P6-02's fix
+  covers the weekly review; the engine's locked figures were left alone.
+- **A disconnected bank's device-side extras** (net worth history, loan activity, category corrections for its
+  transactions) are not cleaned up, unlike the household path at `src/App.jsx:18645-18668` (review P9-02).
+- **Remove-partner and delete-account** still rely on the staying member's phone to remove answers keyed by the
+  other's bank transactions (review P1-03). Leaving is now covered by the leaver's phone.
+- **The Canadian student-loan interest tip** shows only at the student life stage, as the US one did (review P7-05
+  fixed the US tip, which is what it named).
+
+**Seen in passing, outside the review's findings**
+
+- `netlify/functions/plaid.js:282` defaults an account's currency to "CAD" when the bank states none, which defeats
+  the app's "not stated" handling (`src/App.jsx:5291`).
+- A founding trial that goes into the store's billing grace period with no sync in between, and then ends, is
+  treated as a paid founding subscription that ended (`_lib/storeSubscriptions.js:261-262`).
+- `tests/forecast-critic-verify.test.cjs` fails 8 of 40 on `main` (its own [OPEN] items); it is not in `test:math`.
