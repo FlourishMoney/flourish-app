@@ -110,6 +110,12 @@ function makeStripe() {
     log.push(`GET ${p}`);
     if (stripe.fail.list && p.startsWith("/subscriptions?")) { const e = new Error("stripe is down"); e.statusCode = 503; throw e; }
     if (p.startsWith("/billing_portal/configurations")) return { data: [] };
+    // Stripe's current API (2026-08-26.dahlia): a charge names no invoice; this list says which invoice a payment paid.
+    if (p.startsWith("/invoice_payments?")) {
+      if (stripe.fail.invoicePayments) { const e = new Error("stripe is down"); e.statusCode = 503; throw e; }
+      const pi = decodeURIComponent((/payment_intent%5D=([^&]+)/.exec(p) || [])[1] || "");
+      return { data: (stripe.invoicePayments || []).filter((x) => x.payment && x.payment.payment_intent === pi) };
+    }
     if (p.startsWith("/invoices/")) return stripe.invoices.find((i) => i.id === decodeURIComponent(p.split("/").pop())) || {};
     if (p.startsWith("/subscriptions?")) { const cus = decodeURIComponent((/customer=([^&]+)/.exec(p) || [])[1] || ""); return { data: stripe.subs.filter((s) => s.customer === cus) }; }
     if (p.startsWith("/checkout/sessions?")) return { data: [] };
@@ -184,6 +190,35 @@ function loadWith(db, sm, alerts, user = U) {
 
     const extraMeta = { user_id: U, plan_key: "plus_monthly", kind: "plus_addon", flourish_plus_extra: "1" };
     const posted = (sm, path) => sm.stripe.posts.filter((x) => x.p === path);
+
+    // ── The real-world proof, 2026-11-23 (step 1B.4, Stripe test mode) ─────────────────────────────────────────
+    // A second Plus subscription made BY HAND in Stripe for a buyer who already has one, as support might, carries no
+    // metadata: only a checkout the server made does. The webhook knew an account by the subscription's own row or by
+    // that metadata, found neither, and answered 500 ("no account for the subscription"): the extra subscription was
+    // never set to end, nobody was told, and Stripe would have resent the event for days. The buyer's Plus customer is
+    // their own (billing.js makes one per buyer), and our row names it: the account is read from that row.
+    {
+      const db = makeDb(), sm = makeStripe(), alerts = []; const B = loadWith(db, sm, alerts);
+      db.state.rows[T].push(webRow("sub_A", "active", { last_event_at: iso(now - 9000) }));
+      const byHand = webSub("sub_H", "active", { metadata: {}, current_period_start: now - 3600, items: { data: [{ price: { id: "price_pm" }, current_period_end: now + 30 * DAY, current_period_start: now - 3600 }] } });
+      sm.stripe.subs.push(webSub("sub_A", "active"), byHand);
+      const r = await send(B.hook, "customer.subscription.created", byHand, now - 3000);
+      t.eq([r.status, r.body.conflict, rowOf(db).provider_subscription_id, sm.stripe.subs[1].cancel_at_period_end, alerts.length], [200, true, "sub_A", true, 1],
+        "PROOF-1B4a a second Plus made by hand in Stripe (no metadata) for a buyer who has one: the account is found by the buyer's Plus customer; the row stays the first one's, the second is set to end, support is told once (it answered 500 and did nothing)");
+      // A Plus-priced subscription on a customer no row names, with no metadata: nobody's. Never guessed.
+      const stranger = webSub("sub_X", "active", { customer: "cus_nobody", metadata: {} });
+      sm.stripe.subs.push(stranger);
+      const r2 = await send(B.hook, "customer.subscription.created", stranger, now - 2000);
+      t.ok(r2.status >= 500 && rowOf(db).provider_subscription_id === "sub_A" && db.state.rows[T].length === 1 && stranger.cancel_at_period_end === false && alerts.length === 1,
+        "PROOF-1B4b a Plus subscription on a customer nobody's row names, with no metadata, is still nobody's: nothing is written and nothing is ended");
+      // A by-hand subscription for a buyer whose row is a STORE purchase that kept its Stripe customer: the same rule.
+      const db2 = makeDb(), sm2 = makeStripe(), alerts2 = []; const B2 = loadWith(db2, sm2, alerts2);
+      db2.state.rows[T].push(storeRow({ provider_customer_id: "cus_P" }));
+      const hand2 = webSub("sub_H2", "active", { metadata: {} });
+      sm2.stripe.subs.push(hand2);
+      const r3 = await send(B2.hook, "customer.subscription.created", hand2, now - 3000);
+      t.eq([r3.status, rowOf(db2).provider], [200, "app_store"], "PROOF-1B4c …also when the buyer's row is a store purchase that kept its Stripe customer: found, and handled by the usual two-purchases rule");
+    }
 
     // ── N1. A recorded; B bought and set to end as the extra; A ends early while B is paid ─────────────────
     {
@@ -311,6 +346,51 @@ function loadWith(db, sm, alerts, user = U) {
       const unsure = await send(B4.hook, "charge.refunded", { id: "ch_?", object: "charge", customer: "cus_P", refunded: true, amount: 499, amount_refunded: 499, created: now - 2 * DAY }, now - 30);
       t.eq([unsure.status, sm4.log.filter((l) => l.startsWith("DELETE")).length, rowOf(db4).status], [200, 0, "active"],
         "N1r it cannot be told which of two subscriptions the refunded charge paid: neither is cancelled and Plus stays (support's call), rather than ending the wrong one");
+
+      // ── The real-world proof, 2026-11-23 (steps 1B.6 and 1B.9, Stripe test mode, API 2026-08-26.dahlia) ───────────
+      // The refunded charge Stripe really sends has NO invoice field at all (it has customer and payment_intent), and
+      // the invoice has no `subscription` field either (it is at parent.subscription_details.subscription). So "the
+      // charge names its invoice" (N1q) never happens on this API, and every refund fell to the period rule. In the
+      // proof two subscriptions had begun at the same moment: "it cannot be told which", and a full refund of the
+      // Plus the buyer was on ended nothing. Stripe does say which invoice a payment paid (invoice_payments, by the
+      // charge's payment_intent): that is asked first now, and the period rule is only what is left when it cannot be.
+      const realCharge = (id, pi, o = {}) => ({ id, object: "charge", customer: "cus_P", payment_intent: pi, refunded: true, amount: 499, amount_refunded: 499, created: now - 2 * DAY, ...o });
+      const realInvoices = (sm) => { sm.stripe.invoices.push({ id: "in_A", parent: { subscription_details: { subscription: "sub_A" } } }, { id: "in_B", parent: { subscription_details: { subscription: "sub_B" } } });
+        sm.stripe.invoicePayments = [{ invoice: "in_A", payment: { type: "payment_intent", payment_intent: "pi_A" } }, { invoice: "in_B", payment: { type: "payment_intent", payment_intent: "pi_B" } }]; };
+      const db5 = makeDb(), sm5 = makeStripe(); const B5 = loadWith(db5, sm5, alerts);
+      db5.state.rows[T].push(webRow("sub_A", "active"));
+      sm5.stripe.subs.push(webSub("sub_A", "active"), webSub("sub_B", "active", { cancel_at_period_end: true, metadata: extraMeta }));      // both periods began at the same moment
+      realInvoices(sm5);
+      const realExtra = await send(B5.hook, "charge.refunded", realCharge("ch_rB", "pi_B"), now - 30);
+      t.eq([realExtra.status, sm5.log.filter((l) => l.startsWith("DELETE")), rowOf(db5).provider_subscription_id, rowOf(db5).status], [200, ["DELETE /subscriptions/sub_B"], "sub_A", "active"],
+        "PROOF-1B6a the real charge (no invoice field): Stripe is asked which invoice the payment paid, and that invoice's subscription ends, even when two began at the same moment");
+      const db6 = makeDb(), sm6 = makeStripe(); const B6 = loadWith(db6, sm6, alerts);
+      db6.state.rows[T].push(webRow("sub_A", "active"));
+      sm6.stripe.subs.push(webSub("sub_A", "active"));
+      realInvoices(sm6);
+      const realOwn = await send(B6.hook, "charge.refunded", realCharge("ch_rA", "pi_A"), now - 30);
+      t.eq([realOwn.status, sm6.log.filter((l) => l.startsWith("DELETE")), rowOf(db6).status, require("../netlify/functions/_lib/plusAddon.js").isLivePlusRow(rowOf(db6))], [200, ["DELETE /subscriptions/sub_A"], "canceled", false],
+        "PROOF-1B6b a full refund of the payment for the Plus the buyer is on: that subscription is cancelled at Stripe and Plus ends");
+      const db7 = makeDb(), sm7 = makeStripe(); const B7 = loadWith(db7, sm7, alerts);
+      db7.state.rows[T].push(webRow("sub_A", "active"));
+      sm7.stripe.subs.push(webSub("sub_A", "active"), webSub("sub_B", "active", { cancel_at_period_end: true, metadata: extraMeta }));
+      realInvoices(sm7); sm7.stripe.fail.invoicePayments = true;
+      const cannotAsk = await send(B7.hook, "charge.refunded", realCharge("ch_rB", "pi_B"), now - 30);
+      t.eq([cannotAsk.status, sm7.log.filter((l) => l.startsWith("DELETE")).length, rowOf(db7).status], [200, 0, "active"],
+        "PROOF-1B6c Stripe cannot be asked which invoice: the period rule is what is left, and with two that began together nothing is ended (as N1r), never the wrong one");
+      const db8 = makeDb(), sm8 = makeStripe(); const B8 = loadWith(db8, sm8, alerts);
+      db8.state.rows[T].push(webRow("sub_A", "active"));
+      sm8.stripe.subs.push(webSub("sub_A", "active"), webSub("sub_B", "active", { cancel_at_period_end: true, metadata: extraMeta }));
+      realInvoices(sm8); sm8.stripe.charges.push(realCharge("ch_dB", "pi_B", { refunded: false, amount_refunded: 0 }));
+      const lost = await send(B8.hook, "charge.dispute.closed", { id: "dp_1", object: "dispute", status: "lost", charge: "ch_dB" }, now - 30);
+      t.eq([lost.status, sm8.log.filter((l) => l.startsWith("DELETE")), rowOf(db8).provider_subscription_id], [200, ["DELETE /subscriptions/sub_B"], "sub_A"],
+        "PROOF-1B6d a lost chargeback is traced the same way, from the charge Stripe is asked for");
+      const db9 = makeDb(), sm9 = makeStripe(); const B9 = loadWith(db9, sm9, alerts);
+      db9.state.rows[T].push(webRow("sub_A", "active"));
+      sm9.stripe.subs.push(webSub("sub_A", "active"));
+      const noAnswer = await send(B9.hook, "charge.refunded", realCharge("ch_r0", "pi_unknown"), now - 30);
+      t.eq([noAnswer.status, sm9.log.filter((l) => l.startsWith("DELETE"))], [200, ["DELETE /subscriptions/sub_A"]],
+        "PROOF-1B6e Stripe knows no invoice for the payment: the period rule decides as before (one subscription, its current period's charge: it ends)");
     }
 
     // ── N2. One Stripe customer per buyer, whatever the row's provider says ──────────────────────────────

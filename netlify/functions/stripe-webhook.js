@@ -176,6 +176,18 @@ async function applyPlusEvent(admin, evt, object, reply, { stripeGet: get }) {
       if (subErr) throw Object.assign(new Error(`plus read: ${subErr.code || "error"}`), { pg: subErr });
       if (bySub && bySub.user_id) userId = bySub.user_id;
       if (!userId) userId = sub && sub.metadata && sub.metadata.user_id;
+      // …then our own row for the buyer's Plus CUSTOMER (real-world proof 2026-11-23, step 1B.4). A subscription made
+      // by hand in Stripe, as support might for someone who already has Plus, carries no metadata. Each buyer has a
+      // Plus customer of their own (billing.js), named on their row, so the account is that row's. Without this the
+      // event answered 500 for days, the second subscription was never set to end and nobody was told.
+      if (!userId) {
+        const customerId = sub && (typeof sub.customer === "string" ? sub.customer : sub.customer && sub.customer.id);
+        if (customerId) {
+          const { data: byCustomer, error: cusErr } = await admin.from(T).select("user_id").eq("provider_customer_id", customerId).maybeSingle();
+          if (cusErr) throw Object.assign(new Error(`plus read: ${cusErr.code || "error"}`), { pg: cusErr });
+          if (byCustomer && byCustomer.user_id) userId = byCustomer.user_id;
+        }
+      }
       if (!userId) throw new Error("plus: no account for the subscription");
       const { data: cur, error: curErr } = bySub ? { data: bySub, error: null }
         : await admin.from(T).select(`user_id, ${plusAddon.ROW_COLS}`).eq("user_id", userId).maybeSingle();
@@ -305,7 +317,8 @@ async function endPlusForChargeBack(admin, evt, object, deps = {}) {
 }
 // The Plus subscription a charge paid for, out of the customer's Plus subscriptions; null when it paid for none of
 // them, or it cannot be told which.
-//   The charge's invoice says, when the charge names one (it is read from Stripe).
+//   The charge's invoice says: the one the charge names, or (the current API names none) the one Stripe says the
+//   charge's payment paid.
 //   Otherwise by the period: the charge is not from before the subscription's current period (a day's slack: the
 //   first charge can be made a moment before the period Stripe records; an earlier period's is a month older), and of
 //   two that fit, the one whose period began nearest the charge. Two that began at the same moment cannot be told
@@ -313,7 +326,19 @@ async function endPlusForChargeBack(admin, evt, object, deps = {}) {
 async function chargedPlusSubscription(charge, subs, get) {
   let named = null;
   try {
-    const inv = charge.invoice;
+    let inv = charge.invoice;
+    // Real-world proof, 2026-11-23 (steps 1B.6, 1B.9): on Stripe's current API (2026-08-26.dahlia) a charge has no
+    // invoice field at all, so "the charge names its invoice" never happened and every refund fell to the period
+    // rule below. Stripe does say which invoice a payment paid: invoice_payments, asked by the charge's
+    // payment_intent. That is exact, also when two subscriptions began at the same moment.
+    if (!inv) {
+      const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent && charge.payment_intent.id;
+      if (pi) {
+        const paid = await get(`/invoice_payments?payment%5Btype%5D=payment_intent&payment%5Bpayment_intent%5D=${encodeURIComponent(pi)}&limit=1`);
+        const first = paid && Array.isArray(paid.data) ? paid.data[0] : null;
+        inv = first ? (typeof first.invoice === "string" ? first.invoice : first.invoice && first.invoice.id) || null : null;
+      }
+    }
     const invoice = inv && typeof inv === "object" ? inv : (typeof inv === "string" && inv ? await get(`/invoices/${encodeURIComponent(inv)}`) : null);
     const of = invoice && (invoice.subscription || (invoice.parent && invoice.parent.subscription_details && invoice.parent.subscription_details.subscription));
     named = typeof of === "string" ? of : (of && of.id) || null;
