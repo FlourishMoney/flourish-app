@@ -26,6 +26,8 @@ const PLAID_BASE = {
 };
 
 const { corsHeadersFor } = require("./_lib/cors");
+const { freeBankCap } = require("./_lib/freeBanks");
+const { freeServerWords } = require("./_lib/freeWords");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -119,6 +121,18 @@ exports.handler = async (event) => {
       const COUNTRY_CODES = [country];
       const REDIRECT_URI = "https://flourishmoney.app";
 
+      // FREE V1 (2026-11-23, _lib/freeBanks.js): a NEW bank on a plan that connects none is refused here, before Plaid
+      // opens, so nobody signs in to their bank only to be turned away after. Only the website's Free plan connects
+      // none; a store app keeps today's one-bank rule, asked at the exchange as before. A reconnect (item_id, Plaid's
+      // update mode) is never refused: a bank already connected keeps working. A plan that cannot be read changes
+      // nothing here (as before this check existed): the exchange still answers 503 for it.
+      if (ENFORCE_PLAN_LIMITS && !body.item_id && freeBankCap(event) === 0) {
+        const { unlimited, status_unavailable } = await getUserPlan(user_id);
+        if (!status_unavailable && !unlimited) {
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
+        }
+      }
+
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
       let updateAccessToken = null;
@@ -183,10 +197,13 @@ exports.handler = async (event) => {
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
+        // Free v1 (_lib/freeBanks.js): the website's Free plan connects no bank; a store app keeps today's one.
+        const cap = freeBankCap(event);
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
-        if ((count || 0) >= 1) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
+        if ((count || 0) >= cap) {
+          const message = cap === 0 ? freeServerWords("free-server-bank") : "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.";
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message }) };
         }
       }
 
@@ -654,6 +671,7 @@ exports.handler = async (event) => {
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
+      const freeCap = freeBankCap(event);
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
         const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
@@ -678,9 +696,11 @@ exports.handler = async (event) => {
             failures.push({ error: "no item_id returned", index, retry: false });
             continue;
           }
-          // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
-          if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more.", index, retry: false });
+          // Free tier: skip NEW banks beyond the cap (re-migrating an existing item is fine). Free v1
+          // (_lib/freeBanks.js): the website's Free plan connects none; a store app keeps today's one.
+          if (capBanks && !existingIds.has(item_id) && activeCount >= freeCap) {
+            const message = freeCap === 0 ? freeServerWords("free-server-bank") : "Free plan supports one bank. Upgrade to Plus to add more.";
+            failures.push({ error: "plan_limit", message, index, retry: false });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)
