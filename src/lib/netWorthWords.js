@@ -17,8 +17,8 @@
 
 /**
  * "THESE HOLDINGS ARE FROM {date}" (round 3 of the Plus review, NEW-4): shown next to one bank's holdings when they
- * could not be refreshed. ITS WORDS ARE NOT APPROVED YET, so the id is not in NET_WORTH_WORDS below and this answers
- * "": nothing is shown. When the approved line is added under this id (carrying {date}), it shows, and only then.
+ * could not be refreshed. Its words were approved on 2026-11-23 and are in NET_WORTH_WORDS below. This fills in the
+ * date ("November 21, 2026"), and answers "" when there is no date to give (the bank answered, or no time is known).
  */
 export const HOLDINGS_AS_OF_ID = "networth-plus-holdings-as-of";
 export function holdingsAsOfLine(iso, words = NET_WORTH_WORDS, locale = "en-CA") {
@@ -60,6 +60,10 @@ export const NET_WORTH_WORDS = Object.freeze({
   "networth-plus-share-sensitive": "This account's type can reveal something about health or disability. Your partner doesn't see it unless you turn this on.",
   "networth-plus-registered": "Registered",
   "networth-plus-non-registered": "Non-registered",
+  // Under one investment account's holdings, when that bank could not be refreshed ({date}: when they are from).
+  // Approved 2026-11-23, word for word (ChatGPT 100 AGREE, Grok 100 AGREE; round 4 of the Plus review, R4-3). Its record
+  // is its own: docs/review/PLUS-HOLDINGS-AS-OF-APPROVED-2026-11-23.md (tests/netWorthPlus.test.cjs 7n, 7o).
+  "networth-plus-holdings-as-of": "We couldn't reach this bank just now. These holdings are from {date}.",
   "networth-plus-add": "Add a home, car or pension",
   "networth-plus-kind-home": "Home",
   "networth-plus-kind-car": "Car",

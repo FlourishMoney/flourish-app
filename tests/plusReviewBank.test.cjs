@@ -221,8 +221,8 @@ const call = async (fn, body) => {
       meanwhile(mig, { user_id: A, item_id: "a-item-other" });
       const m = await call(load(mig, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-1", institution_name: "Legacy" }] });
       t.eq([m.status, m.body.successes, m.body.failures, banks(mig, A), mig.state.rows.plaid_items.some((x) => x.item_id === "item-legacy-1"), removes().length],
-        [200, [], [{ error: "bank_limit", scope: "person", used: 2, limit: 2 }], 2, false, 0],
-        "2g H3 migrate_items: the same, and the refused bank's row is taken back out without touching it at Plaid");
+        [200, [], [{ error: "bank_limit", scope: "person", used: 2, limit: 2 }], 2, false, 1],   // changed 2026-11-23 (round 4, R4-1): the last was 0
+        "2g H3 migrate_items: the same, and the refused bank is removed at Plaid before its row is taken back out (it used to be left live at Plaid with no row to find it by)");
       reset();
       const migOk = makeDb({ items: { [A]: 1 } });
       const mo = await call(load(migOk, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-1", institution_name: "Legacy" }] });

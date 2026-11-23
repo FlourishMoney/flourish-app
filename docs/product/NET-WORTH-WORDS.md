@@ -36,6 +36,7 @@ Numbers in a line ({used}, {limit}, {count}) are whole numbers of bank logins, f
 | `networth-plus-share-sensitive` | Under the switch, on an account that could reveal a health or disability fact (an RDSP, an HSA) | This account's type can say something about health or disability to whoever sees it; it is never shared unless you turn this on | This account's type can reveal something about health or disability. Your partner doesn't see it unless you turn this on. | 140 |
 | `networth-plus-registered` | Beside an investment account the bank calls registered | Registered | Registered | 20 |
 | `networth-plus-non-registered` | Beside an investment account the bank calls a brokerage account | Non-registered | Non-registered | 20 |
+| `networth-plus-holdings-as-of` | Under one investment account's holdings, when that bank could not be refreshed. {date} is the day they are from, written out (November 21, 2026) | The bank could not be reached just now; these holdings are from {date} | We couldn't reach this bank just now. These holdings are from {date}. | 90 |
 | `networth-plus-add` | The button that adds an entry | Add a home, car or pension | Add a home, car or pension | 40 |
 | `networth-plus-kind-home` | The entry kinds | Home | Home | 20 |
 | `networth-plus-kind-car` | The entry kinds | Car | Car | 20 |

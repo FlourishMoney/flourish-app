@@ -112,7 +112,11 @@ const REPO = path.join(__dirname, "..");
     // BUYING FLOURISH PLUS (plus-buy-*, 2026-11-20) is a later section with a record of its own (approved the same day):
     // 7l and 7m below hold it. The 48 lines of this record are every other one.
     const isBuy = ([id]) => id.startsWith("plus-buy-");
-    const inCode = [...Object.entries(W.NET_WORTH_WORDS).filter((e) => !isBuy(e)), ...Object.entries(SRV.PLAN_WORDS)];
+    // APPROVED LATER, WITH A RECORD OF ITS OWN (added 2026-11-23, as the buying lines were): the "as of" line for
+    // holdings that could not be refreshed. 7n below holds it to its record as strictly as 7h and 7i hold the 48.
+    const LATER = { "networth-plus-holdings-as-of": "PLUS-HOLDINGS-AS-OF-APPROVED-2026-11-23.md" };
+    const isLater = ([id]) => id in LATER;
+    const inCode = [...Object.entries(W.NET_WORTH_WORDS).filter((e) => !isBuy(e) && !isLater(e)), ...Object.entries(SRV.PLAN_WORDS)];
     const buying = Object.entries(W.NET_WORTH_WORDS).filter(isBuy);
     t.eq([numbered.length, numbered.map(([n]) => n).join(",") === Array.from({ length: 49 }, (_, i) => i + 1).join(","), inCode.length], [49, true, 48], "7g the record numbers 49 lines, 1 to 49; the first 48 are the words files' (45 in the app, 3 on the server)");
     const { UPGRADE_COPY: UC } = await import("../src/lib/upgradeFlow.js");
@@ -121,8 +125,8 @@ const REPO = path.join(__dirname, "..");
     t.eq(inCode.filter(([, w], i) => w !== approved[i][1]).map(([id]) => id), [], "7h every line in the code is its approved line in the record, word for word, in the record's order");
     const wordsDoc = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
     const docRows = Object.fromEntries([...wordsDoc.matchAll(/^\| `([a-z0-9-]+)` \| [^|]+ \| [^|]+ \| ([^|]+) \| (\d+) \|$/gm)].map((m) => [m[1], [m[2].trim(), Number(m[3])]]));
-    const longest = (w) => [...w.replace("{used}", "10").replace("{limit}", "10").replace("{count}", "12").replace("{n}", "2")].length;
-    t.eq([Object.keys(docRows).filter((id) => !id.startsWith("plus-buy-")).length, inCode.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1]).map(([id]) => id)], [48, []],
+    const longest = (w) => [...w.replace("{used}", "10").replace("{limit}", "10").replace("{count}", "12").replace("{n}", "2").replace("{date}", "September 30, 2026")].length;
+    t.eq([Object.keys(docRows).filter((id) => !id.startsWith("plus-buy-") && !(id in LATER)).length, inCode.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1]).map(([id]) => id)], [48, []],
       "7i the words doc lists the same 48, each word for word and within its limit");
     const PWORDS = require("./_pendingWords.cjs");
     t.eq([PWORDS.pendingNetWorthWordIds(), inCode.filter(([, w]) => /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id)], [[], []],
@@ -133,6 +137,12 @@ const REPO = path.join(__dirname, "..");
       "7l the 20 buying lines are their approved lines (docs/review/PLUS-BUY-COPY-APPROVED-2026-11-20.md), word for word, in the record's order");
     t.eq(buying.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1] || /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id), [],
       "7m …and the words doc lists each one, word for word and within its limit, with no dash and a lowercase flourish");
+    const later = Object.entries(W.NET_WORTH_WORDS).filter(isLater);
+    const laterRecord = (id) => { const rec = fsW.readFileSync(pathW.join(__dirname, "..", "docs", "review", LATER[id]), "utf8"); return [...rec.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => m[2]); };
+    t.eq([later.length, later.filter(([id, w]) => { const rec = laterRecord(id); return rec.length !== 1 || rec[0] !== w; }).map(([id]) => id)], [Object.keys(LATER).length, []],
+      "7n a line approved later is its approved line in a record of its own (docs/review), word for word");
+    t.eq(later.filter(([id, w]) => !docRows[id] || docRows[id][0] !== w || longest(w) > docRows[id][1] || /\[WORDS:/.test(w) || /\u2014|\u2013/.test(w) || /Flourish/.test(w)).map(([id]) => id), [],
+      "7o …and the words doc lists it, word for word and within its limit, with no dash and a lowercase flourish");
     t.eq([W.netWorthWords("banks-limit-person", { used: 2, limit: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).includes("{"), SRV.planWords("plan-server-coach-limit", { n: 2 }).startsWith("You've used your 2 free coach messages this week.")], [false, false, true],
       "7k the numbers go into the lines: no brace is left on screen");
   }

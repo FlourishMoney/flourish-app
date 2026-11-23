@@ -76,11 +76,13 @@ async function plaid(endpoint, body) {
 // tries. One that still cannot be removed has no row here (its token is never kept for a bank the person was refused),
 // so one error line names the item, never the token, for it to be removed by hand in Plaid's dashboard.
 const REMOVE_TRIES = 3;
+// Plaid saying it no longer knows the Item (or its token) is the same as removed: there is nothing left there to bill.
+const goneAtPlaid = (e) => /ITEM_NOT_FOUND|INVALID_ACCESS_TOKEN/.test(String((e && (e.errorCode || e.message)) || ""));
 async function removeRefusedItem(access_token, item_id, where) {
   let last = null;
   for (let i = 0; i < REMOVE_TRIES; i++) {
     try { await plaid("/item/remove", { access_token }); return true; }
-    catch (e) { last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+    catch (e) { if (goneAtPlaid(e)) return true; last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
   }
   console.error(`[${where}] /item/remove failed ${REMOVE_TRIES} times: item ${item_id} is still live at Plaid, remove it by hand:`, (last && (last.errorCode || last.message)) || "error");
   return false;
@@ -112,7 +114,10 @@ async function markRefused(admin, user_id, item_id, where) {
     } catch (e) { /* tried again */ }
     if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 100 * (i + 1)));
   }
-  console.error(`[${where}] could not mark the refused bank:`, item_id);
+  // Round 4 (R4-2): the caller must NOT go on as if it were refused. Nothing is removed and the bank stays an ordinary
+  // connected row (listed, counted), so it can be found: by this line, by the count being past the limit, and by the
+  // person, who can disconnect it.
+  console.error(`[${where}] could not mark the refused bank; it stays connected and is past the limit:`, item_id);
   return false;
 }
 // …and the rows still marked refused (their removal did not finish) are finished when their owner's banks are next
@@ -126,7 +131,7 @@ async function finishRefusedBanks(admin, user_id, rows) {
       if (error || !full || full.status !== REFUSED) continue;
       let gone = false;
       try { await plaid("/item/remove", { access_token: full.access_token }); gone = true; }
-      catch (e) { gone = /ITEM_NOT_FOUND|INVALID_ACCESS_TOKEN/.test(String((e && (e.errorCode || e.message)) || "")); }
+      catch (e) { gone = goneAtPlaid(e); }
       if (gone) await household.disconnectItem(admin, user_id, r.item_id);
     } catch (e) { console.error("[refused bank] not finished:", r.item_id, (e && e.message) || "error"); }
   }
@@ -333,8 +338,10 @@ exports.handler = async (event) => {
         // answer is the refusal whatever those two manage: a removal that does not finish is finished later
         // (finishRefusedBanks), never turned into "connected". after.unresolved (this bank is inside the limit and the
         // count is still past it) removes nothing: the bank is kept.
+        // Round 4 (R4-2): if the mark cannot be written, the bank is NOT treated as refused: nothing is removed at Plaid,
+        // its row stays as it is (connected, listed, counted), and the answer is "unavailable", not the refusal.
         if (after.over) {
-          await markRefused(admin, user_id, item_id, "exchange_token limit recheck");
+          if (!(await markRefused(admin, user_id, item_id, "exchange_token limit recheck"))) return statusUnavailable(CORS);
           if (await removeRefusedItem(access_token, item_id, "exchange_token limit recheck")) await removeRefusedRow(admin, user_id, item_id, "exchange_token limit recheck");
           return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody({ ...after.lim, used: after.lim.limit })) };
         }
@@ -897,12 +904,17 @@ exports.handler = async (event) => {
             // The same second look as exchange_token (H3): a NEW bank written past the limit is taken back out. Its row
             // only: this bank was connected on an older copy of the app, and is not removed at Plaid here.
             const after = await overAfterAdding(admin, user_id, { itemId: item_id });
-            // Round 3 (M3): refused whatever the row's delete manages (it used to be reported as saved when the delete
-            // failed). Marked first, so it never counts or lists; a row that will not go now is finished later, and
-            // then it is removed at Plaid too, as any refused bank is.
+            // Round 3 (M3): refused whatever the clean-up manages (it used to be reported as saved when the delete failed).
+            // Round 4 (R4-1): the SAME steps, in the same order, as exchange_token. Marked refused first (it stops
+            // counting and listing at once); then removed at Plaid with this bank's own token; and its row is deleted
+            // only once Plaid has removed it (or no longer knows it). If Plaid will not, the row stays, refused, with
+            // the token, and finishRefusedBanks finishes it the next time the banks are listed. (Round 3 deleted the
+            // row without telling Plaid: the Item stayed live there and could never be found again.)
+            // Round 4 (R4-2): a mark that cannot be written is not a refusal: nothing is removed, the row stays as it
+            // is, and this bank's answer is "unavailable".
             if (after.over) {
-              await markRefused(admin, user_id, item_id, "migrate_items limit recheck");
-              await removeRefusedRow(admin, user_id, item_id, "migrate_items limit recheck");
+              if (!(await markRefused(admin, user_id, item_id, "migrate_items limit recheck"))) { failures.push({ error: "unavailable" }); continue; }
+              if (await removeRefusedItem(t.token, item_id, "migrate_items limit recheck")) await removeRefusedRow(admin, user_id, item_id, "migrate_items limit recheck");
               failures.push(limitBody({ ...after.lim, used: after.lim.limit }));
               continue;
             }

@@ -5,8 +5,8 @@
 //   1  the merge marks them: a bank the server answered from its kept list, and a bank that failed and is shown from
 //      this device's copy; a bank that answered live is never marked
 //   2  the net worth model gives each investment account the date its holdings are from, or nothing
-//   3  THE WORDS ARE NOT APPROVED YET: the line's id is not in the words, so nothing is shown. The day the approved
-//      line is added under that id, it shows, with the date filled in
+//   3  the line, approved 2026-11-23, word for word: "We couldn't reach this bank just now. These holdings are from
+//      {date}." It is shown with the date filled in; with no date, or a bad one, nothing is shown
 // (NEW-1, NEW-2, NEW-3 and M3 are tested beside what they change: plusHoldingsStore.sql, plusRound2Holdings,
 //  plusRound2Limits.)
 // -----------------------------------------------------------------------------
@@ -73,8 +73,14 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
   {
     const iso = "2026-11-21T15:00:00.000Z";
     t.eq(W.HOLDINGS_AS_OF_ID, "networth-plus-holdings-as-of", "NEW4-l the line has an id of its own");
-    t.ok(!(W.HOLDINGS_AS_OF_ID in W.NET_WORTH_WORDS), "NEW4-m its words are NOT in the app: they are a draft until Amanda has them approved");
-    t.eq(safe(() => W.holdingsAsOfLine(iso)), "", "NEW4-n so today nothing is shown");
+    // Changed 2026-11-23 (round 4, R4-3): the words were approved that day (ChatGPT 100 AGREE, Grok 100 AGREE). These two
+    // used to hold that the line was NOT in the app and that nothing was shown.
+    t.eq(W.NET_WORTH_WORDS[W.HOLDINGS_AS_OF_ID], "We couldn't reach this bank just now. These holdings are from {date}.", "NEW4-m the approved line is in the app, word for word");
+    t.eq(safe(() => W.holdingsAsOfLine(iso)), "We couldn't reach this bank just now. These holdings are from November 21, 2026.", "NEW4-n and it is shown with the date filled in");
+    const doc = fs.readFileSync(path.join(REPO, "docs", "product", "NET-WORTH-WORDS.md"), "utf8");
+    const rowOf = doc.split("\n").find((l) => l.startsWith("| `networth-plus-holdings-as-of` |")) || "";
+    t.ok(rowOf.split("|").map((c) => c.trim()).includes("We couldn't reach this bank just now. These holdings are from {date}."), "NEW4-n2 the words doc lists it with the same line");
+    t.eq(safe(() => W.netWorthWords(W.HOLDINGS_AS_OF_ID, { date: "November 21, 2026" })).includes("[WORDS:"), false, "NEW4-n3 it is not a placeholder");
     const approved = { ...W.NET_WORTH_WORDS, [W.HOLDINGS_AS_OF_ID]: "TEST WORDS {date} END" };
     t.eq(safe(() => W.holdingsAsOfLine(iso, approved)), "TEST WORDS November 21, 2026 END", "NEW4-o the day the approved line is added under that id it shows, with the date filled in");
     t.eq(safe(() => [W.holdingsAsOfLine(null, approved), W.holdingsAsOfLine("not a date", approved), W.holdingsAsOfLine(iso, { ...approved, [W.HOLDINGS_AS_OF_ID]: "[WORDS: networth-plus-holdings-as-of]" })]), ["", "", ""],
