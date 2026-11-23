@@ -147,10 +147,13 @@ const call = async (fn, body) => {
   const realFetch = global.fetch;
   // The pretend Plaid: a public token "pt-x" becomes item "item-x" with token "access-x". removeDelayMs: how long
   // /item/remove takes.
-  const P = { calls: [], removeDelayMs: 0, neverRemoves: false, alreadyGone: false, removeFailsLeft: 0, onRemove: null, byToken: {} };
+  const P = { calls: [], alerts: [], removeDelayMs: 0, neverRemoves: false, alreadyGone: false, removeFailsLeft: 0, onRemove: null, byToken: {} };
   const ok = (j) => ({ ok: true, status: 200, json: async () => j });
   global.fetch = async (url, init) => {
-    const u = String(url).replace(/^https:\/\/[^/]+/, ""); const body = init && init.body ? JSON.parse(init.body) : {};
+    const u = String(url).replace(/^https:\/\/[^/]+/, "");
+    let body = {}; try { body = init && init.body ? JSON.parse(init.body) : {}; } catch { body = {}; }
+    // Anything sent to a person outside the database (round 7): the error tracker and the support inbox.
+    if (/sentry\.io|resend\.com/.test(String(url))) { P.alerts.push({ to: /sentry\.io/.test(String(url)) ? "sentry" : "email", url: String(url), raw: String((init && init.body) || ""), headers: (init && init.headers) || {} }); return ok({ id: "sent" }); }
     P.calls.push({ url: u, token: body.access_token || null });
     if (/item\/remove/.test(u)) {
       if (P.removeDelayMs) await sleep(P.removeDelayMs);
@@ -165,7 +168,7 @@ const call = async (fn, body) => {
     return ok({});
   };
   const removes = () => P.calls.filter((c) => /item\/remove/.test(c.url)).map((c) => c.token);
-  const reset = () => { P.calls.length = 0; P.removeDelayMs = 0; P.neverRemoves = false; P.alreadyGone = false; P.removeFailsLeft = 0; P.onRemove = null; errors.length = 0; };
+  const reset = () => { P.calls.length = 0; P.alerts.length = 0; P.removeDelayMs = 0; P.neverRemoves = false; P.alreadyGone = false; P.removeFailsLeft = 0; P.onRemove = null; errors.length = 0; };
   for (const k of Object.keys(process.env)) if (/^PLUS_ENABLED$|^PLUS_TESTER_USER_IDS$|^HOUSEHOLD_ENABLED$|^ENFORCE_PLAN_LIMITS$|^STRIPE_PRICE_/.test(k)) delete process.env[k];
   Object.assign(process.env, { PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox", HOUSEHOLD_ENABLED: "true", PLUS_ENABLED: "true",
     STRIPE_PRICE_MONTHLY_CAD: "price_m", STRIPE_PRICE_ANNUAL_CAD: "price_a", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_f", STRIPE_PRICE_PLUS_MONTHLY_CAD: "price_pm", STRIPE_PRICE_PLUS_ANNUAL_CAD: "price_pa" });
@@ -507,7 +510,9 @@ const call = async (fn, body) => {
       reset(); P.removeFailsLeft = 9;
       const d5 = full(); d5.state.upsertFails.plaid_items = 9;
       const r5 = await call(load(d5, A).plaid, newBank("r6e"));
-      t.ok(r5.status === 402 && errors.some((e) => /item-r6e/.test(e) && /still live at Plaid/.test(e)), "R6-1i neither can be done (the database and Plaid both down): still the refusal, and one error line names the Item for a person; nothing else is possible");
+      // Changed 2026-11-23 (round 7, R7-1): this expected the ordinary 402. With no row and the Item still live at Plaid it
+      // is now the explicit "unavailable" (the R7 section below holds the alert that goes with it).
+      t.ok(r5.status === 503 && r5.body.error === "status_unavailable" && errors.some((e) => /item-r6e/.test(e) && /still live at Plaid/.test(e)), "R6-1i neither can be done (the database and Plaid both down): the answer is \"unavailable\", not the ordinary refusal, and one error line names the Item for a person");
 
       // EVERY OTHER PATH THAT REMOVES A BANK AT PLAID (checked for the same gap)
       // 1. the save of a new bank fails after Plaid made the Item
@@ -555,6 +560,116 @@ const call = async (fn, body) => {
       t.eq(removals, 4, "R6-2i Plaid's removal is called in four places only: the one helper every refusal, disconnect and duplicate goes through; the later finish; remove_item (which leaves the row where it is); and deleting the whole account");
       const leftBare = [...withoutComments.matchAll(/try \{ await plaid\("\/item\/remove"/g)].length;
       t.eq(leftBare, 2, "R6-2j the only one-line \"try it\" removals left are inside that helper (three tries) and the later finish: the save-failed, duplicate and disconnect paths no longer try once and carry on");
+    }
+
+    // ── ROUND 7 (2026-11-23), R7-1: THE ROW AND THE REMOVAL BOTH FAIL ───────────────────────────────────────────────
+    // keepRefusedRow answers false when the row could not be written (three tries), and no caller looked. If Plaid's
+    // removal failed too, the request answered an ordinary 402 or 200 with a live Item and no record of it anywhere.
+    // Now every caller looks. When both fail: the answer is the explicit "unavailable" wherever the API allows it, and
+    // an alert goes OUTSIDE the database, to the error tracker and to the support inbox, naming the Item and the path,
+    // never its token, so a person can remove it by hand.
+    {
+      const refused = (db) => db.state.rows.plaid_items.filter((r) => r.status === "refused");
+      const savedEnv = { RESEND_API_KEY: process.env.RESEND_API_KEY, SENTRY_DSN: process.env.SENTRY_DSN, VITE_SENTRY_DSN: process.env.VITE_SENTRY_DSN };
+      process.env.RESEND_API_KEY = "re_test_round7"; process.env.SENTRY_DSN = "https://abc123def@o111.ingest.sentry.io/4242"; delete process.env.VITE_SENTRY_DSN;
+      const sentry = () => P.alerts.filter((a) => a.to === "sentry"), email = () => P.alerts.filter((a) => a.to === "email");
+      const noToken = () => P.alerts.every((a) => !/access-/.test(a.raw) && !/access-/.test(JSON.stringify(a.headers).replace(/re_test_round7/, "")));
+      // what an alert must say
+      const says = (item, pathWord) => {
+        const sn = sentry()[0], em = email()[0];
+        const mail = em ? JSON.parse(em.raw) : {};
+        return [sentry().length, email().length,
+          !!sn && sn.url === "https://o111.ingest.sentry.io/api/4242/envelope/" && /sentry_key=abc123def/.test(String(sn.headers["X-Sentry-Auth"] || "")) && sn.raw.includes(item) && sn.raw.includes(pathWord) && /"level":"error"/.test(sn.raw),
+          !!em && Array.isArray(mail.to) && mail.to[0] === "hello@flourishmoney.app" && String(mail.text || "").includes(item) && String(mail.text || "").includes(pathWord) && String(mail.text || "").includes(A),
+          noToken()];
+      };
+      const BOTH = [1, 1, true, true, true];
+
+      // 1. a NEW bank refused at the limit
+      reset(); P.removeFailsLeft = 9;
+      const a1 = makeDb({ items: { [A]: 2 } }); a1.state.upsertFails.plaid_items = 9;
+      const ra = await call(load(a1, A).plaid, newBank("r7a"));
+      t.eq([ra.status, ra.body && ra.body.error, a1.state.rows.plaid_items.length, a1.state.writes.filter((w) => w[1] === "upsert failed").length, removes().length], [503, "status_unavailable", 2, 3, 3],
+        "R7-1a a new bank refused at the limit; its row cannot be written (three tries) AND Plaid will not remove its Item (three tries): the answer is 503 \"unavailable\" (was an ordinary 402)");
+      t.eq(says("item-r7a", "exchange_token limit"), BOTH, "R7-1b …and one error goes to the error tracker and one email to support, each naming the Item, the path and the account, and neither carrying its token");
+      // 2. the save of a new bank fails
+      reset(); P.removeFailsLeft = 9;
+      const b1 = makeDb({ items: { [A]: 1 } }); b1.state.upsertFails.plaid_items = 9;
+      const rb = await call(load(b1, A).plaid, newBank("r7b"));
+      t.eq([rb.status, rb.body && rb.body.error, b1.state.rows.plaid_items.length], [503, "status_unavailable", 1], "R7-1c the save of a new bank fails, the refused row cannot be written either, and Plaid will not remove the Item: 503 \"unavailable\" (was 500 \"could not save\", with nothing said about the Item)");
+      t.eq(says("item-r7b", "exchange_token save failed"), BOTH, "R7-1d …with the same alert");
+      // 3. the person disconnects a bank: the mark cannot be written, so nothing is deleted
+      reset(); P.removeFailsLeft = 9;
+      const e1 = makeDb({ items: { [A]: 2 } }); e1.state.updateFails.plaid_items = 9;
+      const re1 = await call(load(e1, A).plaid, { action: "delete_item", item_id: "a-item-1" });
+      const still = e1.state.rows.plaid_items.find((r) => r.item_id === "a-item-1") || {};
+      t.eq([re1.status, re1.body && re1.body.error, still.status, still.access_token, e1.state.writes.some((w) => w[1] === "disconnect")], [503, "status_unavailable", "active", "access-a-1", false],
+        "R7-1e a disconnect when Plaid will not remove the Item and the row cannot be marked: 503 \"unavailable\", and NOTHING is deleted, so the bank still has its row and its token (was: the row was deleted first, then lost)");
+      t.eq(says("a-item-1", "delete_item"), BOTH, "R7-1f …with the same alert");
+      // 3b. the mark lands, the disconnect goes through, and then the refused row cannot be put back
+      reset(); P.removeFailsLeft = 9;
+      const e2 = makeDb({ items: { [A]: 2 } }); e2.state.upsertFails.plaid_items = 9;
+      const re2 = await call(load(e2, A).plaid, { action: "delete_item", item_id: "a-item-1" });
+      t.eq([re2.status, re2.body && re2.body.error, e2.state.rows.plaid_items.map((r) => r.item_id)], [503, "status_unavailable", ["a-item-0"]], "R7-1g the disconnect goes through and then its token cannot be kept: 503 \"unavailable\", not \"removed\"");
+      t.eq(says("a-item-1", "delete_item"), BOTH, "R7-1h …with the same alert, which is then the only record of that Item");
+      // 4. a duplicate on re-link: the new bank IS connected, so the answer cannot honestly be an error
+      reset(); P.removeFailsLeft = 9;
+      const c1 = makeDb({ items: { [A]: 1 } }); c1.state.rows.plaid_items[0].institution_id = "ins_same7";
+      c1.state.afterWrite = (table, row) => { if (table === "plaid_items" && row.item_id === "item-dup7") c1.state.updateFails.plaid_items = 9; };
+      const rc1 = await call(load(c1, A).plaid, { action: "exchange_token", public_token: "pt-dup7", institution_name: "Same Bank", institution_id: "ins_same7" });
+      const old1 = c1.state.rows.plaid_items.find((r) => r.item_id === "a-item-0") || {};
+      t.eq([rc1.status, rc1.body && rc1.body.ok, old1.status, old1.access_token, c1.state.writes.some((w) => w[1] === "disconnect")], [200, true, "active", "access-a-0", false],
+        "R7-1i the same bank linked again; the older Item cannot be removed at Plaid and its row cannot be marked: the new bank is connected (the answer cannot honestly be an error), and the older bank's row is NOT deleted, so it keeps its record and its token");
+      t.eq(says("a-item-0", "exchange_token dedupe"), BOTH, "R7-1j …with the same alert");
+      // 5. collapsing duplicates
+      reset(); P.removeFailsLeft = 9;
+      const d1 = makeDb({ items: { [A]: 2 } }); d1.state.rows.plaid_items.forEach((r) => { r.institution_id = "ins_twice7"; });
+      d1.state.updateFails.plaid_items = 9;
+      const rd1 = await call(load(d1, A).plaid, { action: "collapse_duplicate_items" });
+      t.eq([rd1.status, rd1.body && rd1.body.error, d1.state.rows.plaid_items.map((r) => r.status), d1.state.writes.some((w) => w[1] === "disconnect")], [503, "status_unavailable", ["active", "active"], false],
+        "R7-1k collapsing duplicates when neither can be done: 503 \"unavailable\", and both rows are still there");
+      t.ok(sentry().length === 1 && email().length === 1 && noToken() && sentry()[0].raw.includes("collapse"), "R7-1l …with the same alert");
+
+      // ONE failure alone is not this: no alert, the ordinary answer
+      reset(); P.removeFailsLeft = 9;
+      const s1 = makeDb({ items: { [A]: 2 } });
+      const rs1 = await call(load(s1, A).plaid, newBank("r7s"));
+      t.eq([rs1.status, refused(s1).length, P.alerts.length], [402, 1, 0], "R7-1m Plaid will not remove the Item but its row is kept: the ordinary refusal, and no alert (it is finished later)");
+      reset();
+      const s2 = makeDb({ items: { [A]: 2 } }); s2.state.upsertFails.plaid_items = 9;
+      const rs2 = await call(load(s2, A).plaid, newBank("r7t"));
+      t.eq([rs2.status, removes(), P.alerts.length], [402, ["access-r7t"], 0], "R7-1n the row cannot be written but Plaid removes the Item: the ordinary refusal, and no alert (nothing is left)");
+      // no alert settings on this deploy (a preview): the same answer, nothing thrown
+      reset(); P.removeFailsLeft = 9; delete process.env.RESEND_API_KEY; delete process.env.SENTRY_DSN;
+      const n1 = makeDb({ items: { [A]: 2 } }); n1.state.upsertFails.plaid_items = 9;
+      const rn = await call(load(n1, A).plaid, newBank("r7n"));
+      t.eq([rn.status, P.alerts.length, errors.some((e) => /item-r7n/.test(e))], [503, 0, true], "R7-1o with no error tracker and no mail key set (a preview): still 503, nothing thrown, and the function log names the Item");
+      // the app's own error tracker address works too (it is the same public address, already in the app)
+      reset(); P.removeFailsLeft = 9; process.env.VITE_SENTRY_DSN = "https://pubkey9@o222.ingest.sentry.io/77";
+      const v1 = makeDb({ items: { [A]: 2 } }); v1.state.upsertFails.plaid_items = 9;
+      await call(load(v1, A).plaid, newBank("r7v"));
+      t.eq(sentry().map((a) => a.url), ["https://o222.ingest.sentry.io/api/77/envelope/"], "R7-1p the error tracker's address is taken from the server's own setting, or the app's public one");
+      // the sender itself: never throws, never sends a token it was not given, and is quiet without an address
+      const SA = require("../netlify/functions/_lib/serverAlert.js");
+      const sentTo = [];
+      const okFetch = async (url, init) => { sentTo.push({ url, init }); return { ok: true, status: 200 }; };
+      t.eq([await SA.reportServerError({ message: "m", tags: { flag: "f", path: "p" }, extra: { item_id: "item-x" } }, { env: { SENTRY_DSN: "https://k@o9.ingest.sentry.io/5" }, fetchImpl: okFetch }), sentTo.length, sentTo[0] && sentTo[0].init.headers["Content-Type"], sentTo[0] && sentTo[0].init.body.trim().split("\n").length],
+        [true, 1, "application/x-sentry-envelope", 3], "R7-1r the error tracker is sent one envelope: its header, the item's type, and the event");
+      const ev = JSON.parse(sentTo[0].init.body.trim().split("\n")[2]);
+      t.eq([ev.level, ev.tags, ev.extra, ev.message.formatted, /^[0-9a-f]{32}$/.test(ev.event_id)], ["error", { flag: "f", path: "p" }, { item_id: "item-x" }, "m", true], "R7-1s the event says exactly what it was given, as an error");
+      t.eq([await SA.reportServerError({ message: "m" }, { env: {}, fetchImpl: okFetch }), await SA.reportServerError({ message: "m" }, { env: { SENTRY_DSN: "not an address" }, fetchImpl: okFetch }), sentTo.length], [false, false, 1], "R7-1t with no address, or one that is not an address, nothing is sent");
+      t.eq([await SA.reportServerError({ message: "m" }, { env: { SENTRY_DSN: "https://k@o9.ingest.sentry.io/5" }, fetchImpl: async () => { throw new Error("network down"); } }), await SA.reportServerError({ message: "m" }, { env: { SENTRY_DSN: "https://k@o9.ingest.sentry.io/5" }, fetchImpl: async () => ({ ok: false, status: 429 }) })], [false, false], "R7-1u a send that fails answers false and never throws");
+      const SUP = require("../netlify/functions/_lib/supportAlert.js");
+      const m1 = SUP.supportAlertMessage({ flag: "plaid_item_no_record", userId: A, itemId: "item-x", path: "delete_item" });
+      const m2 = SUP.supportAlertMessage({ flag: "plaid_item_removal_stuck", userId: A, itemId: "item-x", path: "collapse" });
+      t.ok(/NO row/.test(m1.text) && /Remove it by hand/.test(m1.text) && /item-x/.test(m1.text) && /still connected/.test(m2.text) && /nothing was deleted/.test(m2.text) && !/\u2014/.test(m1.text + m2.text), "R7-1v the two support emails say which it is: no record anywhere (remove it by hand), or nothing deleted (still connected)");
+
+      // every caller looks at the answer
+      const srcK = src("netlify", "functions", "plaid.js").replace(/\/\/[^\n]*/g, "");
+      const calls7 = [...srcK.matchAll(/^.*keepRefusedRow\(.*$/gm)].map((m) => m[0].trim()).filter((l) => !/^async function keepRefusedRow/.test(l));
+      t.ok(calls7.length >= 3 && calls7.every((l) => /(const \w+ = |if \(!?\(?await |return |&& !?\(?await |\|\| !?\(?await )/.test(l) && !/^await keepRefusedRow\(/.test(l)), `R7-1q every call of keepRefusedRow uses its answer (${calls7.length} calls)`);
+      Object.assign(process.env, Object.fromEntries(Object.entries(savedEnv).filter(([, v]) => v !== undefined)));
+      for (const [k, v] of Object.entries(savedEnv)) if (v === undefined) delete process.env[k];
     }
 
     // ── N4. TWO NEW NET WORTH ENTRIES AT THE SAME MOMENT, AT 49 OF 50 ───────────────────────────────────────────

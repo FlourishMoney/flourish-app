@@ -29,6 +29,8 @@ const { corsHeadersFor } = require("./_lib/cors");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { bankLimitFor, overAfterAdding, limitBody, REFUSED } = require("./_lib/bankLimits");
+const { reportServerError } = require("./_lib/serverAlert");
+const { alertSupport } = require("./_lib/supportAlert");
 const { planWords } = require("./_lib/planWords");
 const plusAddon = require("./_lib/plusAddon");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -138,8 +140,26 @@ async function markRefused(admin, user_id, item_id, where) {
   // Round 4 (R4-2): the caller must NOT go on as if it were refused. Nothing is removed and the bank stays an ordinary
   // connected row (listed, counted), so it can be found: by this line, by the count being past the limit, and by the
   // person, who can disconnect it.
-  console.error(`[${where}] could not mark the refused bank; it stays connected and is past the limit:`, item_id);
+  console.error(`[${where}] could not mark the refused bank; its row stays as it is (connected):`, item_id);
   return false;
+}
+
+// NEITHER COULD BE DONE: Plaid would not remove the Item AND the database would not record it (round 7, R7-1).
+// A person has to know, and the database is the thing that failed, so the alert goes OUTSIDE it: one error to the
+// error tracker (_lib/serverAlert.js) and one email to the support inbox (_lib/supportAlert.js), each naming the
+// Item, the path and the account. NEVER the token. kind:
+//   "no_record"  the Item is live at Plaid and no row here remembers it: nothing will retry it, remove it by hand
+//   "stuck"      nothing was deleted: the bank's row is still there, connected, as it was
+// The caller answers "unavailable" wherever that is honest. Never throws.
+async function alertItemNotRemoved(user_id, item_id, where, kind) {
+  const flag = kind === "no_record" ? "plaid_item_no_record" : "plaid_item_removal_stuck";
+  console.error(`[${where}] ${flag}: Plaid would not remove the Item and the database would not record it:`, item_id);
+  try {
+    await Promise.all([
+      reportServerError({ message: `${flag}: a bank Item could not be removed at Plaid and could not be recorded (${where})`, tags: { area: "plaid", flag, path: where }, extra: { item_id, account: user_id } }),
+      alertSupport({ flag, userId: user_id, provider: "plaid", itemId: item_id, path: where }),
+    ]);
+  } catch (e) { /* each sender already never throws */ }
 }
 // …and the rows still marked refused (their removal did not finish) are finished when their owner's banks are next
 // listed: removed at Plaid (one that Plaid no longer knows is already gone), then the row. Best effort and bounded: a
@@ -324,8 +344,11 @@ exports.handler = async (event) => {
           // Round 6 (R6-1): a refused row is written FIRST (its token; never counted, listed or read), and deleted only
           // once Plaid has removed the Item. Three failed tries used to be ignored here, with no row: the Item stayed
           // live at Plaid with no record. Now the row stays and the removal is finished when the banks are next listed.
-          await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token limit");
+          // Round 7 (R7-1): both answers are looked at. The row could not be written AND Plaid would not remove the
+          // Item: a person is told (alertItemNotRemoved) and the answer is "unavailable", never the ordinary refusal.
+          const rowKept = await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token limit");
           if (await removeRefusedItem(access_token, item_id, "exchange_token limit")) await removeRefusedRow(admin, user_id, item_id, "exchange_token limit");
+          else if (!rowKept) { await alertItemNotRemoved(user_id, item_id, "exchange_token limit", "no_record"); return statusUnavailable(CORS); }
           if (bankLimit.unavailable) return statusUnavailable(CORS);
           return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
         }
@@ -347,7 +370,11 @@ exports.handler = async (event) => {
         console.error("[exchange_token upsert]", upsertErr.message);
         // Round 6 (R6-1, the same gap): three tries, not one; and if Plaid will not remove it, the write is tried again
         // as a refused row, so the Item is not left live at Plaid with no record.
-        if (!(await removeRefusedItem(access_token, item_id, "exchange_token save failed"))) await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token save failed");
+        // Round 7 (R7-1): if that row cannot be written either, a person is told and the answer is "unavailable".
+        if (!(await removeRefusedItem(access_token, item_id, "exchange_token save failed"))) {
+          const rowKept = await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token save failed");
+          if (!rowKept) { await alertItemNotRemoved(user_id, item_id, "exchange_token save failed", "no_record"); return statusUnavailable(CORS); }
+        }
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
       }
 
@@ -403,9 +430,16 @@ exports.handler = async (event) => {
               const rKey = (r.institution_id || "").trim().toLowerCase() || (r.institution_name || "").trim().toLowerCase();
               if (!rKey || rKey !== dedupeKey) continue;
               const gone = await removeRefusedItem(r.access_token, r.item_id, "exchange_token dedupe");
+              // Round 6 (R6-1) and round 7 (R7-1): a duplicate Plaid would not remove is NEVER deleted. Its row is marked
+              // refused where it is (hidden, not counted, not read) and the removal is finished later, with the rest of
+              // its cleanup. If even the mark cannot be written, the row stays exactly as it was (still a record of the
+              // Item) and a person is told. The new bank is connected either way, so this request still answers ok.
+              if (!gone) {
+                if (!(await markRefused(admin, user_id, r.item_id, "exchange_token dedupe"))) await alertItemNotRemoved(user_id, r.item_id, "exchange_token dedupe", "stuck");
+                continue;
+              }
               // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
-              // Round 6 (R6-1, the same gap): if Plaid would not remove it, its token is kept in a refused row.
-              try { await household.disconnectItem(admin, user_id, r.item_id); if (!gone) await keepRefusedRow(admin, user_id, r, "exchange_token dedupe"); }
+              try { await household.disconnectItem(admin, user_id, r.item_id); }
               catch (delErr) { console.error("[exchange_token dedupe: row delete failed]", r.item_id, delErr.message); }
             }
           }
@@ -794,6 +828,13 @@ exports.handler = async (event) => {
       // Round 6 (R6-1, the same gap): three tries, and if Plaid still will not remove it, its token is kept in a
       // refused row below, so the Item is removed later and not left live at Plaid with no record.
       const goneAtPlaidNow = await removeRefusedItem(row.access_token, item_id, "delete_item");
+      // Round 7 (R7-1): before anything is deleted, the row is marked refused where it is. If that cannot be written the
+      // database is not taking writes, so NOTHING is deleted: the bank keeps its row and its token, a person is told,
+      // and the answer is "unavailable" (the person can try again).
+      if (!goneAtPlaidNow && !(await markRefused(admin, user_id, item_id, "delete_item"))) {
+        await alertItemNotRemoved(user_id, item_id, "delete_item", "stuck");
+        return statusUnavailable(CORS);
+      }
       // Couple mode (audit round 2 c): what came from this bank leaves the household's shared blob, under the
       // household's lock and while the row still says whose bank it is, then the row goes: one transaction
       // (_lib/household.js disconnectItem). Not in a household: the row is deleted, as before.
@@ -805,7 +846,13 @@ exports.handler = async (event) => {
       // PLUS: the bank's holdings kept on the server go with it (migration 0055's trigger does the same when the row
       // goes; this is the same thing said here). Never fails the disconnect.
       await holdingsStore.dropPlusHoldings(admin, user_id, item_id);
-      if (!goneAtPlaidNow) await keepRefusedRow(admin, user_id, { item_id, access_token: row.access_token }, "delete_item");
+      // The disconnect took the row with it; the token is put back in a refused row so the Item can still be removed.
+      // Round 7 (R7-1): if that cannot be written, the Item is live at Plaid with no record: a person is told, and the
+      // answer is "unavailable", never "removed".
+      if (!goneAtPlaidNow) {
+        const rowKept = await keepRefusedRow(admin, user_id, { item_id, access_token: row.access_token }, "delete_item");
+        if (!rowKept) { await alertItemNotRemoved(user_id, item_id, "delete_item", "no_record"); return statusUnavailable(CORS); }
+      }
       return ok({ removed: true });
     }
 
@@ -832,6 +879,7 @@ exports.handler = async (event) => {
       }
       const seen = new Set();
       const kept = [], collapsed = [];
+      let stuck = false;   // round 7: a duplicate that could be neither removed at Plaid nor marked
       for (const r of rows || []) {
         if (r.status === REFUSED) continue;   // a bank on its way out (R6-1) is no one's duplicate, and is never "the one kept"
         // institution_id is often null (neither client call site sends it), so fall back to a
@@ -843,13 +891,21 @@ exports.handler = async (event) => {
         if (!seen.has(key)) { seen.add(key); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         // Duplicate (older, since we ordered newest-first) → revoke + delete.
         const gone = await removeRefusedItem(r.access_token, r.item_id, "collapse");
+        // Round 6 (R6-1) and round 7 (R7-1), as on a re-link: a duplicate Plaid would not remove is never deleted. Marked
+        // refused where it is, it is hidden and finished later. If even the mark cannot be written, its row stays as it
+        // was, a person is told, and this request answers "unavailable".
+        if (!gone) {
+          if (await markRefused(admin, user_id, r.item_id, "collapse")) { await holdingsStore.dropPlusHoldings(admin, user_id, r.item_id); collapsed.push({ item_id: r.item_id, institution_name: r.institution_name }); }
+          else { await alertItemNotRemoved(user_id, r.item_id, "collapse", "stuck"); stuck = true; kept.push({ item_id: r.item_id, institution_name: r.institution_name }); }
+          continue;
+        }
         // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
         try { await household.disconnectItem(admin, user_id, r.item_id); }
         catch (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         await holdingsStore.dropPlusHoldings(admin, user_id, r.item_id);   // PLUS: its kept holdings go with it (as delete_item)
-        if (!gone) await keepRefusedRow(admin, user_id, r, "collapse");      // round 6 (R6-1): its token is kept until Plaid removes it
         collapsed.push({ item_id: r.item_id, institution_name: r.institution_name });
       }
+      if (stuck) return statusUnavailable(CORS);
       return ok({ collapsed, kept });
     }
 
