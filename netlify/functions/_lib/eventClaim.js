@@ -44,4 +44,23 @@ async function reclaimEvent(admin, eventId, { now = Date.now() } = {}) {
   return take("received");
 }
 
-module.exports = { STUCK_MS, reclaimEvent };
+/**
+ * THE CLAIM: this delivery's row for the event. Returns { seen: false } when the row is new (this delivery has the
+ * event), { seen: true } when it was already there (ask reclaimEvent what the earlier delivery came to), or
+ * { error } when the row could not be written for any other reason (answer 5xx: the provider sends it again).
+ *
+ * Real-world proof, 2026-11-23 (Stripe test mode, real Postgres). Both webhooks used to call
+ * insert(row, { ignoreDuplicates: true }) and read "no row came back" as "seen before". supabase-js has that option on
+ * upsert only: on insert it is ignored, so a real database answers the second insert of an event with a unique
+ * violation (23505). That was read as "could not claim" and answered 500, on every repeat delivery since the first
+ * version: an event already processed was never acknowledged, and one whose work had failed was never done again.
+ * The stand-in databases in the tests honoured the option. A unique violation is the "seen before" answer; a client
+ * that returns no row instead (as those stand-ins do) means the same.
+ */
+async function claimEvent(admin, row) {
+  const { data, error } = await admin.from("billing_events").insert(row).select("event_id");
+  if (error) return error.code === "23505" ? { seen: true } : { error };
+  return { seen: !data || data.length === 0 };
+}
+
+module.exports = { STUCK_MS, reclaimEvent, claimEvent };

@@ -68,7 +68,10 @@ function fakeDb(rows = {}, opts = {}) {
         const dup = list().some((r) => r[pk] === row[pk]);
         calls.push({ table, op: "insert", row, dup });
         if (!dup) list().push({ ...row });
-        const res = dup && !(o && o.ignoreDuplicates) ? { data: null, error: { code: "23505", message: "duplicate" } } : { data: dup ? [] : [{ ...row }], error: null };
+        // opts.realInsert (2026-11-23): what supabase-js and Postgres really do. `insert` has no ignoreDuplicates option
+        // (only `upsert` does), so a second insert of the same key is a unique violation, 23505, whatever was passed.
+        if (opts.failInsert && opts.failInsert(table)) { const bad = { data: null, error: { code: "XX000", message: "the database is down" } }; return { select: async () => bad, then: (ok) => ok(bad) }; }
+        const res = dup && (opts.realInsert || !(o && o.ignoreDuplicates)) ? { data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "billing_events_pkey"' } } : { data: dup ? [] : [{ ...row }], error: null };
         return { select: async () => res, then: (ok) => ok(res) };
       },
       async upsert(row) {
@@ -194,6 +197,53 @@ const DAY = 86400000;
     const i = fakeDb({ billing_events: [{ event_id: "rc:done", provider: "revenuecat", type: "RENEWAL", status: "processed", attempts: 1, received_at: iso(NOW - 10 * 60000) }] });
     const r10 = await wh.handle(rcEvent("done"), depsFor(i));
     t.eq([r10.statusCode, JSON.parse(r10.body).replay, synced], [200, true, 0], "P3-02o a store event already processed is acknowledged and not repeated");
+
+    // ── P3-02 ON A REAL DATABASE (real-world proof, 2026-11-23, step 1A.8) ─────────────────────────────────────
+    // Stripe test mode against real Postgres: an event whose work failed was sent again twice at the same moment,
+    // then a third time. All three answered 500 "claim_failed" and the event was never applied. Both webhooks claimed
+    // an event with insert(row, { ignoreDuplicates: true }), but supabase-js has that option on upsert only: on a real
+    // database the second insert of an event is a unique violation (23505), which was read as "could not claim". So
+    // since the first version (2026-09-23) every repeat delivery, of a finished event or an unfinished one, has
+    // answered 500, and nothing above (P3-02a to o) was ever reached in production. The stand-in here honoured the
+    // option, which is why no test saw it. `realInsert` makes it behave as the real client does.
+    const R = { realInsert: true };
+    const rd_done = fakeDb({ billing_events: [{ event_id: "evt_done_r", provider: "stripe", type: "checkout.session.completed", status: "processed", attempts: 1, received_at: iso(NOW - 10 * 60000) }] }, R);
+    const rr1 = await deliver(loadHook(rd_done), checkout("evt_done_r"));
+    t.eq([rr1.statusCode, JSON.parse(rr1.body).replay, (rd_done.db.subscriptions || []).length], [200, true, 0], "P3-02p real database: an event already processed, sent again, is acknowledged (it answered 500 claim_failed, so Stripe kept sending it)");
+    const rd_failed = fakeDb({ billing_events: [{ event_id: "evt_failed_r", provider: "stripe", type: "checkout.session.completed", status: "failed", attempts: 1, error: "fetch failed", received_at: iso(NOW - 60000) }] }, R);
+    const rr2 = await deliver(loadHook(rd_failed), checkout("evt_failed_r"));
+    t.eq([rr2.statusCode, (rd_failed.db.subscriptions || []).map((x) => x.status), rd_failed.db.billing_events[0].status, rd_failed.db.billing_events[0].attempts], [200, ["active"], "processed", 2],
+      "P3-02q real database: an event whose work failed is done on the retry (it answered 500 for ever: the payment was never applied)");
+    const rd_stuck = fakeDb({ billing_events: [{ event_id: "evt_stuck_r", provider: "stripe", type: "checkout.session.completed", status: "received", attempts: 1, received_at: iso(NOW - 10 * 60000) }] }, R);
+    const rr3 = await deliver(loadHook(rd_stuck), checkout("evt_stuck_r"));
+    t.eq([rr3.statusCode, (rd_stuck.db.subscriptions || []).length, rd_stuck.db.billing_events[0].status], [200, 1, "processed"], "P3-02r real database: a delivery that died mid-work is done again on the retry");
+    const rd_busy = fakeDb({ billing_events: [{ event_id: "evt_busy_r", provider: "stripe", type: "checkout.session.completed", status: "received", attempts: 1, received_at: iso(Date.now() - 2000) }] }, R);
+    const rr4 = await deliver(loadHook(rd_busy), checkout("evt_busy_r"));
+    t.eq([rr4.statusCode, JSON.parse(rr4.body).error, (rd_busy.db.subscriptions || []).length], [503, "in_progress", 0], "P3-02s real database: while the first delivery may still be at work the second answers 503 in_progress and writes nothing");
+    const rd_two = fakeDb({ billing_events: [{ event_id: "evt_two_r", provider: "stripe", type: "checkout.session.completed", status: "failed", attempts: 1, received_at: iso(NOW - 60000) }] },
+      { ...R, raceLoses: (table, patch) => table === "billing_events" && patch.status === "received" });
+    const rr5 = await deliver(loadHook(rd_two), checkout("evt_two_r"));
+    t.eq([rr5.statusCode, JSON.parse(rr5.body).error, (rd_two.db.subscriptions || []).length], [503, "in_progress", 0], "P3-02t real database: of two retries at the same moment, the one that loses the takeover answers 503 and writes nothing");
+    const rd_down = fakeDb({}, { ...R, failInsert: (table) => table === "billing_events" });
+    const rr6 = await deliver(loadHook(rd_down), checkout("evt_down_r"));
+    t.eq([rr6.statusCode, JSON.parse(rr6.body).error, (rd_down.db.subscriptions || []).length], [500, "claim_failed", 0], "P3-02u any OTHER failure of the claim is still a 500 and nothing is done (only a unique violation means \"seen before\")");
+    const rd_fresh = fakeDb({}, R);
+    const rr7 = await deliver(loadHook(rd_fresh), checkout("evt_fresh_r"));
+    t.eq([rr7.statusCode, (rd_fresh.db.subscriptions || []).length, rd_fresh.db.billing_events[0].status], [200, 1, "processed"], "P3-02v a first delivery is unchanged");
+    // The store webhook, the same way.
+    synced = 0;
+    const rcDone = fakeDb({ billing_events: [{ event_id: "rc:done_r", provider: "revenuecat", type: "RENEWAL", status: "processed", attempts: 1, received_at: iso(NOW - 10 * 60000) }] }, R);
+    const rr8 = await wh.handle(rcEvent("done_r"), depsFor(rcDone));
+    t.eq([rr8.statusCode, JSON.parse(rr8.body).replay, synced], [200, true, 0], "P3-02w real database: a store event already processed, sent again, is acknowledged (it answered 500)");
+    const rcFailed = fakeDb({ billing_events: [{ event_id: "rc:failed_r", provider: "revenuecat", type: "RENEWAL", status: "failed", attempts: 1, received_at: iso(NOW - 60000) }] }, R);
+    const rr9 = await wh.handle(rcEvent("failed_r"), depsFor(rcFailed));
+    t.eq([rr9.statusCode, synced, rcFailed.db.billing_events[0].attempts], [200, 1, 2], "P3-02x real database: a store event whose work failed is done on RevenueCat's retry");
+    const rcDown = fakeDb({}, { ...R, failInsert: (table) => table === "billing_events" });
+    const rr10 = await wh.handle(rcEvent("down_r"), depsFor(rcDown));
+    t.eq([rr10.statusCode, JSON.parse(rr10.body).error], [500, "claim_failed"], "P3-02y …and any other failure of its claim is still a 500");
+    const srcOf = (f) => fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", f), "utf8").replace(/\/\/[^\n]*/g, "");
+    t.ok(!/\.insert\([\s\S]{0,400}?ignoreDuplicates/.test(srcOf("stripe-webhook.js")) && !/\.insert\([\s\S]{0,400}?ignoreDuplicates/.test(srcOf("revenuecat-webhook.js")),
+      "P3-02z neither webhook passes ignoreDuplicates to insert any more: the option does nothing there, and reading it as if it did was the defect");
 
     // ── N1 (round 2 review, 2026-11-22): TWO RETRIES OF THE SAME FAILED EVENT AT THE SAME MOMENT ──────────────
     // The takeover of a row marked failed was an unconditional update, so both retries did the work. It is now the

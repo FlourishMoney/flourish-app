@@ -32,7 +32,7 @@ const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripe
 // The full funnel (migration 0042): the website's payment, cancellation or refund, first time only.
 const { stripeMilestone, recordMilestone } = require("./_lib/funnel");
 const { trialPlanFirstSince } = require("./_lib/planRules");
-const { reclaimEvent } = require("./_lib/eventClaim");
+const { reclaimEvent, claimEvent } = require("./_lib/eventClaim");
 const stripeApi = require("./_lib/stripeApi");   // TRIAL_PLAN_FIRST only: a trial checkout's subscription
 // GIFTS (migration 0050): a paid gift checkout makes its one code; a refunded gift voids it while unused.
 const gifts = require("./_lib/gifts");
@@ -197,15 +197,14 @@ exports.handler = async (event) => {
     user_id: userIdFrom(object),
   };
 
-  // The claim. `ignoreDuplicates` makes this insert-or-nothing; a replay selects zero rows.
-  const { data: claimed, error: claimErr } = await admin
-    .from("billing_events").insert(claim, { ignoreDuplicates: true }).select("event_id");
-
-  if (claimErr) {
-    console.error("[stripe-webhook] could not claim event:", claimErr.message);
+  // The claim: this delivery's row for the event, or word that the row was already there (_lib/eventClaim.js
+  // claimEvent: on a real database a repeat is a unique violation, not an empty answer).
+  const claimed = await claimEvent(admin, claim);
+  if (claimed.error) {
+    console.error("[stripe-webhook] could not claim event:", claimed.error.message);
     return reply(500, { error: "claim_failed" });          // 5xx so Stripe retries
   }
-  if (!claimed || claimed.length === 0) {
+  if (claimed.seen) {
     // Already seen (_lib/eventClaim.js). Finished: acknowledged, nothing repeated. Never finished (marked failed, or
     // left "received" by a delivery that died mid-work): this delivery does the work. Possibly still at work: a 5xx,
     // so Stripe sends it again later; a 200 would be the last anyone heard of the event.

@@ -23,7 +23,7 @@ const { getAdminClient } = require("./_lib/auth");
 const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
-const { reclaimEvent } = require("./_lib/eventClaim");
+const { reclaimEvent, claimEvent } = require("./_lib/eventClaim");
 const { creatorsEnabled, creditStoreEvent } = require("./_lib/creators");
 // The full funnel (migration 0042): a store trial, payment, cancellation or refund, first time only, per store.
 const { revenueCatMilestone, recordMilestone } = require("./_lib/funnel");
@@ -77,12 +77,12 @@ async function handle(event, deps = {}) {
   const accounts = accountsIn(evt);
   // The account id is recorded as text (customer_id), not as user_id: user_id references auth.users, and an event
   // for an account that has since been deleted must be acknowledged, not fail the insert and be retried for days.
-  const { data: claimed, error: claimErr } = await admin.from("billing_events").insert({
+  const claimed = await claimEvent(admin, {
     event_id: eventId, provider: "revenuecat", type: String(evt.type).slice(0, 80), status: "received",
     customer_id: isUuid(evt.app_user_id) ? evt.app_user_id : null,
-  }, { ignoreDuplicates: true }).select("event_id");
-  if (claimErr) { console.error("[revenuecat-webhook] could not claim event:", claimErr.message); return reply(500, { error: "claim_failed" }); }
-  if (!claimed || claimed.length === 0) {
+  });
+  if (claimed.error) { console.error("[revenuecat-webhook] could not claim event:", claimed.error.message); return reply(500, { error: "claim_failed" }); }
+  if (claimed.seen) {
     // Already seen (_lib/eventClaim.js): finished is acknowledged; never finished (failed, or left "received" by a
     // delivery that died mid-work) is done now; possibly still at work is a 5xx, so RevenueCat sends it again.
     const earlier = await reclaimEvent(admin, eventId);
