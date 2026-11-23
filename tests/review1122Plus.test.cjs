@@ -82,7 +82,8 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq(safe(() => X.plusExport({ mode: "today", holdings: hold, owners, list: { mine, partner } })), null, "P9-03d without Plus there is nothing apart to add (holdings are in the household's data, as before)");
     t.eq(safe(() => X.plusExport({ mode: "locked", holdings: [], list: undefined })), null, "P9-03e locked: nothing");
     t.eq(safe(() => X.plusExport({ mode: "plus", holdings: [], list: undefined })), { holdings: [], netWorthEntries: [] }, "P9-03f Plus with nothing loaded yet: empty lists, not a crash");
-    const exp = (() => { const i = app.indexOf("const exportMyData = () => {"); return i < 0 ? "" : app.slice(i, i + 3200); })();
+    // Changed 2026-11-23 (main merged in): main's export is async now (P9-03, "const exportMyData = async () => {").
+    const exp = (() => { const i = app.indexOf("const exportMyData = "); return i < 0 ? "" : app.slice(i, i + 3200); })();
     t.ok(/plusExport\(getNetWorthState\(\)\)/.test(exp), "P9-03g Settings' export asks for it");
   }
 

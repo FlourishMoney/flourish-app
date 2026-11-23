@@ -49,11 +49,17 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
   t.eq(keep([{ id: "acc_undefined", account_id: "gone", name: "One", value: 1 }, { id: "acc_undefined", account_id: "gone", name: "Two", value: 2 }], [{ id: "acc_undefined", account_id: "b-rrsp", name: "Three", value: 3 }], acct, new Set(["item-B"]), true),
     ["acc_undefined:1", "acc_undefined:2", "acc_undefined:3"], "N2m an id made from a missing security is no identity: different holdings are never matched on it");
 
-  const i = app.indexOf("// Phase B3: fetch investment holdings per item"); const block = i < 0 ? "" : app.slice(i, i + 1800);
-  t.ok(/retainHoldings\(prev\.investments,/.test(block), "P10-06h the app's holdings sync uses it");
-  t.ok(/r\.value\.unavailable !== true/.test(block), "P3-09e …and an answer marked unavailable (the server could not read that bank) counts as a failed read, not as \"holds nothing\"");
-  t.ok(!/investments: allHoldings \}/.test(block), "P10-06i the whole list is no longer replaced by the banks that happened to answer");
-  t.ok(/if \(answered\.size > 0\)/.test(block) && !/if \(allHoldings\.length > 0\)/.test(block), "N2n the app applies a round whenever a bank ANSWERED, also when all of them answered with nothing");
-  t.ok(/answered\.size < items\.length/.test(block), "N2o …and tells the rule whether any bank failed");
+  // Changed 2026-11-23 (main merged into plus-1.1.8): on this branch the app has ONE holdings sync for Plus on and off
+  // (syncHoldings, lib/plusHoldings.js). With Plus off it reads each bank's answer in mergeHoldings and applies
+  // plainHoldingsAfter, which gives exactly what retainHoldings gives (tests/plusRound2Holdings.test.cjs N2f3). The five
+  // checks below hold that path to the same five rules main's checks held on main's own sync.
+  const sync = (() => { const i = app.indexOf("const syncHoldings = useCallback("); return i < 0 ? "" : app.slice(i, app.indexOf("// takePlusAnswer: the one place", i)); })();
+  const B3 = (() => { const i = app.indexOf("// Phase B3: fetch investment holdings per item"); return i < 0 ? "" : app.slice(i, i + 400); })();
+  const plusLib = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "plusHoldings.js"), "utf8");
+  t.ok(/await syncHoldings\(items, jwt, /.test(B3) && /plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(sync), "P10-06h the app's holdings sync uses it (plainHoldingsAfter, the same rule as retainHoldings)");
+  t.ok(/if \(v\.plus_mode !== true\) \{ if \(v\.unavailable !== true\) \{ plain\.push/.test(plusLib), "P3-09e …and an answer marked unavailable (the server could not read that bank) counts as a failed read, not as \"holds nothing\"");
+  t.ok(!/investments: allHoldings \}/.test(sync), "P10-06i the whole list is no longer replaced by the banks that happened to answer");
+  t.ok(/\} else if \(merged\.plainAnswered\.length > 0\) \{/.test(sync) && /if \(!answered\.size\) return null;/.test(plusLib), "N2n the app applies a round whenever a bank ANSWERED, also when all of them answered with nothing");
+  t.ok(/const someBankFailed = .*merged\.banks\.some\(\(b\) => !answered\.has\(b && b\.item\)\)/.test(plusLib), "N2o …and tells the rule whether any bank failed");
   t.summary("review1122Holdings");
 })().catch((e) => { console.error(e); process.exit(1); });

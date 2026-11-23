@@ -12949,9 +12949,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // file goes to the system share sheet, because the WebView there ignores a download link (G6).
   const exportMyData = async () => {
     try {
-      // The household's data, built one way for every reader of the file (lib/dataExport.js, review 2026-11-22 P9-03),
-      // and, with Plus, this person's own holdings and net worth entries, which are kept apart from the household's
-      // data (private between partners). Absent without Plus.
+      // lib/dataExport.js (P9-03), plus, with Plus, this person's own holdings and entries (kept apart; absent without).
       const plusPart = plusExport(getNetWorthState());
       const payload = { ...buildExport(data, readExportStores(localStorage, { loanActivityKey: LOAN_ACTIVITY_KEY })), ...(plusPart ? { plus: plusPart } : {}) };
       const d = new Date();

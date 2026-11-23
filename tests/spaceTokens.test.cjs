@@ -26,7 +26,9 @@ const path = require("path");
 const APP = path.join(__dirname, "..", "src", "App.jsx");
 
 // The count on the commit that introduced the rule. It may go down freely.
-const BASELINE = 1364;
+// 1366 since 2026-11-23: main (f048f72, the full-app review fixes, live) was merged in. Its own baseline was 1370 and
+// its code brought 2 raw gaps this branch did not have; this branch adds none. Lower it as they are converted.
+const BASELINE = 1366;
 
 // gap/margin declarations written as a bare number. `gap: SPACE.sm` and `gap: n * 2` are not raw.
 const PATTERNS = {

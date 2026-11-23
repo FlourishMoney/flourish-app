@@ -27,7 +27,11 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { isPaidSubscription } = require("./planRules");
+// isPaidInFull, not isPaidSubscription (merge of main, 2026-11-23): main's billing grace (a failed renewal keeps the
+// MAIN plan while Stripe retries) was decided for the main plan. Plus keeps its reviewed rule: live means active or
+// trialing inside the period, so a store purchase may take the row of a website Plus whose renewal failed, and that
+// website one is then set to end (plusEntitlement 8g/8h, plusReviewBilling 5e/5f).
+const { isPaidInFull } = require("./planRules");
 const { peerIdsOf, isMissing, isAttemptId, HOLD_MINUTES, PENDING_BACKSTOP_DAYS } = require("./household");
 const { PRICE_ENV: MAIN_PRICE_ENV } = require("./billingPlans");
 const supportAlert = require("./supportAlert");
@@ -119,7 +123,7 @@ function plusPriceIdFor(planKey, env = process.env) {
 function isLivePlusRow(row, env = process.env, now = Date.now()) {
   if (!row || !isPlusPlanKey(row.plan_key)) return false;
   if (ms(row.current_period_end) === null) return false;
-  if (!isPaidSubscription(row, now)) return false;
+  if (!isPaidInFull(row, now)) return false;
   if (row.provider === "stripe") return plusPlanForPrice(row.product_id, env) === row.plan_key;
   if (STORE_PROVIDERS.includes(row.provider)) return PLUS_PRODUCTS[row.product_id] === row.plan_key;
   return false;

@@ -498,9 +498,12 @@ exports.handler = async (event) => {
   // household's main plan, or be flagged as a second subscription. It is the add-on's when our checkout says so in its
   // metadata or the subscription carries a Plus price; Plus is granted only for a real Plus price.
   const PLUS_SUB_EVENTS = ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"];
-  if ((evt.type === "checkout.session.completed" && object?.metadata?.kind === "plus_addon")
+  // A Plus checkout whose payment cleared later (main's P3-04, merged 2026-11-23) is the same news as its completed one,
+  // and goes to the Plus handler, never on to the main plan's.
+  if (((evt.type === "checkout.session.completed" || evt.type === CHECKOUT_PAID_LATER) && object?.metadata?.kind === "plus_addon")
       || (PLUS_SUB_EVENTS.includes(evt.type) && plusAddon.isPlusStripeObject(object))) {
-    return await applyPlusEvent(admin, evt, object, reply, { stripeGet });
+    const asPlus = evt.type === CHECKOUT_PAID_LATER ? { ...evt, type: "checkout.session.completed" } : evt;
+    return await applyPlusEvent(admin, asPlus, object, reply, { stripeGet });
   }
 
   // A Plus payment taken back (endPlusForChargeBack). Beside everything below, never instead of it: the same event

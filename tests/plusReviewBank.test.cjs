@@ -171,7 +171,8 @@ const call = async (fn, body) => {
         "1d a real 'none' (no Plus, nothing shared, the bank holds none) and a real answer never say unavailable");
       delete process.env.PLUS_ENABLED; reset(); P.holdings = "fail";
       const off = await call(load(makeDb({ items: { [A]: 1 } }), A).plaid, GET);
-      t.eq(off.body, { holdings: [] }, "1e PLUS_ENABLED off: a failed fetch answers exactly as today");
+      // Changed 2026-11-23 (main merged in: P3-09, live since f048f72): a failed fetch also says `unavailable`.
+      t.eq(off.body, { holdings: [], unavailable: true }, "1e PLUS_ENABLED off: a failed fetch answers exactly as live main does (P3-09's unavailable mark)");
       process.env.PLUS_ENABLED = "true";
     }
 
@@ -223,12 +224,13 @@ const call = async (fn, body) => {
       // Changed 2026-11-23 (round 5, R5-1, Amanda: GRANDFATHER). This expected the legacy bank to be refused and taken back
       // out. A bank the person already had is imported, even past the limit; it counts, and no new bank is accepted.
       t.eq([m.status, m.body.successes, m.body.failures, banks(mig, A), mig.state.rows.plaid_items.some((x) => x.item_id === "item-legacy-1"), removes().length],
-        [200, [{ item_id: "item-legacy-1" }], [], 3, true, 0],
+        // Changed 2026-11-23 (main merged in: P7-01, live since f048f72): each answer also names its token's position.
+        [200, [{ item_id: "item-legacy-1", index: 0 }], [], 3, true, 0],
         "2g H3 migrate_items: a legacy bank is imported even when another bank landed first and the limit is passed; nothing is removed at Plaid");
       reset();
       const migOk = makeDb({ items: { [A]: 1 } });
       const mo = await call(load(migOk, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-1", institution_name: "Legacy" }] });
-      t.eq([mo.body.successes, mo.body.failures, banks(migOk, A)], [[{ item_id: "item-legacy-1" }], [], 2], "2h migrate_items with room: saved as before");
+      t.eq([mo.body.successes, mo.body.failures, banks(migOk, A)], [[{ item_id: "item-legacy-1", index: 0 }], [], 2], "2h migrate_items with room: saved as before (with P7-01's index, from main)");
     }
 
     // ── 3. M2: a refused new item that Plaid will not remove at once ─────────────────────────────────

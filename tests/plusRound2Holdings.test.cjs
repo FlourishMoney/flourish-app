@@ -237,7 +237,9 @@ const call = async (fn, body, version = "1.1.8") => {
         "GN1u Plus off: holdings as today, nothing kept, and the store is not touched");
       P.by = { "access-a-0": "fail" };
       const offDown = await call(load(offDb, A), GET_A);
-      t.eq(offDown.body, { holdings: [] }, "GN1v …and a failed read answers as today");
+      // Changed 2026-11-23 (main merged in: the full-app review's P3-09, live since f048f72): a failed read now also
+      // says `unavailable`, so an app does not take it for "this bank holds nothing". Plus off is otherwise as today.
+      t.eq(offDown.body, { holdings: [], unavailable: true }, "GN1v …and a failed read answers as today (with P3-09's unavailable mark)");
       // the tester-only switch: the owner is a tester, the asker sees no Plus: shared accounts only, and nothing kept is read
       process.env.PLUS_TESTER_USER_IDS = B; P.by = { "access-b-0": B_HOLDS };
       const tdb = makeDb({ items: { [B]: 1 }, partner: true, shares: [[B, "acct-b1", true]] });
@@ -362,7 +364,8 @@ const call = async (fn, body, version = "1.1.8") => {
       t.eq((app.match(/setPlusHoldings\(/g) || []).length, 1, "GN1-blob-e Plus holdings are put in the page's Plus state in one place (the sync), and that state is never saved with the household's data");
       const writers = (app.match(/investments\s*:/g) || []).length;
       t.eq(writers, 1, "GN1-blob-f one line in the whole app writes `investments` into the household's data, and it is the path without Plus");
-      const exp = app.slice(app.indexOf("const exportMyData = () => {"), app.indexOf("const exportMyData = () => {") + 3200);
+      // Changed 2026-11-23 (main merged in): main's export is async now (P9-03).
+      const exp = app.slice(app.indexOf("const exportMyData = "), app.indexOf("const exportMyData = ") + 3200);
       t.ok(/plusExport\(getNetWorthState\(\)\)/.test(exp), "GN1-blob-g the export of one's own data is the only other reader of the Plus state, and it is a file for that person");
       const X2 = X; X2._resetForTests(); X2.setPlusUser(A, mem()); X2.setPlusAnswer({ status: 200, body: { enabled: true, plus: true } }, mem(), A);
       X2.setPlusHoldings([{ id: "mine", _item: "i1" }, { id: "theirs", _item: "i2" }], A); X2.setItemOwners([{ item_id: "i1" }, { item_id: "i2", linked_by: "partner" }], A, mem());
@@ -388,7 +391,19 @@ const call = async (fn, body, version = "1.1.8") => {
       t.eq(after([failed, failed]), null, "N2d no bank answered: nothing to change (null), as before");
       t.eq(after([okp([], { unavailable: true }), okp([], { unavailable: true })]), null, "N2e the server could read neither bank: the same");
       const typed = { id: "typed_x", account_id: "typed", name: "Typed", value: 50 };
-      t.eq(after([okp([]), okp([{ ...B1, value: 8100 }])], [typed, A1, B1]), ["b-rrsp:8100", "typed:50"], "N2f a holding on an account no bank linked is not a bank's to remove");
+      // Changed 2026-11-23 (main merged in): this held the rule from before the full-app review's round 3. Main's R3-1
+      // (live since f048f72, lib/multibank.js retainHoldings) decided it: holdings only ever come from a bank, so one on an
+      // account with no bank marker is an older copy's; when every bank answered and none sent it again, it goes. While
+      // some bank failed it is kept, as it may be that bank's. Plus off now follows the live rule exactly.
+      t.eq(after([okp([]), okp([{ ...B1, value: 8100 }])], [typed, A1, B1]), ["b-rrsp:8100"], "N2f a holding on an account with no bank marker, every bank answered and none sent it again: it goes (main's R3-1)");
+      t.eq(after([failed, okp([{ ...B1, value: 8100 }])], [typed, A1, B1]), ["a-tfsa:12000", "b-rrsp:8100", "typed:50"], "N2f2 …and while some bank failed it is kept (main's R3-1)");
+      const MB = await import("../src/lib/multibank.js");
+      for (const [res, prev] of [[[okp([]), okp([{ ...B1, value: 8100 }])], [typed, A1, B1]], [[failed, okp([{ ...B1, value: 8100 }])], [typed, A1, B1]], [[okp([]), okp([])], [A1, B1]], [[okp([]), failed], [A1, B1]]]) {
+        const m = H.mergeHoldings([], items, res);
+        const answered = new Set(m.plainAnswered);
+        const live = MB.retainHoldings(prev, m.plain, new Map(accounts.map((a) => [a.id, a._item || null])), answered, answered.size < items.length);
+        t.eq(after(res, prev), ids(live), "N2f3 Plus off gives exactly what the live rule gives (lib/multibank.js retainHoldings), round by round");
+      }
       t.eq(after([okp([]), okp([{ ...B1, value: 8100 }])], [{ id: "x_s1", account_id: "gone", name: "Orphan", value: 5 }, B1]), ["b-rrsp:8100"], "N2g a holding whose account is gone, in a round where every bank answered: it is no failed bank's, so it goes");
       t.eq(after([failed, okp([{ ...B1, value: 8100 }])], [{ id: "x_s1", account_id: "gone", name: "Orphan", value: 5 }, B1]), ["b-rrsp:8100", "gone:5"], "N2h …while a bank failed it may be that bank's: it stays");
       t.eq(after([failed, okp([{ id: "acc_undefined", account_id: "b-rrsp", name: "Three", value: 3 }])], [{ id: "acc_undefined", account_id: "gone", name: "One", value: 1 }, { id: "acc_undefined", account_id: "gone", name: "Two", value: 2 }]),

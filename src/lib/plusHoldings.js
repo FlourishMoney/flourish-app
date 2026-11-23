@@ -176,8 +176,8 @@ const holdingKey = (h) => {
  * A holding's BANK decides, whatever its id: kept when its bank did not answer (the call failed, or the server said
  * `unavailable`), gone when its bank answered (what that bank holds now came with the answer, which may be nothing:
  * sold). Only a holding with no known bank is matched by identity, so it is not listed twice when it comes again. Of
- * those not come again: on an account no bank linked, kept (not a bank's to remove); on an account that is gone,
- * kept only while some bank failed (it may be that bank's).
+ * those not come again: kept only while some bank failed (it may be that bank's), whether or not its account is still
+ * there (main's R3-1: holdings only ever come from a bank).
  *   prev      appData.investments now      merged   mergeHoldings' answer      accounts   appData.accounts (_item)
  * Returns the new list, or null when NO bank answered (nothing changes). A round where every bank answered with
  * nothing is applied: the list is then what is left, which may be empty.
@@ -195,7 +195,9 @@ export function plainHoldingsAfter(prev, merged, accounts) {
     if (item != null) return !answered.has(item);
     const key = holdingKey(h);
     if (key && cameKeys.has(key)) return false;
-    return itemOf.has(h.account_id) ? true : someBankFailed;
+    // No bank known for it (main's R3-1, live since 2026-11-23, lib/multibank.js retainHoldings): holdings only ever
+    // come from a bank, so it is an older copy's. Kept while some bank failed (it may be that bank's), gone otherwise.
+    return someBankFailed;
   });
   return [...kept, ...came];
 }

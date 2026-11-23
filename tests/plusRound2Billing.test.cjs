@@ -220,6 +220,20 @@ function loadWith(db, sm, alerts, user = U) {
       t.eq([r3.status, rowOf(db2).provider], [200, "app_store"], "PROOF-1B4c …also when the buyer's row is a store purchase that kept its Stripe customer: found, and handled by the usual two-purchases rule");
     }
 
+    // ── Merge of main, 2026-11-23: a Plus checkout whose payment clears later ───────────────────────────────────
+    // Main (P3-04) reads checkout.session.async_payment_succeeded exactly as a completed checkout. On this branch a Plus
+    // checkout is sent to the Plus handler by its type and its mark; the later-cleared event for a Plus checkout must
+    // go there too, or it would fall through to the MAIN plan's handling and write a main-plan row for a Plus purchase.
+    // (Latent today: no delayed payment method is switched on. It matters the day one is.)
+    {
+      const db = makeDb(), sm = makeStripe(), alerts = []; const B = loadWith(db, sm, alerts);
+      sm.stripe.subs.push(webSub("sub_L", "active"));
+      const plusSession = { id: "cs_plus_later", object: "checkout.session", mode: "subscription", customer: "cus_P", subscription: "sub_L", payment_status: "paid", metadata: { user_id: U, kind: "plus_addon", plan_key: "plus_monthly" } };
+      const r = await send(B.hook, "checkout.session.async_payment_succeeded", plusSession, now - 100);
+      t.eq([r.status, (db.state.rows.subscriptions || []).length, rowOf(db) && rowOf(db).provider_subscription_id, rowOf(db) && rowOf(db).status], [200, 0, "sub_L", "active"],
+        "MERGE-a a Plus checkout paid later (async_payment_succeeded) is handled as Plus: the Plus row is written, and no main-plan row is ever made from it");
+    }
+
     // ── N1. A recorded; B bought and set to end as the extra; A ends early while B is paid ─────────────────
     {
       const db = makeDb(), sm = makeStripe(), alerts = []; const B = loadWith(db, sm, alerts);

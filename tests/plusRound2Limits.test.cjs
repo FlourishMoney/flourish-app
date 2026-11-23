@@ -391,8 +391,8 @@ const call = async (fn, body) => {
       P.byToken["access-legacy-31"] = { item_id: "item-legacy-31", institution_id: "ins_l31" };
       const i1 = await call(load(g1, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-31", institution_name: "Legacy bank" }] });
       const row31 = g1.state.rows.plaid_items.find((r) => r.item_id === "item-legacy-31") || {};
-      t.eq([i1.status, i1.body.successes, i1.body.failures, banks(g1, A).length, row31.status, row31.access_token, removes()], [200, [{ item_id: "item-legacy-31" }], [], 3, "active", "access-legacy-31", []],
-        "R5-1a a legacy bank the person already had, with their plan's 2 of 2 used: it is IMPORTED (was refused, with no row and still live at Plaid). Its row is there with its token, and Plaid is not asked to remove anything");
+      t.eq([i1.status, i1.body.successes, i1.body.failures, banks(g1, A).length, row31.status, row31.access_token, removes()], [200, [{ item_id: "item-legacy-31", index: 0 }], [], 3, "active", "access-legacy-31", []],
+        "(P7-01 index from main, 2026-11-23) R5-1a a legacy bank the person already had, with their plan's 2 of 2 used: it is IMPORTED (was refused, with no row and still live at Plaid). Its row is there with its token, and Plaid is not asked to remove anything");
       const st1 = await call(load(g1, A).plaid, { action: "bank_limit_status" });
       t.eq([st1.body.used, st1.body.limit, st1.body.allowed, st1.body.over, st1.body.connected], [3, 2, false, true, 3], "R5-1b it counts toward the limit: 3 of 2, over, and no room for another");
       const new1 = await call(load(g1, A).plaid, newBank("after"));
