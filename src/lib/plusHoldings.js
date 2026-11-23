@@ -72,12 +72,16 @@ export function holdingsStale(storage, userId, now = Date.now()) {
  * The holdings after one round of get_investments, one answer per bank (Promise.allSettled, in the order of `items`).
  *   prev      what this person had (each holding stamped `_item` with its bank, and `_at` with when it came)
  *   items     the banks (list_items: `linked_by` is set on the other member's)
- * Returns { holdings, plain, plainAnswered, plusMode, delivered, stale, locked, banks }:
+ * Returns { holdings, plain, plainAnswered, plusMode, delivered, stale, marked, locked, banks }:
  *   plusMode   an answer was Plus's (plus_mode): the holdings are private, and `holdings` is the list to show
  *   delivered  at least one bank's holdings really came from the bank (Plus's answer, not locked, not unavailable,
  *              not stale). Only then may anything saved change.
  *   stale      a bank could not be read and the list the SERVER kept for it (migration 0055) is shown in its place.
  *              Shown, never "delivered": nothing is cleared on it.
+ *   marked     a bank could not be refreshed and what THIS DEVICE already held for it was kept and marked `_stale`
+ *              (real-world proof 2026-11-23). Shown, so the screen can say when they are from; never "delivered", and
+ *              nothing is cleared on it. Without this a round where no bank answered live was dropped whole, and a
+ *              person with one bank never saw the line.
  *   locked     an answer said locked (no Plus, or the app must update): nothing came, and nothing changes
  *   plain      Plus off: every holding as it came, for today's path (plainAnswered: the banks they came from)
  *   banks      one per bank: { item, mine, got: "live" | "stale" | "none", stored }. stored: the server says that
@@ -90,7 +94,7 @@ export function holdingsStale(storage, userId, now = Date.now()) {
 export function mergeHoldings(prev, items, results, now = Date.now()) {
   const before = Array.isArray(prev) ? prev : [];
   const out = [], plain = [], banks = [];
-  let plusMode = false, delivered = false, locked = false, stale = false;
+  let plusMode = false, delivered = false, locked = false, stale = false, marked = false;
   const plainAnswered = [];
   (Array.isArray(items) ? items : []).forEach((it, i) => {
     const itemId = it && it.item_id;
@@ -101,7 +105,7 @@ export function mergeHoldings(prev, items, results, now = Date.now()) {
     banks.push(bank);
     // A bank's holdings that could NOT be refreshed in a round that tried are marked `_stale` (round 3, NEW-4), so the
     // screen can say when they are from (`_at`). A live answer brings new objects, so the mark goes with the old ones.
-    const old = () => kept.map((h) => ({ ...h, _stale: true }));
+    const old = () => { if (kept.length) marked = true; return kept.map((h) => ({ ...h, _stale: true })); };
     if (!v) { out.push(...old()); return; }                     // the call failed, or made no sense
     if (v.plus_mode !== true) { if (v.unavailable !== true) { plain.push(...v.holdings); plainAnswered.push(itemId); } out.push(...kept); return; }
     plusMode = true;
@@ -118,8 +122,15 @@ export function mergeHoldings(prev, items, results, now = Date.now()) {
     delivered = true; bank.got = "live"; bank.stored = v.stored === true;
     out.push(...v.holdings.map((h) => ({ ...h, _item: itemId, _at: now })));
   });
-  return { holdings: out, plain, plainAnswered, plusMode, delivered, stale, locked, banks };
+  return { holdings: out, plain, plainAnswered, plusMode, delivered, stale, marked, locked, banks };
 }
+
+/**
+ * Does a Plus round change what is shown? Yes when a bank answered live, when the server's kept list was put in a
+ * bank's place, or when this device's own holdings were marked "could not be refreshed" (so their as-of line shows).
+ * A round that did none of these (every bank locked, or failed with nothing held) changes nothing.
+ */
+export const roundShows = (merged) => !!(merged && (merged.delivered === true || merged.stale === true || merged.marked === true));
 
 /**
  * THE OLD SHARED COPY (appData.investments, from before Plus), after a round with Plus. Round 2 of the Plus review,

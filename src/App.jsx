@@ -27,7 +27,7 @@ import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { plusClientFields } from "./lib/plusClient.js";
-import { mergeHoldings, plainHoldingsAfter, withoutCoveredSharedCopy, loadPrivateHoldings, savePrivateHoldings, keepPrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
+import { mergeHoldings, roundShows, plainHoldingsAfter, withoutCoveredSharedCopy, loadPrivateHoldings, savePrivateHoldings, keepPrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
 // This device's own storage, or null where there is none (a private window): lib/plusHoldings.js reads and writes through it.
 const deviceStore = () => { try { return localStorage; } catch { return null; } };
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
@@ -18328,8 +18328,10 @@ export default function FlourishApp(){
       if (plusMode) {
         // Nothing changes unless a round brought something, for the person still signed in: a bank's holdings really
         // came, or a bank could not be read and the server answered the list it keeps for it (stale: shown, and
-        // nothing more).
-        if (!(merged.delivered || merged.stale) || getNetWorthState().user !== forUser) return;
+        // nothing more), or a bank could not be read and what this device already held for it was marked so (marked:
+        // shown with its as-of line, and nothing more). Real-world proof 2026-11-23: a round that only marked used to
+        // be dropped here, so a person whose one bank was down never saw the line (lib/plusHoldings.js roundShows).
+        if (!roundShows(merged) || getNetWorthState().user !== forUser) return;
         setPlusHoldings(allHoldings);
         // On this device: a round with a live answer is saved with its time (read back: onDevice). The server's kept
         // list alone is saved without a time, so the banks are asked again at the next plan check; it never counts.

@@ -7,6 +7,7 @@
 //   2  the net worth model gives each investment account the date its holdings are from, or nothing
 //   3  the line, approved 2026-11-23, word for word: "We couldn't reach this bank just now. These holdings are from
 //      {date}." It is shown with the date filled in; with no date, or a bad one, nothing is shown
+//   4  the real-world proof of 2026-11-23: a round where NO bank answered live still shows the marks (one bank, down)
 // (NEW-1, NEW-2, NEW-3 and M3 are tested beside what they change: plusHoldingsStore.sql, plusRound2Holdings,
 //  plusRound2Limits.)
 // -----------------------------------------------------------------------------
@@ -87,6 +88,50 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
       "NEW4-p no date, a bad date, or a placeholder for the words: nothing");
     t.ok(/const asOfLine = holdingsAsOfLine\(p\.holdingsAsOf\);/.test(screen) && /\{asOfLine && <div data-nw-holdings-as-of=""[^>]*>\{asOfLine\}<\/div>\}/.test(screen), "NEW4-q the Plus net worth screen has the place for it, under that account's holdings only");
     t.ok(screen.indexOf("{asOfLine && <div data-nw-holdings-as-of") > screen.indexOf("p.holdings.map((h, i)") && screen.indexOf("{asOfLine && <div data-nw-holdings-as-of") < screen.indexOf("{canShare && ("), "NEW4-r …right after the holdings rows");
+  }
+  // ── 4. the real-world proof, 2026-11-23 (step 1C.4 with Plus): a round where NO bank answered live ─────────────
+  // Found on the local site with Plaid's sandbox: a person with ONE bank whose holdings call failed kept the holdings
+  // but never saw the line. The merge marked this device's copy `_stale`, then the app dropped the whole round,
+  // because it took a round only when a bank answered live (`delivered`) or the server's kept list was put in its
+  // place (`stale`). Section 1 never caught it: there the other bank always answered live.
+  {
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const one = [{ item_id: "i-a" }];
+    const held = [{ ...h("a1", "acc-a", 100), _item: "i-a", _at: now - 3 * DAY }, { ...h("a2", "acc-a", 50), _item: "i-a", _at: now - 3 * DAY }];
+    const asOf = new Date(now - 3 * DAY - 500).toISOString();          // the server's kept list is a touch OLDER than this device's
+    const viaServer = safe(() => H.mergeHoldings(held, one, [live([h("a1", "acc-a", 100), h("a2", "acc-a", 50)], { stale: true, as_of: asOf })], now));
+    const viaFail = safe(() => H.mergeHoldings(held, one, [failed], now));
+    const viaDown = safe(() => H.mergeHoldings(held, one, [live([], { unavailable: true })], now));
+    for (const [name, m] of [["the server answers its kept list, no newer than this device's", viaServer], ["the call fails", viaFail], ["the server says unavailable", viaDown]]) {
+      t.eq(mark(m.holdings), [`a1:stale:${now - 3 * DAY}`, `a2:stale:${now - 3 * DAY}`], `PROOF-a (${name}) this device's holdings are kept and marked, with when they came`);
+      t.eq([m.delivered, m.stale, m.marked], [false, false, true], `PROOF-b (${name}) nothing was delivered and nothing of the server's was put in; the round still says it MARKED what is shown`);
+      t.eq(safe(() => H.roundShows(m)), true, `PROOF-c (${name}) so the round is shown`);
+    }
+    // What does not mark: nothing held, a locked answer, a live answer, Plus off.
+    const none = safe(() => H.mergeHoldings([], one, [failed], now));
+    const lockedRound = safe(() => H.mergeHoldings(held, one, [live([], { locked: true })], now));
+    const liveRound = safe(() => H.mergeHoldings(held, one, [live([h("a1", "acc-a", 101)], { stored: true })], now));
+    const plainRound = safe(() => H.mergeHoldings(held, one, [{ status: "fulfilled", value: { holdings: [h("a1", "acc-a", 101)] } }], now));
+    t.eq([none.marked, safe(() => H.roundShows(none))], [false, false], "PROOF-d a bank that fails with nothing held: nothing to mark, nothing to show");
+    t.eq([lockedRound.marked, safe(() => H.roundShows(lockedRound)), mark(lockedRound.holdings)], [false, false, [`a1:live:${now - 3 * DAY}`, `a2:live:${now - 3 * DAY}`]], "PROOF-e a locked answer marks nothing and changes nothing");
+    t.eq([liveRound.marked, liveRound.delivered, safe(() => H.roundShows(liveRound)), mark(liveRound.holdings)], [false, true, true, [`a1:live:${now}`]], "PROOF-f a live answer is shown, unmarked");
+    t.eq([plainRound.marked, plainRound.plusMode], [false, false], "PROOF-g Plus off: nothing is marked (today's path)");
+    t.eq(safe(() => [H.roundShows(null), H.roundShows({}), H.roundShows({ stale: true }), H.roundShows({ delivered: true })]), [false, false, true, true], "PROOF-h roundShows: live, the server's kept list, or marks; never anything else");
+    // Nothing is cleared from the shared copy on such a round (the rule of withoutCoveredSharedCopy stands).
+    const blob = { accounts: [{ id: "acc-a", _item: "i-a" }], investments: [h("a1", "acc-a", 100)] };
+    t.ok(safe(() => H.withoutCoveredSharedCopy(blob, viaFail, false)) === blob, "PROOF-i a round that only marked clears nothing from the household's data");
+    // To the screen: the model gives the date, and the approved line is what is shown.
+    const acct = { id: "acc-a", name: "acc-a", type: "investment", subtype: "tfsa", balance: 150, currency: "CAD" };
+    const v = safe(() => N.viewerNetWorth({ data: { profile: { country: "CA" }, accounts: [acct] }, holdings: viaFail.holdings, list: { mine: { entries: [], shared_accounts: [] }, partner: null }, ownerOf: () => null }));
+    const part = v && [...v.mine, ...v.partner, ...v.household].find((p) => p.id === "acc-a");
+    t.eq(part && part.holdingsAsOf, new Date(now - 3 * DAY).toISOString(), "PROOF-j the screen's model says when that account's holdings are from");
+    t.eq(safe(() => W.holdingsAsOfLine(part.holdingsAsOf)), "We couldn't reach this bank just now. These holdings are from November 19, 2026.", "PROOF-k and the approved line is what a person reads");
+    // The app takes the round on roundShows, for the person still signed in; it is not dropped as before.
+    const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("// takePlusAnswer: the one place"));
+    t.ok(/import \{[^}]*\broundShows\b[^}]*\} from "\.\/lib\/plusHoldings\.js";/.test(app), "PROOF-l the app imports roundShows");
+    t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s*\n\s*setPlusHoldings\(allHoldings\);/.test(sync), "PROOF-m the holdings sync shows every round that roundShows says to, for the person still signed in");
+    t.ok(!/!\(merged\.delivered \|\| merged\.stale\) \|\|/.test(sync), "PROOF-n the old test, which dropped a round that only marked, is gone");
+    t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);/.test(sync), "PROOF-o saved with a time only on a live answer, as before: a round that only marked never counts as fresh");
   }
   t.summary("plusRound3");
 })().catch((e) => { console.error(e); process.exit(1); });
