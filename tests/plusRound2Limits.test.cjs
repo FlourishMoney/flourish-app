@@ -286,10 +286,9 @@ const call = async (fn, body) => {
         () => call(load(mig, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-2", institution_name: "Legacy 2" }] }),
       ]);
       const done = m.map((r) => [r.body.successes.length, r.body.failures.length]).sort();
-      // Changed 2026-11-23 (round 4, R4-1): the last figure was 0, "nothing is removed at Plaid". A refused bank whose row
-      // was deleted while its Item stayed live at Plaid could never be found again, and could go on being billed.
-      const refusedToken = ["access-legacy-1", "access-legacy-2"].find((tok) => !mig.state.rows.plaid_items.some((r) => r.access_token === tok));
-      t.eq([banks(mig, A).length, done, removes()], [2, [[0, 1], [1, 0]], [refusedToken]], "N3k migrate_items, two devices at once at 1 of 2: exactly 2 stay (was 1), one saved and one refused, and the refused one is removed at Plaid, with its own token, before its row goes");
+      // Changed 2026-11-23 (round 5, R5-1, Amanda: GRANDFATHER). This expected one saved and one refused. A legacy bank is
+      // one the person already had: it is imported, never refused, even past the limit, and nothing is removed at Plaid.
+      t.eq([banks(mig, A).length, done, removes()], [3, [[1, 0], [1, 0]], []], "N3k migrate_items, two devices at once at 1 of 2: both legacy banks are imported (3 connected, one past the limit), and nothing is removed at Plaid");
 
       // The rule itself.
       const L = load(makeDb({ items: { [A]: 3 } }), A).lim;
@@ -308,7 +307,9 @@ const call = async (fn, body) => {
       const revoked = makeDb({ items: { [A]: 3 } }); revoked.state.rows.plaid_items[0].status = "revoked";
       t.eq((await L.overAfterAdding(revoked.admin, A, { itemId: "a-item-2" })).over, false, "N3q a bank its bank has revoked is not counted, here as everywhere");
       const plaid = src("netlify", "functions", "plaid.js");
-      t.eq((plaid.match(/overAfterAdding\(admin, user_id, \{ itemId: item_id \}\)/g) || []).length, 2, "N3r both ways a new bank is written (exchange_token and migrate_items) name the bank they just wrote");
+      // Changed 2026-11-23 (round 5, R5-1): this counted two (exchange_token and migrate_items). The import of banks the
+      // person already had asks no limit any more.
+      t.eq((plaid.match(/overAfterAdding\(admin, user_id, \{ itemId: item_id \}\)/g) || []).length, 1, "N3r the one way a NEW bank is written (exchange_token) names the bank it just wrote");
       void t0;
     }
 
@@ -350,6 +351,8 @@ const call = async (fn, body) => {
       t.ok(errors.some((e) => /\[bank-limits\] unresolved/.test(e)), "GROK-b …with a line for a person");
       // M3 for migrate_items: the extra's row will not delete
       reset();
+      // Changed 2026-11-23 (round 5, R5-1): M3-a held that a legacy bank refused at the limit was not reported as saved
+      // when its row would not delete. There is no refusal of a legacy bank any more, so there is no rollback to fail.
       P.byToken["access-legacy-8"] = { item_id: "item-legacy-8", institution_id: "ins_l8" }; P.byToken["access-legacy-9"] = { item_id: "item-legacy-9", institution_id: "ins_l9" };
       const mig3 = makeDb({ items: { [A]: 1 } }); mig3.state.disconnectFails = 9;
       const m3 = await together(mig3, "plaid_items", [
@@ -357,8 +360,8 @@ const call = async (fn, body) => {
         () => call(load(mig3, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-9", institution_name: "Legacy 9" }] }),
       ]);
       const done3 = m3.map((r) => [r.body.successes.length, r.body.failures.length]).sort();
-      t.eq([done3, counted(mig3, A).length, mig3.state.rows.plaid_items.filter((r) => r.status === "refused").length], [[[0, 1], [1, 0]], 2, 1],
-        "M3-a migrate_items, two devices at once at 1 of 2, and the extra's row will not delete: it is NOT reported as saved (was: both \"saved\", 3 banks), it does not count, and its row is kept refused to be finished later");
+      t.eq([done3, counted(mig3, A).length, mig3.state.rows.plaid_items.filter((r) => r.status === "refused").length, mig3.state.writes.filter((w) => w[1] === "disconnect failed").length], [[[1, 0], [1, 0]], 3, 0, 0],
+        "M3-a migrate_items, two devices at once at 1 of 2: both are saved and say so, nothing is marked refused, and no row delete is even tried");
       const src3 = src("netlify", "functions", "plaid.js");
       t.ok(!/if \(after\.over && await removeRefusedItem\(/.test(src3), "M3-b exchange_token no longer makes the refusal depend on Plaid's removal working");
     }
@@ -373,39 +376,63 @@ const call = async (fn, body) => {
         ]);
         return rs.map((r) => [r.body.successes.length, r.body.failures.length, (r.body.failures[0] || {}).error]).sort();
       };
-      // R4-1: the order of the two steps. Plaid first, the row only after.
+      // R4-1a to d and f were about a legacy bank REFUSED at the limit (removed at Plaid first, row kept if Plaid would
+      // not). Replaced 2026-11-23 by round 5, R5-1 (Amanda: GRANDFATHER): a legacy bank is never refused, so there is
+      // nothing of its to remove. R4-1e (a NEW bank, exchange_token) stands.
+      // R5-1: at the limit, the legacy bank is imported
       reset();
-      const m1 = makeDb({ items: { [A]: 1 } });
-      const order = []; const realFetch2 = global.fetch;
-      global.fetch = async (url, init) => { if (/item\/remove/.test(String(url))) order.push(`plaid:${m1.state.rows.plaid_items.filter((r) => r.status === "refused").length ? "row marked, still there" : "row not there"}`); return realFetch2(url, init); };
-      const d1 = await twoLegacy(m1);
-      global.fetch = realFetch2;
-      t.eq([d1.map((x) => x.slice(0, 2)), order, counted(m1, A).length, banks(m1, A).length], [[[0, 1], [1, 0]], ["plaid:row marked, still there"], 2, 2],
-        "R4-1a migrate_items, a bank refused at the limit: it is removed at Plaid while its row is still there (marked refused), and the row goes only after (was: the row was deleted and Plaid was never told)");
-      // Plaid will not remove it: the row is KEPT, refused, so it can be found and finished later
-      reset(); P.neverRemoves = true;
-      const m2 = makeDb({ items: { [A]: 1 } });
-      const d2 = await twoLegacy(m2, "access-legacy-23", "access-legacy-24");
-      const kept2 = m2.state.rows.plaid_items.filter((r) => r.status === "refused");
-      t.eq([d2.map((x) => x.slice(0, 2)), kept2.length, counted(m2, A).length, !!(kept2[0] && kept2[0].access_token)], [[[0, 1], [1, 0]], 1, 2, true],
-        "R4-1b Plaid will not remove it: its row is kept, marked refused, with the token to try again (was: the row was deleted, so the live Item could never be found again)");
-      P.neverRemoves = false; P.calls.length = 0;
-      const l2 = await call(load(m2, A).plaid, { action: "list_items" });
-      t.eq([l2.body.items.length, removes(), m2.state.rows.plaid_items.some((r) => r.status === "refused")], [2, [kept2[0] && kept2[0].access_token], false], "R4-1c …and the next time the banks are listed it is removed at Plaid and its row goes");
-      // Plaid says it no longer knows the Item: that is gone, and the row goes
-      reset(); P.alreadyGone = true;
-      const m3 = makeDb({ items: { [A]: 1 } });
-      const d3 = await twoLegacy(m3, "access-legacy-25", "access-legacy-26");
-      t.eq([d3.map((x) => x.slice(0, 2)), banks(m3, A).length, m3.state.rows.plaid_items.some((r) => r.status === "refused"), removes().length], [[[0, 1], [1, 0]], 2, false, 1],
-        "R4-1d Plaid says it no longer knows the Item: that is gone, so the row goes at once (one try, not three)");
+      const g1 = makeDb({ items: { [A]: 2 } });                                  // the basic plan: 2 of 2 already
+      P.byToken["access-legacy-31"] = { item_id: "item-legacy-31", institution_id: "ins_l31" };
+      const i1 = await call(load(g1, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-31", institution_name: "Legacy bank" }] });
+      const row31 = g1.state.rows.plaid_items.find((r) => r.item_id === "item-legacy-31") || {};
+      t.eq([i1.status, i1.body.successes, i1.body.failures, banks(g1, A).length, row31.status, row31.access_token, removes()], [200, [{ item_id: "item-legacy-31" }], [], 3, "active", "access-legacy-31", []],
+        "R5-1a a legacy bank the person already had, with their plan's 2 of 2 used: it is IMPORTED (was refused, with no row and still live at Plaid). Its row is there with its token, and Plaid is not asked to remove anything");
+      const st1 = await call(load(g1, A).plaid, { action: "bank_limit_status" });
+      t.eq([st1.body.used, st1.body.limit, st1.body.allowed, st1.body.over, st1.body.connected], [3, 2, false, true, 3], "R5-1b it counts toward the limit: 3 of 2, over, and no room for another");
+      const new1 = await call(load(g1, A).plaid, newBank("after"));
+      const link1 = await call(load(g1, A).plaid, { action: "create_link_token", country: "CA" });
+      t.eq([new1.status, new1.body && new1.body.error, link1.status, banks(g1, A).length], [402, "bank_limit", 402, 3], "R5-1c so no NEW bank is accepted until they are back under: the link is not opened and a new bank is refused; nothing connected is touched");
+      // with Plus, at the household's 10
+      reset();
+      const g2 = makeDb({ items: { [A]: 5, [B]: 5 }, partner: true, plus: A });
+      P.byToken["access-legacy-32"] = { item_id: "item-legacy-32", institution_id: "ins_l32" };
+      const i2 = await call(load(g2, B).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-32", institution_name: "Legacy bank" }] });
+      const new2 = await call(load(g2, A).plaid, newBank("plusafter"));
+      t.eq([i2.body.successes.length, i2.body.failures.length, banks(g2).length, new2.status, removes()], [1, 0, 11, 402, ["access-plusafter"]], "R5-1d with Plus at the household's 10 of 10: the legacy bank is imported (11), and then a new bank is refused for either member (the NEW one is what is removed at Plaid, never the legacy one)");
+      // two devices at once, already at the limit: both imported
+      reset();
+      const g3 = makeDb({ items: { [A]: 2 } });
+      const d3 = await twoLegacy(g3, "access-legacy-33", "access-legacy-34");
+      t.eq([d3.map((x) => x.slice(0, 2)), banks(g3, A).length, g3.state.rows.plaid_items.some((r) => r.status === "refused"), removes()], [[[1, 0], [1, 0]], 4, false, []],
+        "R5-1e two devices importing at the same moment, already at the limit: both imported, nothing marked refused, nothing removed at Plaid");
+      // the limit cannot be read: still imported (an existing bank does not wait on a plan read)
+      reset();
+      const g4 = makeDb({ items: { [A]: 2 } }); g4.state.rows.plus_addon_subscriptions = null;
+      const realFrom4 = g4.admin.from;
+      g4.admin.from = (table) => (table === "plus_addon_subscriptions" || table === "household_members" ? { select() { return this; }, eq() { return this; }, in() { return this; }, not() { return this; }, async maybeSingle() { return { data: null, error: { code: "57014", message: "timeout" } }; }, then(res, rej) { return Promise.resolve({ data: null, error: { code: "57014", message: "timeout" } }).then(res, rej); } } : realFrom4(table));
+      P.byToken["access-legacy-35"] = { item_id: "item-legacy-35", institution_id: "ins_l35" };
+      const i4 = await call(load(g4, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-35", institution_name: "Legacy bank" }] });
+      t.eq([i4.status, (i4.body.successes || []).length, banks(g4, A).length], [200, 1, 3], "R5-1f the plan or the limit cannot be read: the legacy bank is still imported (was: the whole import answered unavailable, and nothing was saved)");
+      // the same bank sent again is one bank
+      reset();
+      const i5 = await call(load(g1, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-31", institution_name: "Legacy bank" }] });
+      t.eq([i5.body.successes.length, banks(g1, A).length], [1, 3], "R5-1g the same legacy bank sent again is still one bank");
+      // NO PATH LEAVES AN ITEM LIVE AT PLAID WITH NO ROW: every bank Plaid knows either has a row or its answer is a failure
+      reset();
+      const g6 = makeDb({ items: { [A]: 2 } });
+      P.byToken["access-legacy-36"] = { item_id: "item-legacy-36", institution_id: "ins_l36" }; P.byToken["access-legacy-37"] = { item_id: "item-legacy-37", institution_id: "ins_l37" };
+      const i6 = await call(load(g6, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-36" }, { token: "access-legacy-37" }, { token: "" }] });
+      const rows6 = g6.state.rows.plaid_items.map((r) => r.access_token);
+      t.eq([i6.body.successes.map((x) => x.item_id), i6.body.failures.map((f) => f.error), ["access-legacy-36", "access-legacy-37"].every((tok) => rows6.includes(tok))], [["item-legacy-36", "item-legacy-37"], ["missing token"], true],
+        "R5-1h several at once, past the limit: every bank Plaid knows has its row; the only failure is the entry that named no bank at all");
+      const srcM = src("netlify", "functions", "plaid.js");
+      const mBlock = srcM.slice(srcM.indexOf('if (action === "migrate_items")'), srcM.indexOf('if (action === "delete_account")'));
+      t.ok(mBlock.length > 500 && !/bankLimitFor\(|overAfterAdding\(|markRefused\(|removeRefusedItem\(|removeRefusedRow\(|limitBody\(|\/item\/remove|plan_limit/.test(mBlock.replace(/\/\/[^\n]*/g, "")), "R5-1i migrate_items asks no bank limit, refuses nothing for it, and removes nothing at Plaid");
+
       reset(); P.alreadyGone = true;
       const x3 = makeDb({ items: { [A]: 5, [B]: 4 }, partner: true, plus: A });
       const rx = await together(x3, "plaid_items", [() => call(load(x3, A).plaid, newBank("ga")), () => call(load(x3, B).plaid, newBank("gb"))]);
       t.eq([statuses(rx), banks(x3).length, x3.state.rows.plaid_items.some((r) => r.status === "refused")], [[200, 402], 10, false], "R4-1e the same for a bank just linked (exchange_token): \"already gone at Plaid\" lets its row go");
-      const srcP = src("netlify", "functions", "plaid.js");
-      const migBlock = srcP.slice(srcP.indexOf("migrate_items limit recheck") - 900, srcP.indexOf("migrate_items limit recheck") + 900);
-      t.ok(/if \(await removeRefusedItem\(t\.token, item_id, "migrate_items limit recheck"\)\) await removeRefusedRow\(admin, user_id, item_id, "migrate_items limit recheck"\);/.test(migBlock), "R4-1f migrate_items takes the same two steps, in the same order, as exchange_token");
-
       // R4-2: the mark cannot be written
       reset();
       const k1 = makeDb({ items: { [A]: 5, [B]: 4 }, partner: true, plus: A });
@@ -420,12 +447,13 @@ const call = async (fn, body) => {
       t.eq(lk.body.items.length, 11, "R4-2c it is in the list the app is sent (it is connected), so the person can see it and disconnect it");
       const more = await call(load(k1, A).plaid, newBank("kz"));
       t.eq([more.status, more.body && more.body.error], [402, "bank_limit"], "R4-2d and while the household is over its limit no further bank is accepted");
+      // R4-2e (migrate_items with a mark that cannot be written) was replaced 2026-11-23 by R5-1: nothing is marked there
+      // any more. A database that refuses updates does not stop a legacy bank being imported.
       reset();
       const k2 = makeDb({ items: { [A]: 1 } });
-      k2.state.afterWrite = (table, row) => { if (table === "plaid_items" && /legacy/.test(row.item_id || "")) k2.state.updateFails.plaid_items = 9; };
+      k2.state.updateFails.plaid_items = 9;
       const dk = await twoLegacy(k2, "access-legacy-27", "access-legacy-28");
-      t.eq([dk.map((x) => x[2]).filter(Boolean), dk.map((x) => x.slice(0, 2)), removes().length, banks(k2, A).length], [["unavailable"], [[0, 1], [1, 0]], 0, 3],
-        "R4-2e migrate_items the same: not refused, not saved; that bank's answer is \"unavailable\", nothing is removed at Plaid, and its row stays to be found");
+      t.eq([dk.map((x) => x.slice(0, 2)), removes().length, banks(k2, A).length], [[[1, 0], [1, 0]], 0, 3], "R4-2e migrate_items: both legacy banks imported, nothing removed at Plaid, nothing marked");
     }
 
     // ── N4. TWO NEW NET WORTH ENTRIES AT THE SAME MOMENT, AT 49 OF 50 ───────────────────────────────────────────

@@ -82,8 +82,15 @@ const UPGRADE_TEXTS = ["The free plan connects one bank. A flourish subscription
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
   const PW_SRV = require("../netlify/functions/_lib/planWords.js");
-  t.ok(UPGRADE_TEXTS.every((x, i) => PW_SRV.planWords(["plan-server-one-bank", "plan-server-one-bank-migrate"][i]) === x) && /error: "plan_limit", message: planWords\("plan-server-one-bank"\)/.test(PLAID) && /error: "plan_limit", message: planWords\("plan-server-one-bank-migrate"\)/.test(PLAID),
-    "6a (the server's two texts are the message beside the code plan_limit)");
+  // Changed 2026-11-23 (round 5 of the Plus review, R5-1; Amanda: GRANDFATHER). The second half used to hold that
+  // migrate_items refused a bank past the one-bank cap with the migrate line. A bank moved over from an older copy of the
+  // app is one the person already had: it is imported, never refused (refusing it left it live at Plaid with no row).
+  // Both approved texts are still the server's words, unchanged; the first is still the message beside plan_limit for a
+  // NEW bank; the migrate line is no longer sent, because that refusal no longer exists.
+  const MIGRATE = PLAID.slice(PLAID.indexOf('if (action === "migrate_items")'), PLAID.indexOf('if (action === "delete_account")'));
+  t.ok(UPGRADE_TEXTS.every((x, i) => PW_SRV.planWords(["plan-server-one-bank", "plan-server-one-bank-migrate"][i]) === x) && /error: "plan_limit", message: planWords\("plan-server-one-bank"\)/.test(PLAID),
+    "6a (the server's two texts are as approved, and the first is the message beside the code plan_limit for a new bank)");
+  t.ok(MIGRATE.length > 500 && !/plan_limit|bank_limit|planWords\(/.test(MIGRATE.replace(/\/\/[^\n]*/g, "")), "6a2 a bank moved over from an older copy of the app is never refused for a plan or bank limit");
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);
   t.ok(/const err = new Error\(data\.error \|\| "Plaid error"\);/.test(call) && !/data\.message/.test(call), "6b the app builds a Plaid error from the code only, never the server's message");
   t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || x.split(". ").some((part) => part && APP.includes(part))), [], "6c neither upgrade text, nor either of its sentences, is anywhere in the app");

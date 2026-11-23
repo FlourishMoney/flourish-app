@@ -85,7 +85,10 @@ const offences = (s) => [...SELLS, ...COPY].filter(([, rx]) => rx.test(s)).map((
   t.eq([U.FREE_TIER_LIMITS.simulationsPerDay, L.FREE_SIMULATIONS_DAILY], [1, 1], "3b …and 1 What-If explanation a day, as \"today's What-If\" says");
   t.eq(F.coachLimitLine(3), "You've used this week's 3 coach messages. You get 3 more on Monday.", "3c the coach line takes its number from the limit, not from the text");
   const caps = [...PLAID.matchAll(/\(count \|\| 0\) >= (\d+)|activeCount >= (\d+)/g)].map(m => Number(m[1] || m[2]));
-  t.eq(caps, [F.FREE_BANKS, F.FREE_BANKS], `3d plaid.js caps the free plan at FREE_BANKS (${F.FREE_BANKS}) on both of its write paths`);
+  // Changed 2026-11-23 (round 5 of the Plus review, R5-1; Amanda: GRANDFATHER). This expected the cap twice: on a NEW
+  // bank (exchange_token) and on the import of banks from an older copy of the app (migrate_items). A bank the person
+  // already had is no longer refused there, so the cap is on the one path that adds a new bank.
+  t.eq(caps, [F.FREE_BANKS], `3d plaid.js caps the free plan at FREE_BANKS (${F.FREE_BANKS}) where a NEW bank is added (a bank the person already had is imported, never capped)`);
 
   // ── 4. the trial chip and the end-of-trial banner ────────────────────────────────────────────────────
   let A = {};

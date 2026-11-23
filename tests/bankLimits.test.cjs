@@ -176,8 +176,11 @@ function load(db, user) {
       t.eq(st.body, { plus: false, scope: "person", used: 3, limit: 2, allowed: false, connected: 3, over: true }, "5h the status action: numbers only");
       const mig = makeDb({ items: { [A]: ["active", "active"] } });
       const m = await call(load(mig, A).plaid, { action: "migrate_items", tokens: [{ token: "access-sandbox-1" }] });
-      t.eq([m.status, m.body && m.body.failures && m.body.failures[0] && m.body.failures[0].error, mig.state.writes.filter(([tb]) => tb === "plaid_items").length],
-        [200, "bank_limit", 0], "5i migrate_items, the second way in: a NEW bank past the limit is refused the same way, nothing saved");
+      // Changed 2026-11-23 (round 5 of the Plus review, R5-1, Amanda: GRANDFATHER). This expected "bank_limit" and nothing
+      // saved. A bank moved over from an older copy of the app is one the person already had: limits stop new
+      // connections, never an existing one. It is saved; it counts; and no NEW bank is accepted while they are over.
+      t.eq([m.status, (m.body && m.body.failures || []).length, (m.body && m.body.successes || []).length, mig.state.writes.filter(([tb]) => tb === "plaid_items").length >= 1],
+        [200, 0, 1, true], "5i migrate_items: a bank the person already had is imported even past the limit (it was refused, and left live at Plaid with no row)");
     }
     // ── 6. Nothing disconnects or stops because of a limit ─────────────────────────────────────────
     {
@@ -186,7 +189,8 @@ function load(db, user) {
       t.ok(!/\.delete\(|\.update\(|\.upsert\(|\.insert\(|item\/remove/.test(limSrc), "6a the limit code writes nothing and removes nothing");
       const plaidSrc = fs.readFileSync(PLAID_PATH, "utf8");
       const uses = [...plaidSrc.matchAll(/bankLimitFor\(/g)].map((m) => { const before = plaidSrc.slice(0, m.index); const a = before.lastIndexOf('action === "'); return before.slice(a + 12, before.indexOf("\"", a + 12)); });
-      t.eq([...new Set(uses)].sort(), ["bank_limit_status", "create_link_token", "exchange_token", "migrate_items"], "6b asked only where a NEW bank is added (and the status), never in sync, accounts, transactions, investments or liabilities");
+      // Changed 2026-11-23 (R5-1): migrate_items was in this list. It adds no NEW bank (only ones the person already had).
+      t.eq([...new Set(uses)].sort(), ["bank_limit_status", "create_link_token", "exchange_token"], "6b asked only where a NEW bank is added (and the status), never in sync, accounts, transactions, investments, liabilities, or the import of banks the person already had");
       for (const f of ["plaid-webhook.js"]) t.ok(!/bankLimits/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", f), "utf8")), `6c ${f} never reads the limit`);
     }
     // ── 8. For everyone, no cutoff date (Amanda, 2026-11-10) ────────────────────────────────────────

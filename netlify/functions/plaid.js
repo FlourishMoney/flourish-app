@@ -839,27 +839,14 @@ exports.handler = async (event) => {
       const admin = getAdminClient();
       const successes = [];
       const failures = [];
-      // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
-      // write path into plaid_items). Re-migrating an already-active item is always allowed.
-      const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
-      if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
-      // BANK CONNECTION LIMITS (behind PLUS_ENABLED): a NEW bank here counts as it would through exchange_token.
-      const bankLimit = await bankLimitFor(admin, user_id);
-      if (bankLimit && bankLimit.unavailable) return statusUnavailable(CORS);
-      let limitUsed = bankLimit ? bankLimit.used : null;
-      let mineIds = null;
-      if (bankLimit) {
-        const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id);
-        if (mineErr) return statusUnavailable(CORS);
-        mineIds = new Set((mine || []).map((r) => r.item_id));
-      }
-      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited && !(bankLimit && bankLimit.plus); // v1: flag off → no cap
-      let existingIds = new Set(), activeCount = 0;
-      if (capBanks) {
-        const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
-        existingIds = new Set((existing || []).map(r => r.item_id));
-        activeCount = existingIds.size;
-      }
+      // A BANK THE PERSON ALREADY HAD IS IMPORTED, NEVER REFUSED (round 5 of the Plus review, R5-1; Amanda, 2026-11-23:
+      // GRANDFATHER). These are banks connected on an older copy of the app, whose tokens lived on the device. Limits
+      // stop NEW connections and never disconnect an existing one (_lib/bankLimits.js), so no limit is asked here: not
+      // the Plus bank limit, and not the free plan's one-bank cap (off today, ENFORCE_PLAN_LIMITS). Refusing one left
+      // its Item live at Plaid with no row, so nothing could ever clean it up or show it. An imported bank counts like
+      // any other, so a household past its limit is offered no NEW bank until it is back under (create_link_token and
+      // exchange_token ask the limit; this does not). Nothing here is removed at Plaid, and a plan that cannot be read
+      // holds nothing up.
       for (const t of tokens) {
         if (!t?.token) {
           failures.push({ error: "missing token" });
@@ -873,16 +860,6 @@ exports.handler = async (event) => {
           if (!item_id) {
             failures.push({ error: "no item_id returned" });
             continue;
-          }
-          // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
-          if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: planWords("plan-server-one-bank-migrate") });
-            continue;
-          }
-          let newBank = false;
-          if (bankLimit && !mineIds.has(item_id)) {
-            if (limitUsed >= bankLimit.limit) { failures.push(limitBody({ ...bankLimit, used: limitUsed })); continue; }
-            newBank = true;
           }
           // Upsert (idempotent — re-running migration is safe)
           const { error: upsertErr } = await admin
@@ -900,28 +877,6 @@ exports.handler = async (event) => {
             failures.push({ error: "Could not save this bank." });
             continue;
           }
-          if (newBank) {
-            // The same second look as exchange_token (H3): a NEW bank written past the limit is taken back out. Its row
-            // only: this bank was connected on an older copy of the app, and is not removed at Plaid here.
-            const after = await overAfterAdding(admin, user_id, { itemId: item_id });
-            // Round 3 (M3): refused whatever the clean-up manages (it used to be reported as saved when the delete failed).
-            // Round 4 (R4-1): the SAME steps, in the same order, as exchange_token. Marked refused first (it stops
-            // counting and listing at once); then removed at Plaid with this bank's own token; and its row is deleted
-            // only once Plaid has removed it (or no longer knows it). If Plaid will not, the row stays, refused, with
-            // the token, and finishRefusedBanks finishes it the next time the banks are listed. (Round 3 deleted the
-            // row without telling Plaid: the Item stayed live there and could never be found again.)
-            // Round 4 (R4-2): a mark that cannot be written is not a refusal: nothing is removed, the row stays as it
-            // is, and this bank's answer is "unavailable".
-            if (after.over) {
-              if (!(await markRefused(admin, user_id, item_id, "migrate_items limit recheck"))) { failures.push({ error: "unavailable" }); continue; }
-              if (await removeRefusedItem(t.token, item_id, "migrate_items limit recheck")) await removeRefusedRow(admin, user_id, item_id, "migrate_items limit recheck");
-              failures.push(limitBody({ ...after.lim, used: after.lim.limit }));
-              continue;
-            }
-            limitUsed++;
-            mineIds.add(item_id);
-          }
-          if (!existingIds.has(item_id)) { existingIds.add(item_id); activeCount++; }
           successes.push({ item_id });
         } catch (err) {
           // Plaid /item/get failed (revoked token, login required, network, etc.)

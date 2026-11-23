@@ -220,9 +220,11 @@ const call = async (fn, body) => {
       const mig = makeDb({ items: { [A]: 1 } });
       meanwhile(mig, { user_id: A, item_id: "a-item-other" });
       const m = await call(load(mig, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-1", institution_name: "Legacy" }] });
+      // Changed 2026-11-23 (round 5, R5-1, Amanda: GRANDFATHER). This expected the legacy bank to be refused and taken back
+      // out. A bank the person already had is imported, even past the limit; it counts, and no new bank is accepted.
       t.eq([m.status, m.body.successes, m.body.failures, banks(mig, A), mig.state.rows.plaid_items.some((x) => x.item_id === "item-legacy-1"), removes().length],
-        [200, [], [{ error: "bank_limit", scope: "person", used: 2, limit: 2 }], 2, false, 1],   // changed 2026-11-23 (round 4, R4-1): the last was 0
-        "2g H3 migrate_items: the same, and the refused bank is removed at Plaid before its row is taken back out (it used to be left live at Plaid with no row to find it by)");
+        [200, [{ item_id: "item-legacy-1" }], [], 3, true, 0],
+        "2g H3 migrate_items: a legacy bank is imported even when another bank landed first and the limit is passed; nothing is removed at Plaid");
       reset();
       const migOk = makeDb({ items: { [A]: 1 } });
       const mo = await call(load(migOk, A).plaid, { action: "migrate_items", tokens: [{ token: "access-legacy-1", institution_name: "Legacy" }] });

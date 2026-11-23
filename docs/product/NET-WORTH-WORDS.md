@@ -69,7 +69,7 @@ The store apps' paywall title is not here: main's approved title (2026-11-05, "S
 | `plan-household-extra-stripe` | Couple mode: a member paying on the website while the other's subscription covers them | The partner's subscription includes them; cancel theirs on the website under Settings, the plan, Manage subscription | Your partner's subscription already includes you. Cancel yours where you bought it: Settings > flourish > Manage subscription. | 160 |
 | `plan-server-coach-limit` | The coach, when the free plan's weekly messages are used (the server's line; {n} follows it) | The {n} free coach messages this week are used; the main plan has unlimited; they reset on Monday | You've used your {n} free coach messages this week. A flourish subscription has unlimited messages, or come back on Monday when they reset. | 160 |
 | `plan-server-one-bank` | Website: connecting a second bank on the free plan (the server's line) | The free plan connects one bank; the main plan connects more | The free plan connects one bank. A flourish subscription connects more. | 120 |
-| `plan-server-one-bank-migrate` | The same, when banks are moved from an older version (the server's line) | The free plan connects one bank; the main plan connects more | The free plan connects one bank. A flourish subscription connects more. | 120 |
+| `plan-server-one-bank-migrate` | The same, when banks are moved from an older version (the server's line). Not sent since 2026-11-23: a bank the person already had is imported, never refused. The approved line is kept | The free plan connects one bank; the main plan connects more | The free plan connects one bank. A flourish subscription connects more. | 120 |
 
 ## Buying flourish Plus (approved 2026-11-20, ChatGPT 100 and Grok 100)
 
