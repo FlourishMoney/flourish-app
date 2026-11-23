@@ -21,13 +21,12 @@ const crypto = require("crypto");
 const TIMEOUT_MS = 4000;
 
 // "https://<public key>@<host>/<project id>" -> where to post, and with which key. null when it is not one.
+// Read with one pattern, part by part: scheme, the public key before the "@", the host, the numeric project id.
 function parseDsn(dsn) {
-  try {
-    const u = new URL(String(dsn || "").trim());
-    const project = u.pathname.replace(/^\/+|\/+$/g, "");
-    if (!u.username || !u.host || !/^\d+$/.test(project)) return null;
-    return { key: u.username, url: `${u.protocol}//${u.host}/api/${project}/envelope/`, dsn: `${u.protocol}//${u.username}@${u.host}/${project}` };
-  } catch { return null; }
+  const m = /^(https?):\/\/([A-Za-z0-9_-]+)@([A-Za-z0-9.-]+(?::\d+)?)\/(\d+)\/?$/.exec(String(dsn || "").trim());
+  if (!m) return null;
+  const [, scheme, key, host, project] = m;
+  return { key, url: `${scheme}://${host}/api/${project}/envelope/`, dsn: `${scheme}://${key}@${host}/${project}` };
 }
 
 const short = (v, n = 200) => String(v == null ? "" : v).slice(0, n);
