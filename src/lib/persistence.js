@@ -136,7 +136,10 @@ export function isBlobEmpty(blob) {
   const a = blob && blob.core && blob.core.appData;
   if (!a || a.demo) return true;   // treat demo/sample data as empty — it must never persist
   const has = (x) => Array.isArray(x) && x.length > 0;
-  const profileHasData = a.profile && (a.profile.name || a.profile.country || a.profile.province || a.profile.partnerName);
+  // The country is NOT counted (review 2026-11-22, P5-03): onboarding starts every profile with the device's country
+  // (lib/deviceCountry.js), which nobody typed, so a blob holding only that looked like real data and could outrank
+  // the cloud's copy at the next sign-in. A name, a partner's name or a province (it starts unset) is someone's entry.
+  const profileHasData = a.profile && (a.profile.name || a.profile.province || a.profile.partnerName);
   return !(has(a.bills) || has(a.incomes) || has(a.debts) || has(a.goals) || has(a.accounts) || has(a.transactions) || profileHasData);
 }
 
@@ -222,6 +225,52 @@ export function makeDebouncedSaver(saveFn, delayMs = 2000) {
     peek() { return pending; },                                                      // Sprint Z2 #12: read pending WITHOUT sending (exit keepalive beacon)
     discard() { pending = null; if (timer) { clearTimeout(timer); timer = null; } }, // Sprint Z2 #12: drop pending after a beacon consumed it
   };
+}
+
+// The pending save, sent NOW and awaited (review 2026-11-22, P10-02): before the server copies this account's saved
+// data into a new household, the caller must know the save landed. { ok: true } (also when nothing was waiting, or an
+// empty blob was rightly refused: the row then already holds what the server should copy); { ok: false } when it
+// failed, and then the payload is put back to wait for the next try, unless a newer one arrived meanwhile.
+// `save(payload)` resolves to upsertUserData's / saveHousehold's answer. Never throws.
+export async function flushPendingSave(saver, save) {
+  const pending = saver && saver.peek ? saver.peek() : null;
+  if (!pending) return { ok: true, nothing: true };
+  saver.discard();
+  let r;
+  try { r = await save(pending); } catch (e) { r = { ok: false, error: e }; }
+  if (r && (r.ok || r.refused)) return { ok: true, ...(r.refused ? { refused: true } : {}) };
+  if (!saver.hasPending()) saver.schedule(pending);
+  return { ok: false, error: (r && r.error) || null };
+}
+
+// ── The exit save (pagehide / hidden), as one request (review 2026-11-22, P10-03) ─────────────────────────────
+// It is fire-and-forget with keepalive, so it can arrive late: after a newer save from this device (the person came
+// straight back and changed something) or from another. It used to be an unconditional upsert, so the late arrival
+// replaced the newer copy, and the row's fresh updated_at then made that stale copy win the next sign-in. Now it is
+// an UPDATE that matches only a row whose saved copy is OLDER than this blob (blob.savedAt, stamped when it was
+// built), or carries no time. It never creates a row: the awaited save that always follows it does that.
+// A household's exit save is unchanged: only over the version this device read.
+// Returns { url, method, prefer, body } or null when there is nothing safe to send this way.
+export function beaconRequest(payload, { baseUrl = "", householdVersion = null } = {}) {
+  const blob = payload && payload.blob;
+  if (!payload || !payload.userId || !blob) return null;
+  const body = JSON.stringify({ data: blob, schema_version: blob.schemaVersion || PERSIST_SCHEMA_VERSION });
+  if (payload.householdId) {
+    if (householdVersion == null) return null;
+    return { method: "PATCH", prefer: "return=minimal", body,
+      url: `${baseUrl}/rest/v1/household_data?household_id=eq.${encodeURIComponent(payload.householdId)}&version=eq.${encodeURIComponent(householdVersion)}` };
+  }
+  const at = blob.savedAt;
+  if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || /["\\,()]/.test(at)) return null;
+  const older = `(data->>savedAt.is.null,data->>savedAt.lt."${at}")`;
+  return { method: "PATCH", prefer: "return=minimal", body,
+    url: `${baseUrl}/rest/v1/user_data?user_id=eq.${encodeURIComponent(payload.userId)}&or=${encodeURIComponent(older)}` };
+}
+// The same rule in JavaScript, for tests and for reading: does an exit save stamped `incoming` replace a row whose
+// saved copy is stamped `stored`? (Both are toISOString() values, which sort as text exactly as they do as times.)
+export function beaconLands(stored, incoming) {
+  if (typeof incoming !== "string" || !incoming) return false;
+  return stored == null || String(stored) < incoming;
 }
 
 // ── Couple mode (v1): the household's shared blob (public.household_data, migration 0030) ─────────────

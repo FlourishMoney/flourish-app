@@ -244,6 +244,16 @@ async function recordRepeatConsent(supabaseUrl, secretKey, email, consentVersion
 // to the project's Redirect URLs.
 const CONFIRM_REDIRECT = "https://flourishmoney.app/confirmed";
 
+// WHAT AN ERROR ANSWER MAY CARRY (review of 2026-11-22, P3-11). The database's and the auth service's own error text
+// names tables, constraints and columns, and the app printed it on the sign-up screen. The answer now carries the
+// error's short code only ("23505", "over_request_rate_limit"), which is all support needs beside the function
+// log, where the full text still goes. No code, or one that is not a plain short token: nothing.
+function safeErrorCode(e) {
+  const c = e && (e.code || e.status);
+  const v = c === undefined || c === null ? "" : String(c);
+  return /^[A-Za-z0-9_.-]{1,40}$/.test(v) ? v : undefined;
+}
+
 // Ask Supabase to send its "Confirm your signup" email through the project's SMTP. Returns true when
 // Supabase accepted it. Never throws: a signup that has already created the account must not be
 // reported as failed because the mail could not be handed over, and the person can press Resend.
@@ -758,7 +768,7 @@ async function handle(event) {
         seat = data; // 'ok' | 'cap_reached' | 'email_exists'
       } catch (e) {
         console.error("[beta:signup] reserve_beta_seat failed:", e.message);
-        return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
+        return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: safeErrorCode(e) }) };
       }
       // A FULL CAP MUST NOT REFUSE SOMEONE WHOSE ONLY MISTAKE WAS TYPING A CODE. beta_signups was
       // backfilled from every existing auth user (migration 0005), so it can already be at 30. With the
@@ -822,13 +832,13 @@ async function handle(event) {
           return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
         }
         console.error("[beta:signup] createUser failed:", createErr.message);
-        return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "create_failed", message: createErr.message }) };
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "create_failed", detail: safeErrorCode(createErr) }) };
       }
       newAccountId = createdAccount?.user?.id || null;
     } catch (e) {
       await releaseSeat("createUser threw");
       console.error("[beta:signup] createUser threw:", e.message);
-      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: (e.message || "").slice(0, 200) }) };
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: safeErrorCode(e) }) };
     }
 
     // The creator code goes on the new account. Best effort: the account exists either way, and the code can still be
@@ -904,7 +914,7 @@ async function handle(event) {
     console.error("[beta]", err.message);
     return {
       statusCode: 502, headers: CORS,
-      body: JSON.stringify({ error: err.message, allowed: true }), // fail open so signups aren't blocked by an error
+      body: JSON.stringify({ error: "server_error", allowed: true }), // fail open so signups aren't blocked by an error
     };
   }
 }
@@ -948,3 +958,4 @@ exports.handler = async (event) => {
   return res;
 };
 exports._logLine = logLine;
+exports.safeErrorCode = safeErrorCode;

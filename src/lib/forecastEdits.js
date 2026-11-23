@@ -162,6 +162,7 @@ const _isIncomeLike = (t) => {
   const name = String(t.name || "").toLowerCase();
   return t.cat === "Income" || name.includes("payroll") || name.includes("direct deposit") || name.includes("deposit");
 };
+const _escapeRx = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function depositOwners(incomes, bases, anchorTx) {
   const owner = new Map();
   for (const t of anchorTx) {
@@ -174,10 +175,15 @@ function depositOwners(incomes, bases, anchorTx) {
       if (!(matchAmt > 0)) return;
       const label = normName(inc.label);
       const nameOk = label.length > 3 && name.includes(label.slice(0, 6));
+      // A 2 or 3 letter label ("UW", "Job") was never matched by name, so a pay that landed early under
+      // that name stayed planned as well: counted twice (review 2026-11-22, G8). It counts as the
+      // income's name when it stands as a whole word, the rule incomeSchedule.js already uses for the
+      // payday anchor, and, being short, only together with an amount that fits.
+      const wordOk = label.length >= 2 && label.length <= 3 && new RegExp(`(^|[^a-z0-9])${_escapeRx(label)}([^a-z0-9]|$)`).test(name);
       const ratio = Math.abs(a - matchAmt) / matchAmt;
       const amtOk = ratio < 0.08 || (inc.isVariable && b.low > 0 && a >= b.low * 0.8 && a <= b.high * 1.25);
-      if (!nameOk && !(amtOk && _isIncomeLike(t))) return;
-      const score = (nameOk ? 0 : 10) + ratio;
+      if (!nameOk && !(amtOk && (wordOk || _isIncomeLike(t)))) return;
+      const score = (nameOk || wordOk ? 0 : 10) + ratio;
       if (score < bestScore) { best = i; bestScore = score; }
     });
     if (best >= 0) owner.set(t, best);
@@ -373,6 +379,13 @@ function expectedOccurrences(item, ed, today, days, minDay) {
                amount: e.amount, estimate: base, repeat: item.repeat || "once", skipped: e.skipped, edited: e.edited });
   }
   return out;
+}
+
+// The same question for one due date, for callers outside the forecast (notificationPlanner.js: a reminder is
+// for one occurrence, and a payment of an earlier one does not cancel it; review of 2026-11-22, P5-05).
+export function billOccurrencePaid(bill, due, transactions, today = new Date()) {
+  if (!bill || !due) return false;
+  return billArrived(bill, noon(due), noon(due), transactions || [], today);
 }
 
 // ── Overdue: due in the last few days and not seen paid (audit of 2026-11-13, finding 3) ────────────────────────

@@ -155,10 +155,20 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
       "3b the period is over: free, even if Stripe's 'deleted' event has not reached us yet");
     const deleted = await statusFor({ status: "canceled", current_period_end: iso(Date.now() + 3 * DAY) });
     t.eq([deleted.body.paid, client.webPlan(profilePlan, { paid: webPaid(deleted.body) })], [false, "free"], "3c Stripe says canceled: free");
-    for (const status of ["past_due", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
+    // Changed 2026-11-23 (Amanda's decision, billing grace): "past_due" was in this list. See 3f to 3i.
+    for (const status of ["unpaid", "incomplete", "incomplete_expired", "paused"]) {
       const r = await statusFor({ status, current_period_end: iso(Date.now() + 3 * DAY) });
       t.eq(r.body.paid, false, `3d ${status} is not paid (planRules.SUBSCRIPTION_PAID_STATUSES)`);
     }
+    // BILLING GRACE: a failed renewal Stripe is still retrying keeps access, and the site is told nothing that would
+    // let a device go on believing it for a month or a year if it cannot ask again.
+    const grace = await statusFor({ status: "past_due", provider_customer_id: "cus_1", provider_subscription_id: "sub_1", plan_key: "annual", current_period_end: iso(Date.now() + 300 * DAY) });
+    t.eq([grace.body.paid, client.webPlan(profilePlan, { paid: webPaid(grace.body) })], [true, "premium"], "3f past_due (Stripe is retrying a failed renewal): still paid, the plan stays");
+    t.eq(grace.body.period_end, null, "3g …with no paid-to date: the period is not paid for, so a device that cannot ask again trusts the answer for 3 days, not until that date");
+    t.eq(grace.body.web_attention, false, "3h …and it is not the \"access is off, fix your card\" state");
+    t.eq(vis.billingUiState({ status: grace.body, native: false, paid: grace.body.paid }).mode, "manage", "3i the plan sheet offers the portal (where the card is fixed), never a second checkout");
+    const gaveUp = await statusFor({ status: "unpaid", provider_customer_id: "cus_1", provider_subscription_id: "sub_1", plan_key: "annual", current_period_end: iso(Date.now() + 300 * DAY) });
+    t.eq([gaveUp.body.paid, gaveUp.body.web_attention, client.webPlan(profilePlan, { paid: webPaid(gaveUp.body) })], [false, true, "free"], "3j Stripe marked it unpaid: access ends, and the card is fixed in the portal");
     t.eq((await statusFor(null)).body.paid, false, "3e no subscription row: not paid");
   }
 

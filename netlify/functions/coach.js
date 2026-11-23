@@ -360,7 +360,9 @@ exports.handler = async (event) => {
             return {
               statusCode: 429,
               headers: corsHeaders,
-              body: JSON.stringify({ error: "rate_limited", message: "Coach is briefly unavailable. Please try again in a few minutes." }),
+              // reason "unavailable" (review of 2026-11-22, P2-09): this is "we could not count", not a limit reached.
+              // A store app prints its own weekly-limit line for every other 429; for this one it prints these words.
+              body: JSON.stringify({ error: "rate_limited", reason: "unavailable", message: "Coach is briefly unavailable. Please try again in a few minutes." }),
             };
           }
         }

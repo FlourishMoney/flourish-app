@@ -17,6 +17,7 @@ import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { isCashAccount, num, buildDebtListForSimulator } from "./financialCalculations.js";
 import { weekVersusUsual, categoryPaceDeltas } from "./weeklyReview.js";
+import { effectiveCategory } from "./categoryOverrides.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // The safe-to-spend working, exactly as Today's breakdown prints it (safeToSpendView rows), for How
@@ -90,11 +91,16 @@ export function buildMeetSnapshot(data = {}, now = new Date()) {
   // which is what keeps a quiet week quiet, and keeps quietWeekAgendaFor reachable.
   try {
     const txns = data.transactions || [];
-    const week = weekVersusUsual({ transactions: txns, now });
+    // The week is read by the category the household CORRECTED each transaction to, when the caller holds the
+    // corrections (review of 2026-11-22, P6-01): data.catOverrides, the { byId, byMerchant } pair the engines
+    // take (App.jsx getCatOv; they live in two device keys, not in the household's saved data, so the caller adds
+    // them). Without it the week is read by the category each transaction arrived with, as before.
+    const categoryOf = data.catOverrides ? (t) => effectiveCategory(t, data.catOverrides) : undefined;
+    const week = weekVersusUsual({ transactions: txns, now, categoryOf });
     if (week) snap.weekTotal = week;
     // Top three by size. The agenda applies its own threshold on top, so a quiet week still says
     // nothing rather than reading out three differences of four dollars each.
-    const deltas = categoryPaceDeltas({ transactions: txns, now }).slice(0, 3);
+    const deltas = categoryPaceDeltas({ transactions: txns, now, categoryOf }).slice(0, 3);
     if (deltas.length) snap.behaviorDeltas = deltas;
   } catch { /* no usable history → no wins and no changes, which is not a failure */ }
 

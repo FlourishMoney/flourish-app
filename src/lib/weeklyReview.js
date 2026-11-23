@@ -34,7 +34,8 @@
 // A household whose every day comes in under a dollar is therefore told nothing rather than told
 // something confident. That is the direction to fail in.
 
-import { BILL_CATS, CC_PAYMENT_KEYWORDS, isInternalTransfer } from "./financialCalculations.js";
+import { BILL_CATS, isInternalTransfer } from "./financialCalculations.js";
+import { isCardPaymentCharge } from "./budgetSpend.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const WEEK = 7;
@@ -75,14 +76,23 @@ const _weekOf = (ago) => Math.ceil(ago / WEEK);
 // The spend a household chooses. Bills are excluded because safe-to-spend has already reserved
 // them, so the month's rent must not read as a week that went wrong; income, transfers and card
 // payments are not spending at all.
-export function isDiscretionarySpend(t) {
+//
+// THE CATEGORY IS THE ONE THE HOUSEHOLD CORRECTED IT TO (review of 2026-11-22, P6-01). categoryOf is
+// passed in by the caller that holds the corrections (App.jsx effCat); without one it is the category
+// the transaction arrived with, as before. A rent payment the bank filed under Shopping and the
+// household moved to Rent is a bill here too, and the week is no longer $900 "over".
+//
+// A CARD PAYMENT is budgetSpend.js isCardPaymentCharge, the rule the budget screens use (P6-02): a bare
+// "autopay" is how a subscription or a gym is paid and is spending; autopay with a card word or a card
+// issuer, or a card-payment phrase, is a payment to a card.
+const _rawCategory = (t) => t.cat;
+export function isDiscretionarySpend(t, categoryOf = _rawCategory) {
   if (!t || !(Number(t.amount) > 0) || t.pending) return false;   // expenses are positive in this app
-  const cat = t.cat || "";
+  const cat = categoryOf(t) || "";
   if (cat === "Income" || cat === "Fees" || cat === "Transfer") return false;
   if (BILL_CATS.has(cat)) return false;
-  if (isInternalTransfer(t)) return false;
-  const name = (t.name || "").toLowerCase();
-  if (CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return false;
+  if (isInternalTransfer(cat === (t.cat || "") ? t : { ...t, cat })) return false;
+  if (isCardPaymentCharge(t)) return false;
   return true;
 }
 
@@ -108,16 +118,16 @@ export function isDiscretionarySpend(t) {
 // separate days; coverage runs from week 2 to the oldest week that anchors. A week with nothing in
 // it INSIDE that span is a real zero and stays in the divisor — that is the away week. A week with
 // nothing in it beyond the span is missing data, and is not counted at all.
-function _scan(transactions, now) {
+function _scan(transactions, now, categoryOf = _rawCategory) {
   const thisWeek = new Map();                  // category -> total, for the week just gone
   const perWeek = new Map();                   // week -> { cats: Map(cat -> total), days: Map(dayAgo -> total) }
   const bucket = (w) => { if (!perWeek.has(w)) perWeek.set(w, { cats: new Map(), days: new Map() }); return perWeek.get(w); };
 
   for (const t of transactions || []) {
-    if (!isDiscretionarySpend(t)) continue;
+    if (!isDiscretionarySpend(t, categoryOf)) continue;
     const ago = _daysAgo(t, now);
     if (ago == null || ago < 1 || ago > WEEK * (1 + BASELINE_WEEKS)) continue;
-    const cat = t.cat || "Uncategorised";
+    const cat = categoryOf(t) || "Uncategorised";
     const amt = Math.abs(Number(t.amount) || 0);
     const b = bucket(_weekOf(ago));
     b.cats.set(cat, (b.cats.get(cat) || 0) + amt);
@@ -181,8 +191,8 @@ const _describable = (scan) => scan.spendDays >= MIN_SPEND_DAYS && scan.coveredW
  * Returns { thisWeek, normal, delta } — delta positive means the week cost more than usual — or
  * null when there is not enough history, or not enough of a week, to say anything.
  */
-export function weekVersusUsual({ transactions = [], now = new Date() } = {}) {
-  const scan = _scan(transactions, now);
+export function weekVersusUsual({ transactions = [], now = new Date(), categoryOf } = {}) {
+  const scan = _scan(transactions, now, categoryOf);
   if (!_describable(scan)) return null;
   const normal = scan.baselineTotal / scan.coveredWeeks;
   return { thisWeek: _round2(scan.thisWeekTotal), normal: _round2(normal), delta: _round2(scan.thisWeekTotal - normal) };
@@ -198,8 +208,8 @@ export function weekVersusUsual({ transactions = [], now = new Date() } = {}) {
  * bought a shirt. An annual policy paid in two instalments did the same. Three separate weeks is a
  * habit; two purchases are two purchases.
  */
-export function categoryPaceDeltas({ transactions = [], now = new Date() } = {}) {
-  const scan = _scan(transactions, now);
+export function categoryPaceDeltas({ transactions = [], now = new Date(), categoryOf } = {}) {
+  const scan = _scan(transactions, now, categoryOf);
   if (!_describable(scan)) return [];
   const out = [];
   for (const [cat, perWeek] of scan.baseline) {

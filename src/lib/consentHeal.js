@@ -47,3 +47,30 @@ export function decideConsentAction({ status, errorCode, localAccepted, healedTh
 export function canProceedAfterAccept({ hadJwt, ok }) {
   return hadJwt === false || ok === true;
 }
+
+// ── A REVOKE THE SERVER NEVER GOT (review of 2026-11-22, P10-07, and Grok's medium) ──────────────────────────────
+// "Don't use AI" and Settings > Revoke AI consent turn AI off on this device whatever the network does, which is
+// right. But the server's record is what stops every OTHER device of the account, and a revoke that failed was
+// never sent again: the person had withdrawn consent and the server still held it. The device now remembers a
+// signed-in revoke that failed, for that account only, and the app sends it again when it is signed in and online.
+// Agreeing again (the disclosure, or the AI Coach switch) clears it, so a retry can never undo a newer consent.
+export const REVOKE_PENDING_KEY = "flourish_ai_revoke_pending";
+
+// After a revoke_consent POST. res is postCoachConsent's { ok, hadJwt }: hadJwt false is the demo (no account, so
+// nothing to send again).
+export function noteRevokeResult(res, storage, userId) {
+  try {
+    if (!storage || !res) return;
+    if (res.ok === true) storage.removeItem(REVOKE_PENDING_KEY);
+    else if (res.hadJwt === true && userId) storage.setItem(REVOKE_PENDING_KEY, String(userId));
+  } catch { /* the next revoke or accept sets it right */ }
+}
+
+// Is a revoke waiting for THIS account? Another account on the same device never has one sent on its behalf.
+export function revokePending(storage, userId) {
+  try { return !!storage && !!userId && storage.getItem(REVOKE_PENDING_KEY) === String(userId); } catch { return false; }
+}
+
+export function clearRevokePending(storage) {
+  try { if (storage) storage.removeItem(REVOKE_PENDING_KEY); } catch { /* nothing waiting */ }
+}

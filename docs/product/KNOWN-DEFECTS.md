@@ -1448,3 +1448,91 @@ the entitlement read returns `plus: true`), but nothing reads that yet, so it gi
 
 **Fix** When #128 merges, have its add-on entitlement (`_lib/plusAddon.js`) count `giftCover(...).plus`. Do not sell
 the Plus gift before then.
+
+---
+
+## 68. Left from the full-app review of 2026-11-22 (ChatGPT, Grok and Gemini; branch fix-review-1122)
+
+Every finding of that review was checked against the code. The real blockers, highs and mediums were fixed on
+`fix-review-1122` (tests `tests/review1122*.test.cjs`). These are what was found real and deliberately left, each
+with the reason. Line numbers are at `main` eec2c36.
+
+**Waiting for approved words**
+
+- **An income added in Settings is not asked for its next payday** (`incomeSchedule.js:204-210`, Grok low). Onboarding
+  asks; Settings does not, and no screen shows the "estimated" flag. Needs a new question.
+- **The gift thank-you page shows on `?bought=1` alone** (`public/gift/gift.js:19-22`, review P1-06). It shows no code
+  and asks the server for nothing; the code only ever comes by email from the paid webhook. A check needs a new
+  endpoint and words for "still confirming".
+
+**Low, not quick**
+
+- **A $0 budget is removed, not saved** (`src/App.jsx:17201`, review P9-08). Every reader treats a zero budget as
+  none (`:17696`, `:8396`), so saving it alone changes nothing visible.
+- **Switching accounts on the gift redeem page removes the session key instead of signing out**
+  (`public/gift/redeem.js:50-54`, review P1-07). The page has no Supabase client; the next sign-in clears the other
+  account's data.
+- **The nightly "iPhone" and "Android" walks are the store bundle in Chromium** (`.github/workflows/nightly-e2e.yml`,
+  review P1-08). Real simulators in CI are a project of their own.
+- **Public counters can be inflated** (`attribution.js:14-29`, `beta.js:313-324`, review P3-08). They keep nothing
+  about the visitor on purpose; no money or access depends on them.
+- **The trial reminder sweep's first read is capped at 1,000 rows by the database API** (`trial-reminder-sweep.js`,
+  rest of review P3-10). Due trials are now read soonest first; nothing is near that size.
+- **A large export on Android** (`src/lib/dataExport.js` deliverExport, review G6). The Android WebView cannot share a
+  file and text is capped at 200,000 characters, so a large export shows the existing "Could not export" message. A
+  full fix needs `@capacitor/filesystem` in a store build.
+
+**The rest of a finding that was fixed in part**
+
+- **Short income names in `variablePay`** (`forecastEdits.js:116`): labels of 3 letters or fewer are still skipped
+  there. Review G8 named, and the fix covers, `depositOwners`.
+- **A negative amount in the inline bill edit** (`src/App.jsx:7181` updateBill). Review P8-05's fix covers Add Bill.
+  A negative bill already saved still adds money to the forecast.
+- **"autopay" in the engine's own monthly spend** (`financialCalculations.js:1606`, `:1669`). Review P6-02's fix
+  covers the weekly review; the engine's locked figures were left alone.
+- **A disconnected bank's device-side extras** (net worth history, loan activity, category corrections for its
+  transactions) are not cleaned up, unlike the household path at `src/App.jsx:18645-18668` (review P9-02).
+- **Remove-partner and delete-account** still rely on the staying member's phone to remove answers keyed by the
+  other's bank transactions (review P1-03). Leaving is now covered by the leaver's phone.
+- **The Canadian student-loan interest tip** shows only at the student life stage, as the US one did (review P7-05
+  fixed the US tip, which is what it named).
+
+**Round 2 of the same review (on 4032405): called "partly", and why each is left**
+
+Fixed in round 2: the webhook takeover race (N1), holdings identity and the all-empty round (N2, which was the open
+half of P3-09), the AI Coach switch waiting on both ways of turning it on (P9-07), the purchase guards reading the
+dates (P2-02), and a second try at taking a Plaid webhook's mark back (P3-01). The three lines that were waiting for
+words went in as approved on 2026-11-22 (`src/lib/reviewWords.js`). Round 3 (on 6379243) then fixed the two it kept
+open: a holding on an account with no bank marker goes when every bank answered (R3-1), and a fixed bill is settled
+only by a payment that carries its name, "maybe" otherwise (R3-2, which was P4-01 here). Left:
+
+- **P1-03, a leave goes ahead when the clean-up save before it failed.** On purpose: nothing may stop a person leaving
+  a household. The member who stays still removes what their phone holds.
+- **P2-01, instant sign-up confirms an address nobody proved.** The decision of 2026-11-11, with its guards.
+- **P2-07, a gift whose row cannot be re-read is still emailed.** On purpose: a paid gift that is never delivered is
+  the worse failure; the window between that read and the send is milliseconds.
+- **P2-08, not every way of writing an address or phone number is cut.** Best effort by nature; each new pattern risks
+  cutting ordinary sentences.
+- **P3-01, a mark that cannot be taken back in two tries waits for the 15-minute cleanup.** Plaid keeps retrying for
+  about a day, so a later retry lands.
+- **P3-04, the unpaid, incomplete and trialing paths have not met real Stripe.** They are tested against stand-ins;
+  a pass in Stripe's test mode needs test keys and is worth doing before a bank-debit method is ever switched on.
+- **P3-10, the reminder sweep keeps no cursor between runs.** Due trials are read soonest first, so the next run takes
+  up where the last stopped.
+- **P4-02, a list whose records cannot be told apart is merged as a whole.** On purpose: never guess which is which.
+- **P6-01 group, each screen keeps its own list of what is not spending.** All now use the household's corrections;
+  making the lists one changes totals on three screens and is a product pass.
+- **P7-01, an old device token that fails five times is cleared.** A bank token kept for ever in the browser's
+  storage is the worse outcome; these are pre-migration tokens only.
+- **P8-02, the method changes the order, not the payoff math.** The simulator pays one debt at a time; a true
+  two-method plan is a feature with its own words.
+- **P10-08, the retry of a person's own keys stops after three tries.** The next change, or the next sign-in, sends
+  them again.
+
+**Seen in passing, outside the review's findings**
+
+- `netlify/functions/plaid.js:282` defaults an account's currency to "CAD" when the bank states none, which defeats
+  the app's "not stated" handling (`src/App.jsx:5291`).
+- A founding trial that goes into the store's billing grace period with no sync in between, and then ends, is
+  treated as a paid founding subscription that ended (`_lib/storeSubscriptions.js:261-262`).
+- `tests/forecast-critic-verify.test.cjs` fails 8 of 40 on `main` (its own [OPEN] items); it is not in `test:math`.

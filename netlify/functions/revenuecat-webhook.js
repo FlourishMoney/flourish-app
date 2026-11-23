@@ -25,6 +25,7 @@ const plusAddon = require("./_lib/plusAddon");
 const stripeApi = require("./_lib/stripeApi");   // a website Plus the same buyer also pays for (plusAddon.syncPlusFromStore)
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
+const { reclaimEvent, claimEvent } = require("./_lib/eventClaim");
 const { creatorsEnabled, creditStoreEvent } = require("./_lib/creators");
 // The full funnel (migration 0042): a store trial, payment, cancellation or refund, first time only, per store.
 const { revenueCatMilestone, recordMilestone } = require("./_lib/funnel");
@@ -78,15 +79,17 @@ async function handle(event, deps = {}) {
   const accounts = accountsIn(evt);
   // The account id is recorded as text (customer_id), not as user_id: user_id references auth.users, and an event
   // for an account that has since been deleted must be acknowledged, not fail the insert and be retried for days.
-  const { data: claimed, error: claimErr } = await admin.from("billing_events").insert({
+  const claimed = await claimEvent(admin, {
     event_id: eventId, provider: "revenuecat", type: String(evt.type).slice(0, 80), status: "received",
     customer_id: isUuid(evt.app_user_id) ? evt.app_user_id : null,
-  }, { ignoreDuplicates: true }).select("event_id");
-  if (claimErr) { console.error("[revenuecat-webhook] could not claim event:", claimErr.message); return reply(500, { error: "claim_failed" }); }
-  if (!claimed || claimed.length === 0) {
-    const { data: prior } = await admin.from("billing_events").select("status, attempts").eq("event_id", eventId).maybeSingle();
-    if (!prior || prior.status !== "failed") return reply(200, { received: true, replay: true });
-    await admin.from("billing_events").update({ status: "received", attempts: (prior.attempts || 1) + 1, error: null }).eq("event_id", eventId);
+  });
+  if (claimed.error) { console.error("[revenuecat-webhook] could not claim event:", claimed.error.message); return reply(500, { error: "claim_failed" }); }
+  if (claimed.seen) {
+    // Already seen (_lib/eventClaim.js): finished is acknowledged; never finished (failed, or left "received" by a
+    // delivery that died mid-work) is done now; possibly still at work is a 5xx, so RevenueCat sends it again.
+    const earlier = await reclaimEvent(admin, eventId);
+    if (earlier === "done") return reply(200, { received: true, replay: true });
+    if (earlier === "busy") return reply(503, { error: "in_progress" });
   }
 
   if (accounts.length === 0) {

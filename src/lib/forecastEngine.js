@@ -128,6 +128,10 @@ generate(data, days = 90, scenario = null, today = new Date()) {
     const entry = { day:i, date:d, balance:running, income:inc, deposits, expenses:out,
                     isPayday, bills:dayBills, occurrences: sl.occurrences,
                     billOccurrences: sl.bills.map(x => x.occ) }; // parallel to `bills`, for the edit sheet
+    // A what-if amount that left the balance on this day, said on the day itself (review of 2026-11-22, P4-05):
+    // the drill-down (forecastWalk.js) gives it its own line. Without this the walk could only see it as the gap
+    // between two balances and printed a $500 purchase as "Est. daily spend −$533.46". Only on a day that has one.
+    if (scenarioOut > 0) entry.scenario = scenarioOut;
     forecast.push(entry);
 
     if(running < 0) overdraftRisk.push({ day:i, date:d, balance:running });

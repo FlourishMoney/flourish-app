@@ -324,9 +324,13 @@ const { create } = require("./_runner.cjs");
     const a = blob.core.appData;
     t.ok(a.forecastEdits && a.forecastEdits.dailySpend === 40 && a.forecastEdits.expected.length === 1 && a.depositDecisions.x && a.depositRules.jamie,
          "the synced blob carries forecastEdits, depositDecisions and depositRules in the household's appData");
+    // 2026-11-22 (review P9-03): the export is built by lib/dataExport.js from every part of the data, so this now
+    // checks the file it builds (it used to read three field names out of App.jsx's source).
     const app = fs.readFileSync(path.join(__dirname, "../src/App.jsx"), "utf8");
     const exp = app.slice(app.indexOf("const exportMyData"), app.indexOf("const exportMyData") + 2500);
-    t.ok(/forecastEdits: data\.forecastEdits/.test(exp) && /depositDecisions: data\.depositDecisions/.test(exp) && /depositRules: data\.depositRules/.test(exp),
+    const { buildExport } = await import("../src/lib/dataExport.js");
+    const file = buildExport(a, {});
+    t.ok(/buildExport\(data, /.test(exp) && file.forecastEdits.dailySpend === 40 && file.forecastEdits.expected.length === 1 && !!file.depositDecisions.x && !!file.depositRules.jamie,
          "the data export includes the corrections");
   }
 

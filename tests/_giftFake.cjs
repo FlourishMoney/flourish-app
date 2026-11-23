@@ -129,8 +129,26 @@ function makeFake({ rows = {}, failRpc = null, missingGift = false, onRpc = null
         if (i >= 0) Object.assign(table(name)[i], row); else table(name).push({ ...row });
         return { error: null };
       },
+      // As the real client: any number of filters, run when awaited, and .select() answers the rows it changed (the
+      // webhook's takeover of a failed event is a compare-and-swap on two columns; round 2 of the 2026-11-22 review).
       update(patch) {
-        return { eq: async (col, val) => { state.writes.push({ table: name, op: "update", patch, where: { [col]: val } }); table(name).forEach((r) => { if (r[col] === val) Object.assign(r, patch); }); return { error: null }; } };
+        const where = {}, tests = [];
+        let wantRows = false, done = null;
+        const u = {
+          eq(col, val) { where[col] = val; tests.push((r) => r[col] === val); return u; },
+          is(col, val) { tests.push((r) => (r[col] == null ? null : r[col]) === val); return u; },
+          select() { wantRows = true; return u; },
+          then(res, rej) {
+            done = done || Promise.resolve().then(() => {
+              state.writes.push({ table: name, op: "update", patch, where: { ...where } });
+              const hit = table(name).filter((r) => tests.every((f) => f(r)));
+              hit.forEach((r) => Object.assign(r, patch));
+              return { data: wantRows ? hit.map((r) => ({ ...r })) : null, error: null };
+            });
+            return done.then(res, rej);
+          },
+        };
+        return u;
       },
       // Anything else (an in(), an order(), a limit()): an empty answer, as for a table with nothing in it.
       in() { return q; }, order() { return q; }, limit() { return q; }, neq() { return q; }, is() { return q; }, gt() { return q; }, lte() { return q; },

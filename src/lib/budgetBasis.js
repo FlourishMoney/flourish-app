@@ -71,10 +71,26 @@ export function observedMonthlySpend(data, today = new Date(), catOf = (t) => t.
   return out;
 }
 
-// "typical" until 30 days of the household's own transactions, then "observed".
+// Has the household spent anything in the last 30 days (today included)? (Review of 2026-11-22, P4-06.)
+// ownHistoryDays counts from the EARLIEST purchase, so a few old ones made a long history by themselves:
+// three purchases four months ago and nothing since read "Based on your spending over the last 90 days" above
+// figures that were still the typical ones (nothing fell in the window), and one $900 purchase 35 days ago
+// replaced the whole list with a single $785 Shopping line. Observed spending needs spending that is recent.
+export function hasRecentSpending(data, today = new Date(), catOf = (t) => t.cat) {
+  if (!data || data.demo) return false;
+  const todayDay = dayOf(new Date(today).toISOString());
+  const from = todayDay - OWN_HISTORY_DAYS + 1;
+  return (data.transactions || []).some((t) => {
+    if (!isSpending(t, catOf)) return false;
+    const d = dayOf(t.date);
+    return d !== null && d >= from && d <= todayDay;
+  });
+}
+
+// "typical" until 30 days of the household's own transactions, with spending in the last 30, then "observed".
 export function budgetSuggestionBasis(data, today = new Date(), catOf = (t) => t.cat) {
   const days = ownHistoryDays(data, today, catOf);
-  if (days >= OWN_HISTORY_DAYS) {
+  if (days >= OWN_HISTORY_DAYS && hasRecentSpending(data, today, catOf)) {
     const window = Math.min(days, OBSERVED_WINDOW_MAX_DAYS);
     return { basis: "observed", days, label: `Based on your spending over the last ${window} days` };
   }

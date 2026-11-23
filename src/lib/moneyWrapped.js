@@ -14,6 +14,21 @@
 // delta — the "change" path exists and is tested, but the app does not currently supply a baseline.
 // -----------------------------------------------------------------------------
 
+import { isCardPaymentCharge } from "./budgetSpend.js";
+
+// WHAT COUNTS AS "SPENT" ON MONEY WRAPPED (and in Money Personality's shares).
+// The screen used to take every amount above zero, so a $1,500 credit card payment and a $500 move to
+// savings were "spent", the card payment was the "biggest splurge", and "Transfer" could be the top
+// category. This is the Activity screen's own total (Transactions, totalSpent): money out, not a
+// Transfer or Income, and not a credit card payment (isCardPaymentCharge, the budget tally's rule,
+// which keeps a subscription paid by a bare "autopay"). A bank fee is money spent, as it is there.
+// `categoryOf` lets the caller pass the household's corrected category.
+const WRAPPED_NOT_SPENT = new Set(["Transfer", "Income"]);
+export function wrappedSpend(transactions, { categoryOf = (t) => t.cat, debts = [] } = {}) {
+  return (Array.isArray(transactions) ? transactions : [])
+    .filter(t => t && t.amount > 0 && !WRAPPED_NOT_SPENT.has(categoryOf(t)) && !isCardPaymentCharge(t, debts));
+}
+
 // `netWorth` — the current net worth (any finite number; NaN/undefined → 0).
 // `baseline` — an EARLIER net worth on the same currency basis, or null when none is trustworthy.
 //              The caller is responsible for only passing a baseline that is appropriately dated.

@@ -138,6 +138,84 @@ const ON = { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE };
       r = await checkout(D, U, "annual", { trial: false }, { everSubs: [{ id: "sub_old", status: "canceled" }] });
       s = sessionOf(D);
       t.eq([r.code, s && s.subscription_data.trial_period_days, s && s.payment_method_collection], [200, undefined, undefined], "2g …and with the plain price shown, the checkout charges as before, no trial");
+
+      // ── The real-world proof, 2026-11-23 (step 1A.2, Stripe test mode, a real database): the trial was LOST by
+      // anyone who opened checkout once and came back. The first checkout makes the subscriptions row that holds the
+      // Stripe customer (billing.js ensureCustomer), and the DATABASE gives that row its default status, "incomplete"
+      // (migration 0009). The rule read "no status" as "never subscribed", so on the way back the screen said
+      // "$11.99 a month, charged today" and a checkout that asked for the trial was refused. The stand-in database
+      // here applies no column default, which is why no test saw it: this block puts the default on, as Postgres does.
+      const m0009 = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0009_billing_subscriptions.sql"), "utf8");
+      const DEFAULT_STATUS = (m0009.match(/^\s*status\s+text\s+not null default '([a-z_]+)'/m) || [])[1];
+      t.eq(DEFAULT_STATUS, "incomplete", "2h-a the database gives a new subscriptions row the status \"incomplete\" (migration 0009)");
+      const { webTrialEligibleRow } = require("../netlify/functions/_lib/trialPlanFirst.js");
+      const asStored = (row) => ({ status: DEFAULT_STATUS, cancel_at_period_end: false, currency: "CAD", ...row });
+      t.eq(webTrialEligibleRow(asStored({ provider: "stripe", provider_customer_id: "cus_1", provider_subscription_id: null })), true,
+        "2h-b a row that only holds the Stripe customer, as the database stores it, has never had a subscription: the 14 days still apply");
+      t.eq([webTrialEligibleRow(null), webTrialEligibleRow({ provider: "stripe", provider_customer_id: "cus_1" })], [true, true], "2h-c no row, or a row with no status at all: eligible, as before");
+      t.eq(["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid"].map((status) => webTrialEligibleRow(asStored({ provider: "stripe", provider_subscription_id: "sub_1", status }))),
+        [false, false, false, false, false, false, false], "2h-d any row that names a subscription has had one, whatever its status (a first payment that failed is \"incomplete\" WITH a subscription): no trial");
+      t.eq(["trialing", "active", "past_due", "canceled", "unpaid", "incomplete_expired", "expired"].map((status) => webTrialEligibleRow(asStored({ provider: "stripe", provider_subscription_id: null, status }))),
+        [false, false, false, false, false, false, false], "2h-e a status other than the default, even with no subscription named: not eligible (only the untouched default counts as \"never\")");
+      t.eq([webTrialEligibleRow(asStored({ provider: "app_store", provider_subscription_id: null })), webTrialEligibleRow(asStored({ provider: "play_store", provider_subscription_id: null }))], [false, false],
+        "2h-e2 only the row the website's own checkout makes (provider stripe) is read this way: a store's row is as before");
+      // The whole walk: open checkout, leave, come back.
+      D = makeDb(); U = addUser(D, 1);
+      r = await checkout(D, U, "monthly", { trial: true });
+      t.eq([r.code, D.db.rows.subscriptions.length, D.db.rows.subscriptions[0] && D.db.rows.subscriptions[0].provider_customer_id], [200, 1, `cus_${U.slice(-4)}`], "2h-f the first checkout leaves the row that holds the customer");
+      D.db.rows.subscriptions[0] = asStored(D.db.rows.subscriptions[0]);             // what Postgres actually stored
+      D.db.stripe.length = 0;
+      r = await checkout(D, U, "monthly", { trial: true });
+      s = sessionOf(D);
+      t.eq([r.code, r.body.error || null, s && s.subscription_data.trial_period_days, s && s.payment_method_collection], [200, null, 14, "always"],
+        "2h-g they left Stripe's page and came back: the SAME 14 days free, not \"charged today\" and not refused");
+      r = await checkout(D, U, "monthly", { trial: false });
+      t.eq([r.code, r.body.error, r.body.trial], [409, "trial_changed", true], "2h-h …and a screen that showed them no trial is told one applies (nobody is charged on day one by a stale screen)");
+      D = makeDb(); U = addUser(D, 1);
+      r = await checkout(D, U, "monthly", { trial: true });
+      D.db.rows.subscriptions[0] = asStored(D.db.rows.subscriptions[0]);
+      r = await checkout(D, U, "monthly", { trial: true }, { everSubs: [{ id: "sub_old", status: "canceled" }] });
+      t.eq([r.code, r.body.error, r.body.trial], [409, "trial_changed", false], "2h-i Stripe is still asked: a customer who did have a subscription gets no second trial");
+      t.ok(/if \(web\) out\.web_trial_eligible = webTrialEligibleRow\(row\);/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "_lib", "trialPlanFirst.js"), "utf8")), "2h-j the plans screen's answer (web_trial_eligible) is the same rule, so the screen and the checkout agree");
+
+      // WORSE, found the same hour, and nothing to do with the trial switch: that same row was read as a LIVE
+      // subscription ("incomplete" is in STRIPE_LIVE_UNPAID, for a first payment still pending). So after one
+      // opened-and-left checkout the website answered 409 already_subscribed for ever ("This account already has a
+      // subscription."), a store app was told not to sell to them, and a store purchase could not take the row.
+      // On main since 2026-10-15 (94a754c).
+      const rules = require("../netlify/functions/_lib/planRules.js");
+      const store = require("../netlify/functions/_lib/storeSubscriptions.js");
+      const customerOnly = asStored({ provider: "stripe", provider_customer_id: "cus_1", provider_subscription_id: null, plan_key: null, last_event_at: null, current_period_end: null });
+      const firstPaymentPending = asStored({ provider: "stripe", provider_customer_id: "cus_1", provider_subscription_id: "sub_1", plan_key: "monthly", last_event_at: "2026-11-20T15:00:00Z", current_period_end: null });
+      t.eq([typeof rules.isCustomerOnlyRow, rules.isCustomerOnlyRow && rules.isCustomerOnlyRow(customerOnly), rules.isCustomerOnlyRow && rules.isCustomerOnlyRow(firstPaymentPending)], ["function", true, false],
+        "2h-k one rule says which row only holds the Stripe customer: no subscription named, no plan, no event ever written, and the database's default status");
+      t.eq(rules.isCustomerOnlyRow && [null, undefined, {}, { status: "incomplete", provider: "app_store" }, { status: "incomplete", plan_key: "monthly" }, { status: "incomplete", last_event_at: "2026-11-20T15:00:00Z" }, { status: "past_due" }, { status: "active" }].map((r) => rules.isCustomerOnlyRow(r)),
+        [false, false, false, false, false, false, false, false], "2h-l …and nothing else is: no row, a store's row, a row with a plan or an event on it, any other status");
+      t.eq([store.isLiveRow(customerOnly), store.isLiveRow(firstPaymentPending), store.isLiveRow(asStored({ provider: "stripe", provider_subscription_id: "sub_1", status: "past_due" }))], [false, true, true],
+        "2h-m the customer-only row is NOT a live subscription; a first payment still pending and a failed renewal still are");
+      // The store's own answer reads fewer columns: with only those, the rule must still hold.
+      const asStoreHoldReads = ({ provider, status, current_period_end, plan_key, last_event_at, updated_at }) => ({ provider, status, current_period_end, plan_key, last_event_at, updated_at });
+      t.eq([store.isLiveRow(asStoreHoldReads(customerOnly)), store.isLiveRow(asStoreHoldReads(firstPaymentPending))], [false, true], "2h-n …also when only the columns the store app's calls read are there");
+      t.eq([store.mayReplace(customerOnly, { provider: "app_store", status: "active" }), store.mayReplace(firstPaymentPending, { provider: "app_store", status: "active" })], [true, false],
+        "2h-o a store purchase may take the place of the customer-only row (it could not), never of a web payment still pending");
+      const billingSrc = fs.readFileSync(BILLING_PATH, "utf8");
+      const reads = [...billingSrc.matchAll(/\.from\("subscriptions"\)\.select\("([^"]+)"\)/g)].map((m) => m[1]).filter((cols) => /\bstatus\b/.test(cols));
+      t.ok(reads.length >= 4 && reads.every((cols) => /\bprovider_subscription_id\b/.test(cols) && /\bplan_key\b/.test(cols) && /\blast_event_at\b/.test(cols)),
+        "2h-p every read of the row's status in billing.js also reads the three things that tell the customer-only row apart");
+      // The walk, with the trial switch OFF (the rule from 2026-10-15 to 2026-11-18, and for anyone not offered a trial).
+      env();
+      D = makeDb(); U = addUser(D, 1);
+      r = await checkout(D, U, "monthly");
+      t.eq([r.code, D.db.rows.subscriptions.length], [200, 1], "2h-q switch off: the first checkout is made and leaves the customer's row");
+      D.db.rows.subscriptions[0] = asStored(D.db.rows.subscriptions[0]);
+      D.db.stripe.length = 0;
+      r = await checkout(D, U, "monthly");
+      t.eq([r.code, r.body.error || null, !!sessionOf(D)], [200, null, true], "2h-r they left and came back: a new checkout, not \"This account already has a subscription\"");
+      D.db.rows.subscriptions[0] = { ...firstPaymentPending, user_id: U };
+      D.db.stripe.length = 0;
+      r = await checkout(D, U, "monthly");
+      t.eq([r.code, r.body.error, sessionOf(D)], [409, "already_subscribed", null], "2h-s a first payment really pending is still refused a second checkout (no double charge), as before");
+      env(ON);
       D = makeDb(); U = addUser(D, 1); D.db.rows.subscriptions.push({ user_id: U, provider: "app_store", status: "canceled", current_period_end: "2026-11-15T00:00:00Z" });
       r = await checkout(D, U, "monthly", { trial: true });
       t.eq([r.code, r.body.trial], [409, false], "2h an account that had a store subscription before gets no web trial");
@@ -173,6 +251,33 @@ const ON = { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE };
       // Review round (M3): the checkout itself asks Stripe for the subscription, so the row says trialing from the start.
       t.eq([D.db.rows.subscriptions.find((r) => r.user_id === U).status, D.db.rows.subscriptions.find((r) => r.user_id === U).current_period_end], ["trialing", new Date((T + 14 * DAY) * 1000).toISOString()],
         "2j2 the checkout's row says trialing, with the trial's end, from the start");
+      // The real-world proof, 2026-11-23 (step 1A.2): what Stripe REALLY sends for a trial checkout. The event read
+      // from Stripe test mode (API 2026-08-26.dahlia) says payment_status "paid" with amount_total 0 (the $0 first
+      // invoice is paid), not "no_payment_required". The row was written "active" for the whole trial, so the site
+      // never showed the first-charge date it promises once Stripe confirms. And the trial's start, heard just
+      // before (customer.subscription.created, "trialing"), was written over by it.
+      {
+        const R = makeDb(); const V = addUser(R, 7);
+        R.db.subs = { sub_real: { id: "sub_real", status: "trialing", trial_end: T + 14 * DAY, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } } };
+        const realTrialSub = { id: "sub_real", customer: `cus_${V.slice(-4)}`, status: "trialing", metadata: { user_id: V, plan_key: "monthly", trial_plan_first: "1" }, trial_start: T, trial_end: T + 14 * DAY,
+          items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } };
+        const rowOf = () => R.db.rows.subscriptions.find((r) => r.user_id === V) || {};
+        t.eq(await stripeEvent(R, "evt_real1", "customer.subscription.created", realTrialSub, T), 200, "2j3 the order Stripe really used: the trial's start first");
+        t.eq(rowOf().status, "trialing", "2j4 …trialing");
+        t.eq(await stripeEvent(R, "evt_real2", "checkout.session.completed", { customer: `cus_${V.slice(-4)}`, subscription: "sub_real", mode: "subscription", status: "complete",
+          payment_status: "paid", amount_total: 0, amount_subtotal: 0, metadata: { user_id: V, plan_key: "monthly" } }, T), 200, "2j5 …then the completed checkout, saying \"paid\" for nothing charged");
+        t.eq([rowOf().status, rowOf().current_period_end], ["trialing", new Date((T + 14 * DAY) * 1000).toISOString()],
+          "2j6 the row still says trialing, with the trial's end (it said \"active\": no first-charge date on the site)");
+        // A checkout that really was paid stays "active", and a paid one whose subscription Stripe calls active is never called a trial.
+        const P = makeDb(); const W = addUser(P, 8);
+        P.db.subs = { sub_paid: { id: "sub_paid", status: "active", trial_end: null, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 30 * DAY }] } } };
+        await stripeEvent(P, "evt_paid1", "checkout.session.completed", { customer: `cus_${W.slice(-4)}`, subscription: "sub_paid", mode: "subscription", status: "complete", payment_status: "paid", amount_total: 1199, metadata: { user_id: W, plan_key: "monthly" } }, T);
+        t.eq((P.db.rows.subscriptions.find((r) => r.user_id === W) || {}).status, "active", "2j7 a checkout that was really charged is \"active\", as before");
+        const U2 = makeDb(); const X = addUser(U2, 9);
+        U2.db.subs = { sub_debit: { id: "sub_debit", status: "trialing", trial_end: T + 14 * DAY, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } } };
+        await stripeEvent(U2, "evt_unpaid1", "checkout.session.completed", { customer: `cus_${X.slice(-4)}`, subscription: "sub_debit", mode: "subscription", status: "complete", payment_status: "unpaid", metadata: { user_id: X, plan_key: "monthly" } }, T);
+        t.eq((U2.db.rows.subscriptions.find((r) => r.user_id === X) || {}).status, "trialing", "2j8 an unpaid checkout keeps Stripe's own word for the subscription (P3-04, unchanged)");
+      }
       t.eq(await stripeEvent(D, "evt_c2", "customer.subscription.created", trialSub(), T + 1), 200, "2k on: the trial's start is heard");
       t.eq(D.db.rows.subscriptions.find((r) => r.user_id === U).status, "trialing", "2l …and the row says trialing, with the trial's end");
       t.eq(await stripeEvent(D, "evt_c3", "customer.subscription.deleted", trialSub({ status: "canceled", canceled_at: T + 3 * DAY, ended_at: T + 3 * DAY }), T + 3 * DAY), 200, "2m cancelled on day 3");

@@ -156,6 +156,14 @@ export function simulateDebtPayoff({ balance, apr, monthlyPayment }) {
     remaining = remaining + interest - pay;
     n++;
   }
+  // The loop stops at 1,200 months (100 years). With balance still owed at that point the debt is NOT
+  // paid off, and the "totals" would be 100 years of payments passed off as the whole cost: a low-rate
+  // debt on a very small payment read as "paid off in 1,200 months" with most of it still owed, and a
+  // 0% loan read as negative interest. Same shape as a payment that never covers the interest, marked
+  // beyondHorizon so a caller can tell the two apart (tests/review1122Math.test.cjs, P4-04).
+  if (remaining > 0.005) {
+    return { monthsToPayoff: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffInMonths: Infinity, payoffDate: null, beyondHorizon: true };
+  }
   const totalPaid     = _round(paid);
   const totalInterest = _round(paid - bal);
 
@@ -447,6 +455,15 @@ export function isInvestmentAccount(a) {
 //      Plaid is the source of truth for those. If liabilities is missing/empty,
 //      fall back to using manual debts as-is.
 
+// The order a payoff method works through the debts (Goals > Debt Sim, "Payoff Method"):
+// avalanche = highest rate first, snowball = smallest balance first. Returns a new array.
+export function orderDebtsForMethod(debts, method) {
+  const list = Array.isArray(debts) ? [...debts] : [];
+  return method === "snowball"
+    ? list.sort((a, b) => num(a && a.balance) - num(b && b.balance))
+    : list.sort((a, b) => num(b && b.rate) - num(a && a.rate));
+}
+
 // Sprint 4b: fallback rates used ONLY when the real APR is missing (user left it blank, or
 // Plaid returned null). Every fabricated rate is tagged rateEstimated:true so the UI labels it
 // "Assumed rate, tap to enter yours" (prompt 3b), so the payoff math then never silently presents an
@@ -562,48 +579,66 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
         ...(hand ? { linked: true } : {}),
       };
     });
-  const fedIds = new Set(plaidCredit.map(c => String(c.account_id)));
+  // Every account the bank reports in detail, of any kind. It was the cards only, so a hand-entered
+  // mortgage or student loan linked to its bank account was listed twice: once from the bank's detail
+  // and once as the linked pair (review 2026-11-22, P4-09).
+  const fedIds = new Set([...plaidCredit, ...plaidMortgage, ...plaidStudent].map(c => String(c.account_id)));
 
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
     .map(m => {
-      const real = num(m.interestRate) || entered(m.account_id);
+      const pair = handFor(m.account_id); // C8a: the hand-entered debt linked to this mortgage, if any
+      const hand = pair ? pair[0] : null;
+      const real = (hand && num(hand.rate)) || num(m.interestRate) || entered(m.account_id);
+      const handMin = hand && num(hand.min) > 0 ? num(hand.min) : 0;
       return {
         name: m.name || "Mortgage",
         balance: m.balance || 0,
         rate: real > 0 ? real : DEFAULT_RATE_MORTGAGE,
         rateEstimated: !(real > 0),
-        min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
-        ...(m.monthlyPayment ? {} : { minEstimated: true }),
+        min: handMin || m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
+        ...(handMin || m.monthlyPayment ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "mortgage",
         account_id: m.account_id,
+        ...(hand ? { linked: true } : {}),
       };
     });
 
   const studentEntries = plaidStudent
     .filter(s => (s.balance || 0) > 0)
     .map(s => {
-      const real = num(s.interestRate) || entered(s.account_id);
+      const pair = handFor(s.account_id); // C8a: the hand-entered debt linked to this loan, if any
+      const hand = pair ? pair[0] : null;
+      const real = (hand && num(hand.rate)) || num(s.interestRate) || entered(s.account_id);
+      const handMin = hand && num(hand.min) > 0 ? num(hand.min) : 0;
       return {
         name: s.name || "Student Loan",
         balance: s.balance || 0,
         rate: real > 0 ? real : DEFAULT_RATE_STUDENT,
         rateEstimated: !(real > 0),
-        min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
-        minEstimated: true,
+        min: handMin || Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
+        ...(handMin ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "student",
         account_id: s.account_id,
+        ...(hand ? { linked: true } : {}),
       };
     });
 
-  // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
+  // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.),
+  // and the bank's own balance rows (fromBank) for accounts the bank gave NO detail for. Those rows used
+  // to be dropped whenever any detail existed at all, so one card or loan reported in detail hid every
+  // other bank debt: a second bank's card, a line of credit, a car loan (review 2026-11-22, P4-08). A
+  // row whose account IS reported in detail is still dropped (the detail is that debt), as is a row
+  // with no account id, and the bank's row of a linked pair (isFoldedRow).
+  const uncoveredBankRow = (d) => !!(d && d.fromBank && d.account_id != null && d.account_id !== "" && !fedIds.has(String(d.account_id)) && !isFoldedRow(d));
   const manualStandalones = manual
     .map((d, manualIndex) => [d, manualIndex])
+    .filter(([d]) => !!d)
     // C8a: a linked hand-entered debt is folded into the bank's entry for its account; with no such
     // entry, it is one entry built from the account (linkedEntry).
-    .filter(([d, manualIndex]) => !d.fromBank && !(isLinkedHand(d, manualIndex) && fedIds.has(String(d.sameAsAccountId))) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
+    .filter(([d, manualIndex]) => (!d.fromBank || uncoveredBankRow(d)) && !(isLinkedHand(d, manualIndex) && fedIds.has(String(d.sameAsAccountId))) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
     .map(([d, manualIndex]) => {
       if (isLinkedHand(d, manualIndex)) return linkedEntry(d, manualIndex);
       const real = num(d.rate);
@@ -1532,6 +1567,11 @@ export function netWorthRows(data = {}) {
 // The date is the caller's: "already paid" asks about one occurrence, daily spending about the whole history.
 const _normBillName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 export const NOT_A_PAYMENT_RX = /\b(refund(ed)?|revers(al|ed|e)|return(ed)?|charge ?back)\b/i;
+// The name half of that rule, for a caller with its own amount and date rule (billReconcile.js).
+export function billNameMatches(txnName, billName) {
+  const b = _normBillName(billName), n = _normBillName(txnName);
+  return b.length >= 3 && !!n && (n.includes(b) || b.includes(n));
+}
 export function paysABill(t, b) {
   if (!t || !b) return false;
   if (!(Number(t.amount) > 0) || t.pending || t.transferPairId || NOT_A_PAYMENT_RX.test(String(t.name || ""))) return false;

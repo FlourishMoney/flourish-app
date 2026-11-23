@@ -15,10 +15,12 @@ import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch, debtAccountKindWord } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { splitLoanActivity, storeLoanActivity, moveSavedLoanActivity, loanActivityFor, readLoanActivity, isLoanAccount, LOAN_ACTIVITY_KEY } from "./lib/loanActivity.js";
-import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
+import { retainAccounts, retainLiabilities, retainHoldings, promoteAccounts, dropBankData, fullSyncOwedAfter, FULL_SYNC_OWED_KEY } from "./lib/multibank.js";
+import { afterTokenMigration, LEGACY_TOKEN_TRIES_KEY } from "./lib/legacyTokenMigration.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
-import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
-import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
+import { decideConsentAction, canProceedAfterAccept, noteRevokeResult, revokePending, clearRevokePending } from "./lib/consentHeal.js";
+import { formatWrappedNetWorth, wrappedSpend } from "./lib/moneyWrapped.js";
+import { orderDebtsForMethod } from "./lib/financialCalculations.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
 import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, portfolioStartFor, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
@@ -38,8 +40,9 @@ import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDai
          nextDepositFor, daysToNextDepositFor, isDepositTodayFor, needsOnFileStamp, stampOnFile, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso, sheetDefaults, sheetSave,
          MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel } from "./lib/incomeReconcile.js";
-import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
-import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance } from "./lib/statementImport.js";
+import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill, withBillOverride } from "./lib/billReeval.js";
+import { transactionsFingerprint } from "./lib/reconcileLoop.js";
+import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate, closingBalancePrefill, csvClosingBalance, splitCsvLine } from "./lib/statementImport.js";
 import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amountShownFor, balanceEntryProblem, formatAsOf, todayISO,
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, formatPrice } from "./lib/pricing.js";
@@ -76,6 +79,8 @@ import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, cancelAllScheduled } from "./lib/notifications.js";
+import { latestOnly } from "./lib/latestOnly.js";
+import { bankDisconnectTitle, BANK_DISCONNECT_BODY, DEBT_OVER_100_YEARS, AI_TURN_ON_FAILED } from "./lib/reviewWords.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
@@ -144,11 +149,12 @@ import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportC
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { sendActivationOnce, hasDataSource } from "./lib/activation.js";
 import { sendOnboardingCount, noteFirstSignin, linkFailDetail } from "./lib/onboardingCounts.js";
-import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys } from "./lib/persistence.js";
+import { buildDbBlob, withoutRenderOnly, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate, readSideKeys, manualTransactions, readMembership, fetchHouseholdData, saveHouseholdData, fetchPersonalKeys, savePersonalKeys, flushPendingSave, beaconRequest } from "./lib/persistence.js";
 import { HOUSEHOLD_WORDS, householdErrorLine, extraSubscriptionLine } from "./lib/householdWords.js";
 import { CREATOR_WORDS, creatorErrorLine } from "./lib/creatorWords.js";
 import { captureCreatorCode, creatorCodeInput, forgetCreatorCode } from "./lib/creatorCode.js";
-import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval } from "./lib/household.js";
+import { HOUSEHOLD_STAMP_KEY, rememberInviteToken, recallInviteToken, forgetInviteToken, buildHouseholdBlob, mergeHouseholdBlobs, sideKeysForMember, personalKeysOf, householdHydratePlan, coachProfileFor, inviteTokenFromSearch, keepSyncedTransactions, viewerName, localAfterRemoval, withoutOwnBankAnswers, PERSONAL_RETRY_MS } from "./lib/household.js";
+import { buildExport, readExportStores, deliverExport } from "./lib/dataExport.js";
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -392,7 +398,7 @@ const CC = {
 // Returns a filtered + enriched tax tip array based on profile.
 // Surfaces only credits that apply to the user's life stage, province/state,
 // income types, and family situation.
-function getPersonalizedTaxCredits(profile) {
+function getPersonalizedTaxCredits(profile, { debts = [] } = {}) {
   const country   = profile?.country   || "CA";
   const province  = profile?.province  || "";   // unset: federal tips only (2026-10-23)
   const rawLifeStage = profile?.lifeStages || profile?.lifeStage || ["t4"];
@@ -407,6 +413,9 @@ function getPersonalizedTaxCredits(profile) {
   const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
   const isSenior  = (age&&age>=65)||hasStage("senior","retired");
   const isStudent = hasStage("student");
+  // The interest tip follows the loan, not the life stage: most people paying a student loan have graduated
+  // (review of 2026-11-22, P7-05). A debt the household named or typed as a student loan, or one the bank reported as one.
+  const hasStudentLoan = (debts||[]).some(d => d && (d.debtType === "student" || /student|osap|nslsc/i.test(`${d.name||""} ${d.type||""}`)));
   const cfg = CC[country] || CC.CA;
 
   // Start with base country tips, then add life-stage + province specific ones
@@ -420,7 +429,7 @@ function getPersonalizedTaxCredits(profile) {
     if (t.includes("fhsa") && (isHomeowner || isSenior)) return false;
     if (t.includes("first home") && isHomeowner) return false;
     if (t.includes("resp") && !hasKids) return false;
-    if (t.includes("student loan interest") && !isStudent) return false;
+    if (t.includes("student loan interest") && !isStudent && !hasStudentLoan) return false;
     if (t.includes("home office") && isStudent && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     // Self-employment tips — only for self-employed
@@ -826,7 +835,7 @@ async function callCreator(action, params = {}) {
 // Round-3: once the tokens are safely server-side, the device copies go. A Plaid access token left in
 // localStorage after migration is a live bank credential sitting where any script on the page can read it.
 function clearLegacyPlaidTokens() {
-  try { localStorage.removeItem("flourish_plaid_token"); localStorage.removeItem("flourish_plaid_tokens"); } catch {}
+  try { localStorage.removeItem("flourish_plaid_token"); localStorage.removeItem("flourish_plaid_tokens"); localStorage.removeItem(LEGACY_TOKEN_TRIES_KEY); } catch {}
 }
 async function migrateLocalStorageTokensToSupabase() {
   // Already migrated in an earlier session: the tokens are server-side, so any device copy left
@@ -860,8 +869,16 @@ async function migrateLocalStorageTokensToSupabase() {
     const successes = resp.successes || [];
     const failures = resp.failures || [];
     console.log(`[d1e] migrated ${successes.length} tokens, ${failures.length} failures`);
-    // Mark done regardless — failures are recorded server-side as status:active rows that
-    // failed /item/get, OR they're tokens that revoked at the bank. User will re-link if needed.
+    // Review 2026-11-22 (P7-01): a token leaves this device only once the server holds it, or once it can never be
+    // saved (lib/legacyTokenMigration.js). One the server could not save this time (the bank's lookup timed out, a
+    // write failed) is the only copy there is: it stays, alone, for the next session, a few times at most.
+    const plan = afterTokenMigration(merged, resp, parseInt(localStorage.getItem(LEGACY_TOKEN_TRIES_KEY) || "0", 10) || 0);
+    if (!plan.done) {
+      localStorage.setItem("flourish_plaid_tokens", JSON.stringify(plan.keep));
+      localStorage.removeItem("flourish_plaid_token");
+      localStorage.setItem(LEGACY_TOKEN_TRIES_KEY, String(plan.tries));
+      return;
+    }
     localStorage.setItem("flourish_d1e_migrated", "1");
     clearLegacyPlaidTokens();
   } catch (err) {
@@ -932,6 +949,15 @@ function isFullSyncStale() {
 }
 function stampFullSync() {
   try { localStorage.setItem("flourish_last_full_sync", Date.now().toString()); } catch {}
+}
+// Review 2026-11-22 (P7-02): the stamp above is one for every bank, so a bank whose full read FAILED in that round
+// waited another week for it. Such a bank is remembered here (its id only) and read in full on the next refresh,
+// until it works (lib/multibank.js fullSyncOwedAfter).
+function readFullSyncOwed() {
+  try { const v = JSON.parse(localStorage.getItem(FULL_SYNC_OWED_KEY) || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
+}
+function noteFullSyncRound(owed, items, results, fullResync) {
+  try { localStorage.setItem(FULL_SYNC_OWED_KEY, JSON.stringify(fullSyncOwedAfter(owed, items, results, fullResync))); } catch {}
 }
 
 // Sprint Z #3: drain a truncated sync within one cycle. The server caps pages per call and flags
@@ -1119,7 +1145,9 @@ const NOTIF_DEFAULTS = { permissionAsked:false, billDue:true, lowBalance:true, u
 // reschedule the desired set. Because planNotifications derives every fire time from stored data
 // (never from `now`) and ids are stable (notifId), this is idempotent — an edit overwrites, a removed
 // bill's reminder disappears, and re-running with unchanged data produces the identical schedule.
-async function reconcileNotifications(data) {
+// One run at a time and the newest data wins (lib/latestOnly.js, review of 2026-11-22 P7-03): a run still working
+// through its list can no longer schedule out-of-date reminders after a newer run's cancel, or cancel a newer run's.
+const reconcileNotifications = latestOnly(async function reconcileNotificationsNow(data) {
   const TYPES = ["billDue", "lowBalance", "unusualAmount", "meetingReminder"];
   const perm = await getNotificationPermission();
   const toggles = { ...NOTIF_DEFAULTS, ...(data?.profile?.notifications || {}) };
@@ -1133,7 +1161,7 @@ async function reconcileNotifications(data) {
       await scheduleNotification({ id: n.id, type: n.type, title: n.title, body: n.body, at: n.at });
     }
   }
-}
+});
 
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
@@ -1923,6 +1951,8 @@ function lowStretchLine(forecast, ev) {
     : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in ${rangePhrase(Math.max(0, list.length - 1))}.`;
 }
 
+// The what-if being shown, in words: the Time Machine's banner and the matching line in a day's breakdown.
+const scenarioPhrase = (sc) => sc.type === "purchase" ? `$${sc.amount} purchase` : sc.type === "debt" ? `+$${sc.extraPayment}/mo on debt` : `$${sc.monthlyContribution}/mo invested`;
 function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
@@ -1961,7 +1991,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
         <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:14}}>🔮</span>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>
-            Showing impact of: <strong style={{color:C.teal}}>{activeScenario.type === "purchase" ? `$${activeScenario.amount} purchase` : activeScenario.type === "debt" ? `+$${activeScenario.extraPayment}/mo on debt` : `$${activeScenario.monthlyContribution}/mo invested`}</strong>
+            Showing impact of: <strong style={{color:C.teal}}>{scenarioPhrase(activeScenario)}</strong>
           </div>
           {setActiveScenario && (
             <button aria-label="Remove" onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
@@ -2032,9 +2062,12 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                         deposits: ev.income>0 ? depositLines(ev) : null,
                         bills: ev.bills, avgDailySpend: avgDaily,
                         closing: baseBalance, isToday: ev.day===0,
+                        // A what-if amount leaving that day is its own line, in the banner's words, never part of
+                        // "Est. daily spend" (review of 2026-11-22, P4-05).
+                        scenario: ev.scenario, scenarioLabel: activeScenario ? scenarioPhrase(activeScenario) : "",
                       });
-                      const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, spend:C.muted };
-                      const DOT   = { opening:null, income:C.green, bill:C.gold, spend:C.muted };
+                      const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, scenario:C.teal, spend:C.muted };
+                      const DOT   = { opening:null, income:C.green, bill:C.gold, scenario:C.teal, spend:C.muted };
                       const ICON  = { income:"💰 ", bill:"📅 ", spend:"🛒 " };
                       return (<>
                         {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
@@ -2205,6 +2238,9 @@ const _payoffMonth = (iso) => { const [y, m] = String(iso || "").split("-").map(
 function debtResultSentence(r, extraPayment, currentPayment) {
   const x = formatMoney(extraPayment), b = r.baseline, a = r.boosted;
   const fin = (v) => Number.isFinite(v);
+  // The payment being looked at covers the interest but would still take over 100 years: no date, no interest total,
+  // and the line approved for it (lib/reviewWords.js). "Does not cover the interest" is not true of it.
+  if (!fin(a.monthsToPayoff) && a.beyondHorizon) return DEBT_OVER_100_YEARS;
   if (!fin(b.monthsToPayoff) && !fin(a.monthsToPayoff))
     return `At ${formatMoney(currentPayment)} a month, or ${x} more, the payment does not cover the interest, so the balance is not paid off.`;
   if (!fin(b.monthsToPayoff))
@@ -2763,7 +2799,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || [];
-  const neg = t.filter(x => x.amount > 0);  // expenses are positive in Plaid
+  const neg = wrappedSpend(t, { debts: (data && data.debts) || [] });  // money spent: not a card payment or a transfer (lib/moneyWrapped.js)
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
   // Real Plaid/Flourish category names
@@ -3076,7 +3112,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   // tab renders. Reading it here means the card can only ever name credits the user is about to see,
   // and the card disappears when there are none rather than inventing something to say.
   {
-    const topCredits = getPersonalizedTaxCredits(data.profile)
+    const topCredits = getPersonalizedTaxCredits(data.profile, { debts: buildDebtListForSimulator(data.debts, data.liabilities, data) })
       .filter(t => t.priority === "high")
       .slice(0, 3)
       .map(t => t.title.replace(/\s*\([^)]*\)\s*$/, "").split(/\s+[—:]\s*/)[0].trim());
@@ -3145,7 +3181,10 @@ const WRAP_SCRIM = "linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6))";
 const WRAP_SUB = "rgba(255,255,255,0.86)";
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
-  const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
+  // What counts as spent is one rule (lib/moneyWrapped.js wrappedSpend): money out, not a transfer or income,
+  // not a credit card payment. It used to be every amount above zero.
+  const _wrapOv = getCatOvById();
+  const txns = wrappedSpend(data.transactions, { categoryOf: t => effCat(t, _wrapOv), debts: data.debts || [] });
   const _toMoW = toMonthly; // Bug 1: canonical converter
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0)) * 12; // Bug 5: no fake income fallback
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
@@ -3835,7 +3874,7 @@ function parseCSVStatement(text) {
   if (lines.length < 2) return null;
   const sep = lines[0].includes('\t') ? '\t' : ',';
   const clean = s => s.trim().replace(/^["']|["']$/g,'');
-  const headers = lines[0].split(sep).map(h => clean(h).toLowerCase());
+  const headers = splitCsvLine(lines[0], sep).map(h => clean(h).toLowerCase()); // G9: quote-aware (lib/statementImport.js)
   const dateIdx = headers.findIndex(h => /date|posted|trans/.test(h));
   const descIdx = headers.findIndex(h => /desc|merchant|narr|name|payee|detail|memo/.test(h));
   const amtIdx  = headers.findIndex(h => /^amount$|^amt$/.test(h));
@@ -3843,7 +3882,7 @@ function parseCSVStatement(text) {
   const creditIdx=headers.findIndex(h => /credit|deposit|^in$/.test(h));
   if (dateIdx < 0 || descIdx < 0) return null;
   return lines.slice(1).map((line, i) => {
-    const cols = line.split(sep).map(clean);
+    const cols = splitCsvLine(line, sep).map(clean);
     let amount = 0;
     if (amtIdx >= 0) {
       amount = parseFloat(cols[amtIdx]?.replace(/[$, ]/g,'') || 0);
@@ -5303,10 +5342,12 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts
   learned.ran = true;
   try {
     // Fan out: fetch accounts + transactions for each item in parallel
+    const owed = readFullSyncOwed(); // P7-02: banks whose last full read failed
     const [acctResults, txnResults] = await Promise.all([
       Promise.allSettled(items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt }))),
-      Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))),
+      Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, fullResync || owed.includes(it.item_id)))),
     ]);
+    noteFullSyncRound(owed, items, txnResults, fullResync);
 
     // Sprint 1b: track per-item success and stamp each fresh account with its item_id, so a
     // PARTIAL multi-bank failure no longer wipes the bank that failed this round. Previously
@@ -5417,6 +5458,17 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false, opts
 }
 
 
+// The panel's Spending tab: this month's charges, split into what counts as spending and what is left out
+// (a transfer, income, a fee, a card payment). catOf is the category AS THE HOUSEHOLD CORRECTED IT (effCat);
+// the split used to read the category each transaction arrived with, so a card payment the household had
+// moved to Transfer was still in "Total included spending" (review of 2026-11-22, P7-04).
+function transparencySpendSplit(thisMonthTxns, catOf = (t) => t.cat) {
+  const isCardPay = (t) => CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+  const leftOut = (t) => { const c = catOf(t); return c === "Transfer" || c === "Income" || c === "Fees" || isCardPay(t); };
+  const charges = (thisMonthTxns||[]).filter(t => t.amount > 0);
+  return { included: charges.filter(t => !leftOut(t)), excluded: charges.filter(leftOut) };
+}
+
 // ─── DATA TRANSPARENCY PANEL ─────────────────────────────────────────────────
 // Shows exactly how every key number is calculated — income, spending, balance,
 // what was excluded and why (credit card payments, transfers, etc.)
@@ -5427,19 +5479,27 @@ function DataTransparencyPanel({data, onClose}) {
   // ── Rebuild calc data with full audit trail ──────────────────────────────
   const profile   = data.profile || {};
   const accounts  = data.accounts || [];
-  const incomes   = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+  // The same incomes cashFlow counts (a "My pay varies" income may carry only its expected amount).
+  const incomes   = (data.incomes || []).filter(i => num(i.amount) > 0 || (i.isVariable && num(i.expectedAmount) > 0));
   const bills     = data.bills || [];
   const txns      = data.transactions || [];
   const now       = new Date();
 
   // Income inputs
   // Bug 1: canonical toMonthly import (handles annually).
-  const incomeRows = incomes.map(i => ({
-    label: i.label || i.type || "Income",
-    entered: parseFloat(i.amount||0),
-    freq: i.freq || "biweekly",
-    monthly: toMonthly(i.amount, i.freq),
-  }));
+  // Each income at its GOING RATE (forecastEdits.monthlyIncomeBasis, the helper cashFlow reads): the amount
+  // entered, unless the household changed it from a date on, stopped it, or said the pay varies (then its low
+  // end). This panel explains the app's income figure, so it must be that figure: it used to convert the typed
+  // amount, and disagreed with every other screen for exactly those households (review of 2026-11-22, G4).
+  const incomeRows = incomes.map(i => {
+    const perDeposit = num(monthlyIncomeBasis(i, data, now));
+    return {
+      label: i.label || i.type || "Income",
+      entered: perDeposit,
+      freq: i.freq || "biweekly",
+      monthly: toMonthly(perDeposit, i.freq),
+    };
+  });
   const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0); // Bug 5: no fake income fallback
 
   // Spending audit — this month
@@ -5448,21 +5508,10 @@ function DataTransparencyPanel({data, onClose}) {
     const d = new Date(t.date + "T12:00:00");
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
-  const included = thisMonthTxns.filter(t =>
-    t.amount > 0 &&
-    t.cat !== "Transfer" &&
-    t.cat !== "Income" &&
-    t.cat !== "Fees" &&
-    !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-  );
-  const excluded = thisMonthTxns.filter(t =>
-    t.amount > 0 && (
-      t.cat === "Transfer" ||
-      t.cat === "Income" ||
-      t.cat === "Fees" ||
-      CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-    )
-  );
+  // By the category the household corrected each transaction to (P7-04), as Spending and the budgets read it.
+  const _catOvById = getCatOvById();
+  const catOf = (t) => effCat(t, _catOvById);
+  const { included, excluded } = transparencySpendSplit(thisMonthTxns, catOf);
   const totalSpend = included.reduce((s,t) => s+t.amount, 0);
 
   // Balance audit — this panel exists to EXPLAIN the Today balance, so it must read the same owner,
@@ -5487,7 +5536,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   // Category breakdown
   const catBreakdown = {};
-  included.forEach(t => { catBreakdown[t.cat] = (catBreakdown[t.cat]||0) + t.amount; });
+  included.forEach(t => { const c = catOf(t); catBreakdown[c] = (catBreakdown[c]||0) + t.amount; });
   const catRows = Object.entries(catBreakdown).sort((a,b) => b[1]-a[1]);
 
   const TabBtn = ({id, label}) => (
@@ -5598,16 +5647,16 @@ function DataTransparencyPanel({data, onClose}) {
               {excluded.slice(0,8).map((t,i)=>(
                 <Row key={i}
                   label={t.name}
-                  sub={`${t.cat} · excluded: ${
+                  sub={`${catOf(t)} · excluded: ${
                     CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment" :
-                    t.cat==="Transfer"?(()=>{
+                    catOf(t)==="Transfer"?(()=>{
                       const matched = (data.debts||[]).find(d=>{
                         const min=parseFloat(d.min||0), bal=parseFloat(d.balance||0);
                         return (min>0&&Math.abs(t.amount-min)<5)||(bal>0&&Math.abs(t.amount-bal)<50);
                       });
                       return matched?`CC payment → ${matched.name}`:"account transfer";
                     })():
-                    t.cat==="Fees"?"bank fee":"income"
+                    catOf(t)==="Fees"?"bank fee":"income"
                   }`}
                   value={`$${(t.amount||0).toFixed(0)}`}
                   color={C.muted}
@@ -6000,7 +6049,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
   const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
   const [checklistDismissed,setChecklistDismissed]=useState(()=>{ try{return localStorage.getItem(CHECKLIST_DISMISSED_KEY)==="1";}catch{return false;} });
-  const showsNumber = hasCashAccount && !SafeSpendEngine.calculate(data).noIncome;
+  const showsNumber = hasCashAccount && !_ss.noIncome;   // _ss above is this same calculation: not made twice
   useEffect(()=>{ if(showsNumber && !data.demo && !numberSeen){ try{localStorage.setItem(NUMBER_SEEN_KEY,"1");}catch{} setNumberSeen(true); } },[showsNumber,data.demo,numberSeen]);
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -7206,7 +7255,7 @@ function BillManager({data, setAppData, onClose}){
   const FREQS = ["weekly","biweekly","monthly","quarterly","annually"];
 
   const saveBill = name => {
-    if(!amount||!name) return;
+    if(!(parseFloat(amount)>0)||!name) return; // an amount above zero: a negative bill was ADDED to the forecast as money in
     const newBill = billType==="one_off"
       ? {name, amount, isoDate:oneOffDate, date:String(parseInt((oneOffDate||"").slice(8,10))||1), type:"one_off", manuallyAdded:true}
       : {name, amount, date:dueDate, type:billType, freq, manuallyAdded:true};
@@ -7230,18 +7279,17 @@ function BillManager({data, setAppData, onClose}){
     if (field!=="freq") return {...prev, bills};
     // Sprint Q item 2: persist the cadence correction (keyed by name) so detection won't revert it.
     const norm = String((prev.bills||[])[i]?.name||"").toLowerCase().trim();
-    const ov = prev.userBillOverrides || {};
-    return { ...prev, bills, userBillOverrides: { removed: ov.removed||[], typed: ov.typed||{}, cadence: { ...(ov.cadence||{}), [norm]: val } } };
+    // withBillOverride keeps every other correction (this used to drop the corrected amounts; review 2026-11-22, P8-01).
+    return { ...prev, bills, userBillOverrides: withBillOverride(prev.userBillOverrides, "cadence", norm, val) };
   });
   // Tier 4: type toggle updates the bill AND records userBillOverrides.typed (for re-detection).
   const setBillCatType = (i, name, tp) => {
     const norm = String(name||"").toLowerCase().trim();
     setAppData(prev=>{
-      const ov = prev.userBillOverrides || {};
       return {
         ...prev,
         bills:(prev.bills||[]).map((b,x)=>x===i?{...b,type:tp}:b),
-        userBillOverrides: { removed: ov.removed||[], typed: { ...(ov.typed||{}), [norm]: tp }, cadence: ov.cadence||{} },
+        userBillOverrides: withBillOverride(prev.userBillOverrides, "typed", norm, tp),
       };
     });
   };
@@ -7749,7 +7797,9 @@ function ManualBillForm({data, setAppData, onClose}){
     const now = new Date();
     const clampFor = (y,m) => Math.min(dom, new Date(y, m+1, 0).getDate());
     let d = new Date(now.getFullYear(), now.getMonth(), clampFor(now.getFullYear(), now.getMonth()), 12);
-    if (d < now) d = new Date(now.getFullYear(), now.getMonth()+1, clampFor(now.getFullYear(), now.getMonth()+1), 12);
+    // By the DAY, not the hour: d sits at noon, so `d < now` sent a bill due today, entered after noon, a month ahead.
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (d < today0) d = new Date(now.getFullYear(), now.getMonth()+1, clampFor(now.getFullYear(), now.getMonth()+1), 12);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   };
 
@@ -10026,7 +10076,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {[...debts].sort((a,b)=>b.rate-a.rate).map((d,i)=>{
+        {orderDebtsForMethod(debts, method).map((d,i)=>{ // the order the chosen method pays them in
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span><span style={{color:colors[i%4],fontWeight:700}}>${d.balance.toLocaleString()} · {d.rate}%</span></div>
@@ -10136,7 +10186,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       // them (Family Settings); unset is no kids, as it is for the tax tips.
       const _hasKids=!!data.profile?.hasKids||((data.profile?.kids||[]).length>0);
       const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>(!b.province||b.province===(data.profile?.province||""))&&(!b.kids||_hasKids));
-      const tips=getPersonalizedTaxCredits(data.profile);
+      const tips=getPersonalizedTaxCredits(data.profile, { debts: buildDebtListForSimulator(data.debts, data.liabilities, data) });
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
@@ -10592,7 +10642,9 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData, tourActive = false,
   // screen renders and what the facilitator receives stay the same object: displayed === sent.
   const agenda = useMemo(() => {
     try {
-      const full = meetAgendaFor(data);
+      // The week is read by the categories the household corrected (review of 2026-11-22, P6-01): the corrections
+      // live in two device keys, so they are handed to the agenda with the data. The demo has none of its own.
+      const full = meetAgendaFor(data.demo ? data : { ...data, catOverrides: getCatOv() });
       // Meeting memory: when the household's meetings could not be read, their "no" answers are unknown, so no
       // question is asked (on screen or by the coach) rather than one they already declined being asked again.
       if (!data.demo && !Array.isArray(data.meetingRecords)) full.questions = [];
@@ -10892,6 +10944,24 @@ function familyDebtMetric(totalDebt, data) {
   return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
 }
 
+// A new chore's reward: what was typed, $0 included; the 50 cent default only when nothing usable was
+// typed. `parseFloat(x)||0.50` turned a chore set to $0 into 50 cents.
+const choreReward = (v) => { const r = parseFloat(v); return Number.isFinite(r) && r >= 0 ? r : 0.50; };
+
+// The Family screen's spending check: every charge by category, with transfers, income and fees left out.
+// catOf is the category as the household corrected it (effCat); it used to be the one the transaction
+// arrived with (review of 2026-11-22, P8-03).
+function familyTopSpend(transactions, catOf = (t) => t.cat) {
+  const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
+  return (transactions||[])
+    .filter(t=>t.amount>0 && !SKIP_FAM.has(catOf(t)))
+    .reduce((acc,t)=>{
+      const cat=catOf(t)||"Other";
+      acc[cat]=(acc[cat]||0)+t.amount;
+      return acc;
+    },{});
+}
+
 function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null}){
   const [tab,setTab]=useState("meeting");
   const [started,setStarted]=useState(false);
@@ -11000,7 +11070,7 @@ function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null})
   };
   const addChoreToKid=(kidId)=>{
     if(!newChoreTask.trim())return;
-    const chore={id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,
+    const chore={id:Date.now(),task:newChoreTask.trim(),reward:choreReward(newChoreReward),
       done:false,freq:newChoreFreq,approved:false};
     const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...(k.chores||[]),chore]}:k);
     saveKids(updated);
@@ -11053,14 +11123,8 @@ function Family({data,setAppData,setScreen,tourActive=false,meetingMemory=null})
   const _ss=SafeSpendEngine.calculate(data);
   const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data, getCatOv());
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
-  const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
-  const topSpend=(data.transactions||[])
-    .filter(t=>t.amount>0 && !SKIP_FAM.has(t.cat))
-    .reduce((acc,t)=>{
-      const cat=t.cat||"Other";
-      acc[cat]=(acc[cat]||0)+t.amount;
-      return acc;
-    },{});
+  const _famCatOv = getCatOvById();
+  const topSpend=familyTopSpend(data.transactions, t => effCat(t, _famCatOv));
   const topCat=Object.entries(topSpend).sort((a,b)=>b[1]-a[1])[0];
   const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
   const healthNote=healthPartial?` (${HEALTH_SCORE_PARTIAL_SHORT})`:""; // prompt 3d: say when a score is on 5 of 6 parts
@@ -12173,7 +12237,7 @@ function InlineGoalEditor({data, setAppData, color}){
 
   const saveGoal = () => {
     if(!form.name||!form.target) return;
-    setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {...form}]}));
+    setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {...form, id:Date.now()}]})); // an id, as the Goals screen gives (review of 2026-11-22)
     setForm({name:"",target:"",saved:""});
     setAdding(false);
   };
@@ -12514,7 +12578,16 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   }
 
   if(sectionKey==="bills") {
-    const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
+    // The amount is saved on the bill. For a bill the bank found it is also remembered as a correction, as Manage
+    // Bills does (overrideObserved): the detector then reports the household's amount, and the money meeting does
+    // not ask whether a bill "changed" back to the bank's figure (review of 2026-11-22, P9-06).
+    const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>{
+      const cur=(prev.bills||[])[i], amt=parseFloat(val);
+      const found=!!cur && cur.origin !== "manual" && cur.type!=="one_off" && amt>0;
+      const bills=(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val,...(found?{amountOverride:true}:{})}:b);
+      if(!found) return {...prev,bills};
+      return {...prev,bills,userBillOverrides:withBillOverride(prev.userBillOverrides, "amounts", String(cur.name||"").toLowerCase().trim(), amt)};
+    }); };
     const removeBillS = async (i, name) => { if(await confirmModal({title:"Remove this bill?",message:"It won't be auto-detected again.",confirmLabel:"Remove",destructive:true})) removeBillWithOverride(setAppData, i, name); }; // Tier 5: shared remove (records override)
     const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
     return (
@@ -12824,11 +12897,15 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // to Anthropic, so anyone without current consent (declined at the disclosure, or revoked here)
   // must re-see the terms before the grant happens.
   const [pendingAIConsent,setPendingAIConsent]=useState(false);
+  // The server could not record the consent, so the coach stayed off: the approved line is shown (lib/reviewWords.js).
+  const [aiTurnOnFailed,setAiTurnOnFailed]=useState(false);
   const hasAIConsent=()=>{ try { return localStorage.getItem("flourish_ai_third_party_consent")==="1"; } catch { return false; } };
-  const applyAICoachEnabled=(v)=>{
+  // granted: the server has already recorded the consent for this turn-on (the Enable AI Coach sheet below waits for
+  // it, review of 2026-11-22 P9-07), so it is not sent a second time.
+  const applyAICoachEnabled=(v, granted=false)=>{
     try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
     setAiCoachEnabled(v);
-    if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
+    if (v && !granted) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
   };
 
   // Notifications (Stage 1): read-only permission check on mount (NEVER prompts). The system prompt is
@@ -12868,40 +12945,34 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
   // everything the user has entered as a timestamped JSON file. Client-side blob
   // download — works on web; Capacitor iOS (WKWebView) will need a Share/Filesystem
   // follow-up since a blob <a download> often won't trigger a save there.
-  const exportMyData = () => {
+  // lib/dataExport.js (review 2026-11-22): every part of the data, not a fixed list (P9-03); and in a store app the
+  // file goes to the system share sheet, because the WebView there ignores a download link (G6).
+  const exportMyData = async () => {
     try {
-      const _ls = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || fb); } catch { return JSON.parse(fb); } };
-      const payload = {
-        _meta: { app: "Flourish Money", schema: 1, exportedAt: new Date().toISOString(),
-                 note: "Your Flourish data, exported for your records / portability." },
-        profile: data.profile || null,
-        // With Plus, holdings and the net worth entries a person typed are kept apart from the household's data
-        // (private between partners), so they are added here: this person's own only. Absent without Plus.
-        ...(plusExport(getNetWorthState()) ? { plus: plusExport(getNetWorthState()) } : {}),
-        incomes: data.incomes || [],
-        bills: data.bills || [],
-        debts: data.debts || [],
-        goals: data.goals || [],
-        budgets: data.budgets || {},
-        accounts: data.accounts || [],
-        transactions: data.transactions || [],
-        // The household's forecast corrections: edited or skipped deposits and bills, "from this date on"
-        // changes, expected money in or out, their daily spend figure, and which deposits are not income.
-        forecastEdits: data.forecastEdits || {},
-        depositDecisions: data.depositDecisions || {},
-        depositRules: data.depositRules || {},
-        customCategories: _ls("flourish_custom_cats", "[]"),
-        categoryOverrides: _ls("flourish_cat_overrides", "{}"),
-        coachHistory: _ls("flourish_coach_history", "null"),
-      };
+      // The household's data, built one way for every reader of the file (lib/dataExport.js, review 2026-11-22 P9-03),
+      // and, with Plus, this person's own holdings and net worth entries, which are kept apart from the household's
+      // data (private between partners). Absent without Plus.
+      const plusPart = plusExport(getNetWorthState());
+      const payload = { ...buildExport(data, readExportStores(localStorage, { loanActivityKey: LOAN_ACTIVITY_KEY })), ...(plusPart ? { plus: plusPart } : {}) };
       const d = new Date();
       const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `flourish-export-${stamp}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const file = { json: JSON.stringify(payload, null, 2), text: JSON.stringify(payload), filename: `flourish-export-${stamp}.json` };
+      const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
+      const asFile = (f) => new window.File([f.json], f.filename, { type: "application/json" });
+      const canShareFile = (()=>{ try { return typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [asFile({ json: "{}", filename: file.filename })] }); } catch { return false; } })();
+      const how = await deliverExport(file, {
+        platform,
+        download: (f) => {
+          const url = URL.createObjectURL(new Blob([f.json], { type: "application/json" }));
+          const a = document.createElement("a");
+          a.href = url; a.download = f.filename;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        shareFile: canShareFile ? (f) => navigator.share({ files: [asFile(f)], title: f.filename }) : null,
+        shareText: async (p) => { const { Share } = await import("@capacitor/share"); return Share.share(p); },
+      });
+      if (how === "failed") alertModal({message:"Could not export your data. Please try again."});
     } catch { alertModal({message:"Could not export your data. Please try again."}); }
   };
   return <div style={{color:C.cream}}>
@@ -12954,15 +13025,24 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
-        <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
+        <Toggle label="AI Coach" on={aiCoachEnabled} onChange={async (v)=>{
           // Turning ON without current consent would grant third-party sharing silently — re-disclose
           // first and let the modal apply it. Users who already consented (and just switched AI off
           // for quiet) keep their consent, so they are not re-prompted. Toggle is controlled, so
           // returning early leaves it visually off.
-          if (v && !hasAIConsent()) { setPendingAIConsent(true); return; }
-          applyAICoachEnabled(v);
+          setAiTurnOnFailed(false);
+          if (!v) { applyAICoachEnabled(false); return; }
+          if (!hasAIConsent()) { setPendingAIConsent(true); return; }
+          // Already consented: the consent is sent to the server again, and the switch turns on only once the server
+          // has it (round 2 of the 2026-11-22 review, P9-07). It used to turn on first and send without waiting, so it
+          // could read "on" with nothing on file. When it cannot be recorded the switch stays off and says so.
+          let ok = true;
+          try { ok = await onAcceptAIConsent?.(); } catch { ok = false; }
+          if (ok === false) { setAiTurnOnFailed(true); return; }
+          applyAICoachEnabled(true, true);
         }} />
       </div>
+      {aiTurnOnFailed&&!pendingAIConsent&&<div role="alert" data-ai-turn-on-failed="" style={{color:C.orange,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:8}}>{AI_TURN_ON_FAILED}</div>}
       {/* COPY-CHANGES §12: static trust lines */}
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:10}}>Flourish is read-only. It cannot move, send or hold money.</div>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:4}}>Flourish is not a licensed financial adviser. It explains and coaches; you decide.</div>
@@ -12973,8 +13053,17 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
         <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",minHeight:LAYOUT.minTap,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
       {pendingAIConsent&&<AIConsentModal
-        onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
-        onCancel={()=>setPendingAIConsent(false)}/>}
+        onEnable={async()=>{
+          // P9-07: someone with no consent on file is granting it here. The switch turns on only once the server has
+          // recorded it; if that fails the sheet stays open, AI stays off, and Enable is a real retry.
+          let ok = true;
+          try { ok = await onAcceptAIConsent?.(); } catch { ok = false; }
+          setAiTurnOnFailed(ok === false);
+          if (ok === false) return;
+          applyAICoachEnabled(true, true); setPendingAIConsent(false);
+        }}
+        onCancel={()=>{ setAiTurnOnFailed(false); setPendingAIConsent(false); }}
+        failed={aiTurnOnFailed}/>}
     </div>
     {/* ── Notifications (Stage 1: permission + per-type toggles; NOTHING is scheduled yet) ── */}
     <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
@@ -13093,7 +13182,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
             </div>
             {b.linked_by ? <span data-bank-linked-by="partner" style={{color:C.muted,fontSize:13,textAlign:"right",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{HOUSEHOLD_WORDS.bankLinkedByPartner}</span> :
             <button onClick={async () => {
-              if (!(await confirmModal({title:`Disconnect ${b.institution_name || "this bank"}?`,confirmLabel:"Disconnect",destructive:true}))) return;
+              if (!(await confirmModal({title:bankDisconnectTitle(b.institution_name || "this bank"),message:BANK_DISCONNECT_BODY,confirmLabel:"Disconnect",destructive:true}))) return;
               const jwt = await getJwt();
               if (!jwt) { alertModal({message:"Please sign in again."}); return; }
               let removed = false;
@@ -13113,11 +13202,11 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
               // One of several banks: delete_item removed the plaid_items row + revoked the token, but
               // this bank's account objects still linger in appData.accounts. Drop the accounts tied to
               // this item (matched on _item — the field that ties an account to its plaid_item, kept on
-              // the stored blob) so they don't orphan. bankConnected reflects any non-Manual remainder.
-              setAppData(prev => {
-                const kept = (prev.accounts || []).filter(a => a._item !== b.item_id);
-                return { ...prev, accounts: kept, bankConnected: kept.some(a => a.institution !== "Manual") };
-              });
+              // the stored blob) so they don't orphan.
+              // Review 2026-11-22 (P9-02): and what came from them. Only the accounts used to go, so the bank's
+              // transactions and card debts stayed, frozen, and doubled when the bank was connected again. One
+              // rule now, the household's (lib/multibank.js dropBankData); bankConnected is worked out from the rest.
+              setAppData(prev => dropBankData(prev, a => a._item === b.item_id));
             }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>}
           </div>
         ))}
@@ -13440,6 +13529,16 @@ function SegTabs({ tabs, value, onChange }) {
   );
 }
 
+// What the coach is told about recent spending: the total and the five largest categories, each charge in the
+// category the household corrected it to (effCat), with transfers, income and fees left out as on the Spending
+// screen. It used to read the category each transaction arrived with, so a correction never reached the coach
+// and a card payment could be its "top category" (review of 2026-11-22, P9-04).
+function coachRecentSpend(txns, catOf = (t) => t.cat) {
+  const spent = (txns||[]).filter(t => t.amount>0 && !t.isTransfer && !NON_SPEND_CATS.has(catOf(t)));
+  const byCat = spent.reduce((acc,t)=>{ const c = catOf(t); acc[c]=(acc[c]||0)+t.amount; return acc; },{});
+  return { spending: spent.reduce((s,t)=>s+t.amount,0), topCats: Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,5) };
+}
+
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const tpfOnNow = useTpfOn();   // TRIAL_PLAN_FIRST: the demo coach's last line and button follow the switch
@@ -13506,7 +13605,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     // pay at its low end), from the same cashFlow every other surface reads. Bug 5: no fake fallback.
     const income = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome || 0;
     const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || 0; // Sprint 1: no fake DEMO.balance in Coach context
-    const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
+    const _coachCatOv = getCatOvById();
+    const _recent = coachRecentSpend(txns, t => effCat(t, _coachCatOv));
+    const spending = _recent.spending;
 
     // ── PHASE 1C: pre-computed engine values for affordability reasoning ──
     // The Coach must see these so it can answer "can I afford X" honestly.
@@ -13518,10 +13619,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const _upcomingBills   = _safeSpend.upcomingBills || 0;
     const _monthlySurplus  = _cashFlow.cashFlow || 0;
     const _monthlyExpenses = _cashFlow.totalExpenses || 0;
-    const topCats = Object.entries(
-      txns.filter(t=>t.amount>0 && t.cat!=="Income")
-        .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
-    ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
+    const topCats = _recent.topCats.map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
     const goals = (data.goals||[]).map(g=>`${sanitizeField(g.name,80)}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${parseFloat(g.monthly)||0}/mo contribution`:""}`).join("; ")||"none set";
     const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${billMonthlyAmount(b).toFixed(0)}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
     // demo-fixes C8d: each debt once, from What-If's pair-aware list (a linked card is one debt; an unanswered
@@ -13712,7 +13810,11 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         const limitMsg = isNativeApp()
           ? coachLimitLine()
           : (j.message || "You've hit today's Coach message limit. It resets tomorrow.");
-        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: limitMsg}]);
+        // One exception (review of 2026-11-22, P2-09): reason "unavailable" is the server saying it could not count,
+        // not that a limit was reached. A subscriber on a store app was told they had used this week's messages. That
+        // answer's own line ("Coach is briefly unavailable…") names no plan, no price and no website, so it is shown.
+        const refusal = isNativeApp() && j.reason === "unavailable" && j.message ? j.message : limitMsg;
+        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: refusal}]);
         setLoading(false);
         return;
       }
@@ -15284,7 +15386,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
 // Apple 5.1.2(i): re-disclosure for the Settings "AI Coach enabled" toggle. Turning it on grants
 // third-party sharing consent, so a user who declined at the first-run disclosure — or revoked it
 // here — sees the terms again before any grant. Cancel leaves the toggle off and consent ungranted.
-function AIConsentModal({ onEnable, onCancel }){
+function AIConsentModal({ onEnable, onCancel, failed = false }){
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,...overlaySafe(24, { bottom: true })}}
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
@@ -15298,6 +15400,7 @@ function AIConsentModal({ onEnable, onCancel }){
             This enables AI coaching powered by <strong style={{color:C.cream}}>Claude (Anthropic)</strong>. Your conversations may be processed by Anthropic to generate responses. <strong style={{color:C.cream}}>This is not financial advice.</strong>
           </div>
         </div>
+        {failed&&<div role="alert" data-ai-turn-on-failed="" style={{color:C.orange,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12,textAlign:"center"}}>{AI_TURN_ON_FAILED}</div>}
         <button onClick={onEnable} style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Enable AI Coach</button>
         <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
@@ -15739,6 +15842,10 @@ function ResetPasswordScreen({ onDone, onCancel }) {
     setBusy(true); setErr("");
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) { setErr(error.message || "Couldn't update password. The reset link may have expired. Request a new one below."); setBusy(false); return; }
+    // Every other session of this account is signed out (review of 2026-11-22, P2-01). With instant signup an account
+    // can be made with an address its maker does not own; the owner takes it back with this emailed link, and whoever
+    // made it must not stay signed in. This session stays. Best effort: the password is already changed.
+    try { await supabase.auth.signOut({ scope: "others" }); } catch {}
     stripHash();
     setBusy(false);
     setDone(true);
@@ -17902,6 +18009,7 @@ export default function FlourishApp(){
       localStorage.setItem("flourish_ai_third_party_consent", "1"); // Sprint Z2 #8: explicit consent to share summary+messages with Anthropic
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
     } catch {}
+    clearRevokePending(deviceStorage()); // a newer consent: an older revoke still waiting to be sent must not undo it
     setAiDisclosureSeen(true);
     return true;
   };
@@ -17918,13 +18026,16 @@ export default function FlourishApp(){
     // Tell the server too, so a decline is durable and enforceable rather than a localStorage-only
     // fact. Without this the server sees both consent columns NULL — indistinguishable from "never
     // saw the screen" — so a decliner who clears localStorage would not be gated by /api/coach.
-    postCoachConsent("revoke_consent"); // fire-and-forget — demo has no JWT → no-op
+    // Not awaited (the screen moves on, and the demo has no JWT, so it is a no-op there). If a signed-in revoke does
+    // not reach the server it is remembered and sent again (lib/consentHeal.js, review of 2026-11-22 P10-07).
+    postCoachConsent("revoke_consent").then(res=>noteRevokeResult(res, deviceStorage(), user?.id));
   };
   // Sprint Z2 #8 / Z3 #2: revoke third-party AI consent from Settings — withdraws consent AND turns AI
   // off. The SERVER revoke goes FIRST (so /api/coach blocks even if localStorage is bypassed); the
   // local flip follows best-effort so the client AI goes off regardless of the network result.
   const revokeAIConsent = async ()=>{
-    await postCoachConsent("revoke_consent"); // server revoke FIRST — blocks /api/coach even if localStorage is bypassed
+    const res = await postCoachConsent("revoke_consent"); // server revoke FIRST — blocks /api/coach even if localStorage is bypassed
+    noteRevokeResult(res, deviceStorage(), user?.id); // P10-07: a revoke the server did not get is sent again, not forgotten
     try {
       localStorage.setItem("flourish_ai_third_party_consent", "0");
       localStorage.setItem("flourish_ai_coach_enabled", "0");
@@ -17940,6 +18051,7 @@ export default function FlourishApp(){
     // Otherwise the toggle would read "on" while the gate has nothing on file.
     if (!canProceedAfterAccept(res)) return false;
     try { localStorage.setItem("flourish_ai_third_party_consent", "1"); } catch {}
+    clearRevokePending(deviceStorage()); // a newer consent: an older revoke still waiting to be sent must not undo it
     return true;
   };
   // Self-heal fallback target: re-show the AI disclosure so the user can re-consent (which re-posts to
@@ -18247,6 +18359,14 @@ export default function FlourishApp(){
   const [activeScenario, setActiveScenario] = useState(null);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
+  // P10-07 (review of 2026-11-22): a revoke of AI consent that never reached the server is sent again, for the
+  // account it belongs to, once that account is signed in and the device is online.
+  useEffect(()=>{
+    if (!user?.id || !isOnline || !revokePending(deviceStorage(), user.id)) return;
+    const uid = user.id;
+    postCoachConsent("revoke_consent").then(res=>noteRevokeResult(res, deviceStorage(), uid));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id, isOnline]);
   const [dashLayout,setDashLayout]=useState(()=>{
     try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
     return DASH_TILES.map(t=>({id:t.id,visible:true,locked:false}));
@@ -18791,15 +18911,30 @@ export default function FlourishApp(){
     clearAllUserLocal();
     try { window.location.reload(); } catch {}
   };
+  // This person's own keys did not save (review 2026-11-22, P10-08): try again by itself after a wait, a few times
+  // (lib/household.js PERSONAL_RETRY_MS). Before, they went again only with the next change to the household's
+  // data, and if none came, the next sign-in put the server's older copy back over this device's.
+  const personalRetryRef = useRef({ n: 0, timer: null });
+  const retryPersonalKeysLater = (userId) => {
+    const st = personalRetryRef.current;
+    const wait = PERSONAL_RETRY_MS[st.n];
+    if (wait == null || st.timer) return;
+    st.n += 1;
+    st.timer = setTimeout(() => {
+      st.timer = null;
+      if (!householdRef.current || saverRef.current?.hasPending?.()) return;   // left, or a save is already on its way
+      getSaver().schedule(householdPayload(latestStateRef.current, userId));
+    }, wait);
+  };
   const saveHousehold = async ({ userId, householdId, blob, personal }) => {
     // This person's own keys go to their own private row, and only when they changed. A failure there is reported
-    // (and tried again with the next save) but never holds up the household's own save.
+    // (and tried again: with the next save, or by retryPersonalKeysLater) but never holds up the household's own save.
     const start = householdRef.current;
     let personalErr = null;
     if (personal && start && start.id === householdId && JSON.stringify(personal) !== JSON.stringify(start.personal ?? null)) {
       const mine = await savePersonalKeys(supabase, userId, personal);
-      if (!mine.ok) personalErr = mine.error || new Error("personal_keys");
-      else if (householdRef.current && householdRef.current.id === householdId) householdRef.current = { ...householdRef.current, personal };
+      if (!mine.ok) { personalErr = mine.error || new Error("personal_keys"); retryPersonalKeysLater(userId); }
+      else { personalRetryRef.current.n = 0; if (householdRef.current && householdRef.current.id === householdId) householdRef.current = { ...householdRef.current, personal }; }
     }
     let toWrite = blob;
     for (let i = 0; i < 3; i++) {
@@ -18820,12 +18955,9 @@ export default function FlourishApp(){
     return { ok: false, error: new Error("household_conflict") };
   };
   // The pending save, sent now and awaited (before the server copies this account's data into a new household).
-  const flushSaveNow = async () => {
-    const pending = saverRef.current?.peek?.();
-    if (!pending) return;
-    saverRef.current?.discard?.();
-    if (pending.householdId) await saveHousehold(pending); else await upsertUserData(supabase, pending.userId, pending.blob);
-  };
+  // Answers { ok }: a save that failed is put back to wait, and the caller must not go on as if it had landed
+  // (lib/persistence.js flushPendingSave, review 2026-11-22 P10-02).
+  const flushSaveNow = () => flushPendingSave(saverRef.current, (pending) => (pending.householdId ? saveHousehold(pending) : upsertUserData(supabase, pending.userId, pending.blob)));
   const getSaver = () => {
     if (!saverRef.current) {
       saverRef.current = makeDebouncedSaver(async ({ userId, blob, householdId, personal }) => {
@@ -19199,9 +19331,37 @@ export default function FlourishApp(){
     clearAllUserLocal();
     try { window.location.reload(); } catch {}
   };
+  // Leaving while someone stays (review 2026-11-22, P1-03): the category corrections and deposit answers made on
+  // THIS person's banks' transactions go first (lib/household.js withoutOwnBankAnswers). The database removes their
+  // bank accounts in the leave itself but cannot find these (it never stores a bank's transactions), and the one
+  // who stays could only remove the ones their own phone held. Answers a function that puts them back, for a
+  // leave the server then refuses (this person is still a member, and the answers are still theirs).
+  const takeOwnBankAnswers = async () => {
+    const nothing = () => {};
+    try {
+      const hh = householdRef.current, st = latestStateRef.current;
+      const members = householdInfo?.household?.members || [];
+      if (!hh || !st?.appData || members.length < 2) return nothing;
+      const mine = (await getUserItems()).filter(it => !it.linked_by).map(it => it.item_id);
+      let raw = null, cat = null;
+      try { raw = localStorage.getItem("flourish_cat_overrides"); cat = JSON.parse(raw || "null"); } catch { cat = null; }
+      const out = withoutOwnBankAnswers({ appData: st.appData, catOverrides: cat }, mine);
+      if (!out.removed) return nothing;
+      try { if (out.catOverrides && typeof out.catOverrides === "object") localStorage.setItem("flourish_cat_overrides", JSON.stringify(out.catOverrides)); } catch {}
+      try { saverRef.current?.discard?.(); } catch {}
+      await saveHousehold(householdPayload({ ...st, appData: out.appData }, user.id));
+      return () => {
+        try { if (raw != null) localStorage.setItem("flourish_cat_overrides", raw); } catch {}
+        try { if (householdRef.current) getSaver().schedule(householdPayload(latestStateRef.current, user.id)); } catch {}
+      };
+    } catch { /* the leave goes ahead: the one who stays still removes what their phone holds */ return nothing; }
+  };
   const householdActions = {
     onInvite: async (email)=>{
-      await flushSaveNow();                                   // the server copies this account's saved data
+      // The server copies this account's SAVED data into the household. If the last change did not save, stop:
+      // the copy would be without it, and this device would then load that older copy over it.
+      const saved = await flushSaveNow();
+      if (!saved.ok) return { error: "generic" };
       const r = await callHousehold("create_invite", { email, consent: true });
       if (r.status !== 200) return { error: r.data?.error || "generic" };
       if (!householdRef.current && r.data.household_id) {
@@ -19228,8 +19388,9 @@ export default function FlourishApp(){
       return { ok: true };
     },
     onLeave: async ()=>{
+      const putBack = await takeOwnBankAnswers();
       const r = await callHousehold("leave");
-      if (r.status !== 200) return { error: r.data?.error || "generic" };
+      if (r.status !== 200) { putBack(); return { error: r.data?.error || "generic" }; }
       restartForHousehold();
       return { ok: true };
     },
@@ -19292,28 +19453,18 @@ export default function FlourishApp(){
       if (isBlobEmpty(payload.blob)) return false;          // never beacon empty/demo: the read-then-decide safety net can't run one-shot
       const token = accessTokenRef.current;
       if (!token) return false;                              // no JWT → would 401; let the normal flush handle it
-      if (payload.householdId) {
-        // Couple mode: only over the version this device read (a newer one is merged by the awaited flush).
-        const hh = householdRef.current;
-        if (!hh || hh.id !== payload.householdId) return false;
-        fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/household_data?household_id=eq.${encodeURIComponent(hh.id)}&version=eq.${encodeURIComponent(hh.version)}`, {
-          method: "PATCH",
-          keepalive: true,
-          headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-          body: JSON.stringify({ data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
-        }).catch(()=>{});
-        return true;
-      }
-      fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_data?on_conflict=user_id`, {
-        method: "POST",
+      // Couple mode: only over the version this device read (a newer one is merged by the awaited flush).
+      const hh = householdRef.current;
+      if (payload.householdId && (!hh || hh.id !== payload.householdId)) return false;
+      // One's own row: only over an OLDER saved copy (lib/persistence.js beaconRequest, review 2026-11-22 P10-03).
+      // This request can arrive late; it used to be an unconditional upsert, so a late one replaced a newer save.
+      const req = beaconRequest(payload, { baseUrl: import.meta.env.VITE_SUPABASE_URL, householdVersion: hh ? hh.version : null });
+      if (!req) return false;
+      fetch(req.url, {
+        method: req.method,
         keepalive: true,
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        },
-        body: JSON.stringify({ user_id: payload.userId, data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: req.prefer },
+        body: req.body,
       }).catch(()=>{});                                      // fire-and-forget; localStorage is the durable floor
       return true;
     } catch { return false; }
@@ -19359,9 +19510,11 @@ export default function FlourishApp(){
         // Sprint Z #1: incremental sync — request full_resync when the local store is empty (fresh
         // device / cleared cache) or weekly (B1 self-heal) so the server ignores the stored cursor.
         const fullResync = (appData?.transactions?.length || 0) === 0 || isFullSyncStale();
+        const owed = readFullSyncOwed(); // P7-02: banks whose last full read failed
         const results = await Promise.allSettled(
-          items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))
+          items.map(it => fetchItemTxns(it.item_id, jwt, fullResync || owed.includes(it.item_id)))
         );
+        noteFullSyncRound(owed, items, results, fullResync);
         const fulfilled = results.filter(r => r.status === "fulfilled").map(r => r.value);
         const allTxns = fulfilled.flatMap(v => normaliseTxns(v.transactions||[]));
         const allRemovedIds = fulfilled.flatMap(v => v.removed || []);
@@ -19536,7 +19689,9 @@ export default function FlourishApp(){
   // The signature dep means this settles: it only writes when the SUGGESTION actually changes, so
   // setAppData → re-render → effect cannot loop.
   const incomeDetectSig = useMemo(() => JSON.stringify({
-    n: (appData?.transactions || []).length,
+    // What the transactions SAY, not how many there are: an edited or re-posted deposit is looked at again
+    // (lib/reconcileLoop.js transactionsFingerprint; review of 2026-11-22, P10-04).
+    n: transactionsFingerprint(appData?.transactions),
     i: (appData?.incomes || []).map(x => [x.amount, x.freq, x.anchorDay ?? null]),
     d: appData?.incomeSuggestionDismissed || null,
     demo: !!appData?.demo,
@@ -19574,7 +19729,7 @@ export default function FlourishApp(){
   // pure filter, so a stored amount (including one typed directly in Settings ▸ Bills, which does
   // not record an override), the nextDueDate anchor, and array order all survive untouched.
   const billHealSig = useMemo(() => JSON.stringify({
-    n: (appData?.transactions || []).length,
+    n: transactionsFingerprint(appData?.transactions),   // content, not count (P10-05)
     b: autoBillKeys(appData?.bills),
     o: appData?.userBillOverrides || null,
     demo: !!appData?.demo,
@@ -20189,10 +20344,13 @@ export default function FlourishApp(){
     setNeedsReconnect(false);
     if (theirs.size) {
       // The other member's banks stay in the household; only this person's accounts go.
-      setAppData(d=>{ const kept=(d.accounts||[]).filter(a=>!a._item||theirs.has(a._item)); return {...d, accounts: kept, bankConnected: kept.some(a=>a.institution!=="Manual")}; });
+      // P9-02: with what came from them (lib/multibank.js dropBankData), as Settings does for one of several banks.
+      setAppData(d=>dropBankData(d, a=>!!a._item&&!theirs.has(a._item)));
       return;
     }
-    setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
+    // P9-02: every bank account goes with its transactions, card debts, liabilities and holdings; what the household
+    // entered by hand stays. (They used to stay too, and were there twice once a bank was connected again.)
+    setAppData(d=>{ const left=dropBankData(d)||{}; return {...left, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: left.transactions||[], bankConnected:false }; });
   };
 
   // A function DECLARATION, so it exists for the whole render: the plans screen that cannot be closed returns before

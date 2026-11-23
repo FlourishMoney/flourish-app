@@ -50,8 +50,12 @@ const _money = (cents) => formatMoney(cents / 100, { cents: true });
  * @param {Array}   [o.deposits]       depositLines(ev): one income row per source, named after it. Used
  *                                     only when the lines add up to `income` exactly; otherwise one
  *                                     "Deposit" row carries the total.
+ * @param {number}  [o.scenario]       a what-if amount that leaves the balance that day (the engine's
+ *                                     entry.scenario). It gets its own line, named scenarioLabel, so it is
+ *                                     never part of the daily spending estimate (review of 2026-11-22, P4-05).
+ * @param {string}  [o.scenarioLabel]  the caller's words for that line.
  */
-export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpend = 0, closing = 0, isToday = false, deposits = null } = {}) {
+export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpend = 0, closing = 0, isToday = false, deposits = null, scenario = 0, scenarioLabel = "" } = {}) {
   const closingCents = _cents(closing);
   const billRows = (bills || []).map((b) => {
     const cents = _cents(b && b.amount);
@@ -78,8 +82,12 @@ export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpen
   const openingCents = _cents(opening);
   const incomeCents = Math.max(0, _cents(income));
   const billsCents = billRows.reduce((s, r) => s + r.cents, 0);
+  const scenarioCents = Math.max(0, _cents(scenario));
+  const scenarioRows = scenarioCents > 0
+    ? [{ key: "scenario", label: scenarioLabel || "What if", sign: "−", cents: scenarioCents, value: _money(scenarioCents) }]
+    : [];
   // The residue lands here, by construction, so the printed equation is exactly true.
-  const spendCents = openingCents + incomeCents - billsCents - closingCents;
+  const spendCents = openingCents + incomeCents - billsCents - scenarioCents - closingCents;
 
   const depRows = (Array.isArray(deposits) ? deposits : []).map((d) => {
     const cents = _cents(d && d.amount);
@@ -93,10 +101,11 @@ export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpen
     { key: "opening", label: "Opening balance", sign: "", cents: openingCents, value: _money(openingCents) },
     ...incomeRows,
     ...billRows,
+    ...scenarioRows,
     { key: "spend", label: "Est. daily spend", sign: "−", cents: spendCents, value: _money(spendCents) },
   ];
 
-  const walked = openingCents + incomeCents - billsCents - spendCents;
+  const walked = openingCents + incomeCents - billsCents - scenarioCents - spendCents;
   return {
     ...base,
     hasWalk: true,
@@ -106,6 +115,7 @@ export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpen
     incomeCents,
     incomeText: _money(incomeCents),
     billsCents,
+    scenarioCents,
     spendCents,
     spendText: _money(spendCents),
     reconciles: walked === closingCents,

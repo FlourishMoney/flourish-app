@@ -142,6 +142,18 @@ export function pruneDisqualifiedBills(prevBills, opts = {}) {
 
 // Convenience identity of the auto-detected set, used by the caller to decide whether anything
 // actually needs writing.
+// ONE WRITER FOR A BILL CORRECTION (review of 2026-11-22, P8-01). userBillOverrides holds four things: bills the
+// household removed, and its corrected types, cadences and amounts, each keyed by the bill's lowercased name.
+// Two writers in App.jsx rebuilt the object by hand and left `amounts` out, so changing a bill's type or how
+// often it is due threw away every amount the household had corrected. This returns the whole shape, every
+// time, with one entry set.
+export function withBillOverride(overrides, field, key, value) {
+  const o = overrides && typeof overrides === "object" ? overrides : {};
+  const next = { removed: o.removed || [], typed: o.typed || {}, cadence: o.cadence || {}, amounts: o.amounts || {} };
+  if ((field === "typed" || field === "cadence" || field === "amounts") && key) next[field] = { ...next[field], [key]: value };
+  return next;
+}
+
 export function autoBillKeys(bills) {
   return (Array.isArray(bills) ? bills : [])
     .filter(isAutoDetectedBill)

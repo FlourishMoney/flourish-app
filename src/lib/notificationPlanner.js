@@ -12,6 +12,7 @@
 import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { billNextDue, isBillArchived } from "./financialCalculations.js";
+import { billOccurrencePaid } from "./forecastEdits.js";
 import { computeNextMeeting } from "./meetingSchedule.js";
 import { notifId } from "./notifications.js";
 
@@ -26,18 +27,11 @@ function inThisMonth(dateStr, now) {
   catch { return false; }
 }
 
-// Mirrors SafeSpendEngine.isBillPaid: a same-month transaction whose name contains (or is contained
-// by) the bill name AND whose amount is within ±5% / ±$2 of the bill amount.
-function paidThisMonth(bill, txns, now) {
-  const billName = norm(bill.vendorPattern || bill.name);
-  const billAmt = parseFloat(bill.amount || 0);
-  if (billName.length < 3 || billAmt <= 0) return false;
-  return (txns || []).some(t => {
-    if (!inThisMonth(t.date, now)) return false;
-    const tn = norm(t.name), ta = Math.abs(parseFloat(t.amount || 0));
-    return tn && (tn.includes(billName) || billName.includes(tn)) && Math.abs(ta - billAmt) <= Math.max(2, billAmt * 0.05);
-  });
-}
+// HAS THE OCCURRENCE THE REMINDER IS FOR BEEN PAID? (Review of 2026-11-22, P5-05.) This used to ask whether ANY
+// matching payment had posted this calendar month, the rule safe to spend dropped on 2026-10-26: a weekly bill
+// paid on the 6th had no reminder for the 13th, 20th or 27th, and rent due the 1st and paid on the 1st had none
+// on the 30th for the next 1st. It is now the one "already paid" rule (forecastEdits.js billArrived): a payment
+// marks the due date it is nearest to, so only a payment of THIS due date (paid early) cancels its reminder.
 
 export function planNotifications(data, now = new Date()) {
   const out = [];
@@ -49,9 +43,9 @@ export function planNotifications(data, now = new Date()) {
     if (isBillArchived(b, now)) continue;
     const amt = parseFloat(b.amount || 0);
     if (!(amt > 0)) continue;
-    if (paidThisMonth(b, txns, now)) continue;           // already paid this month → no reminder
     const due = billNextDue(b, now);
     if (!due) continue;
+    if (billOccurrencePaid(b, due, txns, now)) continue;  // this due date is already paid → no reminder
     const at = at9am(due.getFullYear(), due.getMonth(), due.getDate() - 1); // day-before 9am
     if (at <= now) continue;                             // reminder moment already passed
     out.push({

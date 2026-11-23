@@ -69,6 +69,26 @@ exports.handler = async (event) => {
     }
   }
 
+  // Review 2026-11-22 (P3-01): the mark above goes in BEFORE the work. If the work then fails we answer 500 so
+  // Plaid sends the webhook again, and the mark must not be left behind to turn that retry into "duplicate,
+  // skip": the bank's update would be lost. So every failure below takes the mark back first. Best-effort: if
+  // even that cannot be written, the cleanup above removes the mark within 15 minutes.
+  // Tried twice (round 2 of the review): one blink of the database should not leave Plaid's next retries skipped
+  // until the cleanup runs.
+  const unmark = async () => {
+    if (!verification.jti) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { error: unmarkErr } = await admin.from("webhook_seen").delete().eq("jti", verification.jti);
+        if (!unmarkErr) return;
+        console.error("[webhook] could not take the replay mark back:", unmarkErr.message);
+      } catch (e) {
+        console.error("[webhook] could not take the replay mark back:", e?.message || e);
+      }
+    }
+  };
+
+  try {
   // Tier 1.4: resolve the item owner BEFORE any mutation. Scoping every update by
   // user_id (plus the DB unique constraint on item_id) closes the cross-tenant
   // flag-flip exploit — a forged or sandbox-colliding item_id can't touch another
@@ -80,6 +100,7 @@ exports.handler = async (event) => {
     .maybeSingle();
   if (lookupErr) {
     console.error(`[webhook] owner lookup failed for ${item_id}:`, lookupErr.message);
+    await unmark();
     return { statusCode: 500, body: JSON.stringify({ received: false }) };
   }
   if (!ownerRow) {
@@ -116,7 +137,11 @@ exports.handler = async (event) => {
       break;
 
     case "LIABILITIES:DEFAULT_UPDATE":
-      updates = { liabilities_pending: true };
+      // Acknowledged, nothing written (2026-11-23). This used to set a liabilities_pending flag, but production's
+      // plaid_items has no such column (read there that day) and nothing on any branch reads it: the write failed,
+      // and since P3-01 a failed write answers 500, so Plaid would resend every one of these for its whole retry
+      // schedule. The app reads card and loan details from the bank itself when it needs them.
+      console.log(`[webhook] liabilities update for ${item_id}: acknowledged`);
       break;
 
     case "ITEM:PENDING_EXPIRATION":
@@ -157,8 +182,15 @@ exports.handler = async (event) => {
       .eq("user_id", ownerUserId);
     if (updateErr) {
       console.error(`[webhook] update failed for ${item_id}:`, updateErr.message);
+      await unmark();
       return { statusCode: 500, body: JSON.stringify({ received: false }) };
     }
+  }
+  } catch (e) {
+    // Anything thrown while applying it (a dropped connection, say): the same answer as a failed write.
+    console.error(`[webhook] could not apply ${webhook_type}:${webhook_code}:`, e?.message || e);
+    await unmark();
+    return { statusCode: 500, body: JSON.stringify({ received: false }) };
   }
 
   return {
