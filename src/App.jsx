@@ -19897,11 +19897,13 @@ export default function FlourishApp(){
   // H1 (review round): someone who came from a partner's invite (householdLinkToken) is never held at the plans: they
   // join in Settings, and the partner's plan then covers them.
   const plansStageNow = plansFirstStage({ tpf: tpfStatus, paid: tpfPaySource?.paid===true, coveredBy: tpfPaySource?.covered_by||null,
-    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken });
+    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken,
+    native: isNativeApp() });   // free v1 (2026-11-23): on the website the plans close onto Free ("offer_once", never "required")
   // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open),
-  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1).
+  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1). Free v1: only a store
+  // app is held on a remembered "required"; the website has the free plan, so it is never held.
   const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required"
-    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken
+    : (isNativeApp() && recalledRequired(deviceStorage(), user.id) && !householdLinkToken
        && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));
   useEffect(()=>{ if(user?.id && tpfAnswered) rememberRequired(deviceStorage(), user.id, plansStageNow==="required"); },[user?.id, tpfAnswered, plansStageNow]);
   useEffect(()=>{

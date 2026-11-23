@@ -290,9 +290,12 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
     // Gifts (2026-11-20): the one other set still to come, each in its own words home and listed as pending in
     // docs/review/GIFT-COPY.md (tests/_pendingWords.cjs), holds the build back on its own. None of trial plan first's is left.
+    // Free v1 on the website (2026-11-23): its slots are the other set, in their own two homes and listed in
+    // docs/product/FREE-V1-WORDS.md; tests/freeV1Words.test.cjs fails on its own while any is left.
     const PWg = require("./_pendingWords.cjs");
-    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !PWg.pendingGiftWordIds().includes(id));
-    t.eq([left, all.status], [[], PWg.pendingGiftWordIds().length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the gifts' pending lines");
+    const others = [...PWg.pendingGiftWordIds(), ...PWg.pendingFreeWordIds()];
+    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !others.includes(id));
+    t.eq([left, all.status], [[], others.length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the gifts' and free v1's pending lines");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
       t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
