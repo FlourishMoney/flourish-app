@@ -18325,13 +18325,10 @@ export default function FlourishApp(){
       const held = getNetWorthState().holdings;
       const merged = mergeHoldings(held.length ? held : loadPrivateHoldings(deviceStore(), forUser), items, invResults);
       const plusMode = merged.plusMode, allHoldings = plusMode ? merged.holdings : merged.plain;
-      // WHICH ROUNDS ARE SHOWN (lib/plusHoldings.js roundShows; real-world proof 2026-11-23): also a round where a bank
-      // could not be read and what this device already held for it was marked so. That round used to be dropped below,
-      // so a person whose one bank was down kept the holdings but never saw their as-of line.
       if (plusMode) {
         // Nothing changes unless a round brought something, for the person still signed in: a bank's holdings really
         // came, or a bank could not be read and the server answered the list it keeps for it (stale: shown, and
-        // nothing more), or what this device held for it was marked (roundShows, above).
+        // nothing more), or what this device held for it was marked (lib/plusHoldings.js roundShows).
         if (!roundShows(merged) || getNetWorthState().user !== forUser) return;
         setPlusHoldings(allHoldings);
         // On this device: a round with a live answer is saved with its time (read back: onDevice). The server's kept

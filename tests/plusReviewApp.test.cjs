@@ -119,8 +119,12 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     // (stale), so the person is shown it. 2p: the old shared copy is cleared by one rule in lib/plusHoldings.js, bank
     // by bank, on the server's word as well as this device's (it used to be all of it, on this device's word only).
     // 2q: a round is applied whenever a bank ANSWERED (it used to wait for a holding to come, so all-sold stayed).
-    t.ok(/if \(plusMode\) \{[\s\S]{0,500}if \(!\(merged\.delivered \|\| merged\.stale\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
-      "2o with Plus: a locked or failed answer changes nothing at all, and an answer for someone else is dropped");
+    // Changed 2026-11-23 (real-world proof, step 1C.4 with Plus): this held the line `!(merged.delivered ||
+    // merged.stale)`, which dropped a round where the one bank failed and this device's holdings were only MARKED, so
+    // their as-of line never showed. The app now asks lib/plusHoldings.js roundShows (tests/plusRound3.test.cjs,
+    // PROOF-a to PROOF-o). A locked answer still changes nothing; a failed one changes nothing but that mark.
+    t.ok(/if \(plusMode\) \{[\s\S]{0,500}if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
+      "2o with Plus: a locked answer changes nothing at all, a failed one only marks what this device holds, and an answer for someone else is dropped");
     t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);[\s\S]{0,700}setAppData\(prev => withoutCoveredSharedCopy\(prev, merged, onDevice\)\);/.test(sync)
       && (app.match(/withoutCoveredSharedCopy\(/g) || []).length === 1 && !/investments, \.\.\.rest/.test(app), "2p the old shared copy is cleared in one place only, and only once a lasting private copy exists (saved on this device and read back, or kept on the server)");
     // Changed 2026-11-22 (full-app review, P10-06): this used to hold the exact line `investments: allHoldings`, which

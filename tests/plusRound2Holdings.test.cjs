@@ -326,8 +326,11 @@ const call = async (fn, body, version = "1.1.8") => {
     }
     {
       const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
-      t.ok(/if \(!\(merged\.delivered \|\| merged\.stale\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
-        "B1-app-o the app shows a round that brought something: a live answer, or the server's kept list when the bank could not be read");
+      // Changed 2026-11-23 (real-world proof, step 1C.4 with Plus): this held `!(merged.delivered || merged.stale)`.
+      // A round where the bank failed and this device's own holdings were marked is now shown too (roundShows;
+      // tests/plusRound3.test.cjs section 4), or their as-of line never reaches the screen.
+      t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
+        "B1-app-o the app shows a round that brought something: a live answer, the server's kept list when the bank could not be read, or this device's own list marked as not refreshed");
       t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);/.test(sync),
         "B1-app-p a live round is saved on this device with its time; a kept list alone is saved without one and never counts as saved");
       t.ok(/setAppData\(prev => withoutCoveredSharedCopy\(prev, merged, onDevice\)\);/.test(sync) && !/investments, \.\.\.rest/.test(app),
