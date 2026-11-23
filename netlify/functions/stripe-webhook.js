@@ -416,7 +416,10 @@ exports.handler = async (event) => {
       // TRIAL_PLAN_FIRST (review round, M3): a checkout that charged nothing may be a 14-day trial. The row says
       // trialing with the trial's end from the start (the chip, the status). If Stripe cannot be asked, the row is
       // "active" as before and the next subscription event corrects it.
-      if (trialPlanFirstSince() !== null && object.payment_status === "no_payment_required" && live
+      // Real-world proof, 2026-11-23: for a trial checkout Stripe really says payment_status "paid" (the $0 first
+      // invoice is paid), not "no_payment_required", so this never ran and the row said "active" for the whole
+      // trial. Stripe's own word for the subscription decides: trialing, with a trial end.
+      if (trialPlanFirstSince() !== null && ["paid", "no_payment_required"].includes(object.payment_status) && live
           && live.status === "trialing" && Number.isFinite(Number(live.trial_end))) {
         patch.status = "trialing";
         patch.current_period_end = new Date(Number(live.trial_end) * 1000).toISOString();

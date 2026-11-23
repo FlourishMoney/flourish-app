@@ -251,6 +251,33 @@ const ON = { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE };
       // Review round (M3): the checkout itself asks Stripe for the subscription, so the row says trialing from the start.
       t.eq([D.db.rows.subscriptions.find((r) => r.user_id === U).status, D.db.rows.subscriptions.find((r) => r.user_id === U).current_period_end], ["trialing", new Date((T + 14 * DAY) * 1000).toISOString()],
         "2j2 the checkout's row says trialing, with the trial's end, from the start");
+      // The real-world proof, 2026-11-23 (step 1A.2): what Stripe REALLY sends for a trial checkout. The event read
+      // from Stripe test mode (API 2026-08-26.dahlia) says payment_status "paid" with amount_total 0 (the $0 first
+      // invoice is paid), not "no_payment_required". The row was written "active" for the whole trial, so the site
+      // never showed the first-charge date it promises once Stripe confirms. And the trial's start, heard just
+      // before (customer.subscription.created, "trialing"), was written over by it.
+      {
+        const R = makeDb(); const V = addUser(R, 7);
+        R.db.subs = { sub_real: { id: "sub_real", status: "trialing", trial_end: T + 14 * DAY, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } } };
+        const realTrialSub = { id: "sub_real", customer: `cus_${V.slice(-4)}`, status: "trialing", metadata: { user_id: V, plan_key: "monthly", trial_plan_first: "1" }, trial_start: T, trial_end: T + 14 * DAY,
+          items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } };
+        const rowOf = () => R.db.rows.subscriptions.find((r) => r.user_id === V) || {};
+        t.eq(await stripeEvent(R, "evt_real1", "customer.subscription.created", realTrialSub, T), 200, "2j3 the order Stripe really used: the trial's start first");
+        t.eq(rowOf().status, "trialing", "2j4 …trialing");
+        t.eq(await stripeEvent(R, "evt_real2", "checkout.session.completed", { customer: `cus_${V.slice(-4)}`, subscription: "sub_real", mode: "subscription", status: "complete",
+          payment_status: "paid", amount_total: 0, amount_subtotal: 0, metadata: { user_id: V, plan_key: "monthly" } }, T), 200, "2j5 …then the completed checkout, saying \"paid\" for nothing charged");
+        t.eq([rowOf().status, rowOf().current_period_end], ["trialing", new Date((T + 14 * DAY) * 1000).toISOString()],
+          "2j6 the row still says trialing, with the trial's end (it said \"active\": no first-charge date on the site)");
+        // A checkout that really was paid stays "active", and a paid one whose subscription Stripe calls active is never called a trial.
+        const P = makeDb(); const W = addUser(P, 8);
+        P.db.subs = { sub_paid: { id: "sub_paid", status: "active", trial_end: null, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 30 * DAY }] } } };
+        await stripeEvent(P, "evt_paid1", "checkout.session.completed", { customer: `cus_${W.slice(-4)}`, subscription: "sub_paid", mode: "subscription", status: "complete", payment_status: "paid", amount_total: 1199, metadata: { user_id: W, plan_key: "monthly" } }, T);
+        t.eq((P.db.rows.subscriptions.find((r) => r.user_id === W) || {}).status, "active", "2j7 a checkout that was really charged is \"active\", as before");
+        const U2 = makeDb(); const X = addUser(U2, 9);
+        U2.db.subs = { sub_debit: { id: "sub_debit", status: "trialing", trial_end: T + 14 * DAY, items: { data: [{ price: { id: "price_monthly_1199" }, current_period_end: T + 14 * DAY }] } } };
+        await stripeEvent(U2, "evt_unpaid1", "checkout.session.completed", { customer: `cus_${X.slice(-4)}`, subscription: "sub_debit", mode: "subscription", status: "complete", payment_status: "unpaid", metadata: { user_id: X, plan_key: "monthly" } }, T);
+        t.eq((U2.db.rows.subscriptions.find((r) => r.user_id === X) || {}).status, "trialing", "2j8 an unpaid checkout keeps Stripe's own word for the subscription (P3-04, unchanged)");
+      }
       t.eq(await stripeEvent(D, "evt_c2", "customer.subscription.created", trialSub(), T + 1), 200, "2k on: the trial's start is heard");
       t.eq(D.db.rows.subscriptions.find((r) => r.user_id === U).status, "trialing", "2l …and the row says trialing, with the trial's end");
       t.eq(await stripeEvent(D, "evt_c3", "customer.subscription.deleted", trialSub({ status: "canceled", canceled_at: T + 3 * DAY, ended_at: T + 3 * DAY }), T + 3 * DAY), 200, "2m cancelled on day 3");
