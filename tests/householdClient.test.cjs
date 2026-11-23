@@ -263,9 +263,12 @@ const O = "owner-id", P = "partner-id";
     t.eq(rows.filter((r) => !(r[2].trim() && r[3].trim() && r[4].trim().length <= Number(r[5]))).map((r) => r[1]), [], "7f every row says where it shows and its facts, and its line is within its limit");
     // Every line is approved (the last two in the round 6 audit): no placeholder anywhere, in the code or the doc.
     const HOLD = /\[WORDS:/;
-    t.eq(rows.filter((r) => HOLD.test(r[4])).map((r) => r[1]), [], "7g0 no line is still to come: every row in the doc has its approved line");
-    t.eq(Object.keys(code).filter((id) => HOLD.test(String(code[id]))), [], "7g1 no line in the code is a placeholder");
-    t.ok(Object.values(code).every((w) => typeof w === "string" && w.trim()) && !HOLD.test(doc), "7g no placeholder is left in the code's lines or in the doc");
+    // 2026-11-10: one line named the main plan "Flourish Plus" (Settings > Flourish Plus > Manage subscription) and went back
+    // to review. It may be a placeholder only as that exact id, and only while NET-WORTH-WORDS.md lists it as still to come.
+    const backToReview = (v) => v === "[WORDS: plan-household-extra-stripe]" && require("./_pendingWords.cjs").pendingNetWorthWordIds().includes("plan-household-extra-stripe");
+    t.eq(rows.filter((r) => HOLD.test(r[4]) && !backToReview(r[4].trim())).map((r) => r[1]), [], "7g0 no line is still to come: every row in the doc has its approved line");
+    t.eq(Object.keys(code).filter((id) => HOLD.test(String(code[id])) && !backToReview(String(code[id]))), [], "7g1 no line in the code is a placeholder");
+    t.ok(Object.values(code).every((w) => typeof w === "string" && w.trim()) && !HOLD.test(doc.split("\n").filter((l) => !backToReview((l.match(/\[WORDS: [a-z0-9-]+\]/) || [""])[0]) || (l.match(/\[WORDS:/g) || []).length !== 1).join("\n")), "7g no placeholder is left in the code's lines or in the doc");
     t.eq([approved["household.error.purchase_in_progress"], approved["household.error.partner_purchase_in_progress"]],
       ["A purchase you started isn't finished yet. Finish or cancel it, then try again.", "Your partner has a purchase in progress. Try again once it's finished."],
       "7g3 the two round 6 lines are the approved words, word for word");

@@ -146,8 +146,13 @@ async function call({ body, user, now, upsertError = null }) {
   const rcw = read("netlify/functions/revenuecat-webhook.js");
   t.ok(/revenueCatMilestone\(evt\)/.test(rcw) && rcw.indexOf("revenueCatMilestone(evt)") > rcw.indexOf("billing_events\").insert") && rcw.indexOf("revenueCatMilestone(evt)") < rcw.indexOf("syncStoreSubscription(admin"),
     "6c RevenueCat: after the event is claimed, before the sync");
+  // 2026-11-20 (Plus add-on): the funnel is the main plan's. An add-on event is never one of its milestones.
+  const PA = require("../netlify/functions/_lib/plusAddon");
+  t.ok(rcw.includes("const milestone = plusAddon.isPlusStoreProductId(evt.product_id) ? null : revenueCatMilestone(evt);"), "6c2 …and never for a Plus add-on product");
+  t.eq(["app.flourishmoney.plusaddon.monthly", "app.flourishmoney.plusaddon.annual", "flourish_plus_addon:monthly", "flourish_plus_addon:annual", "flourish_plus_addon"].map(PA.isPlusStoreProductId), [true, true, true, true, true], "6c3 the add-on's store products, Google's with or without its base plan");
+  t.eq(["app.flourishmoney.plus.monthly", "app.flourishmoney.plus.annual", "app.flourishmoney.founding.annual", "flourish_plus:monthly", "flourish_plus:founding", "flourish_plus", "", undefined, null, 7].map(PA.isPlusStoreProductId), Array(10).fill(false), "6c4 the main plan's products (and nothing at all) are not the add-on's");
   const sw = read("netlify/functions/stripe-webhook.js");
-  t.ok(/stripeMilestone\(evt\)/.test(sw) && sw.indexOf("stripeMilestone(evt)") > sw.indexOf(".from(\"billing_events\").insert(claim") && sw.indexOf("stripeMilestone(evt)") < sw.indexOf("if (evt.type === \"checkout.session.completed\") {"),
+  t.ok(/stripeMilestone\(evt\)/.test(sw) && sw.indexOf("stripeMilestone(evt)") > sw.indexOf(".from(\"billing_events\").insert(claim") && sw.indexOf("stripeMilestone(evt)") < sw.indexOf("if (evt.type === \"checkout.session.completed\") {", sw.indexOf("exports.handler")),
     "6d Stripe: after the event is claimed, before the handling whose early answers would skip it");
   t.ok(/recordMilestone\(admin, accountId, milestone\.milestone, "web", milestone\.at\)/.test(sw), "6e …always on the web channel");
   const app = read("src/App.jsx");

@@ -82,11 +82,20 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
   const prices = [...new Set((pricingSrc.match(/\b\d{1,3}\.99\b/g) || []))];
   t.ok(prices.length >= 4, `sanity: the plan prices come from pricing.js (${prices.join(", ")})`);
   const PRICE = new RegExp(`\\$\\s?(?:${prices.map(p => p.replace(".", "\\.")).join("|")})\\b`);
+  // 2026-11-20: the main plan's words are approved (src/lib/netWorthWords.js, plan-*). A screen that offers the plan is
+  // known by its id in the code (netWorthWords("plan-…")) and by the approved line itself on screen. plan-name is known by
+  // its id only: its word, "flourish", is the app's own name and is on every screen.
+  const { NET_WORTH_WORDS: PLAN_W } = await import("../src/lib/netWorthWords.js");
+  const PLAN_OFFER_IDS = ["get-cta", "upgrade-cta", "on", "includes-title", "adds-title", "adds-lead", "sim-limit", "sim-cta"];
+  const rxEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const PLAN_LINES = PLAN_OFFER_IDS.map((k) => PLAN_W[`plan-${k}`]);
+  t.ok(PLAN_LINES.every((w) => typeof w === "string" && w.length >= 20 && !/\[WORDS:/.test(w)), "sanity: the main plan's eight offer lines are approved words, each long enough to be told apart from ordinary copy");
   const FORBIDDEN = [
     [/\bupgrade\b/i, "an Upgrade call to action"],
     [/\btry (?:it )?free\b/i, "Try Free"],
     [/\bfree trial\b|\btrial (?:has )?ended\b|\btrial ends\b|\bdays? left\b.*\btrial\b|\bstart \d+ days free\b|\b\d+ days free\b/i, "a trial surface"],
     [/\bget flourish plus\b|\bflourish plus\b/i, "the paid plan"],
+    [new RegExp(`^plan-(name|${PLAN_OFFER_IDS.join("|")})$|${PLAN_LINES.map(rxEscape).sort((a, b) => b.length - a.length).join("|")}`), "the paid plan (by id in the code, by its approved words on screen)"],
     [PRICE, "a plan price"],
   ];
   const offences = (text) => FORBIDDEN.filter(([rx]) => rx.test(text)).map(([rx, what]) => `${what} ("${(text.match(rx) || [""])[0]}")`);

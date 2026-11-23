@@ -20,7 +20,9 @@
 "use strict";
 const crypto = require("crypto");
 const { getAdminClient } = require("./_lib/auth");
-const { syncStoreSubscription, isUuid } = require("./_lib/storeSubscriptions");
+const { syncStoreSubscription, isUuid, fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
+const plusAddon = require("./_lib/plusAddon");
+const stripeApi = require("./_lib/stripeApi");   // a website Plus the same buyer also pays for (plusAddon.syncPlusFromStore)
 const { mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { reconcileHouseholdBilling } = require("./_lib/household");
 const { reclaimEvent, claimEvent } = require("./_lib/eventClaim");
@@ -97,7 +99,9 @@ async function handle(event, deps = {}) {
 
   // THE FULL FUNNEL. Before the sync, so a sync that fails and is retried still counts once (the row is first-time
   // only). Best effort: it never changes the answer RevenueCat gets.
-  const milestone = revenueCatMilestone(evt);
+  // The funnel counts the main plan only: a Plus add-on purchase, cancellation or refund is none of its milestones
+  // (a household that cancels Plus has not cancelled flourish).
+  const milestone = plusAddon.isPlusStoreProductId(evt.product_id) ? null : revenueCatMilestone(evt);
   if (milestone && isUuid(evt.app_user_id)) await recordMilestone(admin, evt.app_user_id, milestone.milestone, milestone.channel, milestone.at);
 
   try {
@@ -116,6 +120,15 @@ async function handle(event, deps = {}) {
       }
       // COUPLE MODE (audit H5): a store purchase in a household the other member already pays for: one is the extra.
       if (r.paid) await reconcileHouseholdBilling(admin, userId);
+      // THE PLUS ADD-ON (behind PLUS_ENABLED): its own row (migration 0044), from the same subscriber record, after the
+      // main plan's. It never changes the main plan's row, and the main plan's sync never changes it.
+      // The tester-only switch: with PLUS_ENABLED off, only a tester's account is synced, and only a tester's sandbox
+      // purchase is accepted.
+      if (plusAddon.plusEnabledFor(userId)) {
+        const p = await plusAddon.syncPlusFromStore(admin, userId, { fetchSubscriber: deps.fetchSubscriber || fetchSubscriber, stripeGet: deps.stripeGet || stripeApi.stripeGet, stripePost: deps.stripePost || stripeApi.stripePost,
+          acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(userId), now: deps.now });
+        if (p.conflict) notes.push("plus conflict: Plus bought in a store by a buyer who has it on the website; refund one");
+      }
       if (r.flag === "two_store_subscriptions") notes.push("flag: two live store subscriptions for one household; refund one");
       if (r.flag === "founding_not_eligible") notes.push("flag: the founding price was bought by a household it was not offered to");
     }

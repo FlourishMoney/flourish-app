@@ -30,6 +30,8 @@ const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold, fillMissingPe
 const { isPaidSubscription, isPaidInFull } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
+const plusAddon = require("./_lib/plusAddon");
+const { fetchSubscriber, acceptSandboxFor } = require("./_lib/storeSubscriptions");
 const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
 const { trialPlanFirstSince } = require("./_lib/planRules");
 const { giftCover } = require("./_lib/gifts");
@@ -66,6 +68,29 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 //                 (round 4 a3): every hold ends at its fixed time.
 const iapEnabled = () => process.env.IAP_ENABLED === "true";
 const STORE_ACTIONS = Object.freeze(["store_status", "store_sync", "store_hold"]);
+// THE PLUS ADD-ON (2026-11-10, _lib/plusAddon.js, migration 0044). Behind PLUS_ENABLED, whatever BILLING_ENABLED
+// and IAP_ENABLED say; while it is off these answer 404 and read nothing. The website's checkout also needs
+// BILLING_ENABLED, and the store sync IAP_ENABLED. None of them reads or writes public.subscriptions.
+//   plus_status      { enabled, plus, covered_by, manage, min_client }; a read that fails is 503 status_unavailable, never
+//                    "no Plus". min_client: the oldest app version that is sent Plus data.
+//                    manage: where the caller's OWN Plus purchase is managed ("stripe", "app_store", "play_store"), or
+//                    null (no Plus, a partner's Plus, complimentary Plus). Never a price, a date or a customer id.
+//   plus_checkout    { plan_key: "plus_monthly" | "plus_annual" }, the website only: a Stripe checkout for Plus on the
+//                    buyer's own Plus customer, beside whatever plan the household has. No promotion codes: Plus has no
+//                    discount, the founding households' included (Amanda's decision).
+//   plus_store_sync  "I just bought Plus in the store; look now": from RevenueCat's server, never from the app. Adds
+//                    conflict: true when the store took a Plus purchase from a buyer whose Plus is already on the website.
+//   plus_store_hold  ONE PLUS PURCHASE AT A TIME (migration 0052, _lib/plusAddon.js holdPlusPurchase), as store_hold is
+//                    for the main plan: { attempt_id, platform, state }. Without state: "about to open the store's
+//                    sheet for this attempt". { held: true } lets the sheet open; anything else sells nothing: the
+//                    household already has Plus ({ held: false, plus: true }), or another attempt is live, this
+//                    person's own or the other member's ({ held: false, reason: "purchase_in_progress", mine }).
+//                    state "pending": the store said pending; the attempt keeps its 7 days. No other state is heard:
+//                    the app never ends a hold. plus_checkout records the website's attempt the same way.
+//   plus_portal      Stripe's portal for the Plus customer (cancel, card), apart from the main plan's, and on a portal
+//                    configuration of its own with plan switching OFF (_lib/plusAddon.js createPlusPortalSession): the
+//                    shared default lets a customer switch into the main plan's prices. No configuration, no portal.
+const PLUS_ACTIONS = Object.freeze(["plus_status", "plus_checkout", "plus_store_sync", "plus_store_hold", "plus_portal"]);
 
 // The founding confirmation links' send counter (Netlify Blobs), or null, which checkSendLimit refuses.
 function confirmSendStore() {
@@ -132,11 +157,22 @@ exports.handler = async (event) => {
   let badJson = false;
   try { body = JSON.parse(event.body || "{}"); } catch { body = {}; badJson = true; }
   const storeAction = STORE_ACTIONS.includes(body && body.action);
-  if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
+  const plusAction = PLUS_ACTIONS.includes(body && body.action);
+  if (plusAction) {
+    // Off for everyone (PLUS_ENABLED off and no tester named): 404 before anyone is asked who they are. With a tester
+    // list, who is calling decides, so that check comes right after auth, below, before anything is read.
+    if (!plusAddon.plusOnForAnyone()) return json(404, CORS, { error: "not_found" });
+    if ((body.action === "plus_checkout" || body.action === "plus_portal") && !billingEnabled()) return json(404, CORS, { error: "not_found" });
+    if ((body.action === "plus_store_sync" || body.action === "plus_store_hold") && !iapEnabled()) return json(404, CORS, { error: "not_found" });
+  } else if (storeAction ? !iapEnabled() : !billingEnabled()) return json(404, CORS, { error: "not_found" });
 
   // Auth first, every time. Nothing below runs for an anonymous caller.
   const { user_id, error: authError } = await getUserFromRequest(event);
   if (!user_id) return unauthorized(CORS, authError || "unauthorized");
+
+  // THE TESTER-ONLY SWITCH (_lib/plusAddon.js): with PLUS_ENABLED off, a Plus action is answered for a tester's account
+  // only. Everyone else gets the same 404 as when Plus is off altogether, and nothing is read for them.
+  if (plusAction && !plusAddon.plusEnabledFor(user_id)) return json(404, CORS, { error: "not_found" });
 
   if (badJson) return json(400, CORS, { error: "invalid_json" });
   const action = body.action;
@@ -489,6 +525,137 @@ exports.handler = async (event) => {
       if (!url) { console.error("[billing] founding confirm", "no_secret"); return json(500, CORS, { error: "server_misconfigured" }); }
       const sent = await sendFoundingConfirmEmail(user.email, url, `founding-confirm/${user_id}/${new URL(url).searchParams.get("x")}`);
       return sent ? json(200, CORS, { sent: true }) : json(502, CORS, { error: "send_failed" });
+    }
+
+    // ── THE PLUS ADD-ON ──────────────────────────────────────────────────────────────────────────────
+    if (plusAction) {
+      // min_client: the oldest app that is sent Plus data (plaid.js get_investments, networth.js). An app older than it
+      // shows "update" and asks for none.
+      const answer = (ent, extra = {}) => json(200, CORS, { enabled: true, plus: !!ent.plus, covered_by: ent.covered_by || null,
+        manage: ent.plus && !ent.covered_by && plusAddon.MANAGED_PROVIDERS.includes(ent.provider) ? ent.provider : null,
+        min_client: plusAddon.PLUS_MIN_CLIENT, ...extra });
+      let synced = {};
+      if (action === "plus_store_sync") {
+        const user = await authUser(admin, user_id);
+        try {
+          // A tester's purchase is a sandbox or licence-tester one (TestFlight, Play internal testing): accepted for a
+          // tester's account only.
+          const r = await plusAddon.syncPlusFromStore(admin, user_id, { fetchSubscriber, stripeGet, stripePost, acceptSandbox: acceptSandboxFor(user) || plusAddon.isPlusTester(user_id) });
+          if (r && r.conflict === true) synced = { conflict: true };
+        }
+        catch (e) { console.error("[billing] plus store sync:", e.message); return json(503, CORS, { error: "status_unavailable" }); }
+      }
+      // The store app asks this just before it opens the purchase sheet. A bad attempt id or state is refused before
+      // anything is read; a read or a hold that fails sells nothing (503).
+      if (action === "plus_store_hold") {
+        const attempt = body.attempt_id;
+        if (!plusAddon.isAttemptId(attempt)) return json(400, CORS, { error: "attempt_required" });
+        if (body.state !== undefined && body.state !== "pending") return json(400, CORS, { error: "invalid_state" });
+        if (body.state === "pending") {
+          try { return json(200, CORS, { pending: await plusAddon.holdPlusPending(admin, user_id, attempt) }); }
+          catch (e) { console.error("[billing] plus pending:", e.message); return json(503, CORS, { error: "unavailable" }); }
+        }
+        const before = await plusAddon.getPlusEntitlement(admin, user_id);
+        if (before.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+        if (before.plus) return json(200, CORS, { held: false, plus: true, covered_by: before.covered_by || null });
+        let hold;
+        try { hold = await plusAddon.holdPlusPurchase(admin, user_id, body.platform === "android" ? "play_store" : "app_store", attempt); }   // which store: a label only
+        catch (e) { console.error("[billing] plus hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+        if (!hold.held) return json(200, CORS, { held: false, plus: false, reason: "purchase_in_progress", mine: hold.mine === true });
+        // The household's Plus again, now the attempt is recorded: a purchase that landed between the read above and
+        // the attempt is seen here, and no sheet opens for a household that has Plus.
+        const after = await plusAddon.getPlusEntitlement(admin, user_id);
+        if (after.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+        if (after.plus) return json(200, CORS, { held: false, plus: true, covered_by: after.covered_by || null });
+        return json(200, CORS, { held: true });
+      }
+
+      const ent = await plusAddon.getPlusEntitlement(admin, user_id);
+      if (ent.status_unavailable) return json(503, CORS, { error: "status_unavailable" });
+      if (action === "plus_status" || action === "plus_store_sync") return answer(ent, synced);
+
+      // The Plus customer is the buyer's own, never the main plan's (so a main-plan refund, portal or check never sees it).
+      const { data: plusRow, error: plusErr } = await admin.from(plusAddon.TABLE)
+        .select("provider, provider_customer_id").eq("user_id", user_id).maybeSingle();
+      if (plusErr) { console.error("[billing] plus row read:", plusErr.code || "error"); return json(503, CORS, { error: "status_unavailable" }); }
+      // ONE Stripe customer per buyer, whatever the row's provider says now (round 2 review, N2). A store purchase
+      // that takes the row keeps the Stripe customer on it (plusAddon.plusFromSubscriber), so it is read from any row:
+      // read only from a row that said "stripe", a buyer who had moved to a store got a SECOND customer at their next
+      // website checkout, and Stripe was then asked about the wrong one before Plus was sold.
+      const plusCustomer = (plusRow && typeof plusRow.provider_customer_id === "string" && plusRow.provider_customer_id) || null;
+
+      if (action === "plus_portal") {
+        if (!plusCustomer) return json(404, CORS, { error: "no_customer" });
+        // Never the shared default configuration: Plus's own, with switching off. If it can be neither found nor made
+        // this throws, and the answer below is an error, not a portal.
+        const session = await plusAddon.createPlusPortalSession({ stripeGet, stripePost }, plusCustomer, `${APP_ORIGIN()}/?plus=portal_return`);
+        return json(200, CORS, { url: session.url });
+      }
+
+      // plus_checkout: the website only (a store app sells Plus through its store), once per household.
+      if (isNativeRequest(event)) return json(403, CORS, { error: "store_app" });
+      const planKey = body.plan_key;
+      if (!plusAddon.isPlusPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
+      if (ent.plus) return json(409, CORS, { error: "already_plus", covered_by: ent.covered_by || null });
+      const { priceId, error: priceError } = plusAddon.plusPriceIdFor(planKey);
+      if (priceError) { console.error("[billing] plus price lookup:", priceError, planKey); return json(500, CORS, { error: priceError }); }
+      let customerId = plusCustomer;
+      if (!customerId) {
+        const user = await authUser(admin, user_id);
+        const customer = await stripePost("/customers", { email: user?.email || undefined, metadata: { user_id, kind: "plus_addon" } },
+          { idempotencyKey: `plus-customer:${user_id}` });
+        customerId = customer.id;
+        // Only the customer is recorded, and never over a store's Plus row that is still live (checked above: ent.plus).
+        const { error: cErr } = await admin.from(plusAddon.TABLE).upsert({ user_id, provider: "stripe", status: "incomplete",
+          provider_customer_id: customerId, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (cErr) { console.error("[billing] plus customer write:", cErr.code || "error"); return json(503, CORS, { error: "unavailable" }); }
+      }
+      // Stripe itself is asked, as the main checkout does: a live Plus subscription the row does not show yet is a 409.
+      try {
+        const live = await liveSubscriptionsFor(customerId);
+        if (live.length) {
+          // "Already has Plus" must be true, not a dead end: a live Plus subscription the row does not show becomes
+          // the row (best effort; a row that is live is never touched).
+          await plusAddon.adoptLiveStripePlus(admin, user_id, customerId, { stripeGet, stripePost });
+          return json(409, CORS, { error: "already_plus" });
+        }
+        await expireOpenCheckouts(customerId);
+      } catch (e) {
+        console.error("[billing] plus live check:", e && e.statusCode ? e.statusCode : "no_status");
+        return json(503, CORS, { error: "unavailable" });
+      }
+      // ONE PLUS PURCHASE AT A TIME (0052): the website's attempt is recorded before the checkout exists, so the other
+      // member's purchase (in a store app or here) is refused while it is open, and this one is refused while theirs
+      // is. This person's own earlier checkout was expired just above, so its attempt is replaced. A hold that cannot
+      // be recorded sells nothing.
+      // A CHECKOUT THAT IS NEVER OPENED GIVES ITS ATTEMPT BACK (review 2026-11-22): if anything below fails before
+      // Stripe has made a checkout, nothing can charge, so the attempt is removed and the other member (or this person
+      // in a store app) is not held 32 minutes for a purchase that does not exist. An OPENED checkout keeps its attempt.
+      const webAttempt = `plusweb-${crypto.randomUUID()}`;
+      let webHold;
+      try { webHold = await plusAddon.holdPlusPurchase(admin, user_id, "stripe", webAttempt); }
+      catch (e) { console.error("[billing] plus hold:", e.message); return json(503, CORS, { error: "unavailable" }); }
+      if (!webHold.held) return json(409, CORS, { error: "purchase_in_progress", mine: webHold.mine === true });
+      let held;
+      try { held = await plusAddon.getPlusEntitlement(admin, user_id); }
+      catch (e) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); throw e; }
+      if (held.status_unavailable) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); return json(503, CORS, { error: "status_unavailable" }); }
+      if (held.plus) { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); return json(409, CORS, { error: "already_plus", covered_by: held.covered_by || null }); }
+      const session = await stripePost("/checkout/sessions", {
+        mode: "subscription",
+        customer: customerId,
+        client_reference_id: user_id,
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { user_id, plan_key: planKey, kind: "plus_addon" },
+        subscription_data: { metadata: { user_id, plan_key: planKey, kind: "plus_addon" } },
+        ...taxParams(),
+        expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,
+        allow_promotion_codes: false,
+        success_url: `${APP_ORIGIN()}/?plus=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url:  `${APP_ORIGIN()}/?plus=cancelled`,
+      }, { idempotencyKey: `plus-checkout:${user_id}:${planKey}:${Math.floor(Date.now() / 60000)}:${crypto.randomUUID()}` })
+        .catch(async (e) => { await plusAddon.releasePlusPurchase(admin, user_id, webAttempt); throw e; });
+      return json(200, CORS, { url: session.url });
     }
 
     if (action === "create_portal_session") {

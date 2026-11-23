@@ -29,14 +29,15 @@ const APPROVED = {
   // "For the first 50 founding members. Your price stays the same while you stay subscribed." and
   // "The founding price is for the first 50 founding members and stays the same while that subscription stays active."
   founding: "For the first 50 households who subscribe. Stays the same while you stay subscribed.",
-  terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. Flourish Plus lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
+  terms7: "A new account has every feature for its first 14 days, at no charge. After that, the free plan has usage limits: 2 coach messages a week, 1 What-If a day and 1 connected bank, and it does not include Credit or the coach-run meeting. Each limit is shown where it applies. A flourish subscription lifts these limits. In the iOS and Android apps it is sold as an auto-renewing subscription through the App Store or Google Play, at the price shown in the app before you buy. Payment is charged to your Apple or Google account when you confirm. The subscription renews automatically at the end of each period unless you cancel it in your App Store or Google Play account settings before it renews (for Apple, at least 24 hours before the period ends). Cancelling takes effect at the end of the current period. Refunds for purchases made in the apps are handled by Apple or Google under their own policies. The founding price is for the first 50 households who subscribe to Founding annual. It is not reserved for anyone, it stays the same while that subscription stays active, and it does not come back once that subscription ends.",
   // 1.1.6 (approved 2026-11-10, ChatGPT 100 and Grok 100), one text for the App Store, Google Play and the app, word for
   // word: three notes.
   whatsNew116: "- Your weekly money meeting now opens with a recap of what you decided last time, and can ask about bill changes it finds in your accounts.\n" +
     "- Sign up in Settings for a short weekly email of Canadian money dates.\n" +
     "- Small fixes and improvements.\n",
 };
-const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
+// 2026-11-10: both named the main plan "Plus" and went back to review. Approved 2026-11-20 (netlify/functions/_lib/planWords.js).
+const UPGRADE_TEXTS = ["The free plan connects one bank. A flourish subscription connects more.", "The free plan connects one bank. A flourish subscription connects more."];
 
 (async () => {
   const t = create();
@@ -80,11 +81,19 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
-  t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x)) && /error: "plan_limit", message: "Connecting more than one bank/.test(PLAID) && /error: "plan_limit", message: "Free plan supports one bank/.test(PLAID),
-    "6a (the server's two texts are the message beside the code plan_limit)");
+  const PW_SRV = require("../netlify/functions/_lib/planWords.js");
+  // Changed 2026-11-23 (round 5 of the Plus review, R5-1; Amanda: GRANDFATHER). The second half used to hold that
+  // migrate_items refused a bank past the one-bank cap with the migrate line. A bank moved over from an older copy of the
+  // app is one the person already had: it is imported, never refused (refusing it left it live at Plaid with no row).
+  // Both approved texts are still the server's words, unchanged; the first is still the message beside plan_limit for a
+  // NEW bank; the migrate line is no longer sent, because that refusal no longer exists.
+  const MIGRATE = PLAID.slice(PLAID.indexOf('if (action === "migrate_items")'), PLAID.indexOf('if (action === "delete_account")'));
+  t.ok(UPGRADE_TEXTS.every((x, i) => PW_SRV.planWords(["plan-server-one-bank", "plan-server-one-bank-migrate"][i]) === x) && /error: "plan_limit", message: planWords\("plan-server-one-bank"\)/.test(PLAID),
+    "6a (the server's two texts are as approved, and the first is the message beside the code plan_limit for a new bank)");
+  t.ok(MIGRATE.length > 500 && !/plan_limit|bank_limit|planWords\(/.test(MIGRATE.replace(/\/\/[^\n]*/g, "")), "6a2 a bank moved over from an older copy of the app is never refused for a plan or bank limit");
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);
   t.ok(/const err = new Error\(data\.error \|\| "Plaid error"\);/.test(call) && !/data\.message/.test(call), "6b the app builds a Plaid error from the code only, never the server's message");
-  t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || APP.includes(x.split(". ")[1])), [], "6c neither upgrade text is anywhere in the app");
+  t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || x.split(". ").some((part) => part && APP.includes(part))), [], "6c neither upgrade text, nor either of its sentences, is anywhere in the app");
   // Onboarding (2026-10-23): any other failure there is W4, so the plan_limit case sets the line on its own.
   t.ok(/if \(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\) setBankError\(FREE_BANK_LINE\);/.test(APP), "6d onboarding's connect: a store app shows FREE_BANK_LINE");
   t.ok(/if\(isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\?\.message\|\|""\)\)\)\{ alertModal\(\{ message: FREE_BANK_LINE \}\); return; \}/.test(APP), "6e Settings' add-bank: a store app shows FREE_BANK_LINE (it used to say \"Please try again\")");
@@ -93,15 +102,19 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   {
     const P = O.PAYWALL_COPY;
     t.eq([P.title, P.lead, P.dataSafe, P.close, P.checking, P.checkAgain, P.storeUnavailable], [
-      // Approved 2026-11-05 (ChatGPT and Grok AGREE 100), replacing the 2026-10-20 title and lead.
+      // Title approved 2026-11-05 (ChatGPT and Grok AGREE 100). Lead approved 2026-11-20 (ChatGPT 100, Grok 100) for 1.1.8: the
+      // 2026-11-05 lead said "every flourish feature", untrue once the flourish Plus add-on is sold.
       "Subscribe to flourish",
-      "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If.",
+      "A flourish subscription includes Credit and the coach-run meeting, with no limits on the coach or What-If.",
       "Your accounts, bills and history stay as they are.",
       "Close",
       "Confirming with the store…",
       "Check again",
       "The store couldn't be reached just now. Your data is safe. Restore purchases works once the store answers.",
     ], "8a the paywall's own lines, word for word (\"stay as they are\", without \"exactly\")");
+    const { NET_WORTH_WORDS: NWW } = await import("../src/lib/netWorthWords.js");
+    t.ok(P.lead === NWW["plan-adds-lead"] && !/every flourish feature|every feature/i.test(P.lead + NWW["plan-adds-lead"]),
+      "8a2 the store apps' lead and the website's (plan-adds-lead) are one sentence, and neither says the main plan is every feature (1.1.8: flourish Plus is an add-on)");
     t.eq(P.outcomes, {
       paid: null,
       already_paid: "This account already has a subscription, so nothing was bought here.",

@@ -6,6 +6,7 @@ Listed 2026-11-05, not changed. Amanda: "Don't touch the other 19 places yet."
 
 - **Title:** "Subscribe to flourish"
 - **Body:** "A subscription gives you every flourish feature, including Credit and the coach-run meeting, with no limits on the coach or What-If."
+  - From 1.1.8 (approved 2026-11-20, branch `plus-1.1.8`): "A flourish subscription includes Credit and the coach-run meeting, with no limits on the coach or What-If." The main plan is no longer every feature once the flourish Plus add-on is sold.
 
 **Not words, and staying as they are:** the product IDs (`app.flourishmoney.plus.*`, `flourish_plus`), the RevenueCat entitlement `plus`, and the internal names.
 

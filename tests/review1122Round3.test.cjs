@@ -39,8 +39,10 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq(keep([legacy], [], map, new Set(), true), ["old_s1:5000"], "R3-1e no bank answered: nothing changes");
     t.eq(keep([h("gone_s1", "acc-gone", 7)], [], map, ALL, false), [], "R3-1f a holding whose account is gone, every bank answered: gone (as before)");
     t.eq(keep([b1], [], map, new Set(["item-A"]), true), ["b_s1:8000"], "R3-1g a holding whose bank is known and failed is kept whatever else happened (as before)");
-    const block = (() => { const i = app.indexOf("// Phase B3: fetch investment holdings per item"); return i < 0 ? "" : app.slice(i, i + 2200); })();
-    t.ok(/retainHoldings\(prev\.investments, allHoldings, new Map\(\(prev\.accounts \|\| \[\]\)\.map\(a => \[a\.id, a\._item \|\| null\]\)\), answered, answered\.size < items\.length\)/.test(block), "R3-1h the app tells the rule whether every bank answered");
+    // Changed 2026-11-23 (main merged into plus-1.1.8): this branch's one holdings sync applies plainHoldingsAfter, which
+    // works out "did every bank answer" from the round itself and gives what retainHoldings gives (plusRound2Holdings N2f3).
+    const plusLib = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "lib", "plusHoldings.js"), "utf8");
+    t.ok(/plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(app) && /const someBankFailed = /.test(plusLib) && /return someBankFailed;/.test(plusLib), "R3-1h the app tells the rule whether every bank answered");
     const writers = (app.match(/investments: /g) || []).length;
     t.ok(writers >= 1 && !/investments:\s*\[\s*\.\.\.\(?prev\.investments/.test(app), "R3-1i (holdings are only ever written by that sync: there is no typed-in holding for the rule to protect)");
   }

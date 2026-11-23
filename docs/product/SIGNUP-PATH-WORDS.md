@@ -16,7 +16,7 @@ Prices are never typed into these lines: the plan card above each one shows the 
 | 2 | signup-email-error | `Enter a valid email address.` | Under the email field, once the person leaves it or taps Create Account / Log In, while the address is not a full email address. |
 | 3 | signup-password-error | `Choose a password of at least 8 characters.` | Under the password field, Sign Up tab only, once the person leaves it or taps Create Account, while it is under 8 characters. |
 | 4 | signup-mail-not-sent | `Your account was created, but the email didn't send. Tap "Resend confirmation email" below or email hello@flourishmoney.app.` | The "Check your email" screen after Create Account, only when the confirmation email did not go out (`beta.js` answered `sent: false`). |
-| 5 | upgrade-headline | `All of flourish, in one subscription` | The upgrade screen's heading, under "Flourish Plus" and Close (website; also what PR #96's no-plan paywall opens with "See plans"). |
+| 5 | upgrade-headline | `flourish, in one subscription` | The upgrade screen's heading, under "Flourish Plus" and Close (website; also what PR #96's no-plan paywall opens with "See plans"). |
 | 6 | upgrade-bullet-1 | `The coach, with no weekly limit` | First line under the headline. |
 | 7 | upgrade-bullet-2 | `What-If as often as you like` | Second line. |
 | 8 | upgrade-bullet-3 | `More than one bank, all in one place` | Third line. |

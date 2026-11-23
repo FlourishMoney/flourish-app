@@ -115,7 +115,7 @@ global.Date = PinnedDate;
     const nameAt = APP.indexOf("viewerName(appData.profile, householdRole)||\"User\"");
     const nativeProfile = APP.slice(nameAt, nameAt + 1000);
     // H13 (audit 2026-10-26): nor during the trial (&&!trialActive), which the countdown names instead.
-    t.ok(/\{isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^>]*>✦ Flourish Plus<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
+    t.ok(/\{isPremium&&!isNativeApp\(\)&&!trialActive&&<div[^>]*>✦ \{netWorthWords\("plan-name"\)\}<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
     // Controls: the web is unchanged.
     const wTerms = textOf(W.render(W.h(W.TermsOfService, { onBack: () => {} })));
     t.ok(/Free Tier/.test(wTerms), "2d (web Terms keep their tiers)");

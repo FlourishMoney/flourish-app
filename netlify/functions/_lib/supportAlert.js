@@ -22,6 +22,7 @@ const WHAT = Object.freeze({
   two_store_subscriptions: "two live store subscriptions at once (for example a regular plan and the founding annual, which Apple bills as separate groups)",
   founding_not_eligible: "the founding price bought in a store by a household the server did not offer it to",
   two_stripe_subscriptions: "two live Stripe subscriptions at once (two checkouts completed); the row keeps the first",
+  plus_second_purchase: "a second flourish Plus purchase in a household that already has one (the same buyer on the website and in a store, or each member bought one)",
   creator_amounts_unknown: "a payment by a household with a creator, whose amounts could not be read (no tax or store fee given): no commission was recorded",
   creator_refund_unmatched: "a refund for a household with a creator that matches no commission: nothing was clawed back",
   creator_chargeback_unmatched: "a lost chargeback for a household with a creator that matches no commission: nothing was clawed back",
@@ -29,18 +30,38 @@ const WHAT = Object.freeze({
   creator_refund_reversed: "a store took back a refund for a household with a creator: any clawback is unchanged",
   creator_own_code: "a payment by a household that includes the creator whose code it holds: no commission was recorded",
   creator_not_cad: "a payment by a household with a creator, not in Canadian dollars: no commission was recorded",
+  // Round 7 of the Plus review (R7-1): a bank Item that Plaid would not remove, when the database could not record it.
+  plaid_item_no_record: "a bank Item is still live at Plaid and flourish holds NO row for it (Plaid would not remove it, and the row that remembers it could not be written)",
+  plaid_item_removal_stuck: "a bank could not be removed at Plaid and could not be marked for a later try; its row is still there, connected, as it was",
 });
 
 // The message, exactly as sent. No address, no amount: the account id is how support finds it.
-function supportAlertMessage({ flag, userId, provider }) {
+function supportAlertMessage({ flag, userId, provider, itemId, path }) {
   const what = WHAT[flag] || flag;
+  // A bank Item (never its token): the Item's id is how it is found in Plaid's dashboard.
+  if (String(flag).startsWith("plaid_item_")) {
+    return {
+      subject: `[flourish support] ${flag}`,
+      text: [
+        `The server could not finish removing a bank: ${what}.`,
+        `Account: ${userId}`,
+        `Plaid Item id: ${itemId || "unknown"}`,
+        `Where it happened: ${path || "unknown"}`,
+        flag === "plaid_item_no_record"
+          ? "Nothing in the database remembers this Item, so nothing will retry it. Remove it by hand: Plaid dashboard, Items, search the Item id, Remove. The person's account is otherwise as they left it."
+          : "The bank is still connected for this person, exactly as before, and nothing was deleted. If this message repeats, check the database and Plaid's status; the person can try again, and the same bank can be removed in Plaid's dashboard by its Item id.",
+      ].join("\n"),
+    };
+  }
   return {
     subject: `[flourish support] ${flag}`,
     text: [
       `The server flagged a household: ${what}.`,
       `Account: ${userId}`,
       `Store: ${provider || "unknown"}`,
-      flag.startsWith("creator_")
+      flag === "plus_second_purchase"
+        ? "The household keeps flourish Plus. Find both purchases by the account id (Stripe: the Plus customer, metadata kind plus_addon and user_id; the stores: RevenueCat, entitlement plus_addon) and refund the extra one. A website Plus subscription the server found to be the extra one is already set to end at its period end, so it is not charged again."
+        : flag.startsWith("creator_")
         ? "Nothing about the household's access changed. Check the payment, and correct creator_commissions by hand if it should count (docs/ops/CREATOR-PAYOUTS.md)."
         : provider === "stripe"
         ? "The household keeps its access. Find the customer in Stripe by the account id (subscription metadata user_id), cancel and refund the extra subscription, then clear support_flag on its subscriptions row."
@@ -49,11 +70,11 @@ function supportAlertMessage({ flag, userId, provider }) {
   };
 }
 
-async function alertSupport({ flag, userId, provider }, { env = process.env, fetchImpl = (typeof fetch === "function" ? fetch : null) } = {}) {
+async function alertSupport({ flag, userId, provider, itemId, path }, { env = process.env, fetchImpl = (typeof fetch === "function" ? fetch : null) } = {}) {
   try {
     const key = String(env.RESEND_API_KEY || "").trim();
     if (!key || !fetchImpl) { console.log("[support-alert] SUPPORT_ALERT_SKIPPED", flag); return false; }
-    const { subject, text } = supportAlertMessage({ flag, userId, provider });
+    const { subject, text } = supportAlertMessage({ flag, userId, provider, itemId, path });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
