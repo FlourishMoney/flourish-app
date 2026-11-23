@@ -27,7 +27,7 @@ const { isPaidSubscription, isStoreRow } = require("./_lib/planRules");
 const { isLiveStripeStatus, holdsHousehold } = require("./_lib/stripeLive");
 const { alertSupport } = require("./_lib/supportAlert");
 const { takeSeat, releaseSeat, releaseTrialSeat } = require("./_lib/foundingSeats");
-const { reconcileHouseholdBilling } = require("./_lib/household");
+const { reconcileHouseholdBilling, clearCompletedAttempt } = require("./_lib/household");
 const { creatorsEnabled, creditStripeInvoice, clawbackStripeCharge, settleStripeDispute } = require("./_lib/creators");
 // The full funnel (migration 0042): the website's payment, cancellation or refund, first time only.
 const { stripeMilestone, recordMilestone } = require("./_lib/funnel");
@@ -154,6 +154,57 @@ function userIdFrom(object) {
 function foundingCheckoutPaid(session) {
   return session?.metadata?.plan_key === "founding_annual" && session?.mode !== "payment"
     && ["paid", "no_payment_required"].includes(session?.payment_status);
+}
+
+// A FULL REFUND OF THE CURRENT PAYMENT ENDS THE PLAN (Amanda's decision, 2026-11-23; the same rule as the Plus
+// add-on's). In the real-world proof (step 1A.6) a full refund left the plan on: Stripe keeps a refunded subscription
+// running, and so did flourish, so a refunded customer kept access until someone also cancelled the subscription.
+// Now: a charge refunded IN FULL, when it is the payment for the period the subscription is in, cancels the
+// subscription at Stripe (so it is not left live and charging) and ends the row now. A partial refund, a refund of an
+// earlier period's payment, or of a payment for anything else (a gift is handled before this) changes nothing: that
+// is support's call.
+// WHICH payment it was: Stripe's current API (2026-08-26.dahlia) puts no invoice on a charge, so Stripe is asked which
+// invoice the payment paid (invoice_payments, by the charge's payment_intent), then whether that invoice is the
+// latest one of the subscription our row names.
+// Returns true when the plan was ended. THROWS when Stripe or the row cannot be reached: the event is then not
+// acknowledged, Stripe sends it again, and nothing is ended on a guess.
+async function endPlanForFullRefund(admin, charge, deps = {}) {
+  if (!charge || charge.refunded !== true) return false;
+  const get = deps.stripeGet || stripeApi.stripeGet, del = deps.stripeDelete || stripeApi.stripeDelete;
+  const customerId = typeof charge.customer === "string" ? charge.customer : charge.customer && charge.customer.id;
+  if (!customerId) return false;
+  const { data: row, error } = await admin.from("subscriptions")
+    .select("user_id, provider, status, provider_subscription_id, current_period_end").eq("provider_customer_id", customerId).maybeSingle();
+  if (error) throw new Error(`subscription read: ${error.message || error.code || "error"}`);
+  if (!row || (row.provider || "stripe") !== "stripe" || !row.provider_subscription_id) return false;
+  let inv = charge.invoice;
+  if (!inv) {
+    const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent && charge.payment_intent.id;
+    if (!pi) return false;
+    const paid = await get(`/invoice_payments?payment%5Btype%5D=payment_intent&payment%5Bpayment_intent%5D=${encodeURIComponent(pi)}&limit=1`);
+    const first = paid && Array.isArray(paid.data) ? paid.data[0] : null;
+    inv = first ? (typeof first.invoice === "string" ? first.invoice : first.invoice && first.invoice.id) || null : null;
+  }
+  if (!inv) return false;                                  // not a subscription's payment
+  const invoice = typeof inv === "object" ? inv : await get(`/invoices/${encodeURIComponent(inv)}`);
+  const of = invoice && (invoice.subscription || (invoice.parent && invoice.parent.subscription_details && invoice.parent.subscription_details.subscription));
+  const subId = typeof of === "string" ? of : (of && of.id) || null;
+  if (!subId || subId !== row.provider_subscription_id) return false;      // another subscription's payment
+  const sub = await get(`/subscriptions/${encodeURIComponent(subId)}`);
+  if (!sub || sub.id !== subId) throw new Error("subscription read: no answer");
+  const latest = typeof sub.latest_invoice === "string" ? sub.latest_invoice : sub.latest_invoice && sub.latest_invoice.id;
+  if (!latest || latest !== invoice.id) return false;      // an earlier period's payment
+  if (sub.status === "canceled" && row.status === "canceled") return false;   // already over
+  if (sub.status !== "canceled") await del(`/subscriptions/${encodeURIComponent(subId)}`);
+  // The row ends now. Stripe's own customer.subscription.deleted follows and writes the rest (the founding lock, the
+  // household's other plan); last_event_at is left alone so that event is not set aside as older.
+  const nowIso = new Date().toISOString();
+  const { error: endErr } = await admin.from("subscriptions")
+    .update({ status: "canceled", current_period_end: nowIso, cancel_at_period_end: false, updated_at: nowIso })
+    .eq("user_id", row.user_id).eq("provider_subscription_id", subId);
+  if (endErr) throw new Error(`subscription end: ${endErr.message || endErr.code || "error"}`);
+  console.error("[stripe-webhook] a full refund of the current payment ended the plan");
+  return true;
 }
 
 exports.handler = async (event) => {
@@ -429,6 +480,9 @@ exports.handler = async (event) => {
       if (eventAtIso) patch.last_event_at = eventAtIso;
       const { error } = await admin.from("subscriptions").upsert(patch, { onConflict: "user_id" });
       if (error) throw new Error(error.message);
+      // The purchase is done: this checkout's own attempt ends now, not after the rest of its 32 minutes
+      // (_lib/household.js clearCompletedAttempt; never throws, never fails the purchase, never a household's hold).
+      await clearCompletedAttempt(admin, user_id, object.id);
       // Past 50 (two checkouts completing at the last seat) the seat is still recorded, and logged: they paid.
       if (foundingCheckoutPaid(object)) await takeSeat(admin, user_id, "stripe", sessionSubId || null);
       // COUPLE MODE (audit H5): the other member already paid too (a race the hold did not stop, or a store
@@ -447,6 +501,8 @@ exports.handler = async (event) => {
           .from("subscriptions").select("user_id").eq("provider_customer_id", customerId).maybeSingle();
         if (ownerErr) throw new Error(ownerErr.message);
         if (owner?.user_id) await releaseSeat(admin, owner.user_id, { reason: "refund", provider: "stripe" });
+        // …and ends the plan, when it was the payment for the period the plan is in (2026-11-23).
+        await endPlanForFullRefund(admin, object);
       }
       // THE CREATOR PROGRAM: a clawback of the commission on that one payment, partial refunds included.
       if (creatorsEnabled()) creatorNotes = await clawbackStripeCharge(admin, object);

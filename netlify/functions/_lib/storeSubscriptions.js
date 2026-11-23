@@ -41,7 +41,7 @@
 "use strict";
 const { alertSupport } = require("./supportAlert");
 const crypto = require("crypto");
-const { isPaidSubscription, STORE_PROVIDERS, isCustomerOnlyRow } = require("./planRules");
+const { isPaidSubscription, isPaidInFull, STORE_PROVIDERS, isCustomerOnlyRow } = require("./planRules");
 const { takeSeat, releaseSeat, releaseTrialSeat } = require("./foundingSeats");
 
 const ENTITLEMENT_ID = "plus";
@@ -234,7 +234,9 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   if (!next) return answer({});
   if (!mayReplace(existing, next, now)) {
     console.error("[store-sync] conflict: a store purchase for a household whose subscription is with", existingProvider);
-    const paidElsewhere = isPaidSubscription(existing, now);
+    // Paid in full elsewhere, not in billing grace: a web renewal that failed is "the web needs attention" here, as it
+    // always was, never "paying twice".
+    const paidElsewhere = isPaidInFull(existing, now);
     // Paying on the website and in a store at once: recorded on the (website's) row for support, which stays as it is.
     let flag = null;
     if (paidElsewhere && isPaidSubscription(next, now)) {

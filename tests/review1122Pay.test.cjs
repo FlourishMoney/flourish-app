@@ -106,7 +106,7 @@ function loadHook(admin, stripe = {}) {
   require.cache[AUTH_PATH].exports = { ...real, getAdminClient: () => admin };
   require.cache[API_PATH] = { id: API_PATH, filename: API_PATH, loaded: true,
     exports: { stripeGet: stripe.stripeGet || (async () => { throw new Error("stripe down"); }), stripePost: stripe.stripePost || (async () => ({})),
-               stripeDelete: async () => ({}), formEncode: () => "" } };
+               stripeDelete: stripe.stripeDelete || (async () => ({})), formEncode: () => "" } };
   // The libraries that hold their own copy of stripeApi are loaded again, so they see the stand-in.
   for (const k of Object.keys(require.cache)) if (k.startsWith(FN) && k !== AUTH_PATH && k !== API_PATH) delete require.cache[k];
   const mod = require(HOOK_PATH);
@@ -245,6 +245,97 @@ const DAY = 86400000;
     t.ok(!/\.insert\([\s\S]{0,400}?ignoreDuplicates/.test(srcOf("stripe-webhook.js")) && !/\.insert\([\s\S]{0,400}?ignoreDuplicates/.test(srcOf("revenuecat-webhook.js")),
       "P3-02z neither webhook passes ignoreDuplicates to insert any more: the option does nothing there, and reading it as if it did was the defect");
 
+    // ══ AMANDA'S DECISIONS AFTER THE REAL-WORLD PROOF (2026-11-23) ═══════════════════════════════════════════════
+    // 2. A FULL REFUND OF THE CURRENT MAIN-PLAN PAYMENT ENDS ACCESS, the same rule as Plus. A partial refund does not.
+    //    In the proof (step 1A.6) a full refund left the plan active: Stripe keeps a refunded subscription running,
+    //    and so did flourish. The charge Stripe sends names no invoice (API 2026-08-26.dahlia), so Stripe is asked
+    //    which invoice the payment paid, and whether that invoice is the subscription's latest (the period it is in).
+    {
+      const charge = (o = {}) => ({ id: "ch_1", object: "charge", customer: "cus_1", payment_intent: "pi_now", refunded: true, amount: 1199, amount_refunded: 1199, created: Math.floor(NOW / 1000) - 3600, ...o });
+      const refundEvt = (id, ch) => ({ id, type: "charge.refunded", created: Math.floor(NOW / 1000), data: { object: ch } });
+      const subRow = (o = {}) => ({ user_id: U1, provider: "stripe", provider_customer_id: "cus_1", provider_subscription_id: "sub_1", plan_key: "monthly", status: "active",
+        current_period_end: iso(NOW + 20 * DAY), cancel_at_period_end: false, last_event_at: iso(NOW - 3600000), updated_at: iso(NOW - 3600000), ...o });
+      const stripeWorld = (o = {}) => {
+        const w = { log: [], latest: "in_now", payments: { pi_now: "in_now", pi_old: "in_old", pi_other: "in_other" }, invoices: { in_now: "sub_1", in_old: "sub_1", in_other: "sub_gone" }, subStatus: "active", down: false, ...o };
+        w.stripeGet = async (p) => {
+          w.log.push(`GET ${p.split("?")[0]}`);
+          if (w.down) { const e = new Error("stripe is down"); e.statusCode = 503; throw e; }
+          if (p.startsWith("/invoice_payments?")) { const pi = decodeURIComponent((/payment_intent%5D=([^&]+)/.exec(p) || [])[1] || ""); return { data: w.payments[pi] ? [{ invoice: w.payments[pi], payment: { type: "payment_intent", payment_intent: pi } }] : [] }; }
+          if (p.startsWith("/invoices/")) { const id = p.split("/").pop(); return w.invoices[id] ? { id, parent: { subscription_details: { subscription: w.invoices[id] } } } : {}; }
+          if (p.startsWith("/subscriptions/")) return { id: p.split("/").pop(), status: w.subStatus, latest_invoice: w.latest };
+          return { data: [] };
+        };
+        w.stripeDelete = async (p) => { w.log.push(`DELETE ${p}`); w.subStatus = "canceled"; return { id: p.split("/").pop(), status: "canceled" }; };
+        return w;
+      };
+      const rowOf = (d) => (d.db.subscriptions || [])[0] || {};
+      const deletes = (w) => w.log.filter((l) => l.startsWith("DELETE"));
+
+      let d = fakeDb({ subscriptions: [subRow()] }), w = stripeWorld();
+      let r = await deliver(loadHook(d, w), refundEvt("evt_rf1", charge()));
+      t.eq([r.statusCode, deletes(w), rowOf(d).status], [200, ["DELETE /subscriptions/sub_1"], "canceled"], "REFUND-a a full refund of the payment for the period the plan is in: the subscription is cancelled at Stripe and the row ends (it stayed active)");
+      t.ok(Date.parse(rowOf(d).current_period_end) <= Date.now() + 1000 && rowOf(d).current_period_end !== subRow().current_period_end, "REFUND-b …and the paid-to date is now, so access ends at once");
+      t.eq(require("../netlify/functions/_lib/planRules.js").isPaidSubscription(rowOf(d)), false, "REFUND-c …the plan rule says not paid");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf2", charge({ refunded: false, amount_refunded: 500 })));
+      t.eq([r.statusCode, deletes(w).length, rowOf(d).status, w.log.length], [200, 0, "active", 0], "REFUND-d a partial refund changes nothing, and Stripe is not even asked");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf3", charge({ payment_intent: "pi_old" })));
+      t.eq([r.statusCode, deletes(w).length, rowOf(d).status], [200, 0, "active"], "REFUND-e a full refund of an EARLIER period's payment changes nothing (support's call), as with Plus");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf4", charge({ payment_intent: "pi_other" })));
+      t.eq([r.statusCode, deletes(w).length, rowOf(d).status], [200, 0, "active"], "REFUND-f a refund of a payment for some other subscription of that customer changes nothing");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf5", charge({ payment_intent: "pi_unknown" })));
+      t.eq([r.statusCode, deletes(w).length, rowOf(d).status], [200, 0, "active"], "REFUND-g Stripe knows no invoice for the payment (not a subscription payment): nothing is ended");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld({ down: true });
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf6", charge()));
+      t.eq([r.statusCode >= 500, rowOf(d).status, d.db.billing_events[0].status], [true, "active", "failed"], "REFUND-h Stripe cannot be asked: the event is not acknowledged (Stripe sends it again) and nothing is ended on a guess");
+      w.down = false;
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf6", charge()));
+      t.eq([r.statusCode, deletes(w), rowOf(d).status], [200, ["DELETE /subscriptions/sub_1"], "canceled"], "REFUND-i …and the retry ends it");
+
+      d = fakeDb({ subscriptions: [subRow({ status: "canceled" })] }); w = stripeWorld({ subStatus: "canceled" });
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf7", charge()));
+      t.eq([r.statusCode, deletes(w).length], [200, 0], "REFUND-j a plan already over is not cancelled twice");
+
+      d = fakeDb({ subscriptions: [subRow({ provider: "app_store", provider_subscription_id: null })] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf8", charge()));
+      t.eq([r.statusCode, deletes(w).length, rowOf(d).status], [200, 0, "active"], "REFUND-k a row that is now a store purchase is never ended by a Stripe refund");
+
+      d = fakeDb({ subscriptions: [subRow({ status: "trialing" })] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf9", charge()));
+      t.eq([r.statusCode, deletes(w), rowOf(d).status], [200, ["DELETE /subscriptions/sub_1"], "canceled"], "REFUND-l whatever the status, if the refunded payment is the current period's, the plan ends");
+
+      d = fakeDb({ subscriptions: [subRow()] }); w = stripeWorld();
+      r = await deliver(loadHook(d, w), refundEvt("evt_rf10", charge()));
+      t.ok(d.rpcCalls.some((c) => c.fn === "founding_seat_release" && c.args.p_user_id === U1), "REFUND-m the founding seat is still given back on a full refund, as before");
+    }
+
+    // 3. THE PURCHASE HOLD IS RELEASED AS SOON AS A CHECKOUT COMPLETES. In the proof a person whose first checkout had
+    //    completed could not start another for up to 32 minutes ("Couldn't reach checkout"): the hold outlived it.
+    {
+      const done = (id, sessionId) => ({ id, type: "checkout.session.completed", created: Math.floor(NOW / 1000),
+        data: { object: { id: sessionId, object: "checkout.session", mode: "subscription", customer: "cus_1", subscription: "sub_1", payment_status: "paid", metadata: { user_id: U1, plan_key: "annual" } } } });
+      const cleared = [];
+      let d = fakeDb({}, { rpc: { purchase_attempt_clear: async (a) => { cleared.push(a); return { data: { result: "cleared" }, error: null }; } } });
+      let r = await deliver(loadHook(d), done("evt_hold1", "cs_test_done_1"));
+      t.eq([r.statusCode, cleared], [200, [{ p_user: U1, p_attempt: "cs_test_done_1" }]], "HOLD-a a completed checkout ends this person's attempt for that very checkout, at once");
+      d = fakeDb({}, { rpc: { purchase_attempt_clear: async () => ({ data: null, error: { code: "XX000", message: "down" } }) } });
+      r = await deliver(loadHook(d), done("evt_hold2", "cs_test_done_2"));
+      t.eq([r.statusCode, (d.db.subscriptions || []).map((x) => x.status), d.db.billing_events[0].status], [200, ["active"], "processed"], "HOLD-b a release that cannot be written never fails the purchase: the plan is on, and the hold lapses on its own as before");
+      d = fakeDb({});                                  // 0031 not applied: the stand-in answers "no such function"
+      r = await deliver(loadHook(d), done("evt_hold3", "cs_test_done_3"));
+      t.eq([r.statusCode, (d.db.subscriptions || []).length], [200, 1], "HOLD-c before the holds exist at all, a purchase is handled as before");
+      const hookSrc = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "stripe-webhook.js"), "utf8");
+      t.ok(/clearCompletedAttempt\(admin, user_id, object\.id\)/.test(hookSrc), "HOLD-d the webhook ends it by the session's own id, never \"any attempt of this person\"");
+    }
+
     // ── N1 (round 2 review, 2026-11-22): TWO RETRIES OF THE SAME FAILED EVENT AT THE SAME MOMENT ──────────────
     // The takeover of a row marked failed was an unconditional update, so both retries did the work. It is now the
     // same compare-and-swap the stuck row has: the one whose write lands does the work, the other is not acknowledged.
@@ -334,7 +425,11 @@ const DAY = 86400000;
     t.eq(isPaidSubscription({ provider: "app_store", status: "active", current_period_end: null, plan_key: "monthly", last_event_at: iso(NOW - 400 * DAY) }, NOW), true, "P2-02g a store row is not touched by this (the store always gives an end)");
     t.eq([isPaidSubscription(row({ current_period_end: iso(NOW + DAY), last_event_at: iso(NOW - 400 * DAY) }), NOW), isPaidSubscription(row({ current_period_end: iso(NOW - DAY), last_event_at: iso(NOW) }), NOW)], [true, false],
       "P2-02h a row WITH a period end is judged by that end alone, as before");
-    t.eq(isPaidSubscription(row({ status: "past_due", plan_key: "monthly", last_event_at: iso(NOW) }), NOW), false, "P2-02i and status still comes first");
+    // Changed 2026-11-23 (Amanda's decision, billing grace): this used "past_due" as the status that is not paid. A
+    // failed renewal Stripe is retrying now keeps access (P2-02i2); "unpaid" is Stripe having given up.
+    t.eq(isPaidSubscription(row({ status: "unpaid", plan_key: "monthly", last_event_at: iso(NOW) }), NOW), false, "P2-02i and status still comes first");
+    t.eq([isPaidSubscription(row({ status: "past_due", plan_key: "monthly", last_event_at: iso(NOW) }), NOW), isPaidSubscription(row({ status: "past_due", plan_key: "monthly", last_event_at: iso(NOW - 40 * DAY) }), NOW)], [true, false],
+      "P2-02i2 billing grace follows the same no-period rule: counted from Stripe's last word, never for ever");
 
     // The row is filled in from Stripe the next time the household's status is read.
     const live = require("../netlify/functions/_lib/stripeLive.js");

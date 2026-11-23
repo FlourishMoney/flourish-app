@@ -35,7 +35,7 @@
 "use strict";
 
 const crypto = require("crypto");
-const { isPaidSubscription } = require("./planRules");
+const { isPaidInFull } = require("./planRules");
 const { cleanEmail, isEmail } = require("./emailAddress");
 const { emailHtml } = require("./emailLayout");
 const { GIFT_WORDS, giftWords } = require("./giftWords");
@@ -504,7 +504,8 @@ async function redeemGift({ admin, userId, rawCode, now = new Date() }) {
   const { data: sub, error: subErr } = await admin.from("subscriptions")
     .select("provider, status, current_period_end, cancel_at_period_end").eq("user_id", userId).maybeSingle();
   if (subErr && !isMissing(subErr)) return { ok: false, result: "unavailable" };
-  const paid = !subErr && isPaidSubscription(sub, now.getTime()) && sub.current_period_end ? sub : null;
+  // A gift year starts after a period that is PAID FOR, not after one in billing grace (unpaid, and it may never be).
+  const paid = !subErr && isPaidInFull(sub, now.getTime()) && sub.current_period_end ? sub : null;
   let r;
   try {
     r = await rpc(admin, "gift_redeem", { p_code: code, p_user: userId, p_not_before: paid ? paid.current_period_end : null, p_now: now.toISOString() });

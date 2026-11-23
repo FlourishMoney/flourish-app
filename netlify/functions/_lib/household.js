@@ -22,7 +22,7 @@
 "use strict";
 
 const crypto = require("crypto");
-const { deriveEntitlement, isPaidSubscription } = require("./planRules");
+const { deriveEntitlement, isPaidSubscription, isPaidInFull } = require("./planRules");
 const { cleanEmail, isEmail } = require("./emailAddress");
 const { emailHtml } = require("./emailLayout");
 const { subjectKey } = require("./limiterKeys");
@@ -168,7 +168,8 @@ async function householdCover(admin, userId, now = Date.now()) {
       if (sub.error) return { covered: false, unavailable: true };
       const ent = deriveEntitlement(prof.data, sub.data, now);
       if (isPaidSubscription(sub.data, now)) {
-        return { covered: true, provider: sub.data.provider || "stripe", period_end: sub.data.current_period_end || null, unavailable: false };
+        // In billing grace the partner is still covered, with no paid-to date (the period is not paid for).
+        return { covered: true, provider: sub.data.provider || "stripe", period_end: isPaidInFull(sub.data, now) ? sub.data.current_period_end || null : null, unavailable: false };
       }
       if (ent.plan === "beta_founder" || ent.plan === "premium") return { covered: true, provider: null, period_end: null, unavailable: false };
       // A gift year the other member redeemed (migration 0050) counts as their paid plan does.
@@ -244,6 +245,21 @@ async function settlePurchaseAttempt(admin, userId, refusal, deps = {}) {
   if (error) throw new Error(`purchase clear: ${error.code || "error"}`);
   return !!data && data.result === "cleared";
 }
+// A CHECKOUT THAT COMPLETED ENDS ITS OWN ATTEMPT AT ONCE (Amanda's decision, 2026-11-23). The attempt is there so two
+// purchases cannot run side by side; once Stripe says this one completed it protects nothing, and it used to stand for
+// the rest of its 32 minutes: a person whose plan then ended, or who needed another checkout, was told "Couldn't
+// reach checkout" (real-world proof, the buy-again step). This is purchase_attempt_clear, the function 0031 already
+// has for "the server has seen that this attempt can no longer charge (… the checkout expired or completed)": that
+// one attempt, by its id. It never ends a HOUSEHOLD's hold; those still end only at their fixed time (round 4 a3).
+// Never throws and never fails the purchase: if it cannot be written the attempt lapses on its own, as before.
+async function clearCompletedAttempt(admin, userId, attemptId) {
+  if (!userId || !isAttemptId(attemptId)) return false;
+  try {
+    const { data, error } = await admin.rpc("purchase_attempt_clear", { p_user: userId, p_attempt: attemptId });
+    if (error) { if (!legacyMissing(error)) console.error("[household] hold release:", error.code || "error"); return false; }
+    return !!data && data.result === "cleared";
+  } catch (e) { console.error("[household] hold release:", e && e.message); return false; }
+}
 // ── WHO LINKED EACH BANK ACCOUNT (audit round 2 c) ─────────────────────────────────────────────────
 // Recorded from Plaid's own answers whenever plaid.js lists an item's accounts, against the person who linked the
 // item (never the member who happens to be asking). Leaving and disconnecting clean up by it, so neither depends on
@@ -305,7 +321,8 @@ async function payersOf(admin, householdId, now = Date.now()) {
       .select("provider, status, current_period_end, plan_key, provider_subscription_id, cancel_at_period_end, support_flag, support_flag_at")
       .eq("user_id", m.user_id).maybeSingle();
     if (error) throw new Error(`subscription read: ${error.code || "error"}`);
-    if (isPaidSubscription(data, now)) out.push({ user_id: m.user_id, role: m.role, provider: data.provider || "stripe", plan_key: data.plan_key || null, row: data });
+    // Paid in full, not merely in billing grace: a plan whose renewal failed is not one of "two plans being paid".
+    if (isPaidInFull(data, now)) out.push({ user_id: m.user_id, role: m.role, provider: data.provider || "stripe", plan_key: data.plan_key || null, row: data });
   }
   return out;
 }
@@ -375,7 +392,7 @@ module.exports = {
   sha256, normalizeCode, isCodeShaped, isTokenShaped, newInviteSecrets, inviteUrl, emailKey, netKeyOf,
   INVITE_EMAIL, hasPlaceholder, inviteEmailPayload, sendInviteEmail,
   householdCover,
-  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending, settlePurchaseAttempt,
+  HOLD_MINUTES, CHECKOUT_MINUTES, PENDING_BACKSTOP_DAYS, isAttemptId, holdPurchase, holdPending, settlePurchaseAttempt, clearCompletedAttempt,
   recordAccountOwners, disconnectItem,
   EXTRA_FLAG, extraPayer, payersOf, reconcileHouseholdBilling, resumeHouseholdExtra,
 };

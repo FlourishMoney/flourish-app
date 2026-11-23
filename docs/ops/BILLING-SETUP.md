@@ -68,6 +68,18 @@ products, separate prices, separate webhook endpoints, separate keys.
    An event the destination does not send never reaches the webhook, so the code that reads it never runs
    and nothing says so. Stripe's test mode has its own destinations: check both.
 
+   **Failed renewals and refunds (Amanda's decisions, 2026-11-23).**
+   - *Billing grace.* A renewal that fails leaves the subscription `past_due` while Stripe retries. The household
+     keeps access for that time (`_lib/planRules.js`), and loses it when Stripe cancels the subscription or marks it
+     unpaid. How long that is, and what happens at the end, is Stripe's setting, not ours: Settings → Billing →
+     Subscriptions and emails → Manage failed payments. The last choice there ("If all retries for a payment fail")
+     must be **cancel the subscription** or **mark the subscription as unpaid**. If it is "leave the subscription
+     past-due", grace runs to the end of the unpaid period: a year, on an annual plan. In test mode on 2026-11-23
+     Stripe cancelled 15 days after the failed charge.
+   - *A full refund ends the plan.* Refunding the whole of the current period's payment cancels the subscription at
+     Stripe and ends access at once (`stripe-webhook.js` `endPlanForFullRefund`). A partial refund, or a refund of an
+     earlier period, changes nothing. It needs `charge.refunded` on the destination (it is there).
+
 4. **Customer portal.** Settings → Billing → Customer portal → activate it in test mode,
    and allow cancel and payment-method updates. `create_portal_session` returns a Stripe
    error until this is switched on, and the error is the same shape as a missing key,

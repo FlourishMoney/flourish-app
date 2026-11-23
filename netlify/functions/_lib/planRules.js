@@ -96,11 +96,21 @@ function isUnlimitedProfile(profile, now = Date.now()) {
 // household currently has what it paid for:
 const SUBSCRIPTION_PAID_STATUSES = Object.freeze(["active", "trialing"]);
 //
-// past_due is deliberately NOT here. It means a renewal charge failed and Stripe is retrying, and
-// including it would be a product decision about a grace period that nobody has made yet — so the
-// conservative reading applies until someone makes it: access follows a payment that succeeded.
-// The day a grace period is decided, it is one entry in this array and a line in the report; the
-// schema does not change, because 0009 stores Stripe's status verbatim and constrains nothing here.
+// BILLING GRACE (Amanda's decision, 2026-11-23, after the real-world proof, step 1A.4). past_due means a renewal
+// charge failed and Stripe is retrying. Until that day it was "deliberately not here": access ended at the first
+// failed charge, the conservative reading while nobody had decided on a grace period. The decision is now made, and
+// it is the stores' own idea of a grace period: ACCESS STAYS WHILE STRIPE IS RETRYING, and ends when Stripe cancels
+// the subscription or marks it unpaid (both arrive as the subscription's new status).
+//   isPaidSubscription   "does the household have access?"   active, trialing, or in grace
+//   isPaidInFull         "is this period paid for?"          active or trialing only. Asked where money, not access,
+//                        is the question: which of two paying members' plans is the extra one, where a gift year
+//                        starts, whether a household is "paying twice", and the paid-to date the apps are told.
+//   inBillingGrace       past_due, on a Stripe row, inside the period Stripe is trying to collect for.
+// A store's row is never given this grace: Apple and Google run their own and report it as a live purchase.
+// HOW LONG it lasts is Stripe's setting (Billing, "Manage failed payments": the retry window, and what happens when
+// every retry fails). If that setting is "leave the subscription past due", grace runs to the end of the unpaid
+// period: for an annual plan, a year. It must be "cancel the subscription" or "mark as unpaid".
+const SUBSCRIPTION_GRACE_STATUSES = Object.freeze(["past_due"]);
 //
 // current_period_end is checked as well as status. An 'active' row whose period ended is a webhook
 // we never received, and trusting status alone would hand out the product on a delivery failure.
@@ -121,8 +131,8 @@ function impliedPeriodEndMs(sub) {
   if (from === null) return null;
   return from + (sub.plan_key === "monthly" ? NO_PERIOD_MS.monthly : NO_PERIOD_MS.annual) + NO_PERIOD_GRACE_MS;
 }
-function isPaidSubscription(sub, now = Date.now()) {
-  if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
+// Has the period this row names not ended yet? (The period check both questions share.)
+function periodNotOver(sub, now = Date.now()) {
   const t = now instanceof Date ? now.getTime() : now;
   const end = _time(sub.current_period_end);
   if (end === null) {
@@ -130,6 +140,18 @@ function isPaidSubscription(sub, now = Date.now()) {
     return implied === null ? true : t < implied;   // no dates read: status is all we have
   }
   return t < end;
+}
+function isPaidInFull(sub, now = Date.now()) {
+  if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
+  return periodNotOver(sub, now);
+}
+function inBillingGrace(sub, now = Date.now()) {
+  if (!sub || !SUBSCRIPTION_GRACE_STATUSES.includes(sub.status)) return false;
+  if (STORE_PROVIDERS.includes(sub.provider)) return false;
+  return periodNotOver(sub, now);
+}
+function isPaidSubscription(sub, now = Date.now()) {
+  return isPaidInFull(sub, now) || inBillingGrace(sub, now);
 }
 
 // WHERE A SUBSCRIPTION ROW CAME FROM (migration 0020). 'stripe' is the website; the other two are the
@@ -179,5 +201,5 @@ function isCustomerOnlyRow(row) {
 module.exports = {
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile, trialPlanFirstSince, accountTrialApplies,
   SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, impliedPeriodEndMs, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
-  isCustomerOnlyRow,
+  isCustomerOnlyRow, SUBSCRIPTION_GRACE_STATUSES, isPaidInFull, inBillingGrace,
 };

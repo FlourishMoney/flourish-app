@@ -27,7 +27,7 @@ const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost, stripeGet } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold, fillMissingPeriod } = require("./_lib/stripeLive");
-const { isPaidSubscription } = require("./_lib/planRules");
+const { isPaidSubscription, isPaidInFull } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
 const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
@@ -206,7 +206,9 @@ exports.handler = async (event) => {
         paid: isPaidSubscription(row),
         // When the paid period ends (only while paid): the app keeps this answer until then if a later status read
         // fails (item 16), as the store apps do with store_status.
-        period_end: isPaidSubscription(row) && row && row.current_period_end ? row.current_period_end : null,
+        // Billing grace (2026-11-23): a failed renewal Stripe is retrying keeps `paid` true, but that period is not
+        // paid for, so no date is given and the app trusts the answer for 3 days at most if it cannot ask again.
+        period_end: isPaidInFull(row) && row && row.current_period_end ? row.current_period_end : null,
         manageable: !!row?.provider_customer_id,
         // H4 (audit 2026-10-26): a web subscription Stripe is still collecting (a renewal that failed, past_due):
         // not paid, so no access, but the fix is the card, in the billing portal, never a second checkout.
@@ -283,7 +285,7 @@ exports.handler = async (event) => {
         conflict_kind: state.conflictKind || null,
         web_attention: webAttention,
         // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
-        period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
+        period_end: state.paid && row && row.current_period_end && isPaidInFull(row) ? row.current_period_end : null,
         // spots_left (2026-10-29): founding spots left, the same public figure the landing shows (/api/founding),
         // for the plans screen's words while the founding price is offered; null otherwise.
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
