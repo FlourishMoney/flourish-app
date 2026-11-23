@@ -8,10 +8,12 @@
 // tests/webPlusIncludes.test.cjs pins each line exactly. Do not reword them here.
 // -----------------------------------------------------------------------------
 
+import { freeWords } from "./freeWords.js";
+
 export const PLUS_INCLUDES = Object.freeze([
   "The coach with no weekly limit",
   "What-If as often as you like",
-  "More than one connected bank",
+  freeWords("free-includes-bank"),   // free v1 on the website (2026-11-23): Free connects no bank; a word slot (lib/freeWords.js)
   "Credit",
   "The coach-run money meeting",
 ]);

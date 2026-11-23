@@ -125,7 +125,10 @@ const D = "Flourish Plus adds Credit and the coach-run meeting, and lifts the fr
   t.ok(E.launchParagraphs().includes(C) && !E.launchParagraphs().includes("flourish is now available in Canada at flourishmoney.app."), "C the launch email's sentence, word for word");
 
   // ── D. The website Settings card ──────────────────────────────────────────────────────────────
-  t.ok(APP.includes(`: "${D}"}`) && !APP.includes("Unlimited coaching and the full picture from your linked accounts."), "D the website Settings card's Flourish Plus line, word for word");
+  // Free v1 on the website (2026-11-23): the line no longer says what Free keeps (it named no bank, and Free now has none);
+  // it is the word slot free-settings-plan-line (lib/freeWords.js, held by tests/freeV1Words.test.cjs), in the same place.
+  t.ok(APP.includes(`: freeWords("free-settings-plan-line")}`) && !APP.includes(D) && !APP.includes("Unlimited coaching and the full picture from your linked accounts."),
+    "D the website Settings card's plan line is the free v1 slot, where the old line was (and neither old line is left)");
   t.ok(/\{billingUi\?\.show&&onOpenUpgrade&&\(/.test(APP), "D …on the card that shows only when the server says billing is on and this is not a store app");
   t.summary("privacyAndWords.test");
 })();

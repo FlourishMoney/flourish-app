@@ -127,7 +127,11 @@ function checkLd(blocks, visibleText) {
   t.ok(home.includes(SEO.PRERENDER_STYLE) && /@media \(scripting: enabled\)/.test(SEO.PRERENDER_STYLE), "1e a browser that runs scripts hides the copy until React replaces it (what a visitor sees does not change)");
   t.ok(home.includes(`<link rel="canonical" href="${SITE}/" />`), "1f the home page names its address");
   t.eq(result.tpfOn, true, "1h the switch was read from this build's env");
-  t.ok(homeText.includes("Get started") && homeText.includes("Eligible new subscribers get 14 days free") && !homeText.includes("Try flourish free for 14 days"), "1i switch on: the landing's switch-on words, as a visitor sees them");
+  // Free v1 on the website (2026-11-23): the line under "Get started" is the word slot free-landing-line (it was
+  // "Choose a plan to get started. Eligible new subscribers get 14 days free, ..."), the same in the pre-rendered copy.
+  const FW = await import("../src/lib/freeWords.js");
+  t.ok(homeText.includes("Get started") && homeText.includes(FW.freeWords("free-landing-line")) && !homeText.includes("Choose a plan to get started") && !homeText.includes("Try flourish free for 14 days"),
+    "1i switch on: the landing's switch-on words, as a visitor sees them (the free v1 landing line in the copy)");
   const off = renderPages({ tpfOn: false, env });
   t.ok(textOf(off.home).includes("Try flourish free for 14 days") && !textOf(off.home).includes("Choose a plan to get started."), "1j switch off: today's words (the same component, the other state)");
   t.ok(!/[—]/.test(homeText) || textOf(shell).includes("—"), "1k the copy adds no em dash of its own");

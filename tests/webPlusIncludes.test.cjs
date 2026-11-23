@@ -13,14 +13,20 @@ const fs = require("fs");
 const path = require("path");
 const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
 
-const APPROVED = ["The coach with no weekly limit", "What-If as often as you like", "More than one connected bank", "Credit", "The coach-run money meeting"];
+// Free v1 on the website (2026-11-23): the free plan connects no bank, so the third line is now the word slot
+// free-includes-bank (lib/freeWords.js, tests/freeV1Words.test.cjs); the other four are the approved lines, word for word.
+const BANK_SLOT = "free-includes-bank";
+const APPROVED_REST = ["The coach with no weekly limit", "What-If as often as you like", "Credit", "The coach-run money meeting"];
 const OLD = ["AI Coach with real data", "Full credit coaching", "Tax tips & benefits checker", "Investment tracking", "Weekly money meeting", "Debt simulator"];
 
 (async () => {
   const t = create();
   const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
   const L = await import("../src/lib/plusIncludes.js");
-  t.eq([...L.PLUS_INCLUDES], APPROVED, "1a the five approved lines, word for word and in order");
+  const { freeWords } = await import("../src/lib/freeWords.js");
+  const APPROVED = [APPROVED_REST[0], APPROVED_REST[1], freeWords(BANK_SLOT), APPROVED_REST[2], APPROVED_REST[3]];
+  t.eq([...L.PLUS_INCLUDES], APPROVED, "1a the five lines in order: the four approved, word for word, and the bank line's slot third");
+  t.ok(!L.PLUS_INCLUDES.includes("More than one connected bank"), "1a2 …and not \"More than one connected bank\" (Free connects none)");
   t.ok(Object.isFrozen(L.PLUS_INCLUDES), "1b …frozen, so nothing rewords them at run time");
   const gateSrc = APP.slice(APP.indexOf("function PremiumGate("), APP.indexOf("// ─── PAYWALL"));
   t.eq([OLD.filter((x) => gateSrc.includes(x)), APP.includes('"AI Coach with real data","Full credit coaching"')], [[], false], "2a the six old lines are gone from the locked screen (\"Weekly money meeting\" stays only as the old Paywall's feature card title)");
