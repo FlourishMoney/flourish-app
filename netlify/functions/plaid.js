@@ -196,20 +196,39 @@ exports.handler = async (event) => {
       // policy — adjust the limit or remove this block if free should allow multiple banks.
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
+      let onlyHeldBank = false;
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         // Free v1 (_lib/freeBanks.js): the website's Free plan connects no bank; a store app keeps today's one.
         const cap = freeBankCap(event);
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
-        if ((count || 0) >= cap) {
-          const message = cap === 0 ? freeServerWords("free-server-bank") : "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.";
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message }) };
+        if (cap > 0 && (count || 0) >= cap) {
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
         }
+        // The website's Free plan (cap 0): a NEW bank was already refused at create_link_token, so what reaches here is a
+        // reconnect of a bank this account holds (Plaid's update mode, which re-uses its item and is never refused). It
+        // is asked after the exchange, by the item Plaid names: a bank this account holds goes on; any other is removed
+        // at Plaid at once (never kept, never billed) and refused.
+        if (cap === 0) onlyHeldBank = true;
       }
 
       const data = await plaid("/item/public_token/exchange", { public_token });
       const access_token = data.access_token;
       const item_id = data.item_id;
+
+      if (onlyHeldBank) {
+        const { data: held, error: heldErr } = await getAdminClient().from("plaid_items").select("item_id").eq("user_id", user_id).eq("item_id", item_id).maybeSingle();
+        if (heldErr) {
+          // Never removed on a read that failed: it may be this account's own bank. Logged so a stray one can be found.
+          console.error("[plaid] free plan: could not check whether an exchanged bank is already held; nothing saved", heldErr.message);
+          return statusUnavailable(CORS);
+        }
+        if (!held) {
+          try { await plaid("/item/remove", { access_token }); }
+          catch (e) { console.error("[plaid] free plan: a refused new bank could not be removed at Plaid", e && e.message); }
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
+        }
+      }
 
       const admin = getAdminClient();
       const { error: upsertErr } = await admin
@@ -677,6 +696,12 @@ exports.handler = async (event) => {
         const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
         existingIds = new Set((existing || []).map(r => r.item_id));
         activeCount = existingIds.size;
+        // Free v1 (2026-11-23): the website's Free plan (cap 0) refuses every NEW bank, so a bank this account already
+        // holds is "existing" whatever its row's status (a sign-in that ran out is still its own bank, never a new one).
+        if (freeCap === 0) {
+          const { data: held } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id);
+          for (const r of held || []) existingIds.add(r.item_id);
+        }
       }
       // Review 2026-11-22 (P7-01): every answer names its token by its position in the list sent (never the token),
       // and a failure says whether trying again can help, so the app clears from the device only what the server

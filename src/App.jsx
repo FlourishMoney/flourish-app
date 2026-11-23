@@ -4297,7 +4297,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
 // debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
 // still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
-function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater,onOpenPlans=null}){
+function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater,onOpenPlans=null,bankMayConnect=false}){
   const after = phase==="after";
   const [step,setStep]=useState(after?3:0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
@@ -4386,6 +4386,9 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===1 && !planBlocked) fetchLinkToken(); },[step]); // eslint-disable-line
+  // Free v1 (review round): once the server says the account is paid or covered, a free-plan refusal from before is
+  // stale: clear it and ask for a link token again (the subscription's webhook may land after the bank step opened).
+  useEffect(()=>{ if(bankMayConnect && planBlocked){ setPlanBlocked(false); setLinkToken(null); if(step===1) fetchLinkToken(); } },[bankMayConnect]); // eslint-disable-line
   // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
   // bank step without one yet (callPlaid also retries transient drops with backoff).
   useEffect(()=>{
@@ -18084,6 +18087,9 @@ export default function FlourishApp(){
   // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
   // surface hidden while BILLING_ENABLED is unset.
   const [showUpgrade,setShowUpgrade]=useState(false);
+  // Free v1 (2026-11-23): the plans over onboarding, opened ONLY by the bank step's free-bank button. Its own state, so
+  // nothing else that opens the plans (the founding link, a Stripe return) can draw them over onboarding (review round).
+  const [plansOverOnboarding,setPlansOverOnboarding]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
   // link's invite token kept for this tab while the person signs in (never synced; lib/household.js).
@@ -20037,12 +20043,13 @@ export default function FlourishApp(){
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id} onConsent={()=>{ recordLegalConsent(consentDeps(user?.id)); }}
     tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}
-    onOpenPlans={(!isNativeApp() && billingUi.show) ? ()=>{ if(user?.id) notePlansOffered(deviceStorage(), user.id); openUpgrade(); } : null}/>{storePaywallOverlay}
+    onOpenPlans={(!isNativeApp() && billingUi.show) ? ()=>{ if(user?.id) notePlansOffered(deviceStorage(), user.id); setPlansOverOnboarding(true); } : null}
+    bankMayConnect={!!(billingStatus?.paid || billingStatus?.covered_by)}/>{storePaywallOverlay}
     {/* Free v1 (the website): the plans, opened from the bank step's free-bank button, over onboarding; closing them
         goes back to the same step. Counted as this device's one offer, so they do not open again after the number. */}
-    {showUpgrade && billingUi.show && !isNativeApp() && (
+    {plansOverOnboarding && billingUi.show && !isNativeApp() && (
       <div role="dialog" aria-modal="true" aria-label="Plans" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg}}>
-        <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}
+        <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setPlansOverOnboarding(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}
           closeLabel={freePlansClose}/>
       </div>
     )}</>;

@@ -83,7 +83,7 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   // Free v1 on the website (2026-11-23): a store app still gets these two texts, word for word, beside plan_limit; the
   // website's Free plan (no bank) gets its own word slot (netlify/functions/_lib/freeWords.js) in their place.
   t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x))
-    && /const message = cap === 0 \? freeServerWords\("free-server-bank"\) : "Connecting more than one bank[^"]*";\s*return \{ statusCode: 402, headers: CORS, body: JSON\.stringify\(\{ error: "plan_limit", message \}\) \};/.test(PLAID)
+    && /if \(cap > 0 && \(count \|\| 0\) >= cap\) \{\s*return \{ statusCode: 402, headers: CORS, body: JSON\.stringify\(\{ error: "plan_limit", message: "Connecting more than one bank/.test(PLAID)
     && /const message = freeCap === 0 \? freeServerWords\("free-server-bank"\) : "Free plan supports one bank[^"]*";\s*failures\.push\(\{ error: "plan_limit", message, index, retry: false \}\);/.test(PLAID),
     "6a (the server's two texts are the message beside the code plan_limit, in a store app)");
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);

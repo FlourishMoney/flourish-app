@@ -110,7 +110,10 @@ const SURFACES = ["TermsOfService", "PrivacyPolicy", "DeleteAccount", "PremiumGa
   t.eq(billingUiState({ status: { enabled: true, plans: [{}] }, native: true, paid: false }).show, false, "3c billing is never shown on a store app, even with billing on");
   t.eq((app.match(/<Paywall /g) || []).length, 1, "3d there is one Paywall render site, the guarded one");
   // TRIAL_PLAN_FIRST (2026-11-10): a second render site, the plans that come first, behind the same guard.
-  t.eq((app.match(/<UpgradeScreen /g) || []).length, (app.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length, "3e …and every upgrade screen render site is the guarded one");
+  // Free v1 on the website (2026-11-23): a third render site, the plans over onboarding, behind billingUi.show and !isNativeApp().
+  const overOnboarding = (app.match(/\{plansOverOnboarding && billingUi\.show && !isNativeApp\(\) && \(\s*<div role="dialog" aria-modal="true" aria-label="Plans"[^>]*>\s*<UpgradeScreen /g) || []).length;
+  t.eq(overOnboarding, 1, "3e0 the plans over onboarding are drawn once, behind the guard");
+  t.eq((app.match(/<UpgradeScreen /g) || []).length, (app.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length + overOnboarding, "3e …and every upgrade screen render site is the guarded one");
 
   t.summary("nativeNoPrice.test");
   setImmediate(() => process.exit(process.exitCode || 0));

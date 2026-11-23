@@ -1536,3 +1536,18 @@ only by a payment that carries its name, "maybe" otherwise (R3-2, which was P4-0
 - A founding trial that goes into the store's billing grace period with no sync in between, and then ends, is
   treated as a paid founding subscription that ended (`_lib/storeSubscriptions.js:261-262`).
 - `tests/forecast-critic-verify.test.cjs` fails 8 of 40 on `main` (its own [OPEN] items); it is not in `test:math`.
+
+## 69. Free v1 on the website (branch free-v1-web, 2026-11-23): left from its review round
+
+- **A bank already connected when an account drops to Free stays connected and keeps updating.** By design for v1:
+  only a NEW bank is refused on the website's free plan (`netlify/functions/_lib/freeBanks.js`). Plaid keeps billing
+  that bank until it is removed. Removal at the end of a paid period, with notice and history kept, is the next round
+  (`docs/plans/FREE-PLAN-ONBOARDING-PLAN.md` section 2.4).
+- **Settings' "+ Connect a Bank" on Free shows the bank consent screen before the free-bank line.** Plaid never opens and
+  nothing is billed; the order is a wasted step. The server answer is what decides, so a covered or paid account is
+  never turned away by a guess on the device.
+- **A checkout started from the plans over onboarding comes back to the start of onboarding.** Stripe checkout leaves the
+  page and onboarding keeps no step across it (the same as any reload there); what was typed is asked again.
+- **The store apps' second-bank refusal at the exchange still leaves the new bank at Plaid.** Unchanged from before this
+  branch (the website's refusal now removes it at once). Goes away when the store apps move to 0 banks, refused at the
+  link token, in their next builds.

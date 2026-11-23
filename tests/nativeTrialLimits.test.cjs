@@ -187,9 +187,13 @@ const coachCall = (mod, origin, type) => mod.coach.handler({
       for (const [who, h] of Object.entries(HOUSEHOLDS)) {
         const mod = load(h);
         const before = outside.length;
+        // Free v1 on the website (2026-11-23): the website's free plan connects no bank, refused at the link token, before
+        // Plaid opens (tests/freeV1Bank.test.cjs holds every step). So the website is asked there; a store app, at the
+        // exchange, as before. Either way a second bank on the free plan never reaches Plaid.
+        const web = origin === WEB;
         const res = await mod.plaid.handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x" },
-          body: JSON.stringify({ action: "exchange_token", public_token: "public-sandbox-1" }) });
-        const toPlaid = outside.slice(before).some(u => /\/item\/public_token\/exchange$/.test(u));
+          body: JSON.stringify(web ? { action: "create_link_token", country: "CA", user_id: "u1" } : { action: "exchange_token", public_token: "public-sandbox-1" }) });
+        const toPlaid = outside.slice(before).some(u => (web ? /\/link\/token\/create$/ : /\/item\/public_token\/exchange$/).test(u));
         note(origin, who, "secondBank", toPlaid ? "plaid" : res.statusCode);
         if (who === "ended") t.eq([res.statusCode, toPlaid], [402, false], `4a ${name}: trial over, not paying, one bank already: a second is refused before Plaid`);
         else t.eq([res.statusCode !== 402, toPlaid], [true, true], `4b ${name}: ${who}: a second bank goes on to Plaid`);

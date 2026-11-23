@@ -142,7 +142,7 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
       "5b it waits for this account's answer, its plan, its data, Apple's AI disclosure (5.1.2), the end of onboarding and the intro tips (Flourish first, 2026-11-05)");
     t.ok(/if\(!onboarded\)return <><Onboarding key="before"\n/.test(APP) && // Free v1 on the website (2026-11-23): onOpenPlans comes after onCount, and the website's plans may follow the overlay
       // (opened only by the bank step's button, never by themselves).
-      /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\n    onOpenPlans=\{[^\n]*\}\/>\{storePaywallOverlay\}\n/.test(APP),
+      /onCount=\{\(event,detail\)=>signalOnboarding\(event,\{detail,userId:user\?\.id\}\)\}\n    onOpenPlans=\{[^\n]*\}\n    bankMayConnect=\{[^\n]*\}\/>\{storePaywallOverlay\}\n/.test(APP),
       "5c the overlay is still drawn over onboarding, but it never opens there by itself: inApp needs onboarding finished (5b)");
     t.ok(/return <><FirstVisitScreen /.test(APP) && /signalOnboarding\("first_number_shown",[^\n]*\}\}\/>\{storePaywallOverlay\}<\/>;/.test(APP), "5d …and over the first-number screen");
     t.ok(APP.indexOf("const storePaywallOverlay =") < APP.indexOf("if(!user && !appData?.demo)return <AuthScreen"), "5e the overlay is built before the early returns that use it");

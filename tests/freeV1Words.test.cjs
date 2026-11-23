@@ -75,6 +75,12 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   const store = F.trialFirstTermsSection7("2026-11-18T18:55:00Z").join(" ");
   t.ok(store.includes("A new account chooses a plan to keep using flourish.") && !PLACEHOLDER.test(store), "2s a store app's Terms are today's, with no slot");
   t.ok(/trialFirstTermsSection7\(tpfSince, \{ web: !isNativeApp\(\) \}\)/.test(APP), "2t the Terms page asks for the website's text on the website");
+  t.ok((APP.match(/setPlansOverOnboarding\(true\)/g) || []).length === 1 && /onOpenPlans=\{\(!isNativeApp\(\) && billingUi\.show\) \? \(\)=>\{ if\(user\?\.id\) notePlansOffered\(deviceStorage\(\), user\.id\); setPlansOverOnboarding\(true\); \} : null\}/.test(APP)
+    && /\{plansOverOnboarding && billingUi\.show && !isNativeApp\(\) && \(/.test(APP),
+    "2u the plans over onboarding open only from the bank step's button (never the founding link or a Stripe return), and count as this device's one offer");
+  t.ok(/useEffect\(\(\)=>\{ if\(bankMayConnect && planBlocked\)\{ setPlanBlocked\(false\); setLinkToken\(null\); if\(step===1\) fetchLinkToken\(\); \} \},\[bankMayConnect\]\);/.test(APP)
+    && /bankMayConnect=\{!!\(billingStatus\?\.paid \|\| billingStatus\?\.covered_by\)\}/.test(APP),
+    "2v once the server says paid or covered, a free-plan refusal at the bank step is cleared and the link token asked again");
 
   // ── 3. the Terms' new date ───────────────────────────────────────────────────────────────────────
   t.ok(/const extraDay = withGiftDate\(withGiftDate\("", giftDay\), isNativeApp\(\) \? null : FREE_TERMS_DATE\) \|\| null;/.test(APP), "3a the website's Terms are dated FREE_TERMS_DATE once set");

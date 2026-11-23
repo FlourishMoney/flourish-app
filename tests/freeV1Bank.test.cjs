@@ -17,7 +17,9 @@
 //   1  a new bank link: refused before Plaid opens for Free on the website, with the server's word slot
 //   2  a reconnect (update mode) is never refused: a bank already connected keeps working
 //   3  the store apps: a new link goes on to Plaid, as today
-//   4  the exchange: 0 banks on Free on the website, 1 in the store apps (today's answer, word for word)
+//   4  the exchange: 0 banks on Free on the website, 1 in the store apps (today's answer, word for word). On the website
+//      it is asked after Plaid's exchange, by the item Plaid names: a bank the account holds (a reconnect) goes on, any
+//      other is removed at Plaid at once and refused (review round, 2026-11-23: a reconnect was refused at the exchange)
 //   5  the old-bank import (migrate_items): 0 on Free on the website, 1 in the store apps
 //   6  ENFORCE_PLAN_LIMITS off: nothing is refused (as today)
 //   7  the rule itself: which requests are the website's
@@ -57,12 +59,12 @@ const HOUSEHOLDS = {
 const UNLIMITED = ["trial", "stripeTrial", "paid", "founder", "gift", "cover"];
 
 // A fake Supabase holding one household and `banks` connected banks.
-function fakeSupabase(h, banks) {
+function fakeSupabase(h, banks, bankStatus = "active") {
   const calls = { writes: [] };
   const rows = {
     profiles: [{ user_id: "u1", ...h.profile }],
     subscriptions: h.sub ? [{ user_id: "u1", ...h.sub }] : [],
-    plaid_items: Array.from({ length: banks }, (_, i) => ({ user_id: "u1", item_id: `it${i + 1}`, status: "active", access_token: `access-${i + 1}`, institution_name: "Old Bank" })),
+    plaid_items: Array.from({ length: banks }, (_, i) => ({ user_id: "u1", item_id: `it${i + 1}`, status: bankStatus, access_token: `access-${i + 1}`, institution_name: "Old Bank" })),
   };
   const client = {
     from(table) {
@@ -97,8 +99,8 @@ function fakeSupabase(h, banks) {
   return { client, calls };
 }
 
-function load(h, { banks = 0, enforce = true } = {}) {
-  const fake = fakeSupabase(h, banks);
+function load(h, { banks = 0, enforce = true, bankStatus = "active" } = {}) {
+  const fake = fakeSupabase(h, banks, bankStatus);
   for (const k of ["TRIAL_PLAN_FIRST", "TRIAL_PLAN_FIRST_SINCE"]) delete process.env[k];
   Object.assign(process.env, {
     SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", ENFORCE_PLAN_LIMITS: enforce ? "true" : "",
@@ -114,7 +116,9 @@ function load(h, { banks = 0, enforce = true } = {}) {
   return { plaid: require(PLAID_PATH), calls: fake.calls };
 }
 
-// Plaid's three endpoints answer; anything else is blocked. Every URL asked is recorded.
+// Plaid's four endpoints answer; anything else is blocked. Every URL asked is recorded. The item Plaid names for an
+// exchange or an old token is "it-new" / "it-legacy" (a bank the account does not hold) unless a test sets it.
+const PLAID_ITEM = { exchange: "it-new", legacy: "it-legacy" };
 const outside = [];
 const realFetch = global.fetch;
 global.fetch = async (url) => {
@@ -122,8 +126,9 @@ global.fetch = async (url) => {
   outside.push(u);
   const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   if (/\/link\/token\/create$/.test(u)) return ok({ link_token: "link-sandbox-test", expiration: iso(Date.now() + 3600e3) });
-  if (/\/item\/public_token\/exchange$/.test(u)) return ok({ access_token: "access-new", item_id: "it-new" });
-  if (/\/item\/get$/.test(u)) return ok({ item: { item_id: "it-legacy", institution_id: "ins_1" } });
+  if (/\/item\/public_token\/exchange$/.test(u)) return ok({ access_token: "access-new", item_id: PLAID_ITEM.exchange });
+  if (/\/item\/get$/.test(u)) return ok({ item: { item_id: PLAID_ITEM.legacy, institution_id: "ins_1" } });
+  if (/\/item\/remove$/.test(u)) return ok({ request_id: "removed" });
   throw new Error("network blocked in test");
 };
 const asked = (before, rx) => outside.slice(before).some((u) => rx.test(u));
@@ -159,6 +164,23 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
       t.eq([res.statusCode, asked(before, /\/link\/token\/create$/)], [200, true], `2a website, ${who} (Free), a reconnect of a bank already held goes on to Plaid`);
     }
 
+    // 2b …and its exchange (the app exchanges after every Plaid success, update mode too): a bank the account holds,
+    // whatever its row's status (a sign-in that ran out is login_required), goes on, and is never removed.
+    for (const who of ["ended", "newFree"]) {
+      for (const bankStatus of ["login_required", "active", "error"]) {
+        const mod = load(HOUSEHOLDS[who], { banks: 1, bankStatus });
+        PLAID_ITEM.exchange = "it1";
+        const before = outside.length;
+        const res = await call(mod, WEB, { action: "exchange_token", public_token: "public-sandbox-update" });
+        PLAID_ITEM.exchange = "it-new";
+        // (The fake database refuses every save, so the function's own rollback runs after; what is asked here is that
+        // the free plan's check let the reconnect through to the save, with no refusal.)
+        const saved = mod.calls.writes.some(([table, op]) => table === "plaid_items" && op === "upsert");
+        t.eq([res.statusCode !== 402 && res.statusCode !== 503, json(res).message !== SERVER_LINE, asked(before, /\/item\/public_token\/exchange$/), saved], [true, true, true, true],
+          `2b website, ${who} (Free), its own bank (${bankStatus}) reconnected: the exchange goes on to the save, never refused`);
+      }
+    }
+
     // ── 3. the store apps: a new link goes on to Plaid, as today ─────────────────────────────────────
     for (const [origin, name] of STORE_ORIGINS) {
       for (const who of ["ended", "newFree", "paid"]) {
@@ -179,7 +201,9 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
         let toPlaid = asked(before, /\/item\/public_token\/exchange$/);
         if (who === "unread") t.eq([res.statusCode, toPlaid], [503, false], `4a website, unread plan, ${banks} bank(s): 503 before Plaid, as today`);
         else if (h.free) {
-          t.eq([res.statusCode, json(res).error, toPlaid], [402, "plan_limit", false], `4b website, ${who} (Free), ${banks} bank(s): refused before Plaid`);
+          const removed = asked(before, /\/item\/remove$/), wrote = mod.calls.writes.some(([table]) => table === "plaid_items");
+          t.eq([res.statusCode, json(res).error, toPlaid, removed, wrote], [402, "plan_limit", true, true, false],
+            `4b website, ${who} (Free), ${banks} bank(s), a bank it does not hold: refused, removed at Plaid at once, nothing saved`);
           t.eq(json(res).message, SERVER_LINE, `4c website, ${who}, ${banks} bank(s): …with the server's word slot`);
         } else t.eq([res.statusCode !== 402 && res.statusCode !== 503, toPlaid], [true, true], `4d website, ${who}, ${banks} bank(s): goes on to Plaid`);
         // the store apps: exactly today's answers
@@ -213,6 +237,15 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
         const second = await migrate(origin, HOUSEHOLDS[who], 1);
         t.eq(second.failures.map((f) => [f.error, f.message]), [["plan_limit", TODAY_ONE_BANK_MIGRATE]], `5c ${name}, ${who}, one bank already: refused with today's words`);
       }
+    }
+    // 5e …but an old token for a bank the account already holds (its row login_required) is its own bank, never a new one.
+    for (const who of ["ended", "newFree"]) {
+      const mod = load(HOUSEHOLDS[who], { banks: 1, bankStatus: "login_required" });
+      PLAID_ITEM.legacy = "it1";
+      const res = await call(mod, WEB, { action: "migrate_items", tokens: [{ token: "access-1", institution_name: "Old Bank" }] });
+      PLAID_ITEM.legacy = "it-legacy";
+      const failures = json(res).failures || [];
+      t.ok(!failures.some((f) => f.error === "plan_limit"), `5e website, ${who} (Free): an old token for a bank it already holds is not refused as a new bank`);
     }
     for (const who of UNLIMITED) {
       const web = await migrate(WEB, HOUSEHOLDS[who], 0);

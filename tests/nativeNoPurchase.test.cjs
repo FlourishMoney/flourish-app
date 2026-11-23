@@ -168,7 +168,9 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
     for (const [name, mount] of Object.entries(MOUNTED_ONLY_OFF_NATIVE)) {
       t.ok(mount.test(src), `${name} is mounted only when native is off`);
       // TRIAL_PLAN_FIRST (2026-11-10): UpgradeScreen has a second mount, the plans-first screen, behind the same guard.
-      const guarded = name === "UpgradeScreen" ? (src.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length : 1;
+      // Free v1 on the website (2026-11-23): a third, the plans over onboarding, behind billingUi.show and !isNativeApp().
+      const overOnboarding = (src.match(/\{plansOverOnboarding && billingUi\.show && !isNativeApp\(\) && \(\s*<div role="dialog" aria-modal="true" aria-label="Plans"[^>]*>\s*<UpgradeScreen /g) || []).length;
+      const guarded = name === "UpgradeScreen" ? (src.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length + overOnboarding : 1;
       t.eq((src.match(new RegExp(`<${name}\\b`, "g")) || []).length, guarded, `…and nowhere else`);
     }
     const { billingUiState } = await import("../src/lib/billingVisibility.js");
