@@ -49,6 +49,25 @@ products, separate prices, separate webhook endpoints, separate keys.
    Copy the **signing secret** (`whsec_...`). Anything else Stripe sends is recorded as
    `ignored` and changes nothing, so extra events are harmless but pointless.
 
+   **The whole list, by switch (checked against the code and the live destination, 2026-11-23).**
+   The live destination `flourish-production` (`we_1USWBmAXAZzlop9761TDZV8J`) listened to five that day:
+   the four above and `customer.subscription.created`. What the webhook reads, and when:
+
+   | Event | Read when | On the live destination 2026-11-23 |
+   |---|---|---|
+   | `checkout.session.completed` | always | yes |
+   | `customer.subscription.updated` | always | yes |
+   | `customer.subscription.deleted` | always | yes |
+   | `charge.refunded` | always (a refunded gift, a refunded payment) | yes |
+   | `customer.subscription.created` | `TRIAL_PLAN_FIRST` on (a Stripe trial's start) | yes |
+   | `checkout.session.async_payment_succeeded` | always, from the full-app review fixes (P3-04): a checkout whose payment clears later | **no: add it when those fixes are live** |
+   | `charge.dispute.closed` | the Plus add-on on (a lost chargeback ends Plus), and `CREATORS_ENABLED` | **no: add it before Plus is on for anyone** |
+   | `invoice.paid` | `CREATORS_ENABLED` | **no: add it with the Creator Program** |
+   | `charge.dispute.funds_reinstated` | `CREATORS_ENABLED` | **no: add it with the Creator Program** |
+
+   An event the destination does not send never reaches the webhook, so the code that reads it never runs
+   and nothing says so. Stripe's test mode has its own destinations: check both.
+
 4. **Customer portal.** Settings → Billing → Customer portal → activate it in test mode,
    and allow cancel and payment-method updates. `create_portal_session` returns a Stripe
    error until this is switched on, and the error is the same shape as a missing key,
