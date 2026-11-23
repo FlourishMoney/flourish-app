@@ -26,8 +26,8 @@ const { confirmUrl, checkSendLimit, sendFoundingConfirmEmail } = require("./_lib
 const { getStore } = require("@netlify/blobs");
 const { connectBlobs } = require("./_lib/blobsContext");
 const { stripePost, stripeGet } = require("./_lib/stripeApi");
-const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold } = require("./_lib/stripeLive");
-const { isPaidSubscription } = require("./_lib/planRules");
+const { liveSubscriptionsFor, expireOpenCheckouts, holdsHousehold, fillMissingPeriod } = require("./_lib/stripeLive");
+const { isPaidSubscription, isPaidInFull } = require("./_lib/planRules");
 const { syncStoreSubscription, isLiveRow, STORE_PROVIDERS } = require("./_lib/storeSubscriptions");
 const { spotsLeft } = require("./_lib/foundingSeats");
 const { trialPlanFirstState, webTrialEligibleRow, TRIAL_PLAN_FIRST_DAYS } = require("./_lib/trialPlanFirst");
@@ -152,9 +152,12 @@ exports.handler = async (event) => {
     if (action === "status") {
       // Item 16: a read that fails is a 503 (the app retries), never "not paid": a paying household must not be
       // shown the plans because the database blinked. Retried first, as getUserPlan does.
-      const { data: row, error: rowErr } = await readWithRetry(() => admin
-        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end").eq("user_id", user_id).maybeSingle());
+      const { data: readRow, error: rowErr } = await readWithRetry(() => admin
+        .from("subscriptions").select("provider, status, provider_customer_id, provider_subscription_id, current_period_end, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle());
       if (rowErr) { console.error("[billing] status read:", rowErr.message || rowErr); return json(503, CORS, { error: "status_unavailable" }); }
+      // A website row with no period end (review of 2026-11-22, P2-02): Stripe is asked about that one subscription and
+      // its own status and end are written on. Never throws; when Stripe cannot be asked the row is as it was read.
+      const row = await fillMissingPeriod(admin, user_id, readRow);
       // TRIAL_PLAN_FIRST (_lib/trialPlanFirst.js): only while it is on is there a trial_plan_first key; off, every
       // answer below is as it was. A profile read that fails is a 503, never a guess about a trial.
       const tpfState = await trialPlanFirstState(admin, user_id, { row, web: !isNativeRequest(event) });
@@ -203,7 +206,9 @@ exports.handler = async (event) => {
         paid: isPaidSubscription(row),
         // When the paid period ends (only while paid): the app keeps this answer until then if a later status read
         // fails (item 16), as the store apps do with store_status.
-        period_end: isPaidSubscription(row) && row && row.current_period_end ? row.current_period_end : null,
+        // Billing grace (2026-11-23): a failed renewal Stripe is retrying keeps `paid` true, but that period is not
+        // paid for, so no date is given and the app trusts the answer for 3 days at most if it cannot ask again.
+        period_end: isPaidInFull(row) && row && row.current_period_end ? row.current_period_end : null,
         manageable: !!row?.provider_customer_id,
         // H4 (audit 2026-10-26): a web subscription Stripe is still collecting (a renewal that failed, past_due):
         // not paid, so no access, but the fix is the card, in the billing portal, never a second checkout.
@@ -220,7 +225,7 @@ exports.handler = async (event) => {
       // The row as it is, for both actions. A read that fails is a 503, never "not paid": a paying household
       // must not be shown the paywall, or sold a second subscription, because the database blinked.
       const { data: row, error: rowErr } = await admin
-        .from("subscriptions").select("provider, status, current_period_end, plan_key, cancel_at_period_end").eq("user_id", user_id).maybeSingle();
+        .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id, plan_key, cancel_at_period_end, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store status read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
       // TRIAL_PLAN_FIRST: as the web's status above; a store app learns trial eligibility from its own store.
       const tpfState = await trialPlanFirstState(admin, user_id, { row });
@@ -280,7 +285,7 @@ exports.handler = async (event) => {
         conflict_kind: state.conflictKind || null,
         web_attention: webAttention,
         // When access ends unless renewed (only while paid): the app keeps its last answer until then (offline).
-        period_end: state.paid && row && row.current_period_end ? row.current_period_end : null,
+        period_end: state.paid && row && row.current_period_end && isPaidInFull(row) ? row.current_period_end : null,
         // spots_left (2026-10-29): founding spots left, the same public figure the landing shows (/api/founding),
         // for the plans screen's words while the founding price is offered; null otherwise.
         founding: { available: !!foundingAvailable, held_on_regular_plan: heldOnRegular, spots_left: foundingAvailable ? await spotsLeft(admin) : null },
@@ -303,7 +308,7 @@ exports.handler = async (event) => {
         try { return json(200, CORS, { pending: await holdPending(admin, user_id, attempt) }); }
         catch (e) { console.error("[billing] store pending:", e.message); return json(503, CORS, { error: "unavailable" }); }
       }
-      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end").eq("user_id", user_id).maybeSingle();
+      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end, provider_subscription_id, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store hold read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
       if (isLiveRow(row)) return json(200, CORS, { held: false, paid: isPaidSubscription(row), provider: row.provider || "stripe" });
       const cover = await householdCover(admin, user_id);
@@ -336,7 +341,7 @@ exports.handler = async (event) => {
       let guardRow = null, guardRead = false;
       {
         const { data: current, error: curErr } = await admin
-          .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id").eq("user_id", user_id).maybeSingle();
+          .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
         if (!curErr) { guardRow = current || null; guardRead = true; }
         if (curErr) console.error("[billing] checkout guard read:", curErr.message);
         if (!curErr && isLiveRow(current)) {

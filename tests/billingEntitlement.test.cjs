@@ -34,7 +34,10 @@ const sub = (status, end = FUTURE) => ({ status, current_period_end: end });
     "1d an expired trial plus a paid subscription is premium, which is the whole conversion path");
 
   // ── 2. Everything else does not ──────────────────────────────────────────────────────────────
-  for (const status of ["past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
+  // Changed 2026-11-23 (Amanda's decision after the real-world proof, step 1A.4): "past_due" was in this list. A
+  // failed renewal that Stripe is still retrying is now BILLING GRACE, the same idea as the stores' grace period:
+  // access stays until Stripe cancels the subscription or marks it unpaid (section 2b below).
+  for (const status of ["canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
     t.eq(deriveEntitlement({ plan: "free" }, sub(status), NOW).plan, "free", `2 ${status} does not grant access`);
   }
   t.eq(deriveEntitlement({ plan: "free" }, null, NOW).plan, "free", "2g no subscription row at all is free");
@@ -42,6 +45,24 @@ const sub = (status, end = FUTURE) => ({ status, current_period_end: end });
     "2h an 'active' row whose period has ENDED is not paid — that is a webhook we never received, not a licence");
   t.ok(isPaidSubscription(sub("active", null), NOW), "2i …but a paid status with no period yet is trusted, since status is all there is");
   t.eq(SUBSCRIPTION_PAID_STATUSES.join(","), "active,trialing", "2j exactly two statuses count as paid");
+
+  // ── 2b. Billing grace (Amanda, 2026-11-23): a failed renewal keeps access while Stripe is retrying ─────────────
+  {
+    const R = require("../netlify/functions/_lib/planRules.js");
+    t.eq([typeof R.inBillingGrace, typeof R.isPaidInFull, (R.SUBSCRIPTION_GRACE_STATUSES || []).join(",")], ["function", "function", "past_due"], "2k one grace status, past_due, and two questions kept apart: has access, and has paid");
+    const pastDue = sub("past_due");                               // Stripe: the renewal failed and it is retrying
+    t.eq([isPaidSubscription(pastDue, NOW), deriveEntitlement({ plan: "free" }, pastDue, NOW).plan], [true, "premium"], "2l past_due: access stays (it ended at the first failed charge)");
+    t.eq([R.inBillingGrace && R.inBillingGrace(pastDue, NOW), R.isPaidInFull && R.isPaidInFull(pastDue, NOW)], [true, false], "2m …and it is known as grace: access, but the period is not paid for");
+    t.eq([R.isPaidInFull && R.isPaidInFull(sub("active"), NOW), R.isPaidInFull && R.isPaidInFull(sub("trialing"), NOW), R.inBillingGrace && R.inBillingGrace(sub("active"), NOW)], [true, true, false], "2n active and trialing are paid in full, and are not grace");
+    for (const status of ["unpaid", "canceled", "paused", "incomplete", "incomplete_expired"]) {
+      t.eq([isPaidSubscription(sub(status), NOW), R.inBillingGrace && R.inBillingGrace(sub(status), NOW)], [false, false], `2o ${status}: Stripe has stopped trying, or never started: no access, no grace`);
+    }
+    t.eq([isPaidSubscription(sub("past_due", PAST), NOW), R.inBillingGrace && R.inBillingGrace(sub("past_due", PAST), NOW)], [false, false], "2p grace never outlasts the period Stripe is trying to collect for");
+    for (const provider of ["app_store", "play_store"]) {
+      t.eq(isPaidSubscription({ ...sub("past_due"), provider }, NOW), false, `2q a ${provider} row is not given this grace: the stores run their own, and report it as paid`);
+    }
+    t.eq(isPaidSubscription({ ...sub("past_due"), provider: "stripe" }, NOW), true, "2r a row that says stripe, the same as one from before the provider column");
+  }
 
   // ── 3. It can only ADD ───────────────────────────────────────────────────────────────────────
   t.eq(deriveEntitlement({ founder_flag: true }, null, NOW).plan, "beta_founder", "3a a founder with no subscription stays a founder");

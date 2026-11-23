@@ -51,5 +51,5 @@ Without them the test fails at step 5 and says so.
 ## Known limits
 
 - It is a browser, not a phone: Apple's and Google's sign-in sheets, the stores' purchase sheets and the real status bar are not exercised.
-- The throwaway database is built from `supabase/migrations`. Production also has two pieces that no migration creates (the table `public.coach_usage` and the column `plaid_items.transactions_pending`); the functions log their absence and carry on, so those two are not exercised.
+- The throwaway database is built from `supabase/migrations`. Production also has two tables that no migration creates (`public.coach_usage` and `public.webhook_seen`, the bank webhook's replay list); the functions log their absence and carry on, so those two are not exercised. (Until 2026-11-23 the columns `plaid_items.transactions_pending` and `holdings_pending` were missing here too; migration 0056 makes them.)
 - Plaid changes its sandbox screens from time to time. Step 5 reads what is on the screen and acts on it, and names what it saw when it cannot go on.

@@ -128,3 +128,25 @@ export function rememberDismissal(domain, signature) {
 export function clearDismissal(domain) {
   return { [dismissalFieldFor(domain)]: null };
 }
+
+// ── WHEN TO LOOK AGAIN (review of 2026-11-22, P10-04 and P10-05) ─────────────────────────────────
+// The income and bill detectors run again when their inputs change. "Changed" used to mean the NUMBER of
+// transactions, so a deposit whose amount was corrected, a pending charge that posted, or a refresh that
+// dropped one row and added another (same count) was not looked at until the next reload.
+// This is a fingerprint of what the detectors actually read from each transaction: its id, date, amount,
+// name, category, and whether it is pending or one leg of a transfer. Order does not matter (a refresh may
+// re-sort the list), so each row is hashed on its own and the hashes are added.
+function _hash32(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+export function transactionsFingerprint(transactions) {
+  const list = Array.isArray(transactions) ? transactions : [];
+  let sum = 0;
+  for (const t of list) {
+    if (!t) continue;
+    sum = (sum + _hash32(`${t.id ?? ""}|${t.date ?? ""}|${t.amount ?? ""}|${t.name ?? ""}|${t.cat ?? ""}|${t.pending ? 1 : 0}|${t.isTransfer ? 1 : 0}|${t.transferPairId ?? ""}`)) >>> 0;
+  }
+  return `${list.length}:${sum.toString(36)}`;
+}

@@ -17,16 +17,22 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const { trialPlanFirstSince, accountTrialApplies, isPaidSubscription } = require("./planRules");
+const { trialPlanFirstSince, accountTrialApplies, isPaidSubscription, isCustomerOnlyRow } = require("./planRules");
 
 const TRIAL_PLAN_FIRST_DAYS = 14;
 
 const trialPlanFirstOn = () => trialPlanFirstSince() !== null;
 
-// Has this account never had a subscription of any kind? A row made only to hold the Stripe customer (billing.js
-// ensureCustomer) has no subscription id and no status. Anything else has had one, and gets no web trial.
+// Has this account never had a subscription of any kind? No row; or a row that names no subscription and has no
+// status; or the row that only holds the Stripe customer, whose status is the database's default "incomplete"
+// (_lib/planRules.js isCustomerOnlyRow). Anything else has had one, and gets no web trial.
+// Real-world proof, 2026-11-23 (step 1A.2): this read "no status" only, so anyone who opened Stripe's checkout for the
+// 14 days and came back without finishing was shown "charged today". The checkout still asks Stripe for every
+// subscription the customer ever had (billing.js).
 function webTrialEligibleRow(row) {
-  return !row || (!row.provider_subscription_id && !row.status);
+  if (!row) return true;
+  if (row.provider_subscription_id) return false;
+  return !row.status || isCustomerOnlyRow(row);
 }
 
 /**

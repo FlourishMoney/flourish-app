@@ -12,7 +12,8 @@
 //
 // SAVING: the app saves only over the version it read (household_data.version). When the other person saved in
 // between, mergeHouseholdBlobs keeps both: a section only one of them changed keeps that change; a section both
-// changed takes this device's (the later save). Sections are appData's top-level keys and each side key. A bank
+// changed is merged record by record (mergeBoth, below), and a record both changed takes this device's (the later
+// save). Sections are appData's top-level keys and each side key. A bank
 // account the other side removed stays removed, with what was made from it (stripAccounts), whatever this
 // device changed meanwhile (audit M7).
 // -----------------------------------------------------------------------------
@@ -137,12 +138,60 @@ export function localAfterRemoval({ catOverrides = null, depositDecisions = null
 }
 
 const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
-function mergeSection(base, local, remote) {
+const isPlain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+// ── BOTH MEMBERS CHANGED ONE SECTION (review 2026-11-22, P4-02) ───────────────────────────────────────────────
+// A section used to go whole to this device, so the other member's edit to a DIFFERENT bill, goal or correction
+// in it was lost. Now the section is merged record by record, with the same rule one level down: a record only
+// the other side changed (or added, or deleted) is theirs; one this side changed (or added, or deleted) is ours;
+// one both changed is ours (the later save). A record is known by its id, or by its name when it has none
+// (onboarding's bills, incomes and debts). A list whose records cannot all be told apart is not guessed at: it
+// goes whole to this device, as before.
+const recordKey = (e) => {
+  if (!isPlain(e)) return null;
+  if (e.id != null && e.id !== "") return `id:${e.id}`;
+  if (typeof e.name === "string" && e.name.trim()) return `name:${e.name.trim().toLowerCase()}`;
+  return null;
+};
+const keyed = (list) => {
+  if (!Array.isArray(list)) return null;
+  const m = new Map();
+  for (const e of list) { const k = recordKey(e); if (k == null || m.has(k)) return null; m.set(k, e); }
+  return m;
+};
+function mergeRecords(base, local, remote) {
+  const B = keyed(base == null ? [] : base), L = keyed(local), R = keyed(remote);
+  if (!B || !L || !R) return null;
+  const out = [];
+  for (const [k, l] of L) {
+    const b = B.get(k);
+    if (!R.has(k)) { if (b === undefined || !same(l, b)) out.push(l); continue; }   // they deleted one we left alone: gone
+    out.push(b !== undefined && same(l, b) ? R.get(k) : l);
+  }
+  for (const [k, r] of R) if (!L.has(k) && !B.has(k)) out.push(r);                  // theirs, new; one we deleted stays deleted
+  return out;
+}
+// The maps a household edits one entry at a time (by field, by category, by transaction, by merchant).
+const MAP_SECTIONS = new Set(["profile", "budgets", "depositDecisions", "depositRules", "forecastEdits"]);
+const JSON_MAP_KEYS = new Set(["flourish_cat_overrides", "flourish_cat_merchant_overrides"]);
+const parsed = (v) => { try { return typeof v === "string" ? JSON.parse(v) : undefined; } catch { return undefined; } };
+// Both sides changed section k, differently. Never throws; anything it cannot merge safely is ours, as before.
+function mergeBoth(k, b, l, r) {
+  if (Array.isArray(l) && Array.isArray(r) && (b == null || Array.isArray(b))) return mergeRecords(b, l, r) || l;
+  if (MAP_SECTIONS.has(k) && isPlain(l) && isPlain(r) && (b == null || isPlain(b))) return mergeSection(b || {}, l, r, false);
+  if (JSON_MAP_KEYS.has(k)) {
+    const pl = parsed(l), pr = parsed(r), pb = b == null ? {} : parsed(b);
+    if (isPlain(pl) && isPlain(pr) && isPlain(pb)) return JSON.stringify(mergeSection(pb, pl, pr, false));
+  }
+  return l;
+}
+function mergeSection(base, local, remote, deep = true) {
   const keys = new Set([...Object.keys(local || {}), ...Object.keys(remote || {}), ...Object.keys(base || {})]);
   const out = {};
   for (const k of keys) {
     const b = base ? base[k] : undefined, l = local ? local[k] : undefined, r = remote ? remote[k] : undefined;
-    const v = same(l, b) ? r : l;   // only the other side changed it: theirs; this side changed it: ours
+    // only the other side changed it: theirs; only this side: ours; both, differently: record by record
+    const v = same(l, b) ? r : (deep && !same(r, b) && !same(l, r) ? mergeBoth(k, b, l, r) : l);
     if (v !== undefined) out[k] = v;
   }
   return out;
@@ -170,6 +219,29 @@ export function mergeHouseholdBlobs(base, local, remote) {
     sideKeys: splitSideKeys(mergeSection(B.sideKeys || {}, L.sideKeys || {}, R.sideKeys || {})).shared,
   };
 }
+
+// ── LEAVING: ONE'S OWN BANKS' ANSWERS GO TOO (review 2026-11-22, P1-03) ───────────────────────────────────────
+// The database takes a leaver's bank accounts out of the shared blob, but it never stores a bank's transactions,
+// so it cannot find the category corrections and deposit answers keyed by them. Until now only the member who
+// STAYS removed them, and only for transactions their phone held. The one who leaves holds their own banks'
+// transactions, so their phone takes those answers out before it asks to leave. `itemIds` are the Plaid items
+// this person linked. Pure; returns the same appData when there is nothing to take.
+export function withoutOwnBankAnswers({ appData = null, catOverrides = null } = {}, itemIds = []) {
+  const items = new Set((itemIds || []).map(String).filter(Boolean));
+  const accounts = new Set((Array.isArray(appData?.accounts) ? appData.accounts : [])
+    .filter((a) => a && a.id != null && a._item && items.has(String(a._item))).map((a) => String(a.id)));
+  const txns = new Set((Array.isArray(appData?.transactions) ? appData.transactions : [])
+    .filter((t) => t && t.id != null && accounts.has(String(t.account_id ?? ""))).map((t) => String(t.id)));
+  const count = (o) => (isPlain(o) ? Object.keys(o).filter((k) => txns.has(k)).length : 0);
+  const removed = count(catOverrides) + count(appData?.depositDecisions);
+  if (!removed) return { appData, catOverrides, removed: 0 };
+  const after = localAfterRemoval({ catOverrides, depositDecisions: appData.depositDecisions ?? null }, { accountIds: [], transactionIds: [...txns] });
+  return { appData: isPlain(appData.depositDecisions) ? { ...appData, depositDecisions: after.depositDecisions } : appData, catOverrides: after.catOverrides, removed };
+}
+
+// A failed save of this person's own keys (their private row) is tried again by itself after these waits
+// (review 2026-11-22, P10-08). Before, it went again only with the next change to the household's data.
+export const PERSONAL_RETRY_MS = Object.freeze([5000, 30000, 120000]);
 
 // Which data this device should load, from what the server says about membership and what this device last
 // belonged to (HOUSEHOLD_STAMP_KEY):

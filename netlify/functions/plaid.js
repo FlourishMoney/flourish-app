@@ -355,6 +355,7 @@ exports.handler = async (event) => {
 
         const holdings = (data.holdings || []).map(h => {
           const s = secMap[h.security_id] || {};
+          const stated = h.iso_currency_code || s.iso_currency_code || acctMap[h.account_id]?.balances?.iso_currency_code || null;
           return {
             account_id:      h.account_id,
             account_subtype: acctMap[h.account_id]?.subtype || null,
@@ -365,7 +366,11 @@ exports.handler = async (event) => {
             quantity: h.quantity,
             price:    s.close_price || 0,
             value:    h.institution_value || 0,
-            currency: s.iso_currency_code || "CAD",
+            // Review 2026-11-22 (P3-05): the value above is in the HOLDING's currency, which is not always the
+            // currency its security is listed in; then the security's, then its account's. When nobody states one
+            // the old default is still sent (apps in people's hands expect a string) with currencyKnown:false.
+            currency: stated || "CAD",
+            ...(stated ? {} : { currencyKnown: false }),
             gain:     null,
             gainPct:  null,
           };
@@ -378,7 +383,10 @@ exports.handler = async (event) => {
         return ok({ holdings });
       } catch (err) {
         if (err && err.ownerRecord) throw err;   // the outer catch: 503, nothing returned
-        return ok({ holdings: [] });
+        // Review 2026-11-22 (P3-09): still 200 and an empty list, as every app in people's hands expects, but it
+        // now says this is "could not fetch", not "this bank holds nothing". An app that does not know the field
+        // ignores it.
+        return ok({ holdings: [], unavailable: true });
       }
     }
 
@@ -395,26 +403,39 @@ exports.handler = async (event) => {
           ...(data.accounts || []).map((a) => a && a.account_id),
           ...[...(l.credit || []), ...(l.mortgage || []), ...(l.student || [])].map((x) => x && x.account_id),
         ]);
+        // Review 2026-11-22 (P3-07): a figure the bank does not state is not $0. A debt whose balance came as 0
+        // dropped out of the app's payoff list although the account owes money. When the liability's own balance
+        // is not stated, the balance owed on its account right now (the same answer's accounts) is sent, marked
+        // balanceFrom:"current"; with neither, 0 is still sent (apps in people's hands expect a number) marked
+        // balanceKnown:false. A payment not stated stays 0, marked ...Known:false. Stated figures are unchanged.
+        const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+        const owedNow = {};
+        (data.accounts || []).forEach((a) => { if (a && a.account_id && isNum(a.balances?.current)) owedNow[a.account_id] = Math.max(0, a.balances.current); });   // on a card or loan, positive is owed; an overpaid card owes nothing
+        const balanceOf = (statedOk, statedValue, accountId) => statedOk ? { balance: statedValue }
+          : isNum(owedNow[accountId]) ? { balance: owedNow[accountId], balanceFrom: "current" }
+          : { balance: 0, balanceKnown: false };
         return ok({
           credit: (l.credit || []).map(c => ({
             account_id: c.account_id,
             name:       c.name,
-            balance:    c.last_statement_balance || 0,
+            ...balanceOf(isNum(c.last_statement_balance), c.last_statement_balance || 0, c.account_id),
             limit:      c.credit_limit || null,
             apr:        c.aprs?.[0]?.apr_percentage || null,
             minPayment: c.minimum_payment_amount || 0,
+            ...(isNum(c.minimum_payment_amount) ? {} : { minPaymentKnown: false }),
           })),
           mortgage: (l.mortgage || []).map(m => ({
             account_id:     m.account_id,
             name:           m.name,
-            balance:        m.outstanding_principal_balance || 0,
+            ...balanceOf(isNum(m.outstanding_principal_balance), m.outstanding_principal_balance || 0, m.account_id),
             interestRate:   m.interest_rate?.percentage || null,
             monthlyPayment: m.next_monthly_payment || 0,
+            ...(isNum(m.next_monthly_payment) ? {} : { monthlyPaymentKnown: false }),
           })),
           student: (l.student || []).map(s => ({
             account_id:   s.account_id,
             name:         s.name,
-            balance:      (s.outstanding_interest_amount || 0) + (s.outstanding_principal_balance || 0),
+            ...balanceOf(isNum(s.outstanding_principal_balance), (s.outstanding_interest_amount || 0) + (s.outstanding_principal_balance || 0), s.account_id),
             interestRate: s.interest_rate_percentage || null,
           })),
         });
@@ -639,9 +660,13 @@ exports.handler = async (event) => {
         existingIds = new Set((existing || []).map(r => r.item_id));
         activeCount = existingIds.size;
       }
-      for (const t of tokens) {
+      // Review 2026-11-22 (P7-01): every answer names its token by its position in the list sent (never the token),
+      // and a failure says whether trying again can help, so the app clears from the device only what the server
+      // holds or what can never be saved (lib/legacyTokenMigration.js).
+      const RETRY_PLAID_CODES = new Set(["INTERNAL_SERVER_ERROR", "PLANNED_MAINTENANCE", "RATE_LIMIT_EXCEEDED", "INSTITUTION_DOWN", "INSTITUTION_NOT_RESPONDING", "INSTITUTION_NOT_AVAILABLE"]);
+      for (const [index, t] of tokens.entries()) {
         if (!t?.token) {
-          failures.push({ error: "missing token" });
+          failures.push({ error: "missing token", index, retry: false });
           continue;
         }
         try {
@@ -650,12 +675,12 @@ exports.handler = async (event) => {
           const item_id = itemResp.item?.item_id;
           const institution_id = itemResp.item?.institution_id || null;
           if (!item_id) {
-            failures.push({ error: "no item_id returned" });
+            failures.push({ error: "no item_id returned", index, retry: false });
             continue;
           }
           // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
           if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more." });
+            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more.", index, retry: false });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)
@@ -671,15 +696,16 @@ exports.handler = async (event) => {
             }, { onConflict: "user_id,item_id" });
           if (upsertErr) {
             console.error("[migrate_items upsert]", upsertErr.message);
-            failures.push({ error: "Could not save this bank." });
+            failures.push({ error: "Could not save this bank.", index, retry: true });
             continue;
           }
           if (!existingIds.has(item_id)) { existingIds.add(item_id); activeCount++; }
-          successes.push({ item_id });
+          successes.push({ item_id, index });
         } catch (err) {
           // Plaid /item/get failed (revoked token, login required, network, etc.)
           console.error("[migrate_items item/get]", err.errorCode || "", err.message);
-          failures.push({ error: "Could not migrate this bank.", error_code: err.errorCode || null });
+          // No Plaid code at all is a call that never got an answer (a timeout, the network): try again.
+          failures.push({ error: "Could not migrate this bank.", error_code: err.errorCode || null, index, retry: !err.errorCode || RETRY_PLAID_CODES.has(err.errorCode) });
         }
       }
       return ok({ successes, failures });

@@ -41,7 +41,7 @@
 "use strict";
 const { alertSupport } = require("./supportAlert");
 const crypto = require("crypto");
-const { isPaidSubscription, STORE_PROVIDERS } = require("./planRules");
+const { isPaidSubscription, isPaidInFull, STORE_PROVIDERS, isCustomerOnlyRow } = require("./planRules");
 const { takeSeat, releaseSeat, releaseTrialSeat } = require("./foundingSeats");
 
 const ENTITLEMENT_ID = "plus";
@@ -67,6 +67,9 @@ const STRIPE_LIVE_UNPAID = Object.freeze(["past_due", "unpaid", "incomplete", "p
 function isLiveRow(row, now = Date.now()) {
   if (!row) return false;
   if (isPaidSubscription(row, now)) return true;
+  // The row that only holds the Stripe customer is "incomplete" by the database's default, not by any payment: it
+  // is no subscription at all (_lib/planRules.js isCustomerOnlyRow; real-world proof 2026-11-23).
+  if (isCustomerOnlyRow(row)) return false;
   return (row.provider || "stripe") === "stripe" && STRIPE_LIVE_UNPAID.includes(row.status);
 }
 
@@ -202,7 +205,7 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
 
   const { data: existing, error: readErr } = await admin
     .from("subscriptions")
-    .select("provider, status, current_period_end, plan_key, founding_ended_at, cancel_at_period_end, provider_subscription_id, support_flag, support_flag_at")
+    .select("provider, status, current_period_end, plan_key, last_event_at, founding_ended_at, cancel_at_period_end, provider_subscription_id, support_flag, support_flag_at")
     .eq("user_id", userId).maybeSingle();
   if (readErr) throw new Error(`subscriptions read: ${readErr.message}`);
   // A flag for support: on the row, and to the inbox the first time it is raised. Never blocks the sync.
@@ -231,7 +234,9 @@ async function syncStoreSubscription(admin, userId, deps = {}) {
   if (!next) return answer({});
   if (!mayReplace(existing, next, now)) {
     console.error("[store-sync] conflict: a store purchase for a household whose subscription is with", existingProvider);
-    const paidElsewhere = isPaidSubscription(existing, now);
+    // Paid in full elsewhere, not in billing grace: a web renewal that failed is "the web needs attention" here, as it
+    // always was, never "paying twice".
+    const paidElsewhere = isPaidInFull(existing, now);
     // Paying on the website and in a store at once: recorded on the (website's) row for support, which stays as it is.
     let flag = null;
     if (paidElsewhere && isPaidSubscription(next, now)) {

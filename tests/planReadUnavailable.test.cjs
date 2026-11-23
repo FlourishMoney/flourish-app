@@ -155,7 +155,10 @@ const status = (billing) => billing.handler({ httpMethod: "POST", headers: { ori
     t.ok(/rememberGate\(deviceStorage\(\), user\.id, body\?\.paid === true, body\?\.period_end \|\| null, Date\.now\(\), WEB_PAID_KEY\)/.test(app)
       && /recalledGate\(deviceStorage\(\), user\.id, Date\.now\(\), WEB_PAID_KEY\) === true/.test(app), "5c App: the status answer is remembered, and with no answer the remembered one decides paid");
     const billingSrc = fs.readFileSync(BILLING_PATH, "utf8");
-    t.ok(/period_end: isPaidSubscription\(row\)/.test(billingSrc), "5d billing status says when the paid period ends");
+    // Changed 2026-11-23 (Amanda's decision, billing grace): this held `period_end: isPaidSubscription(row)`. A failed
+    // renewal Stripe is retrying is still `paid`, but its period is not paid for, so the date is given only for a
+    // period paid in full; with no date the app trusts a remembered answer for 3 days at most.
+    t.ok(/period_end: isPaidInFull\(row\)/.test(billingSrc), "5d billing status says when the paid period ends (and gives no date for a period that is not paid for)");
   }
 
   t.summary("planReadUnavailable");

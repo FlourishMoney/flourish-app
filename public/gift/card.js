@@ -26,6 +26,11 @@
   if (msg) { $("#message").textContent = msg; $("#message").hidden = false; }
   $("#code").textContent = code.replace(/^(.{4})(.{4})(.{4})$/, "$1-$2-$3");
   var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(start);
+  // A real day of the calendar, or no date at all: a link edited by hand to month 99 printed "undefined 99, 2026".
+  if (m) {
+    var day = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    if (day.getUTCFullYear() !== Number(m[1]) || day.getUTCMonth() !== Number(m[2]) - 1 || day.getUTCDate() !== Number(m[3])) m = null;
+  }
   $("#start").textContent = m
     ? words("gift-card-start-on", { date: MONTHS[Number(m[2]) - 1] + " " + Number(m[3]) + ", " + m[1] })
     : words("gift-card-start-now");

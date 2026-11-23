@@ -172,7 +172,7 @@ async function getUserPlan(user_id, { delays = PLAN_READ_DELAYS_MS } = {}) {
     try {
       subRead = await readWithRetry(() => admin
         .from("subscriptions")
-        .select("provider, status, current_period_end, plan_key, cancel_at_period_end")
+        .select("provider, status, current_period_end, plan_key, cancel_at_period_end, last_event_at, updated_at")
         .eq("user_id", user_id)
         .maybeSingle(), delays);
     } catch (e) { subRead = { data: null, error: e }; }

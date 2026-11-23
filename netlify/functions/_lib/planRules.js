@@ -96,20 +96,62 @@ function isUnlimitedProfile(profile, now = Date.now()) {
 // household currently has what it paid for:
 const SUBSCRIPTION_PAID_STATUSES = Object.freeze(["active", "trialing"]);
 //
-// past_due is deliberately NOT here. It means a renewal charge failed and Stripe is retrying, and
-// including it would be a product decision about a grace period that nobody has made yet — so the
-// conservative reading applies until someone makes it: access follows a payment that succeeded.
-// The day a grace period is decided, it is one entry in this array and a line in the report; the
-// schema does not change, because 0009 stores Stripe's status verbatim and constrains nothing here.
+// BILLING GRACE (Amanda's decision, 2026-11-23, after the real-world proof, step 1A.4). past_due means a renewal
+// charge failed and Stripe is retrying. Until that day it was "deliberately not here": access ended at the first
+// failed charge, the conservative reading while nobody had decided on a grace period. The decision is now made, and
+// it is the stores' own idea of a grace period: ACCESS STAYS WHILE STRIPE IS RETRYING, and ends when Stripe cancels
+// the subscription or marks it unpaid (both arrive as the subscription's new status).
+//   isPaidSubscription   "does the household have access?"   active, trialing, or in grace
+//   isPaidInFull         "is this period paid for?"          active or trialing only. Asked where money, not access,
+//                        is the question: which of two paying members' plans is the extra one, where a gift year
+//                        starts, whether a household is "paying twice", and the paid-to date the apps are told.
+//   inBillingGrace       past_due, on a Stripe row, inside the period Stripe is trying to collect for.
+// A store's row is never given this grace: Apple and Google run their own and report it as a live purchase.
+// HOW LONG it lasts is Stripe's setting (Billing, "Manage failed payments": the retry window, and what happens when
+// every retry fails). If that setting is "leave the subscription past due", grace runs to the end of the unpaid
+// period: for an annual plan, a year. It must be "cancel the subscription" or "mark as unpaid".
+const SUBSCRIPTION_GRACE_STATUSES = Object.freeze(["past_due"]);
 //
 // current_period_end is checked as well as status. An 'active' row whose period ended is a webhook
 // we never received, and trusting status alone would hand out the product on a delivery failure.
-function isPaidSubscription(sub, now = Date.now()) {
-  if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
-  const end = _time(sub.current_period_end);
-  if (end === null) return true;               // no period on the row yet: status is all we have
+//
+// NO PERIOD END ON THE ROW (review of 2026-11-22, P2-02). A row a checkout wrote before Stripe could be asked for the
+// period has none until the next subscription event, and used to count as paid for as long as no event arrived: for
+// ever, if the cancellation was the event that went missing. It now counts for the one billing period the checkout
+// paid for (a month, or a year for the annual plans and for a row with no plan key), plus the three days Stripe keeps
+// retrying a webhook, measured from the last word Stripe gave on that row (last_event_at, else updated_at). The same
+// reasoning as the line above: past that point a renewal would have set the period, so silence is a webhook we never
+// received. A caller that did not read those dates gets the old answer (status alone), and so does a store row: the
+// stores always give an end. The status read fills the real end in from Stripe (_lib/stripeLive.js fillMissingPeriod).
+const NO_PERIOD_GRACE_MS = 3 * 86400000;
+const NO_PERIOD_MS = Object.freeze({ monthly: 31 * 86400000, annual: 366 * 86400000 });
+function impliedPeriodEndMs(sub) {
+  if (!sub || STORE_PROVIDERS.includes(sub.provider)) return null;
+  const from = _time(sub.last_event_at) !== null ? _time(sub.last_event_at) : _time(sub.updated_at);
+  if (from === null) return null;
+  return from + (sub.plan_key === "monthly" ? NO_PERIOD_MS.monthly : NO_PERIOD_MS.annual) + NO_PERIOD_GRACE_MS;
+}
+// Has the period this row names not ended yet? (The period check both questions share.)
+function periodNotOver(sub, now = Date.now()) {
   const t = now instanceof Date ? now.getTime() : now;
+  const end = _time(sub.current_period_end);
+  if (end === null) {
+    const implied = impliedPeriodEndMs(sub);
+    return implied === null ? true : t < implied;   // no dates read: status is all we have
+  }
   return t < end;
+}
+function isPaidInFull(sub, now = Date.now()) {
+  if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
+  return periodNotOver(sub, now);
+}
+function inBillingGrace(sub, now = Date.now()) {
+  if (!sub || !SUBSCRIPTION_GRACE_STATUSES.includes(sub.status)) return false;
+  if (STORE_PROVIDERS.includes(sub.provider)) return false;
+  return periodNotOver(sub, now);
+}
+function isPaidSubscription(sub, now = Date.now()) {
+  return isPaidInFull(sub, now) || inBillingGrace(sub, now);
 }
 
 // WHERE A SUBSCRIPTION ROW CAME FROM (migration 0020). 'stripe' is the website; the other two are the
@@ -141,7 +183,23 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
   return { plan: "free", unlimited: false, paidSubscription: false };
 }
 
+// THE ROW THAT ONLY HOLDS THE STRIPE CUSTOMER (real-world proof, 2026-11-23, step 1A.2). The website's checkout makes
+// the household's subscriptions row before anything is bought, to remember the Stripe customer (billing.js
+// ensureCustomer). It writes no status, so the DATABASE gives the row the column's default, "incomplete" (migration
+// 0009): the same word Stripe uses for a first payment still pending. Read as that, the row made a person who opened
+// checkout once and left look subscribed for ever: the website answered "already subscribed", a store app would not
+// sell to them, and their 14 days free were gone.
+// It is told apart by what no real subscription lacks: it names no subscription, no plan, and no event was ever
+// written on it. Every reader of the row's status reads those three with it; a reader that left one out still gets
+// the right answer from the others.
+const CUSTOMER_ONLY_STATUS = "incomplete";
+function isCustomerOnlyRow(row) {
+  return !!row && (row.provider || "stripe") === "stripe" && row.status === CUSTOMER_ONLY_STATUS
+    && !row.provider_subscription_id && !row.plan_key && !row.last_event_at;
+}
+
 module.exports = {
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile, trialPlanFirstSince, accountTrialApplies,
-  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
+  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, impliedPeriodEndMs, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
+  isCustomerOnlyRow, SUBSCRIPTION_GRACE_STATUSES, isPaidInFull, inBillingGrace,
 };
