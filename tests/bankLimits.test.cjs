@@ -46,7 +46,17 @@ function makeDb({ items = {}, partner = false, plus = null, failPlus = false, fa
     };
     return q;
   };
-  return { state, admin: { from, rpc: async () => ({ data: null, error: null }), auth: { admin: {} } } };
+  // household_disconnect_item, as the database does it: the row goes (added 2026-11-23, round 6: a bank refused at the
+  // limit now has a row until Plaid has removed its Item, and this is what deletes it).
+  const rpc = async (name, args) => {
+    if (name === "household_disconnect_item") {
+      state.writes.push(["plaid_items", "disconnect"]);
+      state.rows.plaid_items = state.rows.plaid_items.filter((r) => !(r.user_id === args.p_user && r.item_id === args.p_item));
+      return { data: { result: "removed" }, error: null };
+    }
+    return { data: null, error: null };
+  };
+  return { state, admin: { from, rpc, auth: { admin: {} } } };
 }
 
 function load(db, user) {
@@ -137,8 +147,11 @@ function load(db, user) {
       t.eq([re.status, plaidCalls.some((u) => /link\/token\/create/.test(u))], [200, true], "5b a reconnect of a bank already held is never limited");
       plaidCalls.length = 0;
       const ex = await call(plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "New Bank", institution_id: "ins_new" });
-      t.eq([ex.status, ex.body && ex.body.error, plaidCalls.filter((u) => /item\/remove/.test(u)).length, db.state.writes.filter(([tb]) => tb === "plaid_items").length], [402, "bank_limit", 1, 0],
-        "5c exchange checks again: a new bank past the limit is refused, the item Plaid just made is removed, nothing written");
+      // Changed 2026-11-23 (round 6 of the Plus review, R6-1): the last figure was "0 writes". A refused row is now written
+      // BEFORE Plaid is asked to remove the Item and deleted once it has, so the Item is never live at Plaid with no
+      // record. What this holds is unchanged: after the refusal, nothing of the new bank is left.
+      t.eq([ex.status, ex.body && ex.body.error, plaidCalls.filter((u) => /item\/remove/.test(u)).length, db.state.writes.filter(([tb]) => tb === "plaid_items").map(([, op]) => op), db.state.rows.plaid_items.length], [402, "bank_limit", 1, ["upsert", "disconnect"], 2],
+        "5c exchange checks again: a new bank past the limit is refused, the item Plaid just made is removed, and nothing of it is left (its refused row is written first, then deleted)");
       // Review 2026-11-10 (HIGH): a reconnect comes back through exchange_token with the SAME item. Never limited.
       nextItem = "a-item-0"; plaidCalls.length = 0;
       const rc = await call(load(db, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_name: "Bank 0", institution_id: "ins_0" });
@@ -158,8 +171,10 @@ function load(db, user) {
       plaidCalls.length = 0;
       const f = await call(load(failing, A).plaid, { action: "create_link_token", country: "CA" });
       const fx = await call(load(failing, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_id: "ins_new" });
-      t.eq([f.status, fx.status, plaidCalls.filter((u) => /link\/token|item\/get/.test(u)).length, plaidCalls.filter((u) => /item\/remove/.test(u)).length, failing.state.writes], [503, 503, 0, 1, []],
-        "5e the plan read fails: the new bank waits (503, a plain line, its new item removed), never a guessed count, and nothing is written");
+      // Changed 2026-11-23 (R6-1): "nothing is written" is now "nothing is left": the refused row is written, then deleted.
+      const before5e = failing.state.rows.plaid_items.length;
+      t.eq([f.status, fx.status, plaidCalls.filter((u) => /link\/token|item\/get/.test(u)).length, plaidCalls.filter((u) => /item\/remove/.test(u)).length, failing.state.writes, failing.state.rows.plaid_items.some((r) => r.status === "refused" || r.institution_id === "ins_new"), before5e], [503, 503, 0, 1, [["plaid_items", "upsert"], ["plaid_items", "disconnect"]], false, before5e],
+        "5e the plan read fails: the new bank waits (503, a plain line, its new item removed), never a guessed count, and nothing of it is left");
       nextItem = "a-item-0";
       const fr = await call(load(failing, A).plaid, { action: "exchange_token", public_token: "public-sandbox-x", institution_id: "ins_0" });
       t.ok(fr.status !== 503 && fr.status !== 402, "5e2 …but a reconnect of a bank already held still goes through on a plan read that failed");

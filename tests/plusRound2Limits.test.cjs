@@ -42,7 +42,7 @@ function makeDb({ items = {}, partner = false, plus = null, entries = {} } = {})
   let clock = Date.parse("2026-11-01T12:00:00.000Z");
   const tick = () => new Date((clock += 1000)).toISOString();
   const state = { rows: { plaid_items: [], household_members: [], plus_addon_subscriptions: [], complimentary_access: [], net_worth_entries: [], net_worth_shares: [], plaid_account_owners: [] },
-    writes: [], hold: null, waiting: [], tick, afterWrite: null, disconnectFails: 0, deleteFails: {}, updateFails: {} };
+    writes: [], hold: null, waiting: [], tick, afterWrite: null, disconnectFails: 0, deleteFails: {}, updateFails: {}, upsertFails: {} };
   for (const [user, n] of Object.entries(items)) for (let i = 0; i < n; i++) state.rows.plaid_items.push({ id: newId(), user_id: user, item_id: `${user.slice(0, 1)}-item-${i}`, status: "active", access_token: `access-${user.slice(0, 1)}-${i}`, institution_id: `ins_${user.slice(0, 1)}_${i}`, institution_name: `Bank ${user.slice(0, 1)}${i}`, created_at: tick() });
   for (const [user, n] of Object.entries(entries)) for (let i = 0; i < n; i++) state.rows.net_worth_entries.push({ id: newId(), user_id: user, kind: "home", label: `e${i}`, value_cents: 100, currency: "CAD", shared: false, entered_at: tick() });
   if (partner) state.rows.household_members.push({ user_id: A, household_id: "h1", role: "owner" }, { user_id: B, household_id: "h1", role: "partner" });
@@ -68,6 +68,7 @@ function makeDb({ items = {}, partner = false, plus = null, entries = {} } = {})
       then(res, rej) { const h = filtered(q.f).map((r) => ({ ...r })); return Promise.resolve({ data: h, error: null, count: h.length }).then(res, rej); },
       async upsert(row, opts) {
         await gate(table);
+        if (state.upsertFails[table] > 0) { state.upsertFails[table]--; state.writes.push([table, "upsert failed"]); return { error: { code: "57014", message: "timeout" } }; }
         state.writes.push([table, "upsert"]);
         const keys = opts && opts.onConflict ? opts.onConflict.split(",") : (PK[table] || ["user_id"]);
         const i = rows().findIndex(pkOf(row, keys));
@@ -146,13 +147,15 @@ const call = async (fn, body) => {
   const realFetch = global.fetch;
   // The pretend Plaid: a public token "pt-x" becomes item "item-x" with token "access-x". removeDelayMs: how long
   // /item/remove takes.
-  const P = { calls: [], removeDelayMs: 0, neverRemoves: false, alreadyGone: false, byToken: {} };
+  const P = { calls: [], removeDelayMs: 0, neverRemoves: false, alreadyGone: false, removeFailsLeft: 0, onRemove: null, byToken: {} };
   const ok = (j) => ({ ok: true, status: 200, json: async () => j });
   global.fetch = async (url, init) => {
     const u = String(url).replace(/^https:\/\/[^/]+/, ""); const body = init && init.body ? JSON.parse(init.body) : {};
     P.calls.push({ url: u, token: body.access_token || null });
     if (/item\/remove/.test(u)) {
       if (P.removeDelayMs) await sleep(P.removeDelayMs);
+      if (P.onRemove) P.onRemove(body.access_token);
+      if (P.removeFailsLeft > 0) { P.removeFailsLeft--; return { ok: false, status: 500, json: async () => ({ error_code: "INTERNAL_SERVER_ERROR", error_message: "plaid is down" }) }; }
       if (P.alreadyGone) return { ok: false, status: 400, json: async () => ({ error_code: "ITEM_NOT_FOUND", error_message: "The Item you requested cannot be found." }) };
       if (P.neverRemoves) return { ok: false, status: 500, json: async () => ({ error_code: "INTERNAL_SERVER_ERROR", error_message: "plaid is down" }) };
       return ok({ removed: true });
@@ -162,7 +165,7 @@ const call = async (fn, body) => {
     return ok({});
   };
   const removes = () => P.calls.filter((c) => /item\/remove/.test(c.url)).map((c) => c.token);
-  const reset = () => { P.calls.length = 0; P.removeDelayMs = 0; P.neverRemoves = false; P.alreadyGone = false; errors.length = 0; };
+  const reset = () => { P.calls.length = 0; P.removeDelayMs = 0; P.neverRemoves = false; P.alreadyGone = false; P.removeFailsLeft = 0; P.onRemove = null; errors.length = 0; };
   for (const k of Object.keys(process.env)) if (/^PLUS_ENABLED$|^PLUS_TESTER_USER_IDS$|^HOUSEHOLD_ENABLED$|^ENFORCE_PLAN_LIMITS$|^STRIPE_PRICE_/.test(k)) delete process.env[k];
   Object.assign(process.env, { PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox", HOUSEHOLD_ENABLED: "true", PLUS_ENABLED: "true",
     STRIPE_PRICE_MONTHLY_CAD: "price_m", STRIPE_PRICE_ANNUAL_CAD: "price_a", STRIPE_PRICE_FOUNDING_ANNUAL_CAD: "price_f", STRIPE_PRICE_PLUS_MONTHLY_CAD: "price_pm", STRIPE_PRICE_PLUS_ANNUAL_CAD: "price_pa" });
@@ -454,6 +457,104 @@ const call = async (fn, body) => {
       k2.state.updateFails.plaid_items = 9;
       const dk = await twoLegacy(k2, "access-legacy-27", "access-legacy-28");
       t.eq([dk.map((x) => x.slice(0, 2)), removes().length, banks(k2, A).length], [[[1, 0], [1, 0]], 0, 3], "R4-2e migrate_items: both legacy banks imported, nothing removed at Plaid, nothing marked");
+    }
+
+    // ── ROUND 6 (2026-11-23), R6-1: A REFUSED BANK ALWAYS HAS A ROW UNTIL PLAID HAS REMOVED IT ──────────────────────
+    // exchange_token refuses a NEW bank at the limit before anything is written. The Item Plaid had just made was
+    // removed in three tries and the result ignored: if all three failed, the Item stayed live at Plaid with no row,
+    // so nothing could ever find it. Now a refused row (its token; never counted, never listed, never read) is
+    // written BEFORE the removal, deleted only once Plaid has removed the Item, and otherwise finished later.
+    {
+      const refused = (db) => db.state.rows.plaid_items.filter((r) => r.status === "refused");
+      const full = () => makeDb({ items: { [A]: 2 } });                         // the basic plan: 2 of 2
+      // Plaid's removal blocked three times at the limit
+      reset(); P.removeFailsLeft = 3;
+      const d1 = full(); const seen = [];
+      P.onRemove = (token) => seen.push(`${token}:${refused(d1).some((r) => r.access_token === token) ? "row there" : "NO ROW"}`);
+      const r1 = await call(load(d1, A).plaid, newBank("r6"));
+      const row1 = refused(d1)[0] || {};
+      t.eq([r1.status, r1.body && r1.body.error, row1.item_id, row1.access_token, row1.user_id === A], [402, "bank_limit", "item-r6", "access-r6", true],
+        "R6-1a a new bank refused at the limit, and Plaid will not remove its Item (three tries): the answer is the refusal, and a refused row holds the Item's id and token (was: no row at all, the Item live at Plaid with nothing to find it by)");
+      t.eq([seen.length, [...new Set(seen)]], [3, ["access-r6:row there"]], "R6-1b the row is written BEFORE Plaid is asked: it is there at each of the three tries");
+      const st1 = await call(load(d1, A).plaid, { action: "bank_limit_status" });
+      const li1pre = d1.state.rows.plaid_items.length;
+      t.eq([st1.body.used, st1.body.connected, li1pre], [2, 2, 3], "R6-1c it is never counted: 2 of 2, as before the try");
+      const acc1 = await call(load(d1, A).plaid, { action: "get_accounts", item_id: "item-r6" });
+      t.eq([acc1.status, P.calls.filter((c) => /accounts\/get/.test(c.url)).length], [400, 0], "R6-1d it is never read: asked for by its id it is \"not found\", and Plaid is not asked for its accounts");
+      // then the banks are listed
+      P.calls.length = 0; P.onRemove = null;
+      const li1 = await call(load(d1, A).plaid, { action: "list_items" });
+      t.eq([li1.status, li1.body.items.map((i) => i.item_id).sort(), removes(), refused(d1).length, d1.state.rows.plaid_items.length], [200, ["a-item-0", "a-item-1"], ["access-r6"], 0, 2],
+        "R6-1e then the banks are listed: it was never in the list, the Item is removed at Plaid with its token, and the row is gone");
+      // Plaid removes it at once: nothing is left
+      reset();
+      const d2 = full();
+      const r2 = await call(load(d2, A).plaid, newBank("r6b"));
+      t.eq([r2.status, removes(), d2.state.rows.plaid_items.length, d2.state.writes.filter((w) => w[0] === "plaid_items").map((w) => w[1])], [402, ["access-r6b"], 2, ["upsert", "disconnect"]],
+        "R6-1f Plaid removes it at the first try: the row is written, the Item removed, the row deleted. Nothing is left");
+      // the limit could not be read (the other reason this refusal happens)
+      reset(); P.removeFailsLeft = 3;
+      const d3 = makeDb({ items: { [A]: 1 } });
+      const realFrom3 = d3.admin.from;
+      d3.admin.from = (table) => (table === "plus_addon_subscriptions" ? { select() { return this; }, eq() { return this; }, in() { return this; }, not() { return this; }, async maybeSingle() { return { data: null, error: { code: "57014", message: "timeout" } }; }, then(res, rej) { return Promise.resolve({ data: null, error: { code: "57014", message: "timeout" } }).then(res, rej); } } : realFrom3(table));
+      const r3 = await call(load(d3, A).plaid, newBank("r6c"));
+      t.eq([r3.status, r3.body && r3.body.error, refused(d3).map((r) => r.access_token)], [503, "status_unavailable", ["access-r6c"]], "R6-1g the limit could not be read, and Plaid will not remove the Item: \"unavailable\", and the same refused row is kept");
+      // the refused row itself cannot be written
+      reset();
+      const d4 = full(); d4.state.upsertFails.plaid_items = 9;
+      const r4 = await call(load(d4, A).plaid, newBank("r6d"));
+      t.eq([r4.status, removes(), d4.state.rows.plaid_items.length], [402, ["access-r6d"], 2], "R6-1h the row cannot be written but Plaid answers: the Item is still removed there, and the refusal stands");
+      reset(); P.removeFailsLeft = 9;
+      const d5 = full(); d5.state.upsertFails.plaid_items = 9;
+      const r5 = await call(load(d5, A).plaid, newBank("r6e"));
+      t.ok(r5.status === 402 && errors.some((e) => /item-r6e/.test(e) && /still live at Plaid/.test(e)), "R6-1i neither can be done (the database and Plaid both down): still the refusal, and one error line names the Item for a person; nothing else is possible");
+
+      // EVERY OTHER PATH THAT REMOVES A BANK AT PLAID (checked for the same gap)
+      // 1. the save of a new bank fails after Plaid made the Item
+      reset(); P.removeFailsLeft = 3;
+      const s1 = makeDb({ items: { [A]: 1 } }); s1.state.upsertFails.plaid_items = 1;
+      const rs1 = await call(load(s1, A).plaid, newBank("sv"));
+      t.eq([rs1.status, refused(s1).map((r) => r.access_token), counted(s1, A).length], [500, ["access-sv"], 1],
+        "R6-2a the new bank's row could not be saved, and Plaid will not remove its Item: the answer is still \"could not save\", and a refused row is kept for it (was: one try at Plaid, then nothing)");
+      P.calls.length = 0;
+      await call(load(s1, A).plaid, { action: "list_items" });
+      t.eq([removes(), refused(s1).length], [["access-sv"], 0], "R6-2b …and it is finished when the banks are listed");
+      reset();
+      const s2 = makeDb({ items: { [A]: 1 } }); s2.state.upsertFails.plaid_items = 1;
+      const rs2 = await call(load(s2, A).plaid, newBank("sv2"));
+      t.eq([rs2.status, removes(), s2.state.rows.plaid_items.length], [500, ["access-sv2"], 1], "R6-2c the same with Plaid answering: removed at once, no row left");
+      // 2. the person disconnects a bank and Plaid will not remove it
+      reset(); P.removeFailsLeft = 9;
+      const x1 = makeDb({ items: { [A]: 2 } });
+      const dx = await call(load(x1, A).plaid, { action: "delete_item", item_id: "a-item-1" });
+      t.eq([dx.status, dx.body && dx.body.removed, counted(x1, A), refused(x1).map((r) => r.item_id)], [200, true, ["a-item-0"], ["a-item-1"]],
+        "R6-2d the person disconnects a bank and Plaid will not remove the Item: the bank IS disconnected for them, and a refused row keeps its token so it can still be removed (was: the row deleted, the Item live at Plaid for good)");
+      P.removeFailsLeft = 0; P.calls.length = 0;
+      const lx = await call(load(x1, A).plaid, { action: "list_items" });
+      t.eq([lx.body.items.map((i) => i.item_id), removes(), x1.state.rows.plaid_items.length], [["a-item-0"], ["access-a-1"], 1], "R6-2e …it is not in their list, and listing finishes the removal");
+      reset();
+      const x2 = makeDb({ items: { [A]: 2 } });
+      const dx2 = await call(load(x2, A).plaid, { action: "delete_item", item_id: "a-item-1" });
+      t.eq([dx2.body && dx2.body.removed, x2.state.rows.plaid_items.length, removes()], [true, 1, ["access-a-1"]], "R6-2f with Plaid answering, a disconnect leaves no row, as before");
+      // 3. a duplicate of the same bank, removed when the bank is linked again
+      reset(); P.removeFailsLeft = 9;
+      const u1 = makeDb({ items: { [A]: 1 } });
+      u1.state.rows.plaid_items[0].institution_id = "ins_same";
+      const ru = await call(load(u1, A).plaid, { action: "exchange_token", public_token: "pt-dup", institution_name: "Same Bank", institution_id: "ins_same" });
+      t.eq([ru.status, counted(u1, A), refused(u1).map((r) => r.item_id)], [200, ["item-dup"], ["a-item-0"]],
+        "R6-2g the same bank linked again and Plaid will not remove the older Item: one connected bank (the new one), and the older one's token is kept in a refused row, not lost");
+      // 4. collapsing duplicates
+      reset(); P.removeFailsLeft = 9;
+      const c1 = makeDb({ items: { [A]: 2 } });
+      c1.state.rows.plaid_items.forEach((r) => { r.institution_id = "ins_twice"; });
+      const rc = await call(load(c1, A).plaid, { action: "collapse_duplicate_items" });
+      t.eq([rc.status, counted(c1, A).length, refused(c1).length], [200, 1, 1], "R6-2h collapsing duplicates when Plaid will not remove the older one: one bank stays connected and the other's token is kept in a refused row");
+      const srcR = src("netlify", "functions", "plaid.js");
+      const withoutComments = srcR.replace(/\/\/[^\n]*/g, "");
+      const removals = [...withoutComments.matchAll(/plaid\("\/item\/remove"/g)].length;
+      t.eq(removals, 4, "R6-2i Plaid's removal is called in four places only: the one helper every refusal, disconnect and duplicate goes through; the later finish; remove_item (which leaves the row where it is); and deleting the whole account");
+      const leftBare = [...withoutComments.matchAll(/try \{ await plaid\("\/item\/remove"/g)].length;
+      t.eq(leftBare, 2, "R6-2j the only one-line \"try it\" removals left are inside that helper (three tries) and the later finish: the save-failed, duplicate and disconnect paths no longer try once and carry on");
     }
 
     // ── N4. TWO NEW NET WORTH ENTRIES AT THE SAME MOMENT, AT 49 OF 50 ───────────────────────────────────────────

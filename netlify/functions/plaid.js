@@ -84,7 +84,28 @@ async function removeRefusedItem(access_token, item_id, where) {
     try { await plaid("/item/remove", { access_token }); return true; }
     catch (e) { if (goneAtPlaid(e)) return true; last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
   }
-  console.error(`[${where}] /item/remove failed ${REMOVE_TRIES} times: item ${item_id} is still live at Plaid, remove it by hand:`, (last && (last.errorCode || last.message)) || "error");
+  console.error(`[${where}] /item/remove failed ${REMOVE_TRIES} times: item ${item_id} is still live at Plaid (its refused row, if one could be kept, is finished the next time the banks are listed; with no row it must be removed by hand):`, (last && (last.errorCode || last.message)) || "error");
+  return false;
+}
+
+// A BANK THAT IS NOT (OR NO LONGER) CONNECTED KEEPS A ROW UNTIL PLAID HAS REMOVED IT (round 6 of the Plus review, R6-1).
+// The row is marked refused: it holds the Item's id and token and nothing else matters about it. It counts toward no
+// limit (_lib/bankLimits.js NOT_COUNTED), is never in the list the app is sent, and is never read (resolveAccessToken).
+// It is deleted once Plaid has removed the Item; until then finishRefusedBanks tries again each time its owner's banks
+// are listed. Without it, a removal Plaid would not do left the Item live there with no record anywhere.
+// Used: before the removal, where no row exists yet (a new bank refused at the limit); after a removal that failed,
+// where the row has just gone (a disconnect, a duplicate) or could not be written (a save that failed).
+// Returns true when the row is there. Three tries; a row that cannot be kept is named in one error line.
+async function keepRefusedRow(admin, user_id, bank, where) {
+  const row = { user_id, item_id: bank.item_id, access_token: bank.access_token, institution_id: bank.institution_id || null, institution_name: bank.institution_name || "Your Bank", status: REFUSED };
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try {
+      const { error } = await admin.from("plaid_items").upsert(row, { onConflict: "user_id,item_id" });
+      if (!error) return true;
+    } catch (e) { /* tried again */ }
+    if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+  }
+  console.error(`[${where}] could not keep a refused row for a bank still to be removed at Plaid:`, bank.item_id);
   return false;
 }
 
@@ -291,15 +312,20 @@ exports.handler = async (event) => {
         // A NEW bank only: not one of this person's items, and not a bank (by institution) they already hold.
         addsABank = true;
         try {
-          const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id, institution_id, institution_name").eq("user_id", user_id);
+          const { data: mine, error: mineErr } = await admin.from("plaid_items").select("item_id, institution_id, institution_name, status").eq("user_id", user_id);
           if (mineErr) throw new Error(mineErr.code || "error");
           const key = (r) => String((r && r.institution_id) || "").trim().toLowerCase() || String((r && r.institution_name) || "").trim().toLowerCase();
           const newKey = key({ institution_id, institution_name });
-          addsABank = !(mine || []).some((r) => r.item_id === item_id || (newKey && key(r) === newKey));
+          // A row marked refused is not a bank this person holds (it is one on its way out), so it never makes a new link "the same bank".
+          addsABank = !(mine || []).some((r) => r.status !== REFUSED && (r.item_id === item_id || (newKey && key(r) === newKey)));
         } catch { addsABank = true; }
         if (addsABank && (bankLimit.unavailable || !bankLimit.allowed)) {
           // Refused: the item Plaid just made is removed, so nothing is left connected or billed.
-          await removeRefusedItem(access_token, item_id, "exchange_token limit");
+          // Round 6 (R6-1): a refused row is written FIRST (its token; never counted, listed or read), and deleted only
+          // once Plaid has removed the Item. Three failed tries used to be ignored here, with no row: the Item stayed
+          // live at Plaid with no record. Now the row stays and the removal is finished when the banks are next listed.
+          await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token limit");
+          if (await removeRefusedItem(access_token, item_id, "exchange_token limit")) await removeRefusedRow(admin, user_id, item_id, "exchange_token limit");
           if (bankLimit.unavailable) return statusUnavailable(CORS);
           return { statusCode: 402, headers: CORS, body: JSON.stringify(limitBody(bankLimit)) };
         }
@@ -319,8 +345,9 @@ exports.handler = async (event) => {
         // Persist failed — roll back the orphaned Plaid item so we never leave a
         // live access_token we couldn't save (best-effort).
         console.error("[exchange_token upsert]", upsertErr.message);
-        try { await plaid("/item/remove", { access_token }); }
-        catch (rbErr) { console.warn("[exchange_token rollback /item/remove failed]", rbErr.message); }
+        // Round 6 (R6-1, the same gap): three tries, not one; and if Plaid will not remove it, the write is tried again
+        // as a refused row, so the Item is not left live at Plaid with no record.
+        if (!(await removeRefusedItem(access_token, item_id, "exchange_token save failed"))) await keepRefusedRow(admin, user_id, { item_id, access_token, institution_id, institution_name }, "exchange_token save failed");
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
       }
 
@@ -365,19 +392,20 @@ exports.handler = async (event) => {
         if (dedupeKey) {
           const { data: existingRows, error: listErr } = await admin
             .from("plaid_items")
-            .select("item_id, access_token, institution_id, institution_name")
+            .select("item_id, access_token, institution_id, institution_name, status")
             .eq("user_id", user_id);
           if (listErr) {
             console.error("[exchange_token dedupe] list failed (leaving any duplicate for collapse):", listErr.message);
           } else {
             for (const r of existingRows || []) {
               if (r.item_id === item_id) continue;   // the item just linked/updated — never remove it
+              if (r.status === REFUSED) continue;    // already on its way out (R6-1); finishRefusedBanks finishes it
               const rKey = (r.institution_id || "").trim().toLowerCase() || (r.institution_name || "").trim().toLowerCase();
               if (!rKey || rKey !== dedupeKey) continue;
-              try { await plaid("/item/remove", { access_token: r.access_token }); }
-              catch (revErr) { console.warn("[exchange_token dedupe: item/remove failed]", r.item_id, revErr.message); }
+              const gone = await removeRefusedItem(r.access_token, r.item_id, "exchange_token dedupe");
               // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
-              try { await household.disconnectItem(admin, user_id, r.item_id); }
+              // Round 6 (R6-1, the same gap): if Plaid would not remove it, its token is kept in a refused row.
+              try { await household.disconnectItem(admin, user_id, r.item_id); if (!gone) await keepRefusedRow(admin, user_id, r, "exchange_token dedupe"); }
               catch (delErr) { console.error("[exchange_token dedupe: row delete failed]", r.item_id, delErr.message); }
             }
           }
@@ -762,12 +790,10 @@ exports.handler = async (event) => {
       if (fetchErr || !row) {
         return e400("item not found for this user");
       }
-      // Revoke from Plaid (best-effort — proceed with row delete even if this fails)
-      try {
-        await plaid("/item/remove", { access_token: row.access_token });
-      } catch (revErr) {
-        console.warn("[item/remove failed]", revErr.message);
-      }
+      // Revoke from Plaid (the disconnect goes ahead for the person even if this fails).
+      // Round 6 (R6-1, the same gap): three tries, and if Plaid still will not remove it, its token is kept in a
+      // refused row below, so the Item is removed later and not left live at Plaid with no record.
+      const goneAtPlaidNow = await removeRefusedItem(row.access_token, item_id, "delete_item");
       // Couple mode (audit round 2 c): what came from this bank leaves the household's shared blob, under the
       // household's lock and while the row still says whose bank it is, then the row goes: one transaction
       // (_lib/household.js disconnectItem). Not in a household: the row is deleted, as before.
@@ -779,6 +805,7 @@ exports.handler = async (event) => {
       // PLUS: the bank's holdings kept on the server go with it (migration 0055's trigger does the same when the row
       // goes; this is the same thing said here). Never fails the disconnect.
       await holdingsStore.dropPlusHoldings(admin, user_id, item_id);
+      if (!goneAtPlaidNow) await keepRefusedRow(admin, user_id, { item_id, access_token: row.access_token }, "delete_item");
       return ok({ removed: true });
     }
 
@@ -796,7 +823,7 @@ exports.handler = async (event) => {
       const admin = getAdminClient();
       const { data: rows, error: listErr } = await admin
         .from("plaid_items")
-        .select("item_id, access_token, institution_id, institution_name, created_at")
+        .select("item_id, access_token, institution_id, institution_name, created_at, status")
         .eq("user_id", user_id)
         .order("created_at", { ascending: false });   // newest first
       if (listErr) {
@@ -806,6 +833,7 @@ exports.handler = async (event) => {
       const seen = new Set();
       const kept = [], collapsed = [];
       for (const r of rows || []) {
+        if (r.status === REFUSED) continue;   // a bank on its way out (R6-1) is no one's duplicate, and is never "the one kept"
         // institution_id is often null (neither client call site sends it), so fall back to a
         // normalised institution_name. Rows with neither are never collapsed — we cannot prove
         // they are duplicates, and wrongly removing a real bank is far worse than a duplicate.
@@ -814,12 +842,12 @@ exports.handler = async (event) => {
         if (!key) { kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         if (!seen.has(key)) { seen.add(key); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         // Duplicate (older, since we ordered newest-first) → revoke + delete.
-        try { await plaid("/item/remove", { access_token: r.access_token }); }
-        catch (revErr) { console.warn("[collapse: item/remove failed]", r.item_id, revErr.message); }
+        const gone = await removeRefusedItem(r.access_token, r.item_id, "collapse");
         // Through the same cleanup as delete_item: the duplicate's data leaves the household's blob first.
         try { await household.disconnectItem(admin, user_id, r.item_id); }
         catch (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
         await holdingsStore.dropPlusHoldings(admin, user_id, r.item_id);   // PLUS: its kept holdings go with it (as delete_item)
+        if (!gone) await keepRefusedRow(admin, user_id, r, "collapse");      // round 6 (R6-1): its token is kept until Plaid removes it
         collapsed.push({ item_id: r.item_id, institution_name: r.institution_name });
       }
       return ok({ collapsed, kept });
@@ -1173,7 +1201,8 @@ async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } =
     .eq("user_id", user_id)
     .eq("item_id", body.item_id)
     .single();
-  if (!error && data) { note(user_id, data.status); return { access_token: data.access_token, user_id, owner_id: user_id, error: null }; }
+  // A row marked refused is a bank on its way out (R6-1): it is never read, whoever asks.
+  if (!error && data && data.status !== REFUSED) { note(user_id, data.status); return { access_token: data.access_token, user_id, owner_id: user_id, error: null }; }
   if (!ownOnly) {
     try {
       const peers = await household.peerIdsOf(admin, user_id);
@@ -1184,7 +1213,7 @@ async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } =
           .in("user_id", peers)
           .eq("item_id", body.item_id)
           .maybeSingle();
-        if (!peerErr && theirs && theirs.access_token) {
+        if (!peerErr && theirs && theirs.access_token && theirs.status !== REFUSED) {
           note(theirs.user_id, theirs.status);
           return { access_token: theirs.access_token, user_id, owner_id: theirs.user_id, item_row_id: theirs.id, error: null };
         }
