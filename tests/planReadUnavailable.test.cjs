@@ -73,6 +73,12 @@ function load(db, fail) {
 
 const exchange = (plaid) => plaid.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" },
   body: JSON.stringify({ action: "exchange_token", public_token: "public-sandbox-1" }) });
+// Free v1 on the website (2026-11-23): the website's free plan refuses a new bank at the link token, before Plaid opens;
+// a store app still at the exchange (tests/freeV1Bank.test.cjs holds every step).
+const linkToken = (plaid) => plaid.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" },
+  body: JSON.stringify({ action: "create_link_token", country: "CA", user_id: "u1" }) });
+const exchangeInApp = (plaid) => plaid.handler({ httpMethod: "POST", headers: { origin: "capacitor://localhost", authorization: "Bearer x" },
+  body: JSON.stringify({ action: "exchange_token", public_token: "public-sandbox-1" }) });
 const status = (billing) => billing.handler({ httpMethod: "POST", headers: { origin: "https://flourishmoney.app", authorization: "Bearer x" }, body: JSON.stringify({ action: "status" }) });
 
 (async () => {
@@ -116,8 +122,9 @@ const status = (billing) => billing.handler({ httpMethod: "POST", headers: { ori
       t.eq([p.status_unavailable, p.unlimited, p.paid], [true, false, false], "3a unpaid + read error: status unavailable, no access");
       const res = await exchange(load(freeDb(), { subscriptions: Infinity }).plaid);
       t.eq(res.statusCode, 503, "3b the cap answers 503 (the app retries), not the free limit on a guess");
-      const ok = await exchange(load(freeDb()).plaid);
-      t.eq([ok.statusCode, JSON.parse(ok.body).error], [402, "plan_limit"], "3c read fine and unpaid: a second bank is still refused (402)");
+      const ok = await linkToken(load(freeDb()).plaid), app = await exchangeInApp(load(freeDb()).plaid);
+      t.eq([ok.statusCode, JSON.parse(ok.body).error, app.statusCode, JSON.parse(app.body).error], [402, "plan_limit", 402, "plan_limit"],
+        "3c read fine and unpaid: another bank is still refused (402), on the website at the link token and in a store app at the exchange");
     }
 
     // ── 4. Trial and founder ──────────────────────────────────────────────────────────────────────

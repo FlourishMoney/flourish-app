@@ -305,7 +305,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.ok(/command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),
       "5e …and it runs on the production web build (the bundle and the functions) and on every store build");
     t.ok(!APP.includes("No credit card") && !APP.includes("Canada & USA"), "5f onboarding: the old welcome's price and countries line is gone (1.1.7), switch on or off");
-    t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same");
+    // Free v1 on the website (2026-11-23): while on, the landing's line is the word slot free-landing-line (lib/freeWords.js).
+    t.ok(APP.includes('{tpfOn ? freeWords("free-landing-line") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same (the free v1 line while on)");
     const fake = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
     t.eq([await lib.askTrialPlanFirstOn(fake(200, { on: true })), await lib.askTrialPlanFirstOn(fake(404, {})), await lib.askTrialPlanFirstOn(fake(500, {})),
       await lib.askTrialPlanFirstOn(async () => { throw new Error("offline"); }), await lib.askTrialPlanFirstOn(fake(200, { on: "yes" }))], [true, false, null, null, null],

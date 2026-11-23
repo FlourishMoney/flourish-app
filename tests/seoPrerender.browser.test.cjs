@@ -109,7 +109,9 @@ const HEADLINE = "Know what's safe to spend until payday.";
       const COUNT = /Founding price: \$79\.99 a year plus tax for the first 50 households who subscribe\. \d+ spots? left, first come, first served\. /;
       t.ok(COUNT.test(reactText) && !COUNT.test(homeCopy), "3b the live founding count is the app's own line, from the live answer, and is not in the copy");
       t.eq(reactText.replace(COUNT, ""), homeCopy, "3c apart from it, React's landing says exactly what the copy said, word for word");
-      t.ok(homeCopy.includes("Get started") && homeCopy.includes("Choose a plan to get started."), "3d …with the switch-on words, as production shows today");
+      // Free v1 on the website (2026-11-23): the line under "Get started" is the word slot free-landing-line.
+      const { freeWords } = await import("../src/lib/freeWords.js");
+      t.ok(homeCopy.includes("Get started") && homeCopy.includes(freeWords("free-landing-line")) && !homeCopy.includes("Choose a plan to get started."), "3d …with the switch-on words (the free v1 landing line)");
       t.eq(consoleErrors, [], "7a the landing: nothing in the console");
       await ctx.close();
     }

@@ -20048,7 +20048,7 @@ export default function FlourishApp(){
     {/* Free v1 (the website): the plans, opened from the bank step's free-bank button, over onboarding; closing them
         goes back to the same step. Counted as this device's one offer, so they do not open again after the number. */}
     {plansOverOnboarding && billingUi.show && !isNativeApp() && (
-      <div role="dialog" aria-modal="true" aria-label="Plans" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg}}>
+      <div role="dialog" aria-modal="true" aria-label="Plans" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
         <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setPlansOverOnboarding(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}
           closeLabel={freePlansClose}/>
       </div>
