@@ -53,10 +53,12 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
   // (syncHoldings, lib/plusHoldings.js). With Plus off it reads each bank's answer in mergeHoldings and applies
   // plainHoldingsAfter, which gives exactly what retainHoldings gives (tests/plusRound2Holdings.test.cjs N2f3). The five
   // checks below hold that path to the same five rules main's checks held on main's own sync.
-  const sync = (() => { const i = app.indexOf("const syncHoldings = useCallback("); return i < 0 ? "" : app.slice(i, app.indexOf("// takePlusAnswer: the one place", i)); })();
+    // Changed 2026-11-23 (PLUS-NEW-01): the round code moved, unchanged, out of syncHoldings into the top-level
+    // applyHoldingsRound (so a test runs it); this reads it there. Its early return now hands back the round.
+    const sync = (() => { const i = app.indexOf("function applyHoldingsRound("); return i < 0 ? "" : app.slice(i, app.indexOf("// END applyHoldingsRound", i)); })();
   const B3 = (() => { const i = app.indexOf("// Phase B3: fetch investment holdings per item"); return i < 0 ? "" : app.slice(i, i + 400); })();
   const plusLib = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "plusHoldings.js"), "utf8");
-  t.ok(/await syncHoldings\(items, jwt, /.test(B3) && /plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(sync), "P10-06h the app's holdings sync uses it (plainHoldingsAfter, the same rule as retainHoldings)");
+  t.ok(/await syncHoldings\(items, jwt, /.test(B3) && /applyHoldingsRound\(invResults, items, forUser, setAppData\)/.test(app) && /plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(sync), "P10-06h the app's holdings sync uses it (plainHoldingsAfter, the same rule as retainHoldings)");
   t.ok(/if \(v\.plus_mode !== true\) \{ if \(v\.unavailable !== true\) \{ plain\.push/.test(plusLib), "P3-09e …and an answer marked unavailable (the server could not read that bank) counts as a failed read, not as \"holds nothing\"");
   t.ok(!/investments: allHoldings \}/.test(sync), "P10-06i the whole list is no longer replaced by the banks that happened to answer");
   t.ok(/\} else if \(merged\.plainAnswered\.length > 0\) \{/.test(sync) && /if \(!answered\.size\) return null;/.test(plusLib), "N2n the app applies a round whenever a bank ANSWERED, also when all of them answered with nothing");

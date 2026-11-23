@@ -112,8 +112,11 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq([X.getNetWorthState().holdings.length, safe(() => H.loadPrivateHoldings(d, A)).length], [0, 1], "2m Plus ended: nothing is shown, and the copy on the device is left alone");
     X._resetForTests();
 
-    const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
-    t.ok(sync.length > 200 && /callPlaid\("get_investments",\{item_id:it\.item_id, \.\.\.plusClientFields\(\)\}, \{jwt\}\)/.test(sync) && /const merged = mergeHoldings\(/.test(sync), "2n one holdings sync, used at first load and when Plus is confirmed");
+        // Changed 2026-11-23 (PLUS-NEW-01): the round code moved, unchanged, out of syncHoldings into the top-level
+        // applyHoldingsRound (so a test runs it); this reads it there. Its early return now hands back the round.
+        const sync = app.slice(app.indexOf("function applyHoldingsRound("), app.indexOf("// END applyHoldingsRound"));
+    const asks = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
+    t.ok(sync.length > 200 && /callPlaid\("get_investments",\{item_id:it\.item_id, \.\.\.plusClientFields\(\)\}, \{jwt\}\)/.test(asks) && /applyHoldingsRound\(invResults, items, forUser, setAppData\)/.test(asks) && /const merged = mergeHoldings\(/.test(sync), "2n one holdings sync, used at first load and when Plus is confirmed (it asks the banks; applyHoldingsRound applies the round)");
     // 2o, 2p and 2q changed 2026-11-22 (Plus review round 2; tests/plusRound2Holdings.test.cjs holds the new rules in
     // full). 2o: a round is also taken when the server answered the list it KEEPS for a bank that could not be read
     // (stale), so the person is shown it. 2p: the old shared copy is cleared by one rule in lib/plusHoldings.js, bank
@@ -123,7 +126,7 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     // merged.stale)`, which dropped a round where the one bank failed and this device's holdings were only MARKED, so
     // their as-of line never showed. The app now asks lib/plusHoldings.js roundShows (tests/plusRound3.test.cjs,
     // PROOF-a to PROOF-o). A locked answer still changes nothing; a failed one changes nothing but that mark.
-    t.ok(/if \(plusMode\) \{[\s\S]{0,500}if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
+    t.ok(/if \(plusMode\) \{[\s\S]{0,500}if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return merged;\s+setPlusHoldings\(allHoldings\);/.test(sync),
       "2o with Plus: a locked answer changes nothing at all, a failed one only marks what this device holds, and an answer for someone else is dropped");
     t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);[\s\S]{0,700}setAppData\(prev => withoutCoveredSharedCopy\(prev, merged, onDevice\)\);/.test(sync)
       && (app.match(/withoutCoveredSharedCopy\(/g) || []).length === 1 && !/investments, \.\.\.rest/.test(app), "2p the old shared copy is cleared in one place only, and only once a lasting private copy exists (saved on this device and read back, or kept on the server)");

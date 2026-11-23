@@ -142,6 +142,19 @@ export function setItemOwners(items, forUser = undefined, storage = deviceStore(
 export const ownerOfFrom = (owners) => (a) => (a && a._item && owners && owners[a._item]) || null;
 export const getNetWorthState = () => state;
 /**
+ * PLUS-NEW-01 (2026-11-23): does this device know this account is in Plus mode? For a holdings round that carries no
+ * Plus answer at all (every call failed outright): only then may its marks reach the Plus display.
+ *   yes   the signed-in account's mode is "plus"; or no answer has come yet (pending, unavailable) and this device's saved
+ *         answer for this account is "plus", or the page already holds this account's private holdings
+ *   no    another account, nobody, Plus off ("today"), or Plus ended ("locked")
+ */
+export function plusKnownFor(userId, storage = deviceStore()) {
+  if (typeof userId !== "string" || !userId || state.user !== userId) return false;
+  if (state.mode === "plus") return true;
+  if (state.mode === "today" || state.mode === "locked") return false;
+  return read(storage) === "plus" || state.holdings.length > 0;
+}
+/**
  * The desktop sidebar's old investment card adds up EVERY investment account in the household's data, with no idea
  * who linked which. That is right only where net worth is as it is today. Once Plus is on it is never shown: without
  * Plus the balances are behind Plus, and with Plus a partner's private account must not be in a figure (the Net Worth

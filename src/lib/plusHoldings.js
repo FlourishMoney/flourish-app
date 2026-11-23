@@ -128,9 +128,29 @@ export function mergeHoldings(prev, items, results, now = Date.now()) {
 /**
  * Does a Plus round change what is shown? Yes when a bank answered live, when the server's kept list was put in a
  * bank's place, or when this device's own holdings were marked "could not be refreshed" (so their as-of line shows).
- * A round that did none of these (every bank locked, or failed with nothing held) changes nothing.
+ * A round that did none of these, or that has a locked answer in it, changes nothing.
  */
-export const roundShows = (merged) => !!(merged && (merged.delivered === true || merged.stale === true || merged.marked === true));
+// A round with a LOCKED answer changes nothing at all (mergeHoldings: "nothing came, and nothing changes"), also when
+// another bank's call failed in it and was marked (PLUS-NEW-01 review, 2026-11-23: the marks alone used to get it shown).
+export const roundShows = (merged) => !!(merged && merged.locked !== true && (merged.delivered === true || merged.stale === true || merged.marked === true));
+
+/**
+ * PLUS-NEW-01 (2026-11-23): a round where no bank answered at all, and what this device held for a bank was marked
+ * "could not be refreshed" (`marked`), carries nothing that says Plus (`plusMode` is false: that comes only from a
+ * plus_mode answer). Its marks may reach the Plus display, so the as-of line shows, ONLY when every one of these holds:
+ *   knownPlus   the app knows this account is in Plus mode (lib/netWorthAccess.js plusKnownFor). Never for a Plus-off
+ *               household: there the kept holdings are the shared ones, and nothing changes.
+ *   the round is marked only: no live answer, no server-kept list, no locked answer, no bank that answered without Plus
+ *   the round is for the account still signed in
+ * The caller shows the marked list and does nothing else: nothing is saved with a time (stale is never fresh), and
+ * the household's shared copy is never touched.
+ */
+export function markedRoundShows(merged, { forUser, signedIn, knownPlus } = {}) {
+  if (!merged || merged.marked !== true || merged.plusMode === true) return false;
+  if (merged.delivered === true || merged.stale === true || merged.locked === true) return false;
+  if (Array.isArray(merged.plainAnswered) && merged.plainAnswered.length > 0) return false;
+  return knownPlus === true && isId(forUser) && signedIn === forUser;
+}
 
 /**
  * THE OLD SHARED COPY (appData.investments, from before Plus), after a round with Plus. Round 2 of the Plus review,

@@ -109,7 +109,9 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     // the only bank that answered holds nothing. That was the all-sold defect: bank B answered, so ITS holding goes;
     // bank A failed, so its holding stays.
     t.eq(after([failed, ok([])]), ["a-tfsa_s1:12000"], "P10-06e the only bank that answered holds nothing now: its holding goes, and the failed bank's stays");
-    const sync = (() => { const i = app.indexOf("const syncHoldings = useCallback("); return i < 0 ? "" : app.slice(i, i + 2600); })();
+        // Changed 2026-11-23 (PLUS-NEW-01): the round code moved, unchanged, out of syncHoldings into the top-level
+        // applyHoldingsRound (so a test runs it); this reads it there. Its early return now hands back the round.
+        const sync = (() => { const i = app.indexOf("function applyHoldingsRound("); return i < 0 ? "" : app.slice(i, app.indexOf("// END applyHoldingsRound")); })();
     t.ok(/plainHoldingsAfter\(prev\.investments, merged, prev\.accounts\)/.test(sync) && !/investments: allHoldings \}/.test(sync), "P10-06f the app's sync uses it on the path without Plus");
   }
 

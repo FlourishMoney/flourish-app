@@ -327,11 +327,13 @@ const call = async (fn, body, version = "1.1.8") => {
       t.eq([safe(() => H.keepPrivateHoldings(broken, A, [])), safe(() => H.keepPrivateHoldings(null, A, []))], [false, false], "B1-app-n a device that can save nothing says so");
     }
     {
-      const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
+            // Changed 2026-11-23 (PLUS-NEW-01): the round code moved, unchanged, out of syncHoldings into the top-level
+            // applyHoldingsRound (so a test runs it); this reads it there. Its early return now hands back the round.
+            const sync = app.slice(app.indexOf("function applyHoldingsRound("), app.indexOf("// END applyHoldingsRound"));
       // Changed 2026-11-23 (real-world proof, step 1C.4 with Plus): this held `!(merged.delivered || merged.stale)`.
       // A round where the bank failed and this device's own holdings were marked is now shown too (roundShows;
       // tests/plusRound3.test.cjs section 4), or their as-of line never reaches the screen.
-      t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s+setPlusHoldings\(allHoldings\);/.test(sync),
+      t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return merged;\s+setPlusHoldings\(allHoldings\);/.test(sync),
         "B1-app-o the app shows a round that brought something: a live answer, the server's kept list when the bank could not be read, or this device's own list marked as not refreshed");
       t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);/.test(sync),
         "B1-app-p a live round is saved on this device with its time; a kept list alone is saved without one and never counts as saved");
@@ -361,7 +363,10 @@ const call = async (fn, body, version = "1.1.8") => {
       t.ok(beacon.length > 300 && !/getNetWorthState|plusHoldings|loadPrivate/.test(beacon), "GN1-blob-c the exit save sends that same payload and nothing of the Plus state");
       const ctx = app.slice(app.indexOf("const buildContext = (userText = \"\")=>{"), app.indexOf("const buildContext = (userText = \"\")=>{") + 9000);
       t.ok(ctx.length > 500 && !/getNetWorthState|nwState\.holdings|plusHoldings|loadPrivate|\.investments/.test(ctx), "GN1-blob-d the coach's context holds no holdings, Plus or old");
-      t.eq((app.match(/setPlusHoldings\(/g) || []).length, 1, "GN1-blob-e Plus holdings are put in the page's Plus state in one place (the sync), and that state is never saved with the household's data");
+      // Changed 2026-11-23 (PLUS-NEW-01): two calls now, both in the one place (applyHoldingsRound): a Plus round, and a
+      // marked-only round for an account known to be in Plus mode.
+      const round = app.slice(app.indexOf("function applyHoldingsRound("), app.indexOf("// END applyHoldingsRound"));
+      t.eq([(app.match(/setPlusHoldings\(/g) || []).length, (round.match(/setPlusHoldings\(/g) || []).length], [2, 2], "GN1-blob-e Plus holdings are put in the page's Plus state in one place (the round code), and that state is never saved with the household's data");
       const writers = (app.match(/investments\s*:/g) || []).length;
       t.eq(writers, 1, "GN1-blob-f one line in the whole app writes `investments` into the household's data, and it is the path without Plus");
       // Changed 2026-11-23 (main merged in): main's export is async now (P9-03).
@@ -415,7 +420,8 @@ const call = async (fn, body, version = "1.1.8") => {
       t.eq(safe(() => [ids(m.holdings), m.delivered]), [["a-tfsa:12000", "b-rrsp:8100"], true], "N2k with Plus the same holds: a holding with no id stays or goes with its bank");
       m = safe(() => H.mergeHoldings([{ ...A1, _item: "item-A" }, { ...B1, _item: "item-B" }], items, [lv([]), lv([])]));
       t.eq(safe(() => [m.holdings, m.delivered]), [[], true], "N2l …and a round where every bank answers with nothing is delivered: nothing is held");
-      const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("const takePlusAnswer = useCallback("));
+      // Changed 2026-11-23 (PLUS-NEW-01): the round code is in applyHoldingsRound now.
+      const sync = app.slice(app.indexOf("function applyHoldingsRound("), app.indexOf("// END applyHoldingsRound"));
       t.ok(/\} else if \(merged\.plainAnswered\.length > 0\) \{/.test(sync) && !/allHoldings\.length > 0/.test(sync), "N2m the app applies a round whenever a bank ANSWERED, also when all of them answered with nothing");
     }
 

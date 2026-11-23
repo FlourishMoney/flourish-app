@@ -117,6 +117,9 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq([liveRound.marked, liveRound.delivered, safe(() => H.roundShows(liveRound)), mark(liveRound.holdings)], [false, true, true, [`a1:live:${now}`]], "PROOF-f a live answer is shown, unmarked");
     t.eq([plainRound.marked, plainRound.plusMode], [false, false], "PROOF-g Plus off: nothing is marked (today's path)");
     t.eq(safe(() => [H.roundShows(null), H.roundShows({}), H.roundShows({ stale: true }), H.roundShows({ delivered: true })]), [false, false, true, true], "PROOF-h roundShows: live, the server's kept list, or marks; never anything else");
+    // Added 2026-11-23 (PLUS-NEW-01 review): a locked answer anywhere in the round keeps the whole round from changing
+    // anything, marks included (a failed bank beside a locked one used to be shown).
+    t.eq(safe(() => [H.roundShows({ marked: true, locked: true }), H.roundShows({ delivered: true, locked: true }), H.roundShows({ marked: true, locked: false })]), [false, false, true], "PROOF-h2 roundShows: never with a locked answer in the round");
     // Nothing is cleared from the shared copy on such a round (the rule of withoutCoveredSharedCopy stands).
     const blob = { accounts: [{ id: "acc-a", _item: "i-a" }], investments: [h("a1", "acc-a", 100)] };
     t.ok(safe(() => H.withoutCoveredSharedCopy(blob, viaFail, false)) === blob, "PROOF-i a round that only marked clears nothing from the household's data");
@@ -127,9 +130,11 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
     t.eq(part && part.holdingsAsOf, new Date(now - 3 * DAY).toISOString(), "PROOF-j the screen's model says when that account's holdings are from");
     t.eq(safe(() => W.holdingsAsOfLine(part.holdingsAsOf)), "We couldn't reach this bank just now. These holdings are from November 19, 2026.", "PROOF-k and the approved line is what a person reads");
     // The app takes the round on roundShows, for the person still signed in; it is not dropped as before.
-    const sync = app.slice(app.indexOf("const syncHoldings = useCallback("), app.indexOf("// takePlusAnswer: the one place"));
+        // Changed 2026-11-23 (PLUS-NEW-01): the round code moved, unchanged, out of syncHoldings into the top-level
+        // applyHoldingsRound (so a test runs it); this reads it there. Its early return now hands back the round.
+        const sync = app.slice(app.indexOf("function applyHoldingsRound("), app.indexOf("// END applyHoldingsRound"));
     t.ok(/import \{[^}]*\broundShows\b[^}]*\} from "\.\/lib\/plusHoldings\.js";/.test(app), "PROOF-l the app imports roundShows");
-    t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return;\s*\n\s*setPlusHoldings\(allHoldings\);/.test(sync), "PROOF-m the holdings sync shows every round that roundShows says to, for the person still signed in");
+    t.ok(/if \(!roundShows\(merged\) \|\| getNetWorthState\(\)\.user !== forUser\) return merged;\s*\n\s*setPlusHoldings\(allHoldings\);/.test(sync), "PROOF-m the holdings sync shows every round that roundShows says to, for the person still signed in");
     t.ok(!/!\(merged\.delivered \|\| merged\.stale\) \|\|/.test(sync), "PROOF-n the old test, which dropped a round that only marked, is gone");
     t.ok(/const onDevice = merged\.delivered \? savePrivateHoldings\(deviceStore\(\), forUser, allHoldings\) : \(keepPrivateHoldings\(deviceStore\(\), forUser, allHoldings\), false\);/.test(sync), "PROOF-o saved with a time only on a live answer, as before: a round that only marked never counts as fresh");
   }

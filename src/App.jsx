@@ -23,15 +23,49 @@ import { formatWrappedNetWorth, wrappedSpend } from "./lib/moneyWrapped.js";
 import { orderDebtsForMethod } from "./lib/financialCalculations.js";
 import { bankLimitMessage } from "./lib/bankLimitView.js";
 import { netWorthWords } from "./lib/netWorthWords.js";
-import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, portfolioStartFor, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
+import { useNetWorthState, showsNetWorth, showsAccountBalanceCard, plusExport, portfolioStartFor, ownerOfFrom, setPlusUser, setPlusAnswer, setPlusHoldings, setNetWorthList, setItemOwners, plusKnownFor, askPlusStatus, askPlus, plusAskAgain, callNetWorth, getNetWorthState, openPlusBuy, closePlusBuy } from "./lib/netWorthAccess.js";
 import { viewerNetWorth, totalsTone } from "./lib/netWorthPlus.js";
 import NetWorthPlusScreen, { moneyIn } from "./NetWorthPlusScreen.jsx";
 import PlusAddonScreen from "./PlusAddonScreen.jsx";
 import { plusScreenView, plusReturnNotice, PLUS_RETURN_PARAMS } from "./lib/plusBuy.js";
 import { plusClientFields } from "./lib/plusClient.js";
-import { mergeHoldings, roundShows, plainHoldingsAfter, withoutCoveredSharedCopy, loadPrivateHoldings, savePrivateHoldings, keepPrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
+import { mergeHoldings, roundShows, markedRoundShows, plainHoldingsAfter, withoutCoveredSharedCopy, loadPrivateHoldings, savePrivateHoldings, keepPrivateHoldings, holdingsStale } from "./lib/plusHoldings.js";
 // This device's own storage, or null where there is none (a private window): lib/plusHoldings.js reads and writes through it.
 const deviceStore = () => { try { return localStorage; } catch { return null; } };
+// ONE ROUND OF INVESTMENT HOLDINGS, APPLIED (the app's syncHoldings asks the banks; this decides what changes). At the
+// top level, not inside App, so a test runs it with the app's own modules (tests/plusNew01.test.cjs). setAppData is the
+// app's. Returns the round (lib/plusHoldings.js mergeHoldings).
+function applyHoldingsRound(invResults, items, forUser, setAppData) {
+      const held = getNetWorthState().holdings;
+      const merged = mergeHoldings(held.length ? held : loadPrivateHoldings(deviceStore(), forUser), items, invResults);
+      const plusMode = merged.plusMode, allHoldings = plusMode ? merged.holdings : merged.plain;
+      if (plusMode) {
+        // Nothing changes unless a round brought something, for the person still signed in: a bank's holdings really
+        // came, or a bank could not be read and the server answered the list it keeps for it (stale: shown, and
+        // nothing more), or what this device held for it was marked (lib/plusHoldings.js roundShows).
+        if (!roundShows(merged) || getNetWorthState().user !== forUser) return merged;
+        setPlusHoldings(allHoldings);
+        // On this device: a round with a live answer is saved with its time (read back: onDevice). The server's kept
+        // list alone is saved without a time, so the banks are asked again at the next plan check; it never counts.
+        const onDevice = merged.delivered ? savePrivateHoldings(deviceStore(), forUser, allHoldings) : (keepPrivateHoldings(deviceStore(), forUser, allHoldings), false);
+        // THE OLD SHARED COPY (round 2 of the Plus review, G-N1 with B1): a bank's old holdings leave the household's
+        // data once that bank's holdings have a lasting private home for their owner: the server (stored), or this
+        // device for one's own bank. So a device that can save nothing still clears them, and nothing is ever cleared
+        // on a hope. Nothing Plus sent is ever written there (lib/plusHoldings.js withoutCoveredSharedCopy).
+        setAppData(prev => withoutCoveredSharedCopy(prev, merged, onDevice));
+      } else if (merged.plainAnswered.length > 0) {
+        // Whenever a bank ANSWERED, also when every one answered with nothing (all sold). A bank whose read failed keeps
+        // what it had (lib/plusHoldings.js plainHoldingsAfter; review 2026-11-22 P10-06, and round 2, N2).
+        setAppData(prev => { const next = plainHoldingsAfter(prev.investments, merged, prev.accounts); return next ? { ...prev, investments: next } : prev; });
+      } else if (markedRoundShows(merged, { forUser, signedIn: getNetWorthState().user, knownPlus: plusKnownFor(forUser) })) {
+        // PLUS-NEW-01: every call failed outright, so nothing in the round says Plus, but this device knows the account
+        // is in Plus mode. Its own holdings, marked "could not be refreshed", are shown with their as-of line. Nothing
+        // else: no time saved (stale is never fresh), and the household's shared copy is not touched.
+        setPlusHoldings(merged.holdings);
+      }
+      return merged;
+}
+// END applyHoldingsRound
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
@@ -18440,28 +18474,7 @@ export default function FlourishApp(){
         // keeps them private. An app that says nothing gets none.
         items.map(it => callPlaid("get_investments",{item_id:it.item_id, ...plusClientFields()}, {jwt}))
       );
-      const held = getNetWorthState().holdings;
-      const merged = mergeHoldings(held.length ? held : loadPrivateHoldings(deviceStore(), forUser), items, invResults);
-      const plusMode = merged.plusMode, allHoldings = plusMode ? merged.holdings : merged.plain;
-      if (plusMode) {
-        // Nothing changes unless a round brought something, for the person still signed in: a bank's holdings really
-        // came, or a bank could not be read and the server answered the list it keeps for it (stale: shown, and
-        // nothing more), or what this device held for it was marked (lib/plusHoldings.js roundShows).
-        if (!roundShows(merged) || getNetWorthState().user !== forUser) return;
-        setPlusHoldings(allHoldings);
-        // On this device: a round with a live answer is saved with its time (read back: onDevice). The server's kept
-        // list alone is saved without a time, so the banks are asked again at the next plan check; it never counts.
-        const onDevice = merged.delivered ? savePrivateHoldings(deviceStore(), forUser, allHoldings) : (keepPrivateHoldings(deviceStore(), forUser, allHoldings), false);
-        // THE OLD SHARED COPY (round 2 of the Plus review, G-N1 with B1): a bank's old holdings leave the household's
-        // data once that bank's holdings have a lasting private home for their owner: the server (stored), or this
-        // device for one's own bank. So a device that can save nothing still clears them, and nothing is ever cleared
-        // on a hope. Nothing Plus sent is ever written there (lib/plusHoldings.js withoutCoveredSharedCopy).
-        setAppData(prev => withoutCoveredSharedCopy(prev, merged, onDevice));
-      } else if (merged.plainAnswered.length > 0) {
-        // Whenever a bank ANSWERED, also when every one answered with nothing (all sold). A bank whose read failed keeps
-        // what it had (lib/plusHoldings.js plainHoldingsAfter; review 2026-11-22 P10-06, and round 2, N2).
-        setAppData(prev => { const next = plainHoldingsAfter(prev.investments, merged, prev.accounts); return next ? { ...prev, investments: next } : prev; });
-      }
+      applyHoldingsRound(invResults, items, forUser, setAppData);
     } catch(e) { /* silent — institution may not support investments */ }
   },[]);
   // takePlusAnswer: the one place a plus_status (or plus_store_sync) answer is taken, at sign-in and after a purchase.
