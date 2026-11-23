@@ -161,7 +161,23 @@ function deriveEntitlement(profile, subscription, now = Date.now()) {
   return { plan: "free", unlimited: false, paidSubscription: false };
 }
 
+// THE ROW THAT ONLY HOLDS THE STRIPE CUSTOMER (real-world proof, 2026-11-23, step 1A.2). The website's checkout makes
+// the household's subscriptions row before anything is bought, to remember the Stripe customer (billing.js
+// ensureCustomer). It writes no status, so the DATABASE gives the row the column's default, "incomplete" (migration
+// 0009): the same word Stripe uses for a first payment still pending. Read as that, the row made a person who opened
+// checkout once and left look subscribed for ever: the website answered "already subscribed", a store app would not
+// sell to them, and their 14 days free were gone.
+// It is told apart by what no real subscription lacks: it names no subscription, no plan, and no event was ever
+// written on it. Every reader of the row's status reads those three with it; a reader that left one out still gets
+// the right answer from the others.
+const CUSTOMER_ONLY_STATUS = "incomplete";
+function isCustomerOnlyRow(row) {
+  return !!row && (row.provider || "stripe") === "stripe" && row.status === CUSTOMER_ONLY_STATUS
+    && !row.provider_subscription_id && !row.plan_key && !row.last_event_at;
+}
+
 module.exports = {
   TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile, trialPlanFirstSince, accountTrialApplies,
   SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, impliedPeriodEndMs, deriveEntitlement, STORE_PROVIDERS, isStoreRow,
+  isCustomerOnlyRow,
 };

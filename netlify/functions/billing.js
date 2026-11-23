@@ -223,7 +223,7 @@ exports.handler = async (event) => {
       // The row as it is, for both actions. A read that fails is a 503, never "not paid": a paying household
       // must not be shown the paywall, or sold a second subscription, because the database blinked.
       const { data: row, error: rowErr } = await admin
-        .from("subscriptions").select("provider, status, current_period_end, plan_key, cancel_at_period_end, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
+        .from("subscriptions").select("provider, status, current_period_end, provider_subscription_id, plan_key, cancel_at_period_end, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store status read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
       // TRIAL_PLAN_FIRST: as the web's status above; a store app learns trial eligibility from its own store.
       const tpfState = await trialPlanFirstState(admin, user_id, { row });
@@ -306,7 +306,7 @@ exports.handler = async (event) => {
         try { return json(200, CORS, { pending: await holdPending(admin, user_id, attempt) }); }
         catch (e) { console.error("[billing] store pending:", e.message); return json(503, CORS, { error: "unavailable" }); }
       }
-      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
+      const { data: row, error: rowErr } = await admin.from("subscriptions").select("provider, status, current_period_end, provider_subscription_id, plan_key, last_event_at, updated_at").eq("user_id", user_id).maybeSingle();
       if (rowErr) { console.error("[billing] store hold read:", rowErr.message); return json(503, CORS, { error: "unavailable" }); }
       if (isLiveRow(row)) return json(200, CORS, { held: false, paid: isPaidSubscription(row), provider: row.provider || "stripe" });
       const cover = await householdCover(admin, user_id);
