@@ -189,7 +189,9 @@ const sliceFrom = (start, end) => { const i = APP.indexOf(start); if (i < 0) ret
     }
     {
       const r = reconcileBills([fb("a", "Gym", 50, 10), fb("b", "Storage", 50, 11)], [{ id: "t4", name: "GOODLIFE FITNESS", amount: 50, date: "2026-04-10" }], APRIL);
-      t.eq(r.forecastBills.map(b => b.matched), [true, false], "P4-01f two $50 bills a day apart and one $50 payment: one is confirmed (the nearer), the other stays expected (was both)");
+      // Changed 2026-11-23 (round 3, R3-2): this expected [true, false]. The payment carries neither bill's name, so it
+      // settles neither; it is a "maybe" for the nearer one only. One payment still never counts for two bills.
+      t.eq([r.forecastBills.map(b => b.matched), r.forecastBills.map(b => !!b.maybeMatched)], [[false, false], [true, false]], "P4-01f two $50 bills a day apart and one $50 payment with another name: a \"maybe\" for the nearer only, settled for neither (was both confirmed)");
     }
     {
       const r = reconcileBills([fb("a", "Goodlife", 50, 10), fb("b", "Storage", 50, 12)],
@@ -198,7 +200,8 @@ const sliceFrom = (start, end) => { const i = APP.indexOf(start); if (i < 0) ret
     }
     {
       const r = reconcileBills([fb("r", "Rent", 1850, 1)], [{ id: "t7", name: "E-TRANSFER SENT 0041", amount: 1850, date: "2026-04-01" }], APRIL);
-      t.eq(r.forecastBills[0].matched, true, "P4-01h a fixed bill is still confirmed by its amount and date when the names share nothing (rent paid by e-transfer)");
+      // Changed 2026-11-23 (round 3, R3-2): this expected matched. Amount and date alone no longer settle a bill.
+      t.eq([r.forecastBills[0].matched, r.forecastBills[0].maybeMatched], [false, true], "P4-01h a fixed bill whose payment shares no name with it (rent paid by e-transfer) is \"maybe paid\", never settled on amount and date alone");
     }
   }
 

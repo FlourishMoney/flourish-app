@@ -1502,7 +1502,9 @@ with the reason. Line numbers are at `main` eec2c36.
 Fixed in round 2: the webhook takeover race (N1), holdings identity and the all-empty round (N2, which was the open
 half of P3-09), the AI Coach switch waiting on both ways of turning it on (P9-07), the purchase guards reading the
 dates (P2-02), and a second try at taking a Plaid webhook's mark back (P3-01). The three lines that were waiting for
-words went in as approved on 2026-11-22 (`src/lib/reviewWords.js`). Left:
+words went in as approved on 2026-11-22 (`src/lib/reviewWords.js`). Round 3 (on 6379243) then fixed the two it kept
+open: a holding on an account with no bank marker goes when every bank answered (R3-1), and a fixed bill is settled
+only by a payment that carries its name, "maybe" otherwise (R3-2, which was P4-01 here). Left:
 
 - **P1-03, a leave goes ahead when the clean-up save before it failed.** On purpose: nothing may stop a person leaving
   a household. The member who stays still removes what their phone holds.
@@ -1517,8 +1519,6 @@ words went in as approved on 2026-11-22 (`src/lib/reviewWords.js`). Left:
   a pass in Stripe's test mode needs test keys and is worth doing before a bank-debit method is ever switched on.
 - **P3-10, the reminder sweep keeps no cursor between runs.** Due trials are read soonest first, so the next run takes
   up where the last stopped.
-- **P4-01, a fixed bill with no name match can still pair with another payment of the same amount.** Requiring the
-  name would unmatch real payments whose bank text differs from what was typed; the effect is at most 5% of one bill.
 - **P4-02, a list whose records cannot be told apart is merged as a whole.** On purpose: never guess which is which.
 - **P6-01 group, each screen keeps its own list of what is not spending.** All now use the household's corrections;
   making the lists one changes totals on three screens and is a product pass.

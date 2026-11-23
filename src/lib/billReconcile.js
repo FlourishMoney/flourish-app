@@ -16,15 +16,16 @@
 //   • the transaction is a payment: money out, not pending, not one side of a paired transfer, not a
 //     refund or reversal (the exclusions of financialCalculations.paysABill)
 //   • transaction date within ±3 days of the bill's clamped day-of-month for that month
-//   • (variable:false) transaction amount within ±5% of the manual amount
+//   • (variable:false) transaction amount within ±5% of the manual amount, AND the payment's name is the bill's
+//     (round 3 of the review, R3-2). The right amount on the right days with another name is "maybe" only
+//     (maybeMatched): it settles nothing, and uses that transaction up for no other bill's maybe.
 //   • (variable:true)  amount ignored — but the payment's name must be the bill's (billNameMatches,
 //     the name rule of paysABill), because with no amount to go by, the date alone matched ANY
 //     transaction: a $4.75 coffee on the due day became the hydro bill's stored amount, and so did a
 //     deposit (review 2026-11-22, P4-01).
 //   • ONE TO ONE: a transaction confirms at most one bill, and a bill takes at most one transaction.
 //     One $80 payment used to confirm, and re-price, every bill due within three days of it.
-//     Pairs are settled best first: a payment carrying the bill's name, then the nearest date, then the
-//     nearest amount.
+//     Pairs are settled best first: the nearest date, then the nearest amount.
 // On match: use the OBSERVED amount in the forecast (never the estimate), emit ONE entry
 // (never the manual estimate AND the observed txn), and for variable bills update the
 // stored manual amount so future forecasts improve.
@@ -98,10 +99,17 @@ export function reconcileBills(manualBills = [], observedTransactions = [], mont
     });
   });
   pairs.sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || a.dayDist - b.dayDist || a.amtGap - b.amtGap || a.idx - b.idx || a.ti - b.ti);
-  const matchOf = new Map(), used = new Set();
+  // SETTLED only by a payment that carries the bill's name (round 3 of the review, R3-2). A payment of the right
+  // amount on the right days with another name is "maybe" at most: $200 insurance due the 15th is not paid by an
+  // unrelated $200 purchase on the 14th. (A bill whose amount varies only ever pairs by name, above.)
+  const matchOf = new Map(), maybeOf = new Map(), used = new Set();
   for (const p of pairs) {
-    if (matchOf.has(p.idx) || used.has(p.ti)) continue;
+    if (!p.named || matchOf.has(p.idx) || used.has(p.ti)) continue;
     matchOf.set(p.idx, txns[p.ti]); used.add(p.ti);
+  }
+  for (const p of pairs) {
+    if (p.named || matchOf.has(p.idx) || maybeOf.has(p.idx) || used.has(p.ti)) continue;
+    maybeOf.set(p.idx, txns[p.ti]); used.add(p.ti);
   }
 
   (manualBills || []).forEach((mb, idx) => {
@@ -124,8 +132,11 @@ export function reconcileBills(manualBills = [], observedTransactions = [], mont
       // Variable bills learn their real amount so next month's estimate is better.
       if (mb.variable) updatedManualBills[idx] = { ...updatedManualBills[idx], amount: match.amt };
     } else {
-      // Not yet observed: the manual estimate stands (flagged estimated so the UI can mark it).
-      forecastBills.push({ ...base, amount: estimate, matched: false, estimated: true });
+      // Not yet observed: the manual estimate stands (flagged estimated so the UI can mark it). maybeMatched: a
+      // payment of the right amount on the right days, with another name, is there (maybeAmount). It settles nothing:
+      // the bill is still expected at its own amount until a payment carries its name, or the person says so.
+      const maybe = maybeOf.get(idx) || null;
+      forecastBills.push({ ...base, amount: estimate, matched: false, estimated: true, ...(maybe ? { maybeMatched: true, maybeAmount: maybe.amt } : {}) });
     }
   });
 

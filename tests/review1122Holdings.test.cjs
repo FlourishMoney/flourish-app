@@ -40,7 +40,11 @@ const safe = (fn) => { try { return fn(); } catch (e) { return `THREW ${String(e
   t.eq(keep([A1, B1], [], acct, new Set(["item-B"]), true), ["a-tfsa_s1:12000"], "N2j one answered with nothing, one failed: the failed bank's stays");
   const manualAcct = new Map([...acct, ["m-1", null]]);
   const typed = { id: "m-1_x", account_id: "m-1", name: "Typed in by hand", value: 50 };
-  t.eq(keep([typed, B1], [B1new], manualAcct, new Set(["item-A", "item-B"]), false), ["b-rrsp_s1:8100", "m-1_x:50"], "N2k a holding on an account no bank linked is not a bank's to remove");
+  // Changed 2026-11-23 (round 3, R3-1): this expected the holding to be KEPT ("not a bank's to remove"). Holdings only
+  // ever come from a bank, so one on an account with no bank marker is an older copy's: when every bank answered and
+  // none sent it again, it goes. While some bank failed it is kept, as it may be that bank's.
+  t.eq(keep([typed, B1], [B1new], manualAcct, new Set(["item-A", "item-B"]), false), ["b-rrsp_s1:8100"], "N2k a holding on an account with no bank marker, every bank answered and none sent it again: it goes (it was kept for ever)");
+  t.eq(keep([typed, B1], [B1new], manualAcct, new Set(["item-B"]), true), ["b-rrsp_s1:8100", "m-1_x:50"], "N2k2 …and while some bank failed it is kept");
   t.eq(keep([{ id: "x_s1", account_id: "gone", name: "Orphan", value: 5 }], [B1new], acct, new Set(["item-A", "item-B"]), false), ["b-rrsp_s1:8100"], "N2l a holding whose account is gone, in a round where every bank answered: it is no failed bank's, so it goes");
   t.eq(keep([{ id: "acc_undefined", account_id: "gone", name: "One", value: 1 }, { id: "acc_undefined", account_id: "gone", name: "Two", value: 2 }], [{ id: "acc_undefined", account_id: "b-rrsp", name: "Three", value: 3 }], acct, new Set(["item-B"]), true),
     ["acc_undefined:1", "acc_undefined:2", "acc_undefined:3"], "N2m an id made from a missing security is no identity: different holdings are never matched on it");

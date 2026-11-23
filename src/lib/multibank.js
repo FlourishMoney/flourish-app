@@ -196,8 +196,9 @@ export function retainLiabilities(prevLiab, fresh, acctItemMap, availableItemIds
 // that bank holds now is in `fresh`, which may be nothing: sold). Only a holding with no known bank is matched by
 // identity, so that it is not listed twice when it comes again: its id, or account + security/ticker/name when it
 // has none (an id ending in "_undefined" is none). One with no identity at all is never matched to another.
-// Of those with no known bank and not come again: on an account no bank linked, kept (not a bank's to remove); on an
-// account that is gone, kept only while some bank failed (it may be that bank's). Pure.
+// Of those with no known bank and not come again: kept only while some bank failed (it may be that bank's); when
+// EVERY bank answered, gone. That includes one on an account that carries no bank marker (round 3, R3-1): holdings
+// only ever come from a bank, so such a one is an older copy's, and round 2 kept it for ever. Pure.
 const holdingKey = (h) => {
   if (!h) return null;
   if (typeof h.id === "string" && h.id && !/_(undefined|null)$/.test(h.id)) return `id:${h.id}`;
@@ -213,7 +214,7 @@ export function retainHoldings(prev, fresh, acctItemMap, availableItemIds, someB
     if (item != null) return !availableItemIds.has(item);
     const key = holdingKey(h);
     if (key && cameKeys.has(key)) return false;
-    return acctItemMap.has(h.account_id) ? true : !!someBankFailed;
+    return !!someBankFailed;
   });
   return [...kept, ...came];
 }
