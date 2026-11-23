@@ -137,7 +137,11 @@ exports.handler = async (event) => {
       break;
 
     case "LIABILITIES:DEFAULT_UPDATE":
-      updates = { liabilities_pending: true };
+      // Acknowledged, nothing written (2026-11-23). This used to set a liabilities_pending flag, but production's
+      // plaid_items has no such column (read there that day) and nothing on any branch reads it: the write failed,
+      // and since P3-01 a failed write answers 500, so Plaid would resend every one of these for its whole retry
+      // schedule. The app reads card and loan details from the bank itself when it needs them.
+      console.log(`[webhook] liabilities update for ${item_id}: acknowledged`);
       break;
 
     case "ITEM:PENDING_EXPIRATION":

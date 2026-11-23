@@ -81,14 +81,14 @@ function webhookWorld() {
     }
     return { data: null, error: null };
   });
-  const deliver = async (jti, code = "SYNC_UPDATES_AVAILABLE") => quiet(async () => {
+  const deliver = async (jti, code = "SYNC_UPDATES_AVAILABLE", type = "TRANSACTIONS") => quiet(async () => {
     const saved = { ...process.env }; Object.assign(process.env, ENV);
     require.cache[VERIFY_PATH] = { id: VERIFY_PATH, filename: VERIFY_PATH, loaded: true, exports: { verifyPlaidWebhook: async () => ({ verified: true, jti }) } };
     delete require.cache[AUTH_PATH]; delete require.cache[HOOK_PATH];
     const auth = require(AUTH_PATH); auth.getAdminClient = () => db;
     try {
       let res;
-      try { res = await require(HOOK_PATH).handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ webhook_type: "TRANSACTIONS", webhook_code: code, item_id: "item-1" }) }); }
+      try { res = await require(HOOK_PATH).handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ webhook_type: type, webhook_code: code, item_id: "item-1" }) }); }
       catch (e) { res = { statusCode: 599, body: JSON.stringify({ threw: String(e.message) }) }; }
       return { status: res.statusCode, body: JSON.parse(res.body || "{}") };
     } finally { process.env = saved; delete require.cache[HOOK_PATH]; delete require.cache[AUTH_PATH]; delete require.cache[VERIFY_PATH]; }
@@ -490,6 +490,45 @@ function memStore(init = {}) {
     const drop = (id) => (s) => { const n = new Set(s); n.delete(id); return n; };
     const once = drop("r1")(new Set(["r1", "r2"])), twice = drop("r1")(drop("r1")(new Set(["r1", "r2"])));
     t.eq([...once], [...twice], "G12b …so running it twice (React's development double-run) leaves the same selection as running it once");
+  }
+
+  // ════ Production's own columns (Claude in Chrome's read-only check, 2026-11-23) ═════════════════════════════════
+  // plaid_items was made by hand in the dashboard; supabase/migrations/00001 is a guess at it. Read on production:
+  // it has transactions_pending and holdings_pending and NO liabilities_pending. The webhook wrote that column on
+  // every LIABILITIES:DEFAULT_UPDATE, so the write failed there, and since P3-01 a failed write answers 500 and takes
+  // its mark back: Plaid would have resent each of those webhooks for its whole retry schedule once #157 was live.
+  // Nothing on any branch reads liabilities_pending. The use is dropped; and every column the webhook does write is
+  // now made by a migration (0056, guarded, not run by this change), so a database built from this repo has them all.
+  {
+    const hookSrc = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "plaid-webhook.js"), "utf8");
+    const written = [...new Set([...hookSrc.matchAll(/updates = \{([^}]*)\}/g)].flatMap((m) => [...m[1].matchAll(/([a-z_]+)\s*:/g)].map((x) => x[1])))].sort();
+    t.ok(!written.includes("liabilities_pending") && !/liabilities_pending\s*:/.test(hookSrc), "COLS-a the webhook no longer writes liabilities_pending (production has no such column, and nothing reads it)");
+    const w = webhookWorld();
+    const r = await w.deliver("jti-L1", "DEFAULT_UPDATE", "LIABILITIES");
+    t.eq([r.status, r.body.received, w.state.updates.length], [200, true, 0], "COLS-b a liabilities webhook is acknowledged and writes nothing");
+    t.ok(w.seen.has("jti-L1"), "COLS-c …and stays marked as seen: there is nothing to retry");
+    const h = await w.deliver("jti-H1", "DEFAULT_UPDATE", "HOLDINGS");
+    t.eq([h.status, w.state.updates[0]], [200, { holdings_pending: true }], "COLS-d a holdings webhook still sets its flag (production has holdings_pending)");
+    // Every column the webhook can write is made by a migration in this repo.
+    const dir = path.join(__dirname, "..", "supabase", "migrations");
+    const made = new Set();
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) {
+      const sql = fs.readFileSync(path.join(dir, f), "utf8").replace(/--[^\n]*/g, "");
+      const create = sql.match(/create table if not exists public\.plaid_items\s*\(([\s\S]*?)\n\);/);
+      if (create) for (const line of create[1].split("\n")) { const m = line.match(/^\s*([a-z_]+)\s+(uuid|text|boolean|timestamptz|jsonb|integer)\b/); if (m) made.add(m[1]); }
+      for (const alter of sql.matchAll(/alter table public\.plaid_items([\s\S]*?);/g)) for (const m of alter[1].matchAll(/add column if not exists\s+([a-z_]+)/g)) made.add(m[1]);
+    }
+    t.eq(written.filter((c) => !made.has(c)), [], `COLS-e every column the webhook writes (${written.join(", ")}) is made by a migration in this repo`);
+    t.ok(made.has("transactions_pending") && made.has("holdings_pending") && made.has("next_cursor") && made.has("last_error") && made.has("new_accounts_available"),
+      "COLS-f …including the two production got by hand (transactions_pending, holdings_pending), so a local database and the nightly test have them too");
+    const m56 = fs.readdirSync(dir).find((f) => /^0056_/.test(f));
+    const sql56 = m56 ? fs.readFileSync(path.join(dir, m56), "utf8") : "";
+    const body56 = sql56.replace(/--[^\n]*/g, "");
+    t.ok(m56 && /alter table public\.plaid_items/.test(body56) && !/\bdrop\b|\bdelete\b|\btruncate\b|\bupdate\s+public/i.test(body56) && [...body56.matchAll(/add column\b(?! if not exists)/g)].length === 0,
+      "COLS-g the new migration only adds columns, each guarded (add column if not exists): it changes nothing where a column is already there");
+    t.ok(!/liabilities_pending/.test(body56), "COLS-h …and it does not add liabilities_pending: the use is gone, so no column is needed");
+    const plaidSrc = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "plaid.js"), "utf8");
+    t.ok(!/liabilities_pending/.test(plaidSrc) && !/liabilities_pending/.test(fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8")), "COLS-i nothing else in the server or the app names liabilities_pending");
   }
 
   t.summary("review1122Bank");
