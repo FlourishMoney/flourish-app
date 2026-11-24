@@ -72,8 +72,8 @@ async function plaid(endpoint, body) {
 }
 
 // ── A REFUSED BANK IS CLEANED UP DURABLY (free v1, review round 1, 2026-11-23) ─────────────────────────────────────
-// Ported as-is from plus-1.1.8 (removeRefusedItem, keepRefusedRow, removeRefusedRow, markRefused, alertItemNotRemoved,
-// finishRefusedBanks: rounds 2 to 7 of the Plus review). No migration: a refused row is an ordinary plaid_items row
+// Ported as-is from plus-1.1.8 (removeRefusedItem, keepRefusedRow, removeRefusedRow, alertItemNotRemoved,
+// finishRefusedBanks: rounds 2 to 7 of the Plus review; its markRefused is for paths this branch does not change). No migration: a refused row is an ordinary plaid_items row
 // whose status text is "refused" (_lib/freeBanks.js REFUSED). Added here: claimRefusedRow (whether the account holds
 // the bank, found out by the write itself when the read failed) and alertRefusedPending (the error tracker hears of a
 // removal still to finish).
@@ -143,21 +143,6 @@ async function removeRefusedRow(admin, user_id, item_id, where) {
     catch (e) { last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
   }
   console.error(`[${where}: row delete failed]`, item_id, (last && last.message) || "error");
-  return false;
-}
-
-// A duplicate that Plaid would not remove is marked refused where it is (round 3 of the Plus review: NEW-3, M3). The
-// mark is one quick write: the bank stops counting toward every limit at once. If it cannot be written the caller must
-// NOT go on as if it were refused (round 4, R4-2): nothing is removed and the bank stays an ordinary connected row.
-async function markRefused(admin, user_id, item_id, where) {
-  for (let i = 0; i < REMOVE_TRIES; i++) {
-    try {
-      const { error } = await admin.from("plaid_items").update({ status: REFUSED, updated_at: new Date().toISOString() }).eq("user_id", user_id).eq("item_id", item_id);
-      if (!error) return true;
-    } catch (e) { /* tried again */ }
-    if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 100 * (i + 1)));
-  }
-  console.error(`[${where}] could not mark the refused bank; its row stays as it is (connected):`, item_id);
   return false;
 }
 
