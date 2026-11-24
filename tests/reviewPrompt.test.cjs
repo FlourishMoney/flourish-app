@@ -15,6 +15,11 @@
 //    open is a real open: once when the app loads, then each time the app comes back to the foreground (a data update
 //    after midnight is not one). At most one ask per app session (a new session after 30 minutes in the background):
 //    the other moments wait for a later session, unspent.
+//    Review round 2: the native plugin is resolved first, then every rule is checked again, live, right before the moment
+//    is recorded and the store is asked (a phone app, not the demo, not a sample household, in the foreground, still on
+//    screen, no trouble in 24 hours, the session, three a year); any failing means no ask and the moment kept. The
+//    launch's open and a resume's open pass ONE check (signed in, data loaded, not the demo, not a sample household, in
+//    the foreground), and a launch that fails it can still count later in the same launch.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
@@ -168,7 +173,8 @@ const path = require("path");
     P._setReviewPluginForTest({ requestReview: async () => { asks.push(Date.now()); } });
     const rdemo = await P.reviewOnFirstSafe({ demo: true, delayMs: 0, now: at("2026-11-24T10:00:00") });
     t.eq([rdemo.reason, store[P.REVIEW_STORAGE_KEY], asks.length], ["demo", undefined, 0], "native demo: the first number never asks, and writes nothing (the real first number is still to come)");
-    const fresh = (when) => { for (const k of Object.keys(store)) delete store[k]; P._resetReviewForTest(); newSession(when); };
+    // A fresh install in a fresh session, its launch not yet counted (coming to the foreground counts a launch: round 2).
+    const fresh = (when) => { P._resetReviewForTest(); newSession(when); P._resetLaunchForTest(); for (const k of Object.keys(store)) delete store[k]; };
     const rec2 = () => JSON.parse(store[P.REVIEW_STORAGE_KEY] || "null");
     global.document = { visibilityState: "visible" };
     const T0 = at("2026-11-24T10:00:00");
@@ -213,19 +219,22 @@ const path = require("path");
     t.eq([ra.reason, rb, asks.length], ["replaced", { ask: true, reason: "first_safe" }, 2], "R1f a second showing replaces the first wait: one ask, after the number is back and has stayed");
 
     // R2: an open is a real open. Once when the app loads, then each return to the foreground; one calendar day counts once.
+    // The gate is App's: signed in, the household's data loaded, the demo, a sample household (one check for both).
+    const gate = { signedIn: true, hydrated: true, demo: false, sample: false };
+    P.startReviewWatch(() => gate);
     fresh(at("2026-11-24T08:00:00"));
     const day = () => (rec2() ? rec2().openDays : []);
-    t.eq((await P.reviewOnAppLaunch({ demo: true, now: at("2026-11-24T08:00:00") })).reason, "demo", "R2a native demo: opening the demo counts no day");
+    gate.demo = true;
+    t.eq((await P.reviewOnAppLaunch({ now: at("2026-11-24T08:00:00") })).reason, "demo", "R2a native demo: opening the demo counts no day");
     t.eq(store[P.REVIEW_STORAGE_KEY], undefined, "…and writes nothing");
+    gate.demo = false;
     t.eq((await P.reviewOnAppLaunch({ now: at("2026-11-24T23:59:00") })).reason, "not_third_day", "R2b the app loads: day 1 counted");
     t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-25T00:01:00") })).reason, day()], ["already_counted", ["2026-11-24"]], "R2c a data update after midnight (the same launch) counts no new day");
-    const gate = { ready: true };
-    P.startReviewWatch(() => gate);
     const resume = async (when) => { P._reviewVisibility("hidden", when.getTime() - 60_000); return P._reviewVisibility("visible", when.getTime()); };
-    gate.ready = false;
+    gate.signedIn = false;
     await resume(at("2026-11-25T09:00:00"));
     t.eq(day(), ["2026-11-24"], "R2d a return to the foreground while signed out (or before data loads) counts nothing");
-    gate.ready = true;
+    gate.signedIn = true;
     await resume(at("2026-11-25T09:30:00"));
     await resume(at("2026-11-25T21:00:00"));
     t.eq(day(), ["2026-11-24", "2026-11-25"], "R2e the app comes back to the foreground: an open; twice in a day is one day");
@@ -237,11 +246,78 @@ const path = require("path");
     t.eq([third, asks.length], [{ ask: true, reason: "third_open_day" }, 3], "R2g the 3rd different day the app is opened asks");
     t.eq((await resume(at("2026-11-28T08:00:00"))).reason, "moment_spent", "…once per install");
 
+    // Round 2, R2-2: the launch passes the same check as a resume, and counts only once it has.
+    fresh(at("2026-11-24T08:00:00"));
+    gate.sample = true;
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-24T08:00:00") })).reason, day()], ["sample", []], "R2-2a a sample household's launch counts no day");
+    gate.sample = false;
+    global.document.visibilityState = "hidden";
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-24T08:01:00") })).reason, day()], ["background", []], "R2-2b a launch in the background counts no day");
+    global.document.visibilityState = "visible";
+    await P._reviewVisibility("visible", at("2026-11-24T08:02:00").getTime());
+    t.eq(day(), ["2026-11-24"], "R2-2c …and when that launch comes to the foreground, it counts");
+    t.eq((await P.reviewOnAppLaunch({ now: at("2026-11-24T08:03:00") })).reason, "already_counted", "…once");
+    fresh(at("2026-11-25T08:00:00"));
+    gate.hydrated = false;
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-25T08:00:00") })).reason, day()], ["not_ready", []], "R2-2d a launch before the household's data has loaded counts no day");
+    gate.hydrated = true;
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-25T08:00:05") })).reason, day()], ["not_third_day", ["2026-11-25"]], "R2-2e …and the same launch counts once its data is in");
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-25T08:00:09") })).reason, day()], ["already_counted", ["2026-11-25"]], "…once");
+
+    // Round 2, R2-1: the plugin is resolved first; while it loads, the person can leave. Checked again, live, after it.
+    const slowPlugin = () => {
+      const d = {};
+      d.started = new Promise((r) => { d.enter = r; });
+      d.loaded = new Promise((r) => { d.release = r; });
+      P._setReviewPluginLoaderForTest(async () => { d.enter(); await d.loaded; return { requestReview: async () => { asks.push(Date.now()); } }; });
+      return d;
+    };
+    const kept = (before) => asks.length === before && !(rec2() && (rec2().moments.first_safe || rec2().askedAt.length));
+    for (const [name, leave, back, why] of [
+      ["the app goes to the background", () => { global.document.visibilityState = "hidden"; }, () => { global.document.visibilityState = "visible"; }, "background"],
+      ["the demo starts", () => { demoNow = true; }, () => { demoNow = false; }, "demo"],
+      ["the number leaves the screen", () => { onScreenNow = false; }, () => { onScreenNow = true; }, "not_on_screen"],
+      ["a sample household is loaded", () => { gate.sample = true; }, () => { gate.sample = false; }, "sample"],
+      ["trouble is noted", () => { P.noteReviewTrouble(T0); }, () => {}, "recent_trouble"],
+    ]) {
+      fresh(T0);
+      demoNow = false; var onScreenNow = true;
+      const before = asks.length;
+      const d = slowPlugin();
+      const w = P.reviewOnFirstSafe({ delayMs: 0, now: T0, isDemo: () => demoNow, onScreen: () => onScreenNow });
+      await d.started;
+      leave();
+      d.release();
+      t.eq([(await w).reason, kept(before)], [why, true], `R2-1 ${name} while the plugin loads: no ask, and the moment is not spent`);
+      back();
+    }
+    {
+      fresh(at("2026-11-27T08:00:00"));
+      P._resetLaunchForTest();   // fresh() came back to the foreground, which counted its launch; this is the next one
+      store[P.REVIEW_STORAGE_KEY] = JSON.stringify({ openDays: ["2026-11-24", "2026-11-25"] });
+      const before = asks.length;
+      const d = slowPlugin();
+      const w = P.reviewOnAppLaunch({ now: at("2026-11-27T08:00:00") });
+      await d.started;
+      global.document.visibilityState = "hidden";
+      d.release();
+      t.eq([(await w).reason, asks.length === before, rec2().moments.third_open_day, rec2().openDays.length], ["background", true, null, 3], "R2-1 the third day's ask, the app backgrounded while the plugin loads: no ask, the moment kept (the day counted)");
+      global.document.visibilityState = "visible";
+      const d2 = slowPlugin();
+      const a1 = P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T08:01:00") }), a2 = P.reviewOnMeetingDone({ now: at("2026-11-27T08:01:00") });
+      await d2.started; await new Promise((r) => setTimeout(r, 10));
+      d2.release();
+      const [x1, x2] = await Promise.all([a1, a2]);
+      t.eq([[x1.ask, x2.ask].filter(Boolean).length, asks.length - before], [1, 1], "R2-1 two moments waiting on the plugin at once: the session's one ask, not two");
+    }
+    P._setReviewPluginLoaderForTest(null);
+
     // G1: one ask per app session, whichever moment comes first. The others wait, unspent, for a later session.
     fresh(at("2026-11-24T08:00:00"));
     await P.reviewOnAppLaunch({ now: at("2026-11-24T08:00:00") });
-    for (const d of ["2026-11-25T08:00:00", "2026-11-27T08:00:00"]) { newSession(at(d)); P._resetLaunchForTest(); await P.reviewOnAppLaunch({ now: at(d) }); }
-    t.eq(asks.length, 4, "G1a the third day's open asks");
+    for (const d of ["2026-11-25T08:00:00", "2026-11-27T08:00:00"]) { P._resetLaunchForTest(); newSession(at(d)); await P.reviewOnAppLaunch({ now: at(d) }); }
+    const g1Before = asks.length;
+    t.eq(rec2().moments.third_open_day !== null && rec2().askedAt.length === 1, true, "G1a the third day's open asks");
     const fsSame = await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T08:01:00") });
     t.eq([fsSame.reason, !!rec2().moments.first_safe], ["session_already_asked", false], "G1b the first number in the same session does not ask, and waits (unspent)");
     const mSame = await P.reviewOnMeetingDone({ now: at("2026-11-27T08:02:00") });
@@ -250,7 +326,7 @@ const path = require("path");
     P._reviewVisibility("visible", at("2026-11-27T08:20:00").getTime());
     t.eq((await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T08:20:00") })).reason, "session_already_asked", "G1d 17 minutes in the background is the same session");
     newSession(at("2026-11-27T19:00:00"));
-    t.eq([(await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T19:00:00") })), asks.length], [{ ask: true, reason: "first_safe" }, 5], "G1e a later session: the first number asks");
+    t.eq([(await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T19:00:00") })), asks.length - g1Before], [{ ask: true, reason: "first_safe" }, 1], "G1e a later session: the first number asks");
     t.eq(rec2().askedAt.length, 2, "…two of the three yearly asks, each in its own session");
     P.startReviewWatch(null);
     delete global.document;
@@ -290,9 +366,11 @@ const path = require("path");
       "…Today, when it shows the figure (beside the safe_view count): cancelled when Today goes or the demo starts, checked again before asking (R1)");
     t.ok(!/reviewOnAppOpen/.test(app), "R2 the per-data-update open is gone");
     t.eq((app.match(/reviewOnAppLaunch\(/g) || []).length, 1, "the app's load counts its open from one place");
-    t.ok(/signalActivation\("app_open", false, user\.id\);\s*if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);\s*reviewOnAppLaunch\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo (the wrapper counts it once per launch)");
-    t.ok(/reviewReadyRef\.current = !!\(user && hydratedUidRef\.current === user\.id && !appData\?\.demo && !_activationOff\);/.test(app) && /useEffect\(\(\) => startReviewWatch\(\(\) => \(\{ ready: reviewReadyRef\.current \}\)\), \[\]\);/.test(app),
-      "R2 a return to the foreground counts an open, for a signed-in household whose data has loaded, never the demo or a sample household");
+    t.ok(!/reviewOnAppLaunch\(\{ demo: false \}\)/.test(app), "R2-2 the launch no longer skips the shared check with a fixed demo: false");
+    const gateSet = app.indexOf("reviewGateRef.current = { signedIn: !!user, hydrated: !!user && hydratedUidRef.current === user.id, demo: !!appData?.demo, sample: _activationOff };");
+    const watch = app.indexOf("useEffect(() => startReviewWatch(() => reviewGateRef.current), []);");
+    const launch = app.indexOf("useEffect(() => { reviewOnAppLaunch(); }, [user, appData]);");
+    t.ok(gateSet > 0 && watch > gateSet && launch > watch, "R2-2 one gate for the launch and every resume (signed in, data loaded, demo, sample household), registered before the launch's effect");
     const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
     t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
     // Meeting memory (2026-11-08): markDone saves the meeting first, so "after the meeting is recorded" is now checked
@@ -359,7 +437,7 @@ const path = require("path");
     const pkg = JSON.parse(rd("package.json"));
     t.ok(!pkg.dependencies["@capacitor-community/in-app-review"] && !/InAppReview/.test(rd("ios", "App", "CapApp-SPM", "Package.swift")) && !/in-app-review/.test(rd("android", "capacitor.settings.gradle")),
       "the old plugin (which fell back to SKStoreReviewController below iOS 17) is gone from both projects");
-    t.ok(/registerPlugin\("FlourishReview"\)\.requestReview\(\)/.test(rd("src", "lib", "reviewPrompt.js")), "reviewPrompt.js asks through it, at the moment of asking only");
+    t.ok(/registerPlugin\("FlourishReview"\)/.test(rd("src", "lib", "reviewPrompt.js")) && /await plugin\.requestReview\(\)/.test(rd("src", "lib", "reviewPrompt.js")), "reviewPrompt.js asks through it, at the moment of asking only");
   }
 
   t.summary("reviewPrompt.test");

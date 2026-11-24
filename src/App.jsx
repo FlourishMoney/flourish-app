@@ -19267,13 +19267,15 @@ export default function FlourishApp(){
     if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
     signalActivation("app_open", false, user.id);
     if (hasDataSource(appData)) signalActivation("data_source", false, user.id);
-    reviewOnAppLaunch({ demo: false }); // the store review's third-day moment: this launch's open, counted once (lib/reviewPrompt.js)
   }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The store review's opens after the first (review round 1): each return to the foreground, for a signed-in household
-  // whose data has loaded, never the demo or a sample household. Also ends the first number's wait when the app is hidden.
-  const reviewReadyRef = useRef(false);
-  reviewReadyRef.current = !!(user && hydratedUidRef.current === user.id && !appData?.demo && !_activationOff);
-  useEffect(() => startReviewWatch(() => ({ ready: reviewReadyRef.current })), []);
+  // The store review's opens (lib/reviewPrompt.js): this launch's, counted once, and each return to the foreground. Both
+  // pass ONE check there: signed in, the household's data loaded, not the demo, not a sample household, in the foreground
+  // (review round 2). A launch that fails it counts later in the same launch, once it passes. The watch also ends the
+  // first number's wait when the app is hidden.
+  const reviewGateRef = useRef(null);
+  reviewGateRef.current = { signedIn: !!user, hydrated: !!user && hydratedUidRef.current === user.id, demo: !!appData?.demo, sample: _activationOff };
+  useEffect(() => startReviewWatch(() => reviewGateRef.current), []);
+  useEffect(() => { reviewOnAppLaunch(); }, [user, appData]);
 
   // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──
   // A lightweight signature over the notification-relevant slices (bills, account balances, txns,

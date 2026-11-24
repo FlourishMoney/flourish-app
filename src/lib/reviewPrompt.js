@@ -47,9 +47,26 @@ export function noteReviewTrouble(now = new Date()) {
   try { save(withTrouble(load(), now)); } catch {}
 }
 
-// Tests only: a stand-in for the native plugin (node cannot load it).
+// Tests only: a stand-in for the native plugin (node cannot load it), or for the time it takes to load.
 let _pluginForTest = null;
+let _pluginLoaderForTest = null;
 export function _setReviewPluginForTest(plugin) { _pluginForTest = plugin; }
+export function _setReviewPluginLoaderForTest(load) { _pluginLoaderForTest = load; }
+
+// The native plugin, resolved once. Looked up only at the moment of asking, and only on a native shell.
+let _plugin = null;
+async function reviewPlugin() {
+  if (_pluginLoaderForTest) return _pluginLoaderForTest();
+  if (_pluginForTest) return _pluginForTest;
+  if (!_plugin) {
+    const { registerPlugin } = await import("@capacitor/core");
+    const native = registerPlugin("FlourishReview");
+    // A plain object, never the plugin itself: Capacitor's plugin answers every property, "then" included, so an async
+    // function returning it would be awaited as if it were a promise.
+    _plugin = { requestReview: () => native.requestReview() };
+  }
+  return _plugin;
+}
 
 // The reasons a once-per-install moment passes without being spent: it never came (web, demo), it already had, or this
 // session already asked (it waits for a later session).
@@ -65,9 +82,40 @@ function inForeground() {
   try { return typeof document === "undefined" || document.visibilityState !== "hidden"; } catch { return true; }
 }
 
+// App's gate (startReviewWatch): () => ({ signedIn, hydrated, demo, sample }). sample: a sample household (App Review's).
+let _gate = null;
+function gateNow() { try { return _gate ? _gate() || null : null; } catch { return null; } }
+
+// THE ONE CHECK an open passes, the launch's and every resume's (review round 2): a phone app, signed in, the household's
+// data loaded, not the demo, not a sample household, in the foreground. Null when it passes, else the reason.
+function openBlocker() {
+  if (!isNative()) return "web";
+  const g = gateNow();
+  if (!g || !g.signedIn || !g.hydrated) return "not_ready";
+  if (g.demo) return "demo";
+  if (g.sample) return "sample";
+  if (!inForeground()) return "background";
+  return null;
+}
+
+// What must still hold for this moment, checked live: before the decision, and again right before asking.
+//   isDemo, onScreen: the caller's own (the first number); needsOpen: the third day's open must still pass the one check.
+function liveBlocker({ demo = false, isDemo = null, onScreen = null, needsOpen = false } = {}) {
+  if (!isNative()) return "web";
+  const g = gateNow();
+  try { if (demo || (isDemo && isDemo()) || (g && g.demo)) return "demo"; } catch { return "demo"; }
+  if (g && g.sample) return "sample";
+  if (!inForeground()) return "background";
+  try { if (onScreen && !onScreen()) return "not_on_screen"; } catch { return "not_on_screen"; }
+  if (needsOpen) { const b = openBlocker(); if (b) return b; }
+  return null;
+}
+
 // prepare: for the third day, the record with today counted (and saved) before the decision.
-async function askIfAllowed(trigger, { demo = false, now = new Date(), meetingKey = localDayKey(now), prepare = null } = {}) {
+// live: what liveBlocker checks for this moment.
+async function askIfAllowed(trigger, { demo = false, now = new Date(), meetingKey = localDayKey(now), prepare = null, live = {} } = {}) {
   const native = isNative();
+  if (native && !demo) { const why = liveBlocker({ demo, ...live }); if (why) return { ask: false, reason: why }; }
   let state = native ? load() : null;
   if (native && !demo && prepare) {
     const next = prepare(state);
@@ -75,24 +123,30 @@ async function askIfAllowed(trigger, { demo = false, now = new Date(), meetingKe
     state = next;
   }
   const decision = decideReviewAsk({ state, trigger, now, native, demo, meetingKey, askedThisSession: _askedThisSession });
-  // A once-per-install moment has come: spent now, whether or not the rules let it ask.
-  if (native && !demo && trigger !== REVIEW_TRIGGERS.MEETING_DONE && !NOT_A_MOMENT.includes(decision.reason)) {
+  // A once-per-install moment has come but the rules say no (trouble, three a year): spent now. A yes is spent only once
+  // it has passed the live check below, together with the ask.
+  if (native && !demo && !decision.ask && trigger !== REVIEW_TRIGGERS.MEETING_DONE && !NOT_A_MOMENT.includes(decision.reason)) {
     state = withMomentSpent(state, trigger, now);
     save(state);
   }
   if (!decision.ask) return decision;
+  // Review round 2: the plugin first. Then, right before recording and asking, everything again, live: the person may
+  // have left while it loaded. Any check failing means no ask, and the moment is not spent.
+  let plugin;
+  try { plugin = await reviewPlugin(); } catch { plugin = null; }
+  if (!plugin) return { ask: false, reason: "no_plugin" };
+  const why = liveBlocker({ demo, ...live });
+  if (why) return { ask: false, reason: why };
+  state = load();
+  const again = decideReviewAsk({ state, trigger, now, native: isNative(), demo, meetingKey, askedThisSession: _askedThisSession });
+  if (!again.ask) return again;
   // Recorded BEFORE the call: if the plugin throws or the app is killed mid-sheet, the next launch
   // must still see that Flourish asked, rather than asking again.
+  if (trigger !== REVIEW_TRIGGERS.MEETING_DONE) state = withMomentSpent(state, trigger, now);
   save(withAsked(state, now, trigger === REVIEW_TRIGGERS.MEETING_DONE ? meetingKey : null));
   _askedThisSession = true;
-  try {
-    if (_pluginForTest) await _pluginForTest.requestReview();
-    else {
-      const { registerPlugin } = await import("@capacitor/core");
-      await registerPlugin("FlourishReview").requestReview();
-    }
-  } catch {}
-  return decision;
+  try { await plugin.requestReview(); } catch {}
+  return again;
 }
 
 // A money meeting was just marked done. Each completed meeting may ask once, at most three times in
@@ -137,7 +191,7 @@ export function reviewOnFirstSafe({ demo = false, now = null, delayMs = FIRST_SA
         else if (!onScreen()) still.reason = "not_on_screen";
       } catch { still.reason = "not_on_screen"; }
       if (still.reason) { finish({ ask: false, reason: still.reason }); return; }
-      finish(askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date() }));
+      finish(askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date(), live: { isDemo, onScreen } }));
     }, Math.max(0, delayMs));
   });
   _firstSafe = w;
@@ -149,19 +203,21 @@ export function reviewOnFirstSafe({ demo = false, now = null, delayMs = FIRST_SA
 // household's data changes, so a data update after midnight is no new day), and each time the app comes back to the
 // foreground (the watch below). The 3rd different calendar day it is opened may ask, once per install.
 let _launchCounted = false;
-function countOpen(demo, now) {
-  return askIfAllowed(REVIEW_TRIGGERS.THIRD_OPEN_DAY, { demo, now, prepare: (state) => withOpenDay(state, now) });
+function countOpen(now) {
+  return askIfAllowed(REVIEW_TRIGGERS.THIRD_OPEN_DAY, { now, prepare: (state) => withOpenDay(state, now), live: { needsOpen: true } });
 }
-export function reviewOnAppLaunch({ demo = false, now = new Date() } = {}) {
-  if (!isNative() || demo) return countOpen(demo, now);
+// Review round 2: the launch passes the same one check as a resume, and is marked counted only once it has, so a launch
+// that fails it (a sample household, the background, data not yet loaded) can still count later in the same launch.
+export function reviewOnAppLaunch({ now = new Date() } = {}) {
   if (_launchCounted) return Promise.resolve({ ask: false, reason: "already_counted" });
+  const why = openBlocker();
+  if (why) return Promise.resolve({ ask: false, reason: why });
   _launchCounted = true;
-  return countOpen(false, now);
+  return countOpen(now);
 }
 
 // The foreground and the background. Hidden: the first number's wait ends, and the session's clock starts. Visible: a
-// new session after the gap, and an open counted when gate() says a signed-in household's data is on screen (not the demo).
-let _gate = null;
+// new session after the gap; the launch's open if it has not counted yet, else a resume's open, each through the one check.
 export function _reviewVisibility(state, nowMs = Date.now()) {
   if (state === "hidden") {
     endFirstSafe("background");
@@ -171,13 +227,13 @@ export function _reviewVisibility(state, nowMs = Date.now()) {
   if (_hiddenAt != null && nowMs - _hiddenAt >= SESSION_GAP_MS) _askedThisSession = false;
   const wasHidden = _hiddenAt != null;
   _hiddenAt = null;
-  let g = null;
-  try { g = _gate ? _gate() : null; } catch { g = null; }
-  if (!wasHidden || !g || !g.ready || !isNative()) return Promise.resolve(null);
-  return countOpen(!!g.demo, new Date(nowMs));
+  if (!_launchCounted) return reviewOnAppLaunch({ now: new Date(nowMs) });
+  if (!wasHidden || openBlocker()) return Promise.resolve(null);
+  return countOpen(new Date(nowMs));
 }
 
-// The app starts watching once (App.jsx). Phone apps only; returns the way to stop. gate: () => ({ ready, demo }).
+// The app starts watching once (App.jsx). Phone apps only; returns the way to stop. gate: () => ({ signedIn, hydrated,
+// demo, sample }).
 let _listening = false;
 function onVisibility() { try { _reviewVisibility(document.visibilityState); } catch {} }
 export function startReviewWatch(gate) {
