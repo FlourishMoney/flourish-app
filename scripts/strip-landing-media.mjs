@@ -23,7 +23,7 @@ export const LANDING_ONLY = [
   "clarity",          // Microsoft Clarity's loader for /get and the guides (website only, 2026-11-06)
   "guide-media",      // the guides' app screens and link-preview images (website only, 2026-11-18)
   "gift",             // the gift pages: buy, redeem and the printable card (website only: Apple 3.1.1, 2026-11-20)
-  "press",            // the press page's dark logo (/press, scripts/ai-pages.mjs, 2026-11-24)
+  "press-media",      // the press page's dark logo (/press, scripts/ai-pages.mjs, 2026-11-24)
 ];
 
 // The landing's link-preview tags in index.html (between the LANDING-META markers): they name the website, and a

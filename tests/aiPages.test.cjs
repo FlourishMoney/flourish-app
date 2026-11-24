@@ -147,12 +147,12 @@ function approvedWords() {
     const same = (a, b) => fs.readFileSync(a).equals(fs.readFileSync(b));
     const pub = (u) => path.join(ROOT, "public", u);
     t.ok(links.includes("/email/flourish-wordmark.png"), "4b the logo (light): the flourish wordmark the emails use");
-    t.ok(links.includes("/press/flourish-logo-dark.png") && same(pub("/press/flourish-logo-dark.png"), path.join(ROOT, "ios-appicon", "icon-1024-dark.png")), "4c the logo (dark): the mark on its dark ground, the iOS dark icon's own file");
+    t.ok(links.includes("/press-media/flourish-logo-dark.png") && same(pub("/press-media/flourish-logo-dark.png"), path.join(ROOT, "ios-appicon", "icon-1024-dark.png")), "4c the logo (dark): the mark on its dark ground, the iOS dark icon's own file");
     t.ok(links.includes("/flourish-adult-app-icon-1024.png"), "4d the app icon, 1024 px");
     const shots = links.filter((u) => u.startsWith("/app-screens/"));
     t.ok(shots.length >= 3 && shots.length <= 5 && !shots.includes("/app-screens/hero-card.jpg"), `4e 3 to 5 screenshots, the landing's approved screens (${shots.length})`);
-    const NEW = fs.readdirSync(pub("press"));
-    t.eq(NEW, ["flourish-logo-dark.png"], "4f public/press holds one copied file and no new art");
+    const NEW = fs.readdirSync(pub("press-media"));
+    t.eq(NEW, ["flourish-logo-dark.png"], "4f public/press-media holds one copied file and no new art");
     t.ok(textOf(html).includes("Example, sample data"), "4g the screenshots say they are sample data");
   }
 
@@ -165,7 +165,10 @@ function approvedWords() {
     const redirects = [...toml.matchAll(/\[\[redirects\]\]\s*\n\s*from\s*=\s*"([^"]+)"\s*\n\s*to\s*=\s*"([^"]+)"\s*\n\s*status\s*=\s*(\d+)/g)].map((m) => [m[1], m[2], +m[3]]);
     t.eq(redirects[redirects.length - 1], ["/*", "/app.html", 200], "5b the SPA fallback is still the last rule");
     t.ok(!redirects.some(([from, to]) => /compare|press|best-budgeting/.test(from + to)), "5c no rule of its own: each page is a real file");
-    const served = (p) => { const f = path.join(dist, p); if (fs.existsSync(f) && fs.statSync(f).isFile()) return p; if (fs.existsSync(`${f}.html`)) return `${p}.html`; if (fs.existsSync(path.join(f, "index.html"))) return `${p}/index.html`; return "app.html"; };
+    // Netlify's order (as tests/seoPrerender.browser serves it): the file itself, a folder's index.html, /x as x.html, else the
+    // SPA fallback. A folder at a page's own address would come first and hide the page, so none may exist.
+    const served = (p) => { const f = path.join(dist, p); if (fs.existsSync(f) && fs.statSync(f).isFile()) return p; if (fs.existsSync(f) && fs.statSync(f).isDirectory()) return fs.existsSync(path.join(f, "index.html")) ? `${p}/index.html` : "app.html"; if (fs.existsSync(`${f}.html`)) return `${p}.html`; return "app.html"; };
+    t.eq(PATHS.filter((p) => fs.existsSync(path.join(dist, p)) || fs.existsSync(path.join(ROOT, "public", p.slice(1)))), [], "5d0 no folder (in dist or public) sits at a page's own address");
     t.eq(PATHS.map(served), PATHS.map((p) => `${p}.html`), "5d each address answers with its own page");
     t.eq(["/compare", "/compare/", "/compare/mint", "/press-kit", "/best-budgeting-apps", "/login", "/app"].map(served), Array(7).fill("app.html"), "5e an unknown address still gets the app shell, as before");
   }
@@ -193,9 +196,12 @@ function approvedWords() {
   // ── 7. A store app holds none of it ─────────────────────────────────────────────────────────────
   {
     const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
-    t.ok(LANDING_ONLY.includes("press"), "7a a store build drops public/press");
+    t.ok(LANDING_ONLY.includes("press-media"), "7a a store build drops public/press-media");
     const pkg = JSON.parse(read("package.json")).scripts;
     t.ok(!/build-guides|ai-pages/.test(pkg["build:native"]), "7b build:native never builds the pages");
+    // `npm run build` runs build-guides.mjs, whose last step awaits build-seo.mjs, which imports ai-pages.mjs. Were
+    // ai-pages.mjs to import build-guides.mjs, that await would never settle and the build would stop there.
+    t.ok(!/from\s+["']\.\/build-guides\.mjs["']|import\(["']\.\/build-guides/.test(read("scripts", "ai-pages.mjs")), "7c ai-pages.mjs imports nothing from build-guides.mjs (no import cycle to stall the build)");
   }
 
   t.summary("AI PAGES (best apps, three comparisons, press, sitemap, footer, llms.txt)");

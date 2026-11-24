@@ -20,8 +20,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-// A cycle on purpose: ai-pages.mjs uses this file's shell and helpers, and this file writes its pages and lists them in
-// the sitemap. Neither file reads the other's exports while it is first loaded, only inside functions.
+// The AI pages (2026-11-24): written here with this file's shell and date format, which buildAiPages is handed (ai-pages.mjs
+// imports nothing from this file, so there is no import cycle).
 import { AI_PAGES, AI_PAGES_DATE, buildAiPages } from "./ai-pages.mjs";
 
 export const SITE = "https://flourishmoney.app";
@@ -299,7 +299,7 @@ export function buildGuides(dist, { contentDir, env = process.env } = {}) {
   write("guides/index.html", renderIndex(published, tags));
   for (const g of guides) write(`guides/${g.slug}/index.html`, renderGuide(g, tags));
   write("sitemap.xml", renderSitemap(published));
-  const aiPages = buildAiPages(dist, { tags });
+  const aiPages = buildAiPages(dist, { tags, shell, readableDate });
   write("robots.txt", ROBOTS);
   const index = path.join(dist, "index.html");
   fs.writeFileSync(index, addTagsToHead(fs.readFileSync(index, "utf8"), [BING_VERIFY_TAG, ...tags]));

@@ -13,13 +13,15 @@
 //
 // JSON-LD: FAQPage only, on the one page with questions, holding exactly the questions and answers the page shows.
 // The comparisons are real tables. /press links the repo's existing art (no new art): the wordmark the emails use, the
-// mark on its dark ground (the iOS dark icon's own file, copied into public/press), the 1024 px app icon and the
+// mark on its dark ground (the iOS dark icon's own file, copied into public/press-media; not public/press, whose folder would sit beside press.html and take /press), the 1024 px app icon and the
 // landing's four app screens.
 // -----------------------------------------------------------------------------
 import fs from "node:fs";
 import path from "node:path";
 import { APP_STORE_URL, PLAY_STORE_URL, STORE_BADGES } from "../src/lib/storeLinks.js";
-import { SITE, shell, readableDate } from "./build-guides.mjs";
+// The page shell and date format are build-guides.mjs's, handed in by buildGuides (which writes these pages): this file
+// imports nothing from it, because build-seo.mjs imports this file and build-guides.mjs imports build-seo.mjs.
+export const SITE = "https://flourishmoney.app";
 
 // The go-live day (Toronto). See the note above.
 export const AI_PAGES_DATE = "2026-11-24";
@@ -184,10 +186,10 @@ const PRESS = {
   ],
   downloadsLine: ["Downloads:", "logo (light and dark), app icon, screenshots."],
   contact: "hello@flourishmoney.app",
-  // The repo's existing, approved art. public/press holds only the dark logo, copied from ios-appicon/icon-1024-dark.png.
+  // The repo's existing, approved art. public/press-media holds only the dark logo, copied from ios-appicon/icon-1024-dark.png.
   files: [
     { href: "/email/flourish-wordmark.png", label: "Logo, light (PNG)" },
-    { href: "/press/flourish-logo-dark.png", label: "Logo, dark (PNG)" },
+    { href: "/press-media/flourish-logo-dark.png", label: "Logo, dark (PNG)" },
     { href: "/flourish-adult-app-icon-1024.png", label: "App icon (PNG, 1024 px)" },
   ],
   // The landing's screens and their captions (src/App.jsx, the landing's strip).
@@ -288,7 +290,9 @@ function renderPress(p) {
   ].join("\n");
 }
 
-export function renderAiPage(p, { tags = [], date = readableDate(AI_PAGES_DATE) } = {}) {
+// shell and readableDate: build-guides.mjs's own (see the import note above).
+export function renderAiPage(p, { tags = [], shell, readableDate }) {
+  const date = readableDate(AI_PAGES_DATE);
   const ld = p.faq ? {
     "@context": "https://schema.org", "@type": "FAQPage", "@id": `${aiPageUrl(p)}#faq`, url: aiPageUrl(p),
     mainEntity: p.faq.map(({ q, a }) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
@@ -304,12 +308,13 @@ ${storeLinks()}
 }
 
 /** Write the five pages into dist (dist/<path>.html). */
-export function buildAiPages(dist, { tags = [] } = {}) {
+export function buildAiPages(dist, { tags = [], shell, readableDate }) {
+  if (typeof shell !== "function" || typeof readableDate !== "function") throw new Error("ai-pages: build-guides.mjs hands in its shell and date format");
   if (!/^https:\/\/apps\.apple\.com\//.test(APP_STORE_URL) || !/^https:\/\/play\.google\.com\//.test(PLAY_STORE_URL)) throw new Error("ai-pages: the store links did not come through");
   for (const p of AI_PAGES) {
     const file = path.join(dist, aiPageFile(p));
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, renderAiPage(p, { tags }));
+    fs.writeFileSync(file, renderAiPage(p, { tags, shell, readableDate }));
   }
   return AI_PAGES.map(aiPageFile);
 }
