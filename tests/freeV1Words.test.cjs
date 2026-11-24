@@ -83,9 +83,12 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   t.ok((APP.match(/setPlansOverOnboarding\(true\)/g) || []).length === 1 && /onOpenPlans=\{\(!isNativeApp\(\) && billingUi\.show\) \? \(\)=>\{ if\(user\?\.id\) notePlansOffered\(deviceStorage\(\), user\.id\); setPlansOverOnboarding\(true\); \} : null\}/.test(APP)
     && /\{plansOverOnboarding && billingUi\.show && !isNativeApp\(\) && \(/.test(APP),
     "2u the plans over onboarding open only from the bank step's button (never the founding link or a Stripe return), and count as this device's one offer");
-  t.ok(/useEffect\(\(\)=>\{ if\(bankMayConnect && planBlocked\)\{ setPlanBlocked\(false\); setLinkToken\(null\); if\(step===1\) fetchLinkToken\(\); \} \},\[bankMayConnect\]\);/.test(APP)
+  // Review round 1 (Gemini, ChatGPT): it runs on the refusal, the paid answer and the step, asks with a FRESH link
+  // token, and only once per visit to the bank step (tests/freeV1Web.browser.test.cjs 4 and 5 run it in a browser).
+  t.ok(/if\(!bankMayConnect \|\| step!==1\)\{ planRetried\.current=false; return; \}\s*if\(!planBlocked \|\| planRetried\.current\) return;\s*planRetried\.current=true;\s*setPlanBlocked\(false\); setBankError\(null\); setLinkToken\(null\);\s*fetchLinkToken\(\{fresh:true\}\);\s*\},\[bankMayConnect, planBlocked, step\]\);/.test(APP)
+    && /if\(linkToken && !fresh\) return;/.test(APP)
     && /bankMayConnect=\{!!\(billingStatus\?\.paid \|\| billingStatus\?\.covered_by\)\}/.test(APP),
-    "2v once the server says paid or covered, a free-plan refusal at the bank step is cleared and the link token asked again");
+    "2v once the server says paid or covered, a free-plan refusal at the bank step is cleared and the link token asked again, fresh, once per visit");
 
   // ── 3. the Terms' new date ───────────────────────────────────────────────────────────────────────
   t.ok(/const extraDay = withGiftDate\(withGiftDate\("", giftDay\), isNativeApp\(\) \? null : FREE_TERMS_DATE\) \|\| null;/.test(APP), "3a the website's Terms are dated FREE_TERMS_DATE once set");
