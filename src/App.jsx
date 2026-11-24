@@ -5993,8 +5993,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // The store review's first-number moment (2026-11-24): for a household that did not see its first number on this
   // install's first-number screen (an update, a new phone), Today's figure is that first number. Once per install. The
   // wait is cancelled when Today goes or the demo starts, and checked again right before asking (lib/reviewPrompt.js).
+  // Review round 3: the figure is off screen once Today goes (the cleanup), never left true after an unmount.
   const firstSafeOnScreen = useRef(false); firstSafeOnScreen.current = showsSafeFigure && !data?.demo;
-  useEffect(()=>{ if(!showsSafeFigure || data?.demo) return; const wait = reviewOnFirstSafe({ onScreen: ()=>firstSafeOnScreen.current, isDemo: ()=>_activationOff }); return ()=>wait.cancel(); },[showsSafeFigure, !!data?.demo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ if(!showsSafeFigure || data?.demo) return; const wait = reviewOnFirstSafe({ onScreen: ()=>firstSafeOnScreen.current, isDemo: ()=>_activationOff }); return ()=>{ firstSafeOnScreen.current = false; wait.cancel(); }; },[showsSafeFigure, !!data?.demo]); // eslint-disable-line react-hooks/exhaustive-deps
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
@@ -15058,7 +15059,9 @@ function FirstVisitScreen({data, onDismiss, onNumberShown}) {
   useEffect(() => { if (numberShown && !shownOnce.current) { shownOnce.current = true; try { if (onNumberShown) onNumberShown(); } catch { /* never blocks the screen */ } } }, [numberShown]); // eslint-disable-line react-hooks/exhaustive-deps
   // The store review's first-number moment (lib/reviewPrompt.js): about 3 seconds after the number shows, cancelled if
   // this screen goes first. This screen is only ever a real account's (never the demo); a sample household never asks.
-  useEffect(() => { if (!numberShown) return; const wait = reviewOnFirstSafe({ isDemo: () => _activationOff }); return () => wait.cancel(); }, [numberShown]);
+  // Review round 3: on screen while mounted with its number, off the moment it goes, read right before asking.
+  const numberOnScreen = useRef(false);
+  useEffect(() => { if (!numberShown) return; numberOnScreen.current = true; const wait = reviewOnFirstSafe({ onScreen: () => numberOnScreen.current, isDemo: () => _activationOff }); return () => { numberOnScreen.current = false; wait.cancel(); }; }, [numberShown]);
 
   return (
     // Scrolls when the screen is shorter than its content (a Duo's outer screen in landscape is 466px tall): centred

@@ -20,6 +20,8 @@
 //    screen, no trouble in 24 hours, the session, three a year); any failing means no ask and the moment kept. The
 //    launch's open and a resume's open pass ONE check (signed in, data loaded, not the demo, not a sample household, in
 //    the foreground), and a launch that fails it can still count later in the same launch.
+//    Review round 3: a first-number wait cancelled after its timer fired (the plugin still loading) asks nothing and
+//    keeps the moment; both screens go off screen when they unmount (tests/reviewScreens.browser.test.cjs mounts them).
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
@@ -310,6 +312,27 @@ const path = require("path");
       const [x1, x2] = await Promise.all([a1, a2]);
       t.eq([[x1.ask, x2.ask].filter(Boolean).length, asks.length - before], [1, 1], "R2-1 two moments waiting on the plugin at once: the session's one ask, not two");
     }
+    // Round 3, R3-1: each wait has its own cancelled flag. A cancel after the timer fired, while the plugin loads, still
+    // counts: the live check right before asking reads it. (The screens' unmount: tests/reviewScreens.browser.test.cjs.)
+    {
+      fresh(T0);
+      const before = asks.length;
+      const d = slowPlugin();
+      const w = P.reviewOnFirstSafe({ delayMs: 0, now: T0 });
+      await d.started;
+      w.cancel();
+      d.release();
+      t.eq([(await w).reason, kept(before)], ["cancelled", true], "R3-1 a wait cancelled after its timer fired, while the plugin loads: no ask, and the moment is not spent");
+      fresh(T0);
+      const before2 = asks.length;
+      const d2 = slowPlugin();
+      const w2 = P.reviewOnFirstSafe({ delayMs: 0, now: T0 });
+      await d2.started;
+      d2.release();
+      t.eq([(await w2).ask, asks.length - before2, !!rec2().moments.first_safe], [true, 1, true], "R3-1 a wait left alone still asks, once");
+      w2.cancel();
+      t.eq(asks.length - before2, 1, "…and a cancel after it asked changes nothing");
+    }
     P._setReviewPluginLoaderForTest(null);
 
     // G1: one ask per app session, whichever moment comes first. The others wait, unspent, for a later session.
@@ -359,11 +382,11 @@ const path = require("path");
     // never saw it on this install) and the app opening. Demo and the sample households never ask.
     t.eq((app.match(/reviewOnFirstSafe\(/g) || []).length, 2, "the first number asks from two places: the first-number screen and Today");
     const fv = app.slice(app.indexOf("function FirstVisitScreen("), app.indexOf("function AIDisclosureScreen("));
-    t.ok(/useEffect\(\(\) => \{ if \(!numberShown\) return; const wait = reviewOnFirstSafe\(\{ isDemo: \(\) => _activationOff \}\); return \(\) => wait\.cancel\(\); \}, \[numberShown\]\);/.test(fv),
-      "…the first-number screen, when its number shows, its wait cancelled when the screen goes (R1)");
+    t.ok(/const numberOnScreen = useRef\(false\);\s*useEffect\(\(\) => \{ if \(!numberShown\) return; numberOnScreen\.current = true; const wait = reviewOnFirstSafe\(\{ onScreen: \(\) => numberOnScreen\.current, isDemo: \(\) => _activationOff \}\); return \(\) => \{ numberOnScreen\.current = false; wait\.cancel\(\); \}; \}, \[numberShown\]\);/.test(fv),
+      "…the first-number screen, when its number shows: on screen until it goes (R3-1), its wait cancelled when it goes (R1)");
     t.ok(!/reviewOnFirstSafe/.test(app.slice(app.indexOf("onNumberShown={()=>{"), app.indexOf("onNumberShown={()=>{") + 400)), "…not from App's onNumberShown callback, which cannot cancel");
-    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*const firstSafeOnScreen = useRef\(false\); firstSafeOnScreen\.current = showsSafeFigure && !data\?\.demo;\s*useEffect\(\(\)=>\{ if\(!showsSafeFigure \|\| data\?\.demo\) return; const wait = reviewOnFirstSafe\(\{ onScreen: \(\)=>firstSafeOnScreen\.current, isDemo: \(\)=>_activationOff \}\); return \(\)=>wait\.cancel\(\); \},\[showsSafeFigure, !!data\?\.demo\]\);/.test(app),
-      "…Today, when it shows the figure (beside the safe_view count): cancelled when Today goes or the demo starts, checked again before asking (R1)");
+    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*const firstSafeOnScreen = useRef\(false\); firstSafeOnScreen\.current = showsSafeFigure && !data\?\.demo;\s*useEffect\(\(\)=>\{ if\(!showsSafeFigure \|\| data\?\.demo\) return; const wait = reviewOnFirstSafe\(\{ onScreen: \(\)=>firstSafeOnScreen\.current, isDemo: \(\)=>_activationOff \}\); return \(\)=>\{ firstSafeOnScreen\.current = false; wait\.cancel\(\); \}; \},\[showsSafeFigure, !!data\?\.demo\]\);/.test(app),
+      "…Today, when it shows the figure (beside the safe_view count): cancelled when Today goes or the demo starts, checked again before asking (R1), off screen once it goes (R3-1)");
     t.ok(!/reviewOnAppOpen/.test(app), "R2 the per-data-update open is gone");
     t.eq((app.match(/reviewOnAppLaunch\(/g) || []).length, 1, "the app's load counts its open from one place");
     t.ok(!/reviewOnAppLaunch\(\{ demo: false \}\)/.test(app), "R2-2 the launch no longer skips the shared check with a fixed demo: false");

@@ -99,9 +99,11 @@ function openBlocker() {
 }
 
 // What must still hold for this moment, checked live: before the decision, and again right before asking.
-//   isDemo, onScreen: the caller's own (the first number); needsOpen: the third day's open must still pass the one check.
-function liveBlocker({ demo = false, isDemo = null, onScreen = null, needsOpen = false } = {}) {
+//   isDemo, onScreen: the caller's own (the first number); needsOpen: the third day's open must still pass the one check;
+//   cancelled: the first number's wait was cancelled (review round 3), even after its timer fired.
+function liveBlocker({ demo = false, isDemo = null, onScreen = null, needsOpen = false, cancelled = null } = {}) {
   if (!isNative()) return "web";
+  try { if (cancelled && cancelled()) return "cancelled"; } catch { return "cancelled"; }
   const g = gateNow();
   try { if (demo || (isDemo && isDemo()) || (g && g.demo)) return "demo"; } catch { return "demo"; }
   if (g && g.sample) return "sample";
@@ -160,9 +162,10 @@ export function reviewOnMeetingDone(opts = {}) {
 // cancels it when the number leaves the screen or the demo starts; the app going to the background cancels it too. Right
 // before asking it checks again: a phone app, not the demo, in the foreground, the number still on screen. Any of those
 // failing means no ask, and the moment is not spent (it comes again the next time the number shows). A second showing
-// replaces the first wait. Returns a promise of the decision, with cancel().
+// replaces the first wait. Returns a promise of the decision, with cancel(). Review round 3: each wait has its own
+// cancelled flag, which cancel() always sets, even after the timer fired; the live check right before asking reads it.
 //   onScreen  () => is the number still on screen?   isDemo  () => is the demo on now?
-let _firstSafe = null;   // the wait in progress: { timer, finish }
+let _firstSafe = null;   // the wait whose timer has not fired yet: { timer, finish, cancelled }
 function endFirstSafe(reason) {
   const w = _firstSafe;
   if (!w) return;
@@ -179,7 +182,7 @@ export function reviewOnFirstSafe({ demo = false, now = null, delayMs = FIRST_SA
   endFirstSafe("replaced");
   let w;
   const p = new Promise((finish) => {
-    w = { finish, timer: null };
+    w = { finish, timer: null, cancelled: false };
     w.timer = setTimeout(() => {
       if (_firstSafe !== w) return;
       _firstSafe = null;
@@ -191,11 +194,11 @@ export function reviewOnFirstSafe({ demo = false, now = null, delayMs = FIRST_SA
         else if (!onScreen()) still.reason = "not_on_screen";
       } catch { still.reason = "not_on_screen"; }
       if (still.reason) { finish({ ask: false, reason: still.reason }); return; }
-      finish(askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date(), live: { isDemo, onScreen } }));
+      finish(askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date(), live: { isDemo, onScreen, cancelled: () => w.cancelled } }));
     }, Math.max(0, delayMs));
   });
   _firstSafe = w;
-  p.cancel = () => { if (_firstSafe === w) endFirstSafe("cancelled"); };
+  p.cancel = () => { w.cancelled = true; if (_firstSafe === w) endFirstSafe("cancelled"); };
   return p;
 }
 
