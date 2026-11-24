@@ -15,8 +15,12 @@
 //   first_safe      about 3 seconds after the first safe-to-spend number shows on this install (2026-11-24).
 //   third_open_day  the 3rd different day (the person's own calendar day) the app is opened on this install
 //                   (2026-11-24). The days need not be in a row.
-// The last two come once per install: once a moment has come, whether or not the rules below let it ask, it never
-// asks again, so it never turns up later at some other, unrelated moment. (2026-11-24: the meeting alone is reached by
+// The last two come once per install: once a moment has come, whether or not the limits below let it ask, it never
+// asks again, so it never turns up later at some other, unrelated moment.
+//
+// ONE ASK PER APP SESSION (review round 1, 2026-11-24): whichever moment comes first. A moment that comes later in the
+// same session is not spent; it waits for a later session (the third day: any later open; the first number: the next
+// time Today shows it). A session ends after REVIEW_SESSION_GAP_MINUTES in the background (reviewPrompt.js). (2026-11-24: the meeting alone is reached by
 // almost nobody.)
 //
 // NEVER straight after something went wrong: an error, a bank link that failed, a payment the store
@@ -44,6 +48,7 @@ const MOMENTS = [REVIEW_TRIGGERS.FIRST_SAFE, REVIEW_TRIGGERS.THIRD_OPEN_DAY];
 // The first number's ask waits about this long after the number shows, so the person sees it first.
 export const FIRST_SAFE_DELAY_MS = 3000;
 const OPEN_DAYS_TO_ASK = 3;
+export const REVIEW_SESSION_GAP_MINUTES = 30;
 const DAY_KEY_RX = /^\d{4}-\d{2}-\d{2}$/;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -127,7 +132,8 @@ export function asksInWindow(state, now) {
 // Returns { ask, reason }. `ask` is true only when every rule allows it.
 // meetingKey: the completed meeting's own key (its local day); a meeting asks at most once.
 // For third_open_day, state.openDays must already hold today (withOpenDay).
-export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey = null }) {
+// askedThisSession: this app session has already asked (reviewPrompt.js keeps it).
+export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey = null, askedThisSession = false }) {
   if (!native) return { ask: false, reason: "web" };
   if (demo) return { ask: false, reason: "demo" };
   if (!Object.values(REVIEW_TRIGGERS).includes(trigger)) return { ask: false, reason: "unknown_trigger" };
@@ -137,9 +143,10 @@ export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey 
     if (s.askedMeetings.includes(meetingKey)) return { ask: false, reason: "meeting_already_asked" };
   } else {
     if (s.moments[trigger]) return { ask: false, reason: "moment_spent" };
-    // The third day is the day the third different day was counted, not any day after it.
-    if (trigger === REVIEW_TRIGGERS.THIRD_OPEN_DAY && (s.openDays.length < OPEN_DAYS_TO_ASK || s.openDays[OPEN_DAYS_TO_ASK - 1] !== localDayKey(now))) return { ask: false, reason: "not_third_day" };
+    // From the third different day on: the first open of it asks, or, if that session had already asked, a later one.
+    if (trigger === REVIEW_TRIGGERS.THIRD_OPEN_DAY && s.openDays.length < OPEN_DAYS_TO_ASK) return { ask: false, reason: "not_third_day" };
   }
+  if (askedThisSession) return { ask: false, reason: "session_already_asked" };
   if (asksInWindow(s, now) >= REVIEW_MAX_ASKS) return { ask: false, reason: "yearly_limit" };
   const t = new Date(now).getTime();
   if (s.lastTroubleAt) {

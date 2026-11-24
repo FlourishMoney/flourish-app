@@ -10,6 +10,11 @@
 //    2026-11-24 (the meeting is reached by almost nobody): two more moments, native only, under the same
 //    limits. About 3 seconds after the first safe-to-spend number shows (first_safe), and the 3rd different day the
 //    app is opened (third_open_day). Each comes once per install: once it has come, asked or not, it never asks again.
+//    Review round 1 (2026-11-24): the first number's wait is cancelled when the number leaves the screen, the app goes to
+//    the background or the demo starts, and is checked again right before asking (none of those spends the moment). An
+//    open is a real open: once when the app loads, then each time the app comes back to the foreground (a data update
+//    after midnight is not one). At most one ask per app session (a new session after 30 minutes in the background):
+//    the other moments wait for a later session, unspent.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
@@ -101,12 +106,18 @@ const path = require("path");
     t.eq([s.openDays.length, moment(s, T.THIRD_OPEN_DAY, day3)], [3, { ask: true, reason: "third_open_day" }], "the 3rd different day the app is opened asks (the days need not be in a row)");
     const after3 = R.withMomentSpent(s, T.THIRD_OPEN_DAY, day3);
     t.eq(moment(R.withOpenDay(after3, later(day3, 1)), T.THIRD_OPEN_DAY, later(day3, 1)).reason, "moment_spent", "…once per install: day 4 and on never ask");
-    t.eq(moment(R.withOpenDay(R.withOpenDay(s, later(day3, 1)), later(day3, 2)), T.THIRD_OPEN_DAY, later(day3, 2)).reason, "not_third_day", "a day after the third is not the third day (the moment does not wait for a later day)");
+    t.eq(moment(R.withOpenDay(R.withOpenDay(s, later(day3, 1)), later(day3, 2)), T.THIRD_OPEN_DAY, later(day3, 2)), { ask: true, reason: "third_open_day" }, "a later open still asks while the moment is unspent (it waits for a later session; review round 1)");
     t.eq(R.withOpenDay(after3, later(day3, 9)).openDays.length, 3, "only the first three days are kept");
     t.eq(moment(s, T.THIRD_OPEN_DAY, day3, { native: false }).reason, "web", "the web never asks on the third day");
     t.eq(moment(s, T.THIRD_OPEN_DAY, day3, { demo: true }).reason, "demo", "…nor does the demo");
     t.eq(moment(withTrouble(s, later(day3, -0.5)), T.THIRD_OPEN_DAY, day3).reason, "recent_trouble", "…nor within 24 hours of trouble");
     t.eq(moment(withAsked(withAsked(withAsked(s, day1, "a"), day2, "b"), day2, "c"), T.THIRD_OPEN_DAY, day3).reason, "yearly_limit", "…and it counts toward the same three a year");
+    // One ask per app session (review round 1): whichever moment comes first; the others wait, unspent.
+    t.eq(R.REVIEW_SESSION_GAP_MINUTES, 30, "a new app session after 30 minutes in the background");
+    for (const [trig, extra] of [[T.FIRST_SAFE, {}], [T.THIRD_OPEN_DAY, {}], [T.MEETING_DONE, { meetingKey: localDayKey(day3) }]]) {
+      t.eq(moment(s, trig, day3, { askedThisSession: true, ...extra }), { ask: false, reason: "session_already_asked" }, `${trig}: not in a session that already asked`);
+    }
+    t.eq(moment(after3, T.THIRD_OPEN_DAY, day3, { askedThisSession: true }).reason, "moment_spent", "(a spent moment still reads as spent)");
     // The meeting's ask is unchanged by the two new moments, and the moments do not need a meeting.
     t.eq(ask(after3, later(day3, 2)).ask, true, "the meeting-done ask still asks");
     t.eq(moment(emptyReviewState(), T.FIRST_SAFE, d0, { meetingKey: null }).ask, true, "a moment needs no meeting key");
@@ -120,13 +131,15 @@ const path = require("path");
     const store = {};
     global.window = { localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } } };
     const P = await import("../src/lib/reviewPrompt.js");
+    // A later app session: 31 minutes in the background, then back (review round 1, one ask per session).
+    const newSession = (when) => { P._reviewVisibility("hidden", when.getTime() - 31 * 60 * 1000); P._reviewVisibility("visible", when.getTime()); };
     const r1 = await P.reviewOnMeetingDone({});
     P.noteReviewTrouble();
     t.eq(r1.reason, "web", "web: the meeting trigger does not ask");
     t.eq(Object.keys(store), [], "web: nothing is written");
     t.ok(!P.REVIEW_STORAGE_KEY.startsWith("flourish_"), "the record's key is outside the flourish_ prefix that sign-out and the shared-device wipe remove");
     t.eq(typeof P.reviewOnTodayOpen + typeof P.reviewOnCheckInDone, "undefinedundefined", "the retired triggers are gone from the wrapper");
-    const w1 = await P.reviewOnFirstSafe({ delayMs: 0 }), w2 = await P.reviewOnAppOpen({});
+    const w1 = await P.reviewOnFirstSafe({ delayMs: 0 }), w2 = await P.reviewOnAppLaunch({});
     t.eq([w1.reason, w2.reason, Object.keys(store)], ["web", "web", []], "web: the first number and the app opening do not ask, and nothing is written");
 
     // On a native shell the ask is recorded before the plugin is called, so a crash mid-sheet
@@ -139,8 +152,11 @@ const path = require("path");
     const rec = JSON.parse(store[P.REVIEW_STORAGE_KEY]);
     t.eq([rec.askedAt, rec.askedMeetings], [[at("2026-10-05T10:00:00").toISOString()], ["2026-10-05"]], "…and the ask is on record, with the meeting it was for");
     t.eq((await P.reviewOnMeetingDone({ now: at("2026-10-05T18:00:00") })).reason, "meeting_already_asked", "…so the same meeting never asks again, even if marked done twice that day");
+    newSession(at("2026-10-12T10:00:00"));
     t.eq((await P.reviewOnMeetingDone({ now: at("2026-10-12T10:00:00") })).ask, true, "the next week's meeting asks (2 of 3)");
+    newSession(at("2026-10-19T10:00:00"));
     t.eq((await P.reviewOnMeetingDone({ now: at("2026-10-19T10:00:00") })).ask, true, "…and the one after (3 of 3)");
+    newSession(at("2026-10-26T10:00:00"));
     t.eq((await P.reviewOnMeetingDone({ now: at("2026-10-26T10:00:00") })).reason, "yearly_limit", "…and then no more within the year");
     P.noteReviewTrouble(at("2027-11-01T11:00:00"));
     t.eq(JSON.parse(store[P.REVIEW_STORAGE_KEY]).lastTroubleAt, at("2027-11-01T11:00:00").toISOString(), "native: trouble is recorded");
@@ -152,26 +168,92 @@ const path = require("path");
     P._setReviewPluginForTest({ requestReview: async () => { asks.push(Date.now()); } });
     const rdemo = await P.reviewOnFirstSafe({ demo: true, delayMs: 0, now: at("2026-11-24T10:00:00") });
     t.eq([rdemo.reason, store[P.REVIEW_STORAGE_KEY], asks.length], ["demo", undefined, 0], "native demo: the first number never asks, and writes nothing (the real first number is still to come)");
+    const fresh = (when) => { for (const k of Object.keys(store)) delete store[k]; P._resetReviewForTest(); newSession(when); };
+    const rec2 = () => JSON.parse(store[P.REVIEW_STORAGE_KEY] || "null");
+    global.document = { visibilityState: "visible" };
+    const T0 = at("2026-11-24T10:00:00");
+    fresh(T0);
     const started = Date.now();
-    const [fs1, fs2] = await Promise.all([P.reviewOnFirstSafe({ delayMs: 120, now: at("2026-11-24T10:00:00") }), P.reviewOnFirstSafe({ delayMs: 120, now: at("2026-11-24T10:00:01") })]);
+    const shown = P.reviewOnFirstSafe({ delayMs: 120, now: T0 });
+    t.ok(typeof shown.cancel === "function", "the first number's wait can be cancelled");
+    const fs1 = await shown;
     t.ok(Date.now() - started >= 110, "the first number's ask waits its delay before asking");
-    t.eq([fs1, fs2.ask, asks.length], [{ ask: true, reason: "first_safe" }, false, 1], "native: the first number asks once, even when Today and the first-number screen both show it at once");
-    const recFs = JSON.parse(store[P.REVIEW_STORAGE_KEY]);
-    t.ok(recFs.askedAt.length === 1 && !!recFs.moments.first_safe, "…recorded as an ask, and the moment as spent");
+    t.eq([fs1, asks.length], [{ ask: true, reason: "first_safe" }, 1], "native: the first number asks after the wait");
+    t.ok(rec2().askedAt.length === 1 && !!rec2().moments.first_safe, "…recorded as an ask, and the moment as spent");
+    newSession(at("2026-11-29T10:00:00"));
     t.eq((await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-29T10:00:00") })).reason, "moment_spent", "…and never again on this install");
     // Trouble during the wait: the decision is made after the wait, so it does not ask, and the moment is spent.
-    for (const k of Object.keys(store)) delete store[k];
-    const waiting = P.reviewOnFirstSafe({ delayMs: 80, now: at("2026-11-24T10:00:00") });
+    fresh(T0);
+    const waiting = P.reviewOnFirstSafe({ delayMs: 80, now: T0 });
     P.noteReviewTrouble(at("2026-11-24T09:59:59"));
-    t.eq([(await waiting).reason, asks.length, !!JSON.parse(store[P.REVIEW_STORAGE_KEY]).moments.first_safe], ["recent_trouble", 1, true], "trouble during the 3 seconds: no ask, and the moment has passed");
-    // The third different day the app is opened.
-    for (const k of Object.keys(store)) delete store[k];
-    t.eq((await P.reviewOnAppOpen({ demo: true, now: at("2026-11-24T08:00:00") })).reason, "demo", "native demo: opening the demo counts no day");
+    t.eq([(await waiting).reason, asks.length, !!rec2().moments.first_safe], ["recent_trouble", 1, true], "trouble during the 3 seconds: no ask, and the moment has passed");
+
+    // R1 (review round 1): the wait ends early, or the check right before asking fails. No ask, and the moment is NOT spent.
+    const unspent = () => !(rec2() && rec2().moments.first_safe) && asks.length === 1;
+    fresh(T0);
+    const left = P.reviewOnFirstSafe({ delayMs: 200, now: T0 });
+    setTimeout(() => left.cancel(), 20);
+    t.eq([(await left).reason, unspent()], ["cancelled", true], "R1a the number leaves the screen during the wait (Today or the first-number screen unmounts): no ask, moment kept");
+    const gone = await P.reviewOnFirstSafe({ delayMs: 30, now: T0, onScreen: () => false });
+    t.eq([gone.reason, unspent()], ["not_on_screen", true], "R1b the number is no longer on screen when the wait ends: no ask, moment kept");
+    const bg = P.reviewOnFirstSafe({ delayMs: 200, now: T0 });
+    setTimeout(() => P._reviewVisibility("hidden", T0.getTime() + 50), 20);
+    t.eq([(await bg).reason, unspent()], ["background", true], "R1c the app goes to the background during the wait: no ask, moment kept");
+    P._reviewVisibility("visible", T0.getTime() + 60_000);
+    global.document.visibilityState = "hidden";
+    const bg2 = await P.reviewOnFirstSafe({ delayMs: 20, now: T0 });
+    global.document.visibilityState = "visible";
+    t.eq([bg2.reason, unspent()], ["background", true], "R1d the app is not in the foreground at the moment of asking: no ask, moment kept");
+    let demoNow = false;
+    const dm = P.reviewOnFirstSafe({ delayMs: 120, now: T0, isDemo: () => demoNow });
+    setTimeout(() => { demoNow = true; }, 20);
+    t.eq([(await dm).reason, unspent()], ["demo", true], "R1e the demo starts during the wait: no ask, moment kept");
+    const a = P.reviewOnFirstSafe({ delayMs: 120, now: T0 }), b = P.reviewOnFirstSafe({ delayMs: 120, now: T0 });
+    const [ra, rb] = await Promise.all([a, b]);
+    t.eq([ra.reason, rb, asks.length], ["replaced", { ask: true, reason: "first_safe" }, 2], "R1f a second showing replaces the first wait: one ask, after the number is back and has stayed");
+
+    // R2: an open is a real open. Once when the app loads, then each return to the foreground; one calendar day counts once.
+    fresh(at("2026-11-24T08:00:00"));
+    const day = () => (rec2() ? rec2().openDays : []);
+    t.eq((await P.reviewOnAppLaunch({ demo: true, now: at("2026-11-24T08:00:00") })).reason, "demo", "R2a native demo: opening the demo counts no day");
     t.eq(store[P.REVIEW_STORAGE_KEY], undefined, "…and writes nothing");
-    const opens = [];
-    for (const when of ["2026-11-24T08:00:00", "2026-11-24T20:00:00", "2026-11-25T08:00:00", "2026-11-27T08:00:00", "2026-11-27T09:00:00", "2026-11-28T08:00:00"]) opens.push((await P.reviewOnAppOpen({ now: at(when) })).reason);
-    t.eq(opens, ["not_third_day", "not_third_day", "not_third_day", "third_open_day", "moment_spent", "moment_spent"], "native: the 3rd different day the app is opened asks, once");
-    t.eq(asks.length, 2, "…one more ask in all");
+    t.eq((await P.reviewOnAppLaunch({ now: at("2026-11-24T23:59:00") })).reason, "not_third_day", "R2b the app loads: day 1 counted");
+    t.eq([(await P.reviewOnAppLaunch({ now: at("2026-11-25T00:01:00") })).reason, day()], ["already_counted", ["2026-11-24"]], "R2c a data update after midnight (the same launch) counts no new day");
+    const gate = { ready: true };
+    P.startReviewWatch(() => gate);
+    const resume = async (when) => { P._reviewVisibility("hidden", when.getTime() - 60_000); return P._reviewVisibility("visible", when.getTime()); };
+    gate.ready = false;
+    await resume(at("2026-11-25T09:00:00"));
+    t.eq(day(), ["2026-11-24"], "R2d a return to the foreground while signed out (or before data loads) counts nothing");
+    gate.ready = true;
+    await resume(at("2026-11-25T09:30:00"));
+    await resume(at("2026-11-25T21:00:00"));
+    t.eq(day(), ["2026-11-24", "2026-11-25"], "R2e the app comes back to the foreground: an open; twice in a day is one day");
+    gate.demo = true;
+    await resume(at("2026-11-27T08:00:00"));
+    t.eq(day(), ["2026-11-24", "2026-11-25"], "R2f a return to the demo counts no day");
+    gate.demo = false;
+    const third = await resume(at("2026-11-27T08:05:00"));
+    t.eq([third, asks.length], [{ ask: true, reason: "third_open_day" }, 3], "R2g the 3rd different day the app is opened asks");
+    t.eq((await resume(at("2026-11-28T08:00:00"))).reason, "moment_spent", "…once per install");
+
+    // G1: one ask per app session, whichever moment comes first. The others wait, unspent, for a later session.
+    fresh(at("2026-11-24T08:00:00"));
+    await P.reviewOnAppLaunch({ now: at("2026-11-24T08:00:00") });
+    for (const d of ["2026-11-25T08:00:00", "2026-11-27T08:00:00"]) { newSession(at(d)); P._resetLaunchForTest(); await P.reviewOnAppLaunch({ now: at(d) }); }
+    t.eq(asks.length, 4, "G1a the third day's open asks");
+    const fsSame = await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T08:01:00") });
+    t.eq([fsSame.reason, !!rec2().moments.first_safe], ["session_already_asked", false], "G1b the first number in the same session does not ask, and waits (unspent)");
+    const mSame = await P.reviewOnMeetingDone({ now: at("2026-11-27T08:02:00") });
+    t.eq([mSame.reason, rec2().askedMeetings], ["session_already_asked", []], "G1c a meeting marked done in the same session does not ask either");
+    P._reviewVisibility("hidden", at("2026-11-27T08:03:00").getTime());
+    P._reviewVisibility("visible", at("2026-11-27T08:20:00").getTime());
+    t.eq((await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T08:20:00") })).reason, "session_already_asked", "G1d 17 minutes in the background is the same session");
+    newSession(at("2026-11-27T19:00:00"));
+    t.eq([(await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-27T19:00:00") })), asks.length], [{ ask: true, reason: "first_safe" }, 5], "G1e a later session: the first number asks");
+    t.eq(rec2().askedAt.length, 2, "…two of the three yearly asks, each in its own session");
+    P.startReviewWatch(null);
+    delete global.document;
     P._setReviewPluginForTest(null);
     delete global.window;
   }
@@ -200,10 +282,17 @@ const path = require("path");
     // 2026-11-24: the first safe-to-spend number (the first-number screen after onboarding, or Today for a household that
     // never saw it on this install) and the app opening. Demo and the sample households never ask.
     t.eq((app.match(/reviewOnFirstSafe\(/g) || []).length, 2, "the first number asks from two places: the first-number screen and Today");
-    t.ok(/onNumberShown=\{\(\)=>\{ signalActivation\("safe_view", false, user\?\.id\); signalOnboarding\("first_number_shown",[^}]*\}\); reviewOnFirstSafe\(\{ demo: _activationOff \}\); \}\}/.test(app), "…the first-number screen, when its number shows (never in the demo: that screen is for a real account)");
-    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*useEffect\(\(\)=>\{ if\(showsSafeFigure\) reviewOnFirstSafe\(\{ demo: !!data\?\.demo \|\| _activationOff \}\); \},\[showsSafeFigure\]\);/.test(app), "…Today, when it shows the figure (beside the safe_view count), passing demo");
-    t.eq((app.match(/reviewOnAppOpen\(/g) || []).length, 1, "the app opening asks from one place");
-    t.ok(/signalActivation\("app_open", false, user\.id\);\s*if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);\s*reviewOnAppOpen\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo");
+    const fv = app.slice(app.indexOf("function FirstVisitScreen("), app.indexOf("function AIDisclosureScreen("));
+    t.ok(/useEffect\(\(\) => \{ if \(!numberShown\) return; const wait = reviewOnFirstSafe\(\{ isDemo: \(\) => _activationOff \}\); return \(\) => wait\.cancel\(\); \}, \[numberShown\]\);/.test(fv),
+      "…the first-number screen, when its number shows, its wait cancelled when the screen goes (R1)");
+    t.ok(!/reviewOnFirstSafe/.test(app.slice(app.indexOf("onNumberShown={()=>{"), app.indexOf("onNumberShown={()=>{") + 400)), "…not from App's onNumberShown callback, which cannot cancel");
+    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*const firstSafeOnScreen = useRef\(false\); firstSafeOnScreen\.current = showsSafeFigure && !data\?\.demo;\s*useEffect\(\(\)=>\{ if\(!showsSafeFigure \|\| data\?\.demo\) return; const wait = reviewOnFirstSafe\(\{ onScreen: \(\)=>firstSafeOnScreen\.current, isDemo: \(\)=>_activationOff \}\); return \(\)=>wait\.cancel\(\); \},\[showsSafeFigure, !!data\?\.demo\]\);/.test(app),
+      "…Today, when it shows the figure (beside the safe_view count): cancelled when Today goes or the demo starts, checked again before asking (R1)");
+    t.ok(!/reviewOnAppOpen/.test(app), "R2 the per-data-update open is gone");
+    t.eq((app.match(/reviewOnAppLaunch\(/g) || []).length, 1, "the app's load counts its open from one place");
+    t.ok(/signalActivation\("app_open", false, user\.id\);\s*if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);\s*reviewOnAppLaunch\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo (the wrapper counts it once per launch)");
+    t.ok(/reviewReadyRef\.current = !!\(user && hydratedUidRef\.current === user\.id && !appData\?\.demo && !_activationOff\);/.test(app) && /useEffect\(\(\) => startReviewWatch\(\(\) => \(\{ ready: reviewReadyRef\.current \}\)\), \[\]\);/.test(app),
+      "R2 a return to the foreground counts an open, for a signed-in household whose data has loaded, never the demo or a sample household");
     const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
     t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
     // Meeting memory (2026-11-08): markDone saves the meeting first, so "after the meeting is recorded" is now checked
