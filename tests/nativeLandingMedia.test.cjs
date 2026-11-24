@@ -23,7 +23,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
 (async () => {
   const t = create();
   const { LANDING_ONLY } = await import("../scripts/strip-landing-media.mjs");
-  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter", "clarity", "guide-media", "gift"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images, Clarity's loader, the guides' screens and link-preview images, the gift pages");
+  t.eq(LANDING_ONLY, ["video", "app-screens", "og-image.png", "og-image-ca.png", "get", "email", "newsletter", "clarity", "guide-media", "gift", "press"], "0 the website-only files: the videos, the screenshots, the link-preview images, the device link's page, the emails' images, Clarity's loader, the guides' screens and link-preview images, the gift pages, the press page's dark logo");
 
   // ── 1. the web build keeps every landing file ───────────────────────────────────────────────
   const web = tempDir("landing-media-web");
@@ -62,7 +62,7 @@ const same = (a, b) => fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFile
   // ── 3. the native check refuses landing media ───────────────────────────────────────────────
   const check = (cwd) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-native-build.mjs"), "--artifact"], { cwd, env: ENV, encoding: "utf8" });
   const bad = check(web);
-  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png, get, email, newsletter, clarity, guide-media, gift\)/.test(bad.stderr + bad.stdout),
+  t.ok(bad.status !== 0 && /still holds landing-only media \(video, app-screens, og-image\.png, og-image-ca\.png, get, email, newsletter, clarity, guide-media, gift, press\)/.test(bad.stderr + bad.stdout),
     "3a check-native-build --artifact refuses a dist/ that still holds the landing media");
   const good = check(nat);
   t.ok(good.status === 0 && /native build check passed \(artifact\)/.test(good.stdout), "3b …and passes the stripped one");

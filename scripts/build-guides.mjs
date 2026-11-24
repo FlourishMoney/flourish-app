@@ -20,6 +20,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// A cycle on purpose: ai-pages.mjs uses this file's shell and helpers, and this file writes its pages and lists them in
+// the sitemap. Neither file reads the other's exports while it is first loaded, only inside functions.
+import { AI_PAGES, AI_PAGES_DATE, buildAiPages } from "./ai-pages.mjs";
 
 export const SITE = "https://flourishmoney.app";
 export const AUTHOR = "flourish team";
@@ -91,7 +94,7 @@ export function readableDate(iso) {
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
 }
 
-const STYLE = `<style>
+export const STYLE = `<style>
   :root { --page: #F4F1EB; --card: #FFFFFF; --ink: #1A2035; --muted: #5B6170; --rule: #E6E1D8; --brand: #007048; color-scheme: light dark; }
   @media (prefers-color-scheme: dark) { :root { --page: #12151E; --card: #1A1F2B; --ink: #F4F1EB; --muted: #B4B9C6; --rule: #2A3142; --brand: #4FD1A0; } }
   * { box-sizing: border-box; }
@@ -141,7 +144,10 @@ const FOOT = `<footer>
   <p><a href="/newsletter/">Canadian money dates</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></p>
 </footer>`;
 
-function shell({ head, body, tags }) {
+// The guides' header; the AI pages (scripts/ai-pages.mjs) pass the home page's instead.
+export const GUIDES_HEADER = '<header><a href="/guides/" style="text-decoration:none">flourish guides</a></header>';
+
+export function shell({ head, body, tags, header = GUIDES_HEADER }) {
   return [
     "<!doctype html>",
     '<html lang="en">',
@@ -157,7 +163,7 @@ function shell({ head, body, tags }) {
     CLARITY_LOADER,
     "</head>",
     "<body>",
-    '<header><a href="/guides/" style="text-decoration:none">flourish guides</a></header>',
+    header,
     body,
     FOOT,
     "</body>",
@@ -256,6 +262,8 @@ export function renderSitemap(published) {
     ...published.map((g) => row(guideUrl(g.slug), g.updatedAt)),
     // The other public pages (2026-11-19). /get/ is left out: it is a redirect to the stores and says noindex.
     ...SITEMAP_PAGES.map((p) => row(`${SITE}${p}`)),
+    // The AI visibility pages (scripts/ai-pages.mjs, 2026-11-24), each dated by the day its words went live.
+    ...AI_PAGES.map((p) => row(`${SITE}${p.path}`, AI_PAGES_DATE)),
     "</urlset>",
     "",
   ].join("\n");
@@ -291,16 +299,17 @@ export function buildGuides(dist, { contentDir, env = process.env } = {}) {
   write("guides/index.html", renderIndex(published, tags));
   for (const g of guides) write(`guides/${g.slug}/index.html`, renderGuide(g, tags));
   write("sitemap.xml", renderSitemap(published));
+  const aiPages = buildAiPages(dist, { tags });
   write("robots.txt", ROBOTS);
   const index = path.join(dist, "index.html");
   fs.writeFileSync(index, addTagsToHead(fs.readFileSync(index, "utf8"), [BING_VERIFY_TAG, ...tags]));
-  return { guides: guides.length, published: published.length, tags: tags.length };
+  return { guides: guides.length, published: published.length, tags: tags.length, aiPages: aiPages.length };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const r = buildGuides(path.join(root, "dist"), { contentDir: path.join(root, "content", "guides") });
-  console.log(`  ✓ guides: ${r.guides} (${r.published} published), robots.txt, sitemap.xml, ${r.tags} verification tag${r.tags === 1 ? "" : "s"}`);
+  console.log(`  ✓ guides: ${r.guides} (${r.published} published), ${r.aiPages} AI pages, robots.txt, sitemap.xml, ${r.tags} verification tag${r.tags === 1 ? "" : "s"}`);
   // The home page's and /support's words in their HTML, JSON-LD and /llms.txt (scripts/build-seo.mjs, 2026-11-19).
   const { buildSeo } = await import("./build-seo.mjs");
   const published = readGuides(path.join(root, "content", "guides")).filter((g) => g.status === "published").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

@@ -16837,6 +16837,12 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
                 <a href="/newsletter/">Canadian money dates</a>
                 <a href="/guides/">Blog</a>
+                {/* The AI visibility pages (scripts/ai-pages.mjs, 2026-11-24), by their approved llms.txt names. */}
+                <a href="/best-budgeting-apps-canada">Best budgeting apps in Canada</a>
+                <a href="/compare/ynab">flourish vs YNAB</a>
+                <a href="/compare/monarch">flourish vs Monarch</a>
+                <a href="/compare/waypoint">flourish vs Waypoint</a>
+                <a href="/press">Press kit</a>
               </div>
             </div>
           </div>

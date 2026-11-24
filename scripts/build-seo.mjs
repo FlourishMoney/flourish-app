@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { renderPages } from "./prerender-pages.mjs";
+import { AI_PAGES, aiPageUrl } from "./ai-pages.mjs";
 
 const require = createRequire(import.meta.url);
 const { trialPlanFirstSince } = require("../netlify/functions/_lib/planRules.js");
@@ -120,6 +121,13 @@ export const LLMS_FACTS = {
   operator: { text: "flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", from: "home" },
 };
 
+// Approved word for word (docs/product/AI-VISIBILITY-WORDS.md, item 6, 2026-11-24). Not on a page in these words, so
+// they are held here and by tests/aiPages.test.cjs, not checked against a page.
+export const LLMS_APPROVED = {
+  where: "Where to use it: iPhone, Android, and in a browser at flourishmoney.app.",
+  pricing: "The free plan, or a flourish subscription at $11.99 a month or $99.99 a year in Canadian dollars, plus tax. Eligible new subscribers get 14 days free with payment details required, then it renews at the listed price unless cancelled. On the website, the free plan doesn't connect a bank.",
+};
+
 export function buildLlms({ pages, guides }) {
   const check = (f) => {
     const on = pages[f.from];
@@ -134,10 +142,19 @@ export function buildLlms({ pages, guides }) {
     `> ${check(F.summary)}`,
     "",
     "Who it's for: Canadian households.",
+    LLMS_APPROVED.where,
     "",
     "## What it does",
     "",
     ...F.does.map((f) => { const said = check(f); return `- ${f.label}: ${said}${/[.!?]$/.test(said) ? "" : "."}`; }),
+    "",
+    "## Pricing",
+    "",
+    LLMS_APPROVED.pricing,
+    "",
+    "## Compare",
+    "",
+    ...AI_PAGES.map((p) => `- [${p.llmsName}](${aiPageUrl(p)})`),
     "",
     "## Get the app",
     "",

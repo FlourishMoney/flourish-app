@@ -126,6 +126,7 @@ function checkLd(blocks, visibleText) {
   t.ok(home.includes('<div id="root"><div data-prerender="">') && !/<div data-prerender="">[\s\S]*<script/.test(home.split("</head>")[1].split('<script type="module"')[0]), "1d the words sit in #root, in the copy, with no script of their own");
   t.ok(home.includes(SEO.PRERENDER_STYLE) && /@media \(scripting: enabled\)/.test(SEO.PRERENDER_STYLE), "1e a browser that runs scripts hides the copy until React replaces it (what a visitor sees does not change)");
   t.ok(home.includes(`<link rel="canonical" href="${SITE}/" />`), "1f the home page names its address");
+  t.ok(["/best-budgeting-apps-canada", "/compare/ynab", "/compare/monarch", "/compare/waypoint", "/press"].every((p) => home.includes(`<a href="${p}">`)), "1f2 the pre-rendered home page links the five AI pages from its footer (2026-11-24)");
   t.eq(result.tpfOn, true, "1h the switch was read from this build's env");
   // Free v1 on the website (2026-11-23): the line under "Get started" is the word slot free-landing-line (it was
   // "Choose a plan to get started. Eligible new subscribers get 14 days free, ..."), the same in the pre-rendered copy.
@@ -192,7 +193,10 @@ function checkLd(blocks, visibleText) {
   t.ok(llms.includes(`(${APP_STORE})`) && llms.includes(`(${PLAY})`), "4c it links both store pages");
   for (const g of published) t.ok(llms.includes(`[${g.title}](${SITE}/guides/${g.slug}/)`), `4d it links the guide ${g.slug}`);
   t.ok(!/—/.test(llms), "4e no em dash");
-  t.ok(!/browser|home screen|web app|sign up on the website/i.test(llms), "4f it promotes no web app: the way in is the stores");
+  // 2026-11-24: Amanda approved two lines that name the browser and the website (docs/product/AI-VISIBILITY-WORDS.md, item 6).
+  // They are the only exceptions, word for word; anything else that promotes a web app still fails.
+  t.ok(llms.includes(SEO.LLMS_APPROVED.where) && llms.includes(SEO.LLMS_APPROVED.pricing), "4f0 the two approved lines that name the browser and the website");
+  t.ok(!/browser|home screen|web app|sign up on the website/i.test(llms.replace(SEO.LLMS_APPROVED.where, "").replace(SEO.LLMS_APPROVED.pricing, "")), "4f beyond them it promotes no web app: the way in is the stores");
   const pages = { home: homeText, support: supportText, homeMeta: "A Canadian money app where safe to spend is built around your paydays." };
   t.throws(() => SEO.buildLlms({ pages: { ...pages, home: homeText.replace("Every bill and payday", "Each bill") }, guides: [] }), "4g a fact that is not on its page stops the build");
   const factLines = llms.split("\n").filter((l) => l.startsWith("- ") && !l.startsWith("- [") && !l.startsWith("- Contact"));
@@ -208,7 +212,8 @@ function checkLd(blocks, visibleText) {
     for (const line of rulesFor(bot)) { const [k, v] = line.split(/:\s*/); const kind = k.toLowerCase(); if ((kind === "allow" || kind === "disallow") && p.startsWith(v) && (!best || v.length > best.v.length || (v.length === best.v.length && kind === "allow"))) best = { kind, v }; }
     return !best || best.kind === "allow";
   };
-  const PUBLIC = ["/", "/guides/", ...published.map((g) => `/guides/${g.slug}/`), "/support", "/privacy", "/terms", "/newsletter/", "/get/", "/llms.txt"];
+  const AI = ["/best-budgeting-apps-canada", "/compare/ynab", "/compare/monarch", "/compare/waypoint", "/press"];   // 2026-11-24, scripts/ai-pages.mjs
+  const PUBLIC = ["/", "/guides/", ...published.map((g) => `/guides/${g.slug}/`), "/support", "/privacy", "/terms", "/newsletter/", ...AI, "/get/", "/llms.txt"];
   for (const bot of [...BOTS, "SomeOtherBot"]) {
     t.ok(PUBLIC.every((p) => allowed(bot, p)) && !allowed(bot, "/api/beta"), `5a ${bot} may read every public page (and not /api/)`);
   }
