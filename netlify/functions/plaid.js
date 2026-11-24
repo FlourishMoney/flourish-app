@@ -203,7 +203,7 @@ exports.handler = async (event) => {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if (cap > 0 && (count || 0) >= cap) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
         }
         // The website's Free plan (cap 0): a NEW bank was already refused at create_link_token, so what reaches here is a
         // reconnect of a bank this account holds (Plaid's update mode, which re-uses its item and is never refused). It
@@ -724,8 +724,7 @@ exports.handler = async (event) => {
           // Free tier: skip NEW banks beyond the cap (re-migrating an existing item is fine). Free v1
           // (_lib/freeBanks.js): the website's Free plan connects none; a store app keeps today's one.
           if (capBanks && !existingIds.has(item_id) && activeCount >= freeCap) {
-            const message = freeCap === 0 ? freeServerWords("free-server-bank") : "Free plan supports one bank. Upgrade to Plus to add more.";
-            failures.push({ error: "plan_limit", message, index, retry: false });
+            failures.push({ error: "plan_limit", message: freeServerWords("free-server-bank"), index, retry: false });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)

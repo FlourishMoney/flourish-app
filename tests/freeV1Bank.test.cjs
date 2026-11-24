@@ -39,8 +39,9 @@ const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
 const IOS = "capacitor://localhost", ANDROID = "https://localhost", WEB = "https://flourishmoney.app";
 const STORE_ORIGINS = [[IOS, "iOS"], [ANDROID, "Android"]];
-const TODAY_ONE_BANK = "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.";
-const TODAY_ONE_BANK_MIGRATE = "Free plan supports one bank. Upgrade to Plus to add more.";
+// A store app's second bank (approved 2026-11-23): the same server line as the website's refusal.
+const TODAY_ONE_BANK = require("../netlify/functions/_lib/freeWords.js").freeServerWords("free-server-bank");
+const TODAY_ONE_BANK_MIGRATE = TODAY_ONE_BANK;
 const SERVER_LINE = freeServerWords("free-server-bank");
 const SINCE = iso(Date.now() - 10 * DAY);
 
@@ -213,7 +214,7 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
           res = await call(mod, origin, { action: "exchange_token", public_token: "public-sandbox-1" });
           toPlaid = asked(before, /\/item\/public_token\/exchange$/);
           if (who === "unread") t.eq([res.statusCode, toPlaid], [503, false], `4e ${name}, unread plan, ${banks} bank(s): 503, as today`);
-          else if (h.free && banks >= 1) t.eq([res.statusCode, json(res).message, toPlaid], [402, TODAY_ONE_BANK, false], `4f ${name}, ${who} (Free), one bank already: a second is refused with today's words`);
+          else if (h.free && banks >= 1) t.eq([res.statusCode, json(res).message, toPlaid], [402, TODAY_ONE_BANK, false], `4f ${name}, ${who} (Free), one bank already: a second is refused with the approved line`);
           else t.eq([res.statusCode !== 402, toPlaid], [true, true], `4g ${name}, ${who}, ${banks} bank(s): goes on to Plaid, as today`);
         }
       }
@@ -235,7 +236,7 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
         const app = await migrate(origin, HOUSEHOLDS[who], 0);
         t.ok(!app.failures.some((f) => f.error === "plan_limit") && app.wrote, `5b ${name}, ${who} (Free), no bank yet: imported, as today`);
         const second = await migrate(origin, HOUSEHOLDS[who], 1);
-        t.eq(second.failures.map((f) => [f.error, f.message]), [["plan_limit", TODAY_ONE_BANK_MIGRATE]], `5c ${name}, ${who}, one bank already: refused with today's words`);
+        t.eq(second.failures.map((f) => [f.error, f.message]), [["plan_limit", TODAY_ONE_BANK_MIGRATE]], `5c ${name}, ${who}, one bank already: refused with the approved line`);
       }
     }
     // 5e …but an old token for a bank the account already holds (its row login_required) is its own bank, never a new one.

@@ -9,7 +9,7 @@
 "use strict";
 
 const FREE_SERVER_WORDS = Object.freeze({
-  "free-server-bank": "[WORDS: free-server-bank]",
+  "free-server-bank": "Connecting this bank needs a flourish subscription. You can choose one in Settings.",
 });
 
 function freeServerWords(id) {

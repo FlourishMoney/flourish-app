@@ -20,7 +20,7 @@
 import { FREE_TIER_LIMITS } from "./usageLimits.js";
 import { pendingWords } from "./pendingWords.js";
 import { chargeDateLabel } from "./trialPlanFirst.js";
-import { freeWords } from "./freeWords.js";
+import { freeWords, FREE_TERMS_DATE } from "./freeWords.js";
 
 // The free plan's bank limit. netlify/functions/plaid.js enforces it (exchange_token and migrate_items);
 // tests/nativeFreePlanLine.test.cjs reads the cap there so the two cannot drift.
@@ -102,7 +102,8 @@ export function trialFirstTermsSection7(since, { web = false } = {}) {
     "To cancel on iPhone: Settings, your name, then Subscriptions, at least 24 hours before the trial or period ends. " +
       "On Android: Google Play, your profile, Payments & subscriptions, then Subscriptions. On the website: Settings, then Manage subscription. " +
       "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
-    freeWords("free-terms-7-free-plan", { date }) + " " + freeWords("free-terms-7-bank-end"),
+    // {date} is the day the free plan returns to the website (FREE_TERMS_DATE, also the Terms' "Last updated").
+    freeWords("free-terms-7-free-plan", { date: FREE_TERMS_DATE ? chargeDateLabel(new Date(`${FREE_TERMS_DATE}T12:00:00`)) : date }) + " " + freeWords("free-terms-7-bank-end"),
     "Apple or Google handle refunds for in-app purchases under their own policies. " +
       "On the website, partial periods are not refunded unless the law requires it.",
   ];

@@ -36,6 +36,8 @@ const APPROVED = {
     "- Sign up in Settings for a short weekly email of Canadian money dates.\n" +
     "- Small fixes and improvements.\n",
 };
+// The old upgrade texts the server sent beside plan_limit (gone 2026-11-23: every refusal now sends the approved
+// free-server-bank line, netlify/functions/_lib/freeWords.js). The app must never show any of them.
 const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks.", "Free plan supports one bank. Upgrade to Plus to add more."];
 
 (async () => {
@@ -80,12 +82,12 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
   // ── 6. The bank limit ─────────────────────────────────────────────────────────────────────────
-  // Free v1 on the website (2026-11-23): a store app still gets these two texts, word for word, beside plan_limit; the
-  // website's Free plan (no bank) gets its own word slot (netlify/functions/_lib/freeWords.js) in their place.
-  t.ok(UPGRADE_TEXTS.every((x) => PLAID.includes(x))
-    && /if \(cap > 0 && \(count \|\| 0\) >= cap\) \{\s*return \{ statusCode: 402, headers: CORS, body: JSON\.stringify\(\{ error: "plan_limit", message: "Connecting more than one bank/.test(PLAID)
-    && /const message = freeCap === 0 \? freeServerWords\("free-server-bank"\) : "Free plan supports one bank[^"]*";\s*failures\.push\(\{ error: "plan_limit", message, index, retry: false \}\);/.test(PLAID),
-    "6a (the server's two texts are the message beside the code plan_limit, in a store app)");
+  // Free v1 (approved 2026-11-23): the website, or a second bank in a store app, gets the approved free-server-bank line
+  // beside plan_limit, from all three places; the old upgrade texts are gone from the server.
+  t.ok(UPGRADE_TEXTS.every((x) => !PLAID.includes(x))
+    && /if \(cap > 0 && \(count \|\| 0\) >= cap\) \{\s*return \{ statusCode: 402, headers: CORS, body: JSON\.stringify\(\{ error: "plan_limit", message: freeServerWords\("free-server-bank"\) \}\) \};/.test(PLAID)
+    && /failures\.push\(\{ error: "plan_limit", message: freeServerWords\("free-server-bank"\), index, retry: false \}\);/.test(PLAID),
+    "6a (the server's text beside the code plan_limit is the approved free-server-bank line, in a store app too)");
   const call = APP.slice(APP.indexOf("async function callPlaid("), APP.indexOf("async function callPlaid(") + 3000);
   t.ok(/const err = new Error\(data\.error \|\| "Plaid error"\);/.test(call) && !/data\.message/.test(call), "6b the app builds a Plaid error from the code only, never the server's message");
   t.eq(UPGRADE_TEXTS.filter((x) => APP.includes(x) || APP.includes(x.split(". ")[1])), [], "6c neither upgrade text is anywhere in the app");

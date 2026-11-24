@@ -35,7 +35,7 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   const rows = [...DOC.matchAll(/^\| `(free-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)]
     .map((m) => ({ id: m[1], where: m[2].trim(), line: m[4].trim(), limit: Number(m[5]) }));
   t.eq(rows.map((r) => r.id).sort(), Object.keys(ALL).sort(), "1a the words doc lists exactly the slots in the two words files");
-  t.eq(Object.keys(ALL).length, 13, "1b (not vacuous: thirteen slots)");
+  t.eq(Object.keys(ALL).length, 12, "1b (not vacuous: twelve slots)");
   t.ok(rows.every((r) => r.line === ALL[r.id]), "1c each slot's line in the doc is its line in the code, word for word");
 
   // ── 2. each slot where it shows ──────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   t.eq((APP.match(/if\(isFreeBankRefusal\(err\)\)\{ freeBankDialogRef\.current\(\); return; \}/g) || []).length, 3,
     "2e …from Settings' new bank, a reconnect with no bank, and a refused exchange");
   t.ok(/const isFreeBankRefusal = \(err\) => !isNativeApp\(\) && \/plan_limit\//.test(APP), "2f …on the website only (a store app keeps FREE_BANK_LINE)");
-  t.eq((PLAID.match(/freeServerWords\("free-server-bank"\)/g) || []).length, 3, "2g the server's slot: the link token, the exchange and the old-bank import");
+  t.eq((PLAID.match(/freeServerWords\("free-server-bank"\)/g) || []).length, 4, "2g the server's slot: the link token, the exchange, the old-bank import, and a store app's second bank");
   const { UPGRADE_COPY } = await import("../src/lib/upgradeFlow.js");
   t.eq(UPGRADE_COPY.bullets[2], W.freeWords("free-plans-bullet-bank"), "2h the plans screen's third bullet");
   const { PLUS_INCLUDES } = await import("../src/lib/plusIncludes.js");
@@ -58,20 +58,28 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   t.ok(/const freePlansClose = \(!isNativeApp\(\) && !isPremium && !billingStatus\?\.paid && !billingStatus\?\.covered_by\) \? freeWords\("free-plans-close"\) : "Close";/.test(APP)
     && (APP.match(/closeLabel=\{freePlansClose\}/g) || []).length === 2 && /\{!required&&<button onClick=\{onClose\}[^>]*>\{closeLabel\}<\/button>\}/.test(APP),
     "2j the plans screen's close button, for an account without a plan (a paying one keeps \"Close\")");
-  t.ok(/: billingUi\.mode==="manage"\s*\? "Change your card or cancel\."\s*: freeWords\("free-settings-plan-line"\)\}/.test(APP), "2k Settings' plan card line");
-  t.ok(/\(tpfOn && !isNativeApp\(\)\) \? freeWords\("free-signup-title"\) : switchWords\("trialfirst-signup-title", tpfOn\)/.test(APP), "2l the website's sign-up heading (a store app keeps its own)");
+  t.ok(/: billingUi\.mode==="manage"\s*\? "Change your card or cancel\."\s*: onFreePlan\s*\? freeWords\("free-settings-plan-line"\)\s*: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If\."\}/.test(APP)
+    && /onFreePlan=\{!isPremium && !billingStatus\?\.paid && !billingStatus\?\.covered_by\}/.test(APP),
+    "2k Settings' plan card line, only for an account on the free plan (one in an account trial or founder access keeps today's line)");
+  t.ok(!/free-signup-title/.test(APP) && /\{mode === "signup" \? switchWords\("trialfirst-signup-title", tpfOn\)/.test(APP), "2l the sign-up heading is today's, unchanged (no new words for it)");
   t.eq((APP.match(/freeWords\("free-landing-line"\)/g) || []).length, 2, "2m the landing's line, top and bottom");
   t.ok(!/trialWords\("trialfirst-landing"\)/.test(APP), "2n …and the old line is no longer shown");
   const META = await import("../scripts/trial-first-meta.mjs");
   t.eq(META.META_ON, W.freeWords("free-page-description"), "2o the page description's sentence");
   const html = read("index.html");
   const on = META.trialFirstMeta(html, { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-18T18:55:00Z" });
-  t.eq((on.match(new RegExp(W.freeWords("free-page-description").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 2, "2p …in both descriptions while plans come first");
+  const descs = [...on.matchAll(/<meta (?:name="description"|property="og:description") content="([^"]*)" \/>/g)].map((m) => m[1]);
+  t.eq(descs, [META.META_ON_HTML, META.META_ON_HTML], "2p …as the whole of both descriptions while plans come first");
   const F = await import("../src/lib/freePlan.js");
   const web = F.trialFirstTermsSection7("2026-11-18T18:55:00Z", { web: true }).join(" ");
   t.ok(web.includes(W.freeWords("free-terms-7-new-account")) && web.includes(W.freeWords("free-terms-7-bank-end")) && !web.includes("A new account chooses a plan to keep using flourish."),
     "2q the website's Terms section 7: the new-account sentence and the bank sentence, not \"chooses a plan to keep using\"");
   t.ok(!/then moves to the free plan: 2 coach messages a week, 1 What-If a day, 1 connected bank/.test(web), "2r …and not the free plan with \"1 connected bank\"");
+  const { chargeDateLabel } = await import("../src/lib/trialPlanFirst.js");
+  const shipDay = W.FREE_TERMS_DATE ? chargeDateLabel(new Date(`${W.FREE_TERMS_DATE}T12:00:00`)) : null;
+  t.ok(!!shipDay && web.includes(`in the 14-day account trial on ${shipDay} keeps that trial`) && !web.includes("November 18, 2026"),
+    `2r2 …and its {date} is the day the free plan returns (FREE_TERMS_DATE, ${shipDay}), not the day plans came first`);
+  t.ok(!/\{date\}/.test(web), "2r3 …with no {date} left unfilled");
   const store = F.trialFirstTermsSection7("2026-11-18T18:55:00Z").join(" ");
   t.ok(store.includes("A new account chooses a plan to keep using flourish.") && !PLACEHOLDER.test(store), "2s a store app's Terms are today's, with no slot");
   t.ok(/trialFirstTermsSection7\(tpfSince, \{ web: !isNativeApp\(\) \}\)/.test(APP), "2t the Terms page asks for the website's text on the website");

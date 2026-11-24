@@ -17,38 +17,36 @@
 export const FREE_WORDS = Object.freeze({
   // The website, a Free account at "Connect a bank" (onboarding's bank step, Settings, a reconnect with no bank):
   // the line, and the button with it that opens the plans.
-  "free-bank-line": "[WORDS: free-bank-line]",
-  "free-bank-button": "[WORDS: free-bank-button]",
+  "free-bank-line": "Connecting a bank requires a flourish subscription. On the free plan, you can add your balances, bills and paydays by hand.",
+  "free-bank-button": "See plans",
   // The website's plans screen: the bullet that replaces "More than one bank, all in one place".
-  "free-plans-bullet-bank": "[WORDS: free-plans-bullet-bank]",
+  "free-plans-bullet-bank": "Read-only bank connections",
   // The website's locked screens (Credit, the coach-run meeting): the line in "what a subscription includes" that
   // replaces "More than one connected bank".
-  "free-includes-bank": "[WORDS: free-includes-bank]",
+  "free-includes-bank": "Connected banks",
   // The website's plans screen: the button that closes it onto Free (today "Close").
-  "free-plans-close": "[WORDS: free-plans-close]",
+  "free-plans-close": "Continue on the free plan",
   // The website's Settings, the plan card's line (today "Flourish Plus adds Credit and the coach-run meeting, and
   // lifts the free plan's limits on the coach and What-If.").
-  "free-settings-plan-line": "[WORDS: free-settings-plan-line]",
-  // The website's sign-up card heading (today "Create your account" while plans come first).
-  "free-signup-title": "[WORDS: free-signup-title]",
+  "free-settings-plan-line": "You're on the free plan.",
   // The website's landing: the line under "Get started", top and bottom (today "Choose a plan to get started. ...").
-  "free-landing-line": "[WORDS: free-landing-line]",
+  "free-landing-line": "On the website, use the free plan or choose a flourish subscription to connect banks. Eligible new subscribers get 14 days free with payment details required, then the subscription renews at the listed price unless cancelled. flourish is also on iPhone and Android.",
   // The website's page description (search results and link previews): the sentence after "Know what's safe to
   // spend until payday. A Canadian money app where safe to spend is built around your paydays."
-  "free-page-description": "[WORDS: free-page-description]",
+  "free-page-description": "flourish is a Canadian money app that shows what's safe to spend until payday.",
   // Terms of Service section 7 on the website (plans first): the sentence that replaces "A new account chooses a
   // plan to keep using flourish.", the paragraph that says what the free plan is (replaces "An account opened
   // before {date} keeps its 14-day account trial ... then moves to the free plan: ..."), and what happens to a
   // connected bank when a plan or trial ends. {date} is filled in by the code, as today.
-  "free-terms-7-new-account": "[WORDS: free-terms-7-new-account]",
-  "free-terms-7-free-plan": "[WORDS: free-terms-7-free-plan]",
-  "free-terms-7-bank-end": "[WORDS: free-terms-7-bank-end]",
+  "free-terms-7-new-account": "A new account can use the free plan or choose a paid plan.",
+  "free-terms-7-free-plan": "The free plan includes 2 coach messages a week and 1 What-If a day. It does not include Credit or the coach-run money meeting. On the website, the free plan does not connect a bank. In the iPhone and Android apps, the free plan can connect 1 bank. An account already in the 14-day account trial on {date} keeps that trial to its end, then moves to the free plan.",
+  "free-terms-7-bank-end": "If a paid plan ends, a bank you already connected stays connected. If we change that, we will email you at least 30 days before.",
 });
 
 // THE TERMS' NEW DATE. The website's Terms change with these words, so their "Last updated" date (and the date the
 // consent step records, lib/legalConsent.js) moves to the day the words go live: "YYYY-MM-DD", set when the words are
 // pasted in. null until then, and tests/freeV1Words.test.cjs fails while it is. The store apps' Terms do not move.
-export const FREE_TERMS_DATE = null;
+export const FREE_TERMS_DATE = "2026-11-23";
 
 const PLACEHOLDER = /\[WORDS:\s*free-/;
 
