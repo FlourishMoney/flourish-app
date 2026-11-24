@@ -16,8 +16,8 @@
 //   third_open_day  the 3rd different day (the person's own calendar day) the app is opened on this install
 //                   (2026-11-24). The days need not be in a row.
 // The last two come once per install: once a moment has come, whether or not the rules below let it ask, it never
-// asks again, so it never turns up later at some other, unrelated moment. (Amanda, 2026-11-24: the meeting alone is
-// reached by almost nobody.)
+// asks again, so it never turns up later at some other, unrelated moment. (2026-11-24: the meeting alone is reached by
+// almost nobody.)
 //
 // NEVER straight after something went wrong: an error, a bank link that failed, a payment the store
 // declined (or a purchase that did not finish), or a coach message that was refused. Any of those in the

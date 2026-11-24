@@ -7,7 +7,7 @@
 //    at most three asks in any 365 days; never within 24 hours of trouble (an error, a failed bank link,
 //    a declined payment, a refused coach message); never on the web or in demo mode. The retired
 //    triggers (third day on Today, weekly check-in) ask nothing.
-//    2026-11-24 (Amanda: the meeting is reached by almost nobody): two more moments, native only, under the same
+//    2026-11-24 (the meeting is reached by almost nobody): two more moments, native only, under the same
 //    limits. About 3 seconds after the first safe-to-spend number shows (first_safe), and the 3rd different day the
 //    app is opened (third_open_day). Each comes once per install: once it has come, asked or not, it never asks again.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.

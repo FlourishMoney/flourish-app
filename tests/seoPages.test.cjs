@@ -193,7 +193,7 @@ function checkLd(blocks, visibleText) {
   t.ok(llms.includes(`(${APP_STORE})`) && llms.includes(`(${PLAY})`), "4c it links both store pages");
   for (const g of published) t.ok(llms.includes(`[${g.title}](${SITE}/guides/${g.slug}/)`), `4d it links the guide ${g.slug}`);
   t.ok(!/—/.test(llms), "4e no em dash");
-  // 2026-11-24: Amanda approved two lines that name the browser and the website (docs/product/AI-VISIBILITY-WORDS.md, item 6).
+  // 2026-11-24: two approved lines that name the browser and the website (docs/product/AI-VISIBILITY-WORDS.md, item 6).
   // They are the only exceptions, word for word; anything else that promotes a web app still fails.
   t.ok(llms.includes(SEO.LLMS_APPROVED.where) && llms.includes(SEO.LLMS_APPROVED.pricing), "4f0 the two approved lines that name the browser and the website");
   t.ok(!/browser|home screen|web app|sign up on the website/i.test(llms.replace(SEO.LLMS_APPROVED.where, "").replace(SEO.LLMS_APPROVED.pricing, "")), "4f beyond them it promotes no web app: the way in is the stores");

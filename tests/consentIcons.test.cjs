@@ -1,6 +1,6 @@
 // tests/consentIcons.test.cjs
 // -----------------------------------------------------------------------------
-// POLISHED ICONS ON TWO FIRST-RUN SCREENS (2026-11-24). Amanda: the robot on "About AI in Flourish" looks juvenile; it
+// POLISHED ICONS ON TWO FIRST-RUN SCREENS (2026-11-24). The owner: the robot on "About AI in Flourish" looks juvenile; it
 // must look polished and sleek. The same for the emoji used as icons on the onboarding bank step.
 //   1  "About AI in Flourish": the app's own flourish diamond mark (FlourishMark) at the top, at the 48 px the robot
 //      was drawn at, in place of the robot. Web and the phone apps share this screen, so both change.
