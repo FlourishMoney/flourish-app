@@ -72,7 +72,7 @@ async function plaid(endpoint, body) {
 }
 
 // ── A REFUSED BANK IS CLEANED UP DURABLY (free v1, review round 1, 2026-11-23) ─────────────────────────────────────
-// Ported as-is from plus-1.1.8 (removeRefusedItem, keepRefusedRow, removeRefusedRow, alertItemNotRemoved,
+// Ported as-is from plus-1.1.8 (removeRefusedItem, keepRefusedRow (removed in round 4), removeRefusedRow, alertItemNotRemoved,
 // finishRefusedBanks: rounds 2 to 7 of the Plus review; its markRefused is for paths this branch does not change). No migration: a refused row is an ordinary plaid_items row
 // whose status text is "refused" (_lib/freeBanks.js REFUSED). Added here: claimRefusedRow (whether the account holds
 // the bank, found out by the write itself when the read failed) and alertRefusedPending (the error tracker hears of a
@@ -99,21 +99,8 @@ async function removeRefusedItem(access_token, item_id, where) {
 // limit, is never in the list the app is sent, and is never read (resolveAccessToken).
 // It is deleted once Plaid has removed the Item; until then finishRefusedBanks tries again each time its owner's banks
 // are listed. Without it, a removal Plaid would not do left the Item live there with no record anywhere.
-// Used: before the removal, where no row exists yet (a new bank refused at the limit); after a removal that failed,
-// where the row has just gone (a disconnect, a duplicate) or could not be written (a save that failed).
-// Returns true when the row is there. Three tries; a row that cannot be kept is named in one error line.
-async function keepRefusedRow(admin, user_id, bank, where) {
-  const row = { user_id, item_id: bank.item_id, access_token: bank.access_token, institution_id: bank.institution_id || null, institution_name: bank.institution_name || "Your Bank", status: REFUSED };
-  for (let i = 0; i < REMOVE_TRIES; i++) {
-    try {
-      const { error } = await admin.from("plaid_items").upsert(row, { onConflict: "user_id,item_id" });
-      if (!error) return true;
-    } catch (e) { /* tried again */ }
-    if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 100 * (i + 1)));
-  }
-  console.error(`[${where}] could not keep a refused row for a bank still to be removed at Plaid:`, bank.item_id);
-  return false;
-}
+// It is only ever written by claimRefusedRow below, never over a row already there (review round 4, R4-1: the port's
+// keepRefusedRow, an unconditional upsert, could overwrite a bank saved as connected meanwhile, and is gone).
 
 // WHETHER THE ACCOUNT HOLDS THIS BANK, WHEN THAT COULD NOT BE READ (free v1, review round 1). The refused row is
 // written ONLY IF NO ROW IS THERE (insert, conflicts ignored): a row that went in means the account held no row for
@@ -410,24 +397,21 @@ exports.handler = async (event) => {
         // finishRefusedBanks tries again each time the banks are listed, and the error tracker is told.
         const WHERE = "exchange_token free plan";
         const { data: held, error: heldErr } = await admin.from("plaid_items").select("item_id, status").eq("user_id", user_id).eq("item_id", item_id).maybeSingle();
-        let isNew, rowKept;
-        if (heldErr) {
-          // Whether the account holds it could not be read. Never removed on a guess: it may be this account's own bank.
-          // The refused row goes in only if no row is there, and that write says which it is (claimRefusedRow).
+        // A connected (not refused) row read for this Item is the account's own bank: a reconnect, nothing claimed.
+        // Anything else (no row, a refused row, or a read that failed) is CLAIMED before anything is removed (review
+        // round 4, R4-1): the refused row goes in only if no row is there (claimRefusedRow), never written over one, so
+        // the same Item saved as connected between the read and the claim is never overwritten or removed. The claim
+        // says which it is: "new" (it went in) or "refused" (a refused row is there): a refused row keeps the Item, so it
+        // is removed at Plaid; "held" (a connected row is there now): nothing removed, the reconnect goes on; "unknown":
+        // nothing removed, "unavailable".
+        if (heldErr || !held || held.status === REFUSED) {
           const claim = await claimRefusedRow(admin, user_id, bank, WHERE);
           if (claim === "unknown") { await alertItemNotRemoved(user_id, item_id, WHERE, "owner_unread"); return statusUnavailable(CORS); }
-          isNew = claim === "new" || claim === "refused";
-          rowKept = isNew;
-        } else {
-          // A row marked refused is a bank on its way out, not one the account holds.
-          isNew = !held || held.status === REFUSED;
-          rowKept = isNew ? await keepRefusedRow(admin, user_id, bank, WHERE) : false;
-        }
-        if (isNew) {
-          if (await removeRefusedItem(access_token, item_id, WHERE)) await removeRefusedRow(admin, user_id, item_id, WHERE);
-          else if (!rowKept) { await alertItemNotRemoved(user_id, item_id, WHERE, "no_record"); return statusUnavailable(CORS); }
-          else await alertRefusedPending(user_id, item_id, WHERE);
-          return planRefusal;
+          if (claim !== "held") {
+            if (await removeRefusedItem(access_token, item_id, WHERE)) await removeRefusedRow(admin, user_id, item_id, WHERE);
+            else await alertRefusedPending(user_id, item_id, WHERE);
+            return planRefusal;
+          }
         }
         // A bank this account holds (a reconnect in Plaid's update mode): it goes on below, saved as connected.
       }
@@ -439,7 +423,7 @@ exports.handler = async (event) => {
         if (saveErr) console.error("[exchange_token save]", saveErr.message);
         // REVIEW ROUND 3 (R3-2): what is there NOW is read back, never a snapshot from before the save:
         //   saved (an error whose write went in): a success, nothing removed
-        //   refused: not saved, the plan refusal (the clean-up finishes its removal)
+        //   refused: not saved; the plan refusal on a free plan, "try again" otherwise (the clean-up finishes its removal)
         //   any other row (a bank the account holds, or one saved meanwhile): left exactly as it is, "try again"
         //   unreadable: nothing removed, a person is told, "try again"
         //   absent: the refused row is CLAIMED (written only if none is there) before the Item is removed at Plaid,
@@ -447,7 +431,9 @@ exports.handler = async (event) => {
         const SAVE = "exchange_token save failed";
         const tryAgain = { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again.", retry: true }) };
         const there = await rowNow(admin, user_id, item_id, access_token);
-        if (there === "refused") return planRefusal;
+        // Refused (review round 4, R4-2): the plan refusal's words are true only for a free plan; a paid or trialing
+        // account hears "try again", retryable (the Item is on its way out at Plaid).
+        if (there === "refused") return ENFORCE_PLAN_LIMITS && !unlimited ? planRefusal : tryAgain;
         if (there === "held") return tryAgain;
         if (there === "unknown") { await alertItemNotRemoved(user_id, item_id, SAVE, "owner_unread"); return tryAgain; }
         if (there === "absent") {

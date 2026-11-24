@@ -38,6 +38,11 @@
 //   E  R3-4 the clean-up claims a row (refused, last tried over 5 minutes ago) before calling Plaid: overlapping
 //      listings call Plaid once for an Item
 //   P  a paying or trialing person's connected bank is never removed at Plaid by any of these paths
+// Review round 4 (Grok 100, Gemini 100, ChatGPT 94, on 5585eb4):
+//   K  R4-1 the free plan's refusal CLAIMS the refused row (insert only if absent) whether or not the first read worked:
+//      a connected row appearing between the read and the claim survives, and Plaid is never asked to remove it
+//   A1/A2 (R4-2) a refused row read back: a paid or trialing account hears "Could not save … try again" (retryable),
+//      never the free plan's words; a free plan keeps the plan refusal
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -242,8 +247,23 @@ const PAID = { plan: "annual", unlimited: true, paid: true, status_unavailable: 
   db = makeDb({ fail: [failItemWrites] });
   r = await exchange(db);
   t.eq(r.status, 503, "R4a neither Plaid nor the database: \"unavailable\", never the ordinary refusal");
-  t.ok(net.sentry.some((b) => b.includes("plaid_item_no_record") && b.includes("it-new")), "R4b the error tracker is told the Item has no record");
+  // Round 4 (R4-1): the refused row is CLAIMED before anything is removed; a claim that cannot be written removes nothing.
+  t.ok(net.sentry.some((b) => b.includes("plaid_item_owner_unread") && b.includes("it-new")), "R4b the error tracker is told whose bank it is could not be told");
   t.ok(net.sentry.every((b) => !b.includes(TOKEN)), "R4c …never with the token");
+  t.eq(net.removeAsked.length, 0, "R4d …and nothing is removed at Plaid");
+
+  // ── K (R4-1): the free plan's refusal claims the refused row, whether or not the first read worked ─────────
+  // The read finds no row; before the refused row is written, the same Item is saved as connected.
+  reset();
+  db = makeDb({ fail: [(q) => {
+    if (q.table === "plaid_items" && ["upsert", "insert"].includes(q.op) && q.payload && q.payload.status === "refused" && !item(db, "it-new"))
+      db.tables.plaid_items.push({ user_id: "u1", item_id: "it-new", status: "active", access_token: "access-saved", created_at: LONG_AGO, updated_at: LONG_AGO });
+    return null;
+  }] });
+  r = await exchange(db);
+  t.eq(net.removeAsked.length, 0, "K1 a connected row appearing between the read and the claim: Plaid is never asked to remove the Item");
+  t.eq(item(db, "it-new") && item(db, "it-new").status, "active", "K2 …and the connected row survives, never overwritten as refused");
+  t.ok(!db.log.some((l) => l.table === "plaid_items" && l.op === "upsert" && l.payload && l.payload.status === "refused" && !l.opts.ignoreDuplicates), "K3 …no refused row is ever written over one there (insert only if absent)");
 
   // ── R5: the ordinary case: Plaid removes it at once ───────────────────────────────────────────────────────
   reset();
@@ -430,11 +450,15 @@ const PAID = { plan: "annual", unlimited: true, paid: true, status_unavailable: 
 
   // ── A (R3-1): the exchange never saves a connected bank over a refused row ─────────────────────────────────
   const TRIAL = { plan: "trial", unlimited: true, paid: false, status_unavailable: false };
-  for (const [name, origin, plan] of [["a paid account", WEB, PAID], ["a trial in a store app", IOS, TRIAL], ["a store app's free plan", IOS, undefined]]) {
+  // Round 4 (R4-2): the plan refusal ("needs a flourish subscription") is said only to a free plan; a paid or trialing
+  // account hears the existing "Could not save your bank connection. Please try again.", retryable.
+  const COULD_NOT_SAVE = [503, "Could not save your bank connection. Please try again.", true];
+  for (const [name, origin, plan, answer] of [["a paid account", WEB, PAID, COULD_NOT_SAVE], ["a trial in a store app", IOS, TRIAL, COULD_NOT_SAVE], ["a store app's free plan", IOS, undefined, [402, "plan_limit", undefined]]]) {
     reset();
     db = makeDb({ items: [{ item_id: "it-new", status: "refused", access_token: "access-out" }] });
     r = await exchange(db, { origin, plan });
-    t.eq([r.status, r.json.error], [402, "plan_limit"], `A1 ${name}: an Item whose row is refused is not saved: the plan refusal`);
+    t.eq([r.status, r.json.error, r.json.retry], answer, `A1 ${name}: an Item whose row is refused is not saved: ${answer[0] === 402 ? "the plan refusal" : "\"try again\", never the free plan's words"}`);
+    if (answer[0] !== 402) t.ok(!/subscription/i.test(JSON.stringify(r.json)) && r.json.error !== "plan_limit", `A1 ${name}: …never told it needs a subscription`);
     t.eq([item(db, "it-new").status, item(db, "it-new").access_token], ["refused", "access-out"], `A1 ${name}: …its row stays refused, its token untouched`);
   }
   // The exchange lands while the clean-up is removing that Item at Plaid.
@@ -447,7 +471,7 @@ const PAID = { plan: "annual", unlimited: true, paid: true, status_unavailable: 
     const row = item(db, "it-new");
     const itemRemoved = net.removed.has("access-out") || net.removed.has(TOKEN);
     t.ok(!(row && row.status === "active" && itemRemoved), `A2 ${name}: a save racing the clean-up never ends as a connected bank whose Item was removed at Plaid`);
-    t.eq([during && during.status, row], [402, null], `A2 ${name}: …the clean-up had begun: the save is refused and the row is finished`);
+    t.eq([during && during.status, during && during.json.retry, row], [503, true, null], `A2 ${name}: …the clean-up had begun: the save is not made ("try again") and the row is finished`);
   }
   // The save wins: the row was saved as connected before the clean-up reached it (its listing was older).
   reset();

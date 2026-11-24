@@ -76,7 +76,13 @@ function fakeSupabase(h, banks, bankStatus = "active") {
         in(col, vals) { q._f.push((r) => vals.includes(r[col])); return q; },
         neq(col, val) { q._f.push((r) => r[col] !== val); return q; },
         order() { return q; }, limit() { return q; },
-        upsert(v) { calls.writes.push([table, "upsert", v]); q._stop = true; return q; },
+        // Every write is refused, except the refused row's insert-if-absent (review round 4, R4-1: the free plan's
+        // refusal claims that row before anything is removed at Plaid), which goes in where no row is there.
+        upsert(v, o) {
+          calls.writes.push([table, "upsert", v]);
+          if (table === "plaid_items" && o && o.ignoreDuplicates && v && v.status === "refused") q._claim = v; else q._stop = true;
+          return q;
+        },
         insert(v) { calls.writes.push([table, "insert", v]); q._stop = true; return q; },
         update(v) { calls.writes.push([table, "update", v]); q._stop = true; return q; },
         delete() { calls.writes.push([table, "delete"]); q._stop = true; return q; },
@@ -84,7 +90,9 @@ function fakeSupabase(h, banks, bankStatus = "active") {
         async maybeSingle() { return q._stop ? { data: null, error: { message: "test stops here" } } : { data: q._rows()[0] || null, error: null }; },
         async single() { return q.maybeSingle(); },
         then(res, rej) {
-          const out = q._stop ? { data: null, error: { message: "test stops here" } }
+          const there = q._claim && (rows.plaid_items || []).some((r) => r.user_id === q._claim.user_id && r.item_id === q._claim.item_id);
+          const out = q._claim ? { data: there ? [] : [{ item_id: q._claim.item_id }], error: null }
+            : q._stop ? { data: null, error: { message: "test stops here" } }
             : q._head ? { count: q._rows().length, error: null } : { data: q._rows(), error: null };
           return Promise.resolve(out).then(res, rej);
         },

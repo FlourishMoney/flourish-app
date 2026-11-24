@@ -77,6 +77,16 @@ Branch `free-v1-web`, from main `f048f72` (2026-11-23). Website only. The iPhone
   refused and its last try is over 5 minutes old, stamping the try time. A claim that matches nothing is skipped, so
   overlapping listings call Plaid once for an Item.
 
+## Review round 4 (on 5585eb4: Grok 100, Gemini 100, ChatGPT 94)
+
+- R4-1: the free plan's refusal claims the refused row (`claimRefusedRow`, insert only if absent) whenever the read did
+  not find a connected row: no row, a refused row, or a read that failed. A connected row that appears between the
+  read and the claim is "held": nothing removed, the reconnect goes on. "unknown": nothing removed, "unavailable". The
+  port's `keepRefusedRow` (an unconditional upsert) is gone. A claim that finds a refused row still removes the Item at
+  Plaid, as before: a refused row can never be saved as connected, so nothing connected can be lost.
+- R4-2: a refused row read back after a save answers the plan refusal only on a free plan; a paid or trialing account
+  hears the existing "Could not save your bank connection. Please try again." (503, retryable). No new words.
+
 ## Not in this branch
 
 - Removing a bank at the end of a paid period (a bank kept after a trial ends stays connected and billed for now).
