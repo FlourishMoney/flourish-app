@@ -203,8 +203,9 @@ function androidProduct(plan, price, { offer = false } = {}) {
       lib.rememberRequired(st, U, true);
       lib.rememberRequired(st, U, false);   // the answer that said "paid" (the trial started)
       t.eq(lib.recalledRequired(st, U), false, "3g the plans that cannot be closed are not remembered for a household that has started its trial");
-      t.ok(APP.includes("const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow===\"required\"\n    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken\n       && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));"),
-        "3h with no answer, those plans show only if the server last said \"must choose\" and this device remembers no payment");
+      // Free v1 on the website (2026-11-23): the website has the free plan, so only a store app is held on a remembered answer.
+      t.ok(APP.includes("const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow===\"required\"\n    : (isNativeApp() && recalledRequired(deviceStorage(), user.id) && !householdLinkToken\n       && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));"),
+        "3h with no answer, those plans show only in a store app, only if the server last said \"must choose\" and this device remembers no payment");
       let bought = 0;
       const deps = (serverStatus, serverHold) => ({ serverStatus, serverHold, serverSync: async () => ({ paid: true }), purchasePackage: async () => { bought++; }, sleep: async () => {}, attempt: { current: null } });
       const noAnswer = await store.buy(deps(async () => null, async () => ({ held: true })), { product: {} });

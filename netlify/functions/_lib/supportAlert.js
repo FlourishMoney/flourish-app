@@ -29,11 +29,33 @@ const WHAT = Object.freeze({
   creator_refund_reversed: "a store took back a refund for a household with a creator: any clawback is unchanged",
   creator_own_code: "a payment by a household that includes the creator whose code it holds: no commission was recorded",
   creator_not_cad: "a payment by a household with a creator, not in Canadian dollars: no commission was recorded",
+  // Round 7 of the Plus review (R7-1): a bank Item that Plaid would not remove, when the database could not record it.
+  plaid_item_no_record: "a bank Item is still live at Plaid and flourish holds NO row for it (Plaid would not remove it, and the row that remembers it could not be written)",
+  plaid_item_removal_stuck: "a bank could not be removed at Plaid and could not be marked for a later try; its row is still there, connected, as it was",
+  // Free v1, review round 1 (2026-11-23): whether the account already held a bank it just linked could not be read.
+  plaid_item_owner_unread: "a bank was linked on the website's free plan and the database could not say whether the account already held it; nothing was removed at Plaid and nothing was saved",
 });
 
 // The message, exactly as sent. No address, no amount: the account id is how support finds it.
-function supportAlertMessage({ flag, userId, provider }) {
+function supportAlertMessage({ flag, userId, provider, itemId, path }) {
   const what = WHAT[flag] || flag;
+  // A bank Item (never its token): the Item's id is how it is found in Plaid's dashboard.
+  if (String(flag).startsWith("plaid_item_")) {
+    return {
+      subject: `[flourish support] ${flag}`,
+      text: [
+        `The server could not finish removing a bank: ${what}.`,
+        `Account: ${userId}`,
+        `Plaid Item id: ${itemId || "unknown"}`,
+        `Where it happened: ${path || "unknown"}`,
+        flag === "plaid_item_no_record"
+          ? "Nothing in the database remembers this Item, so nothing will retry it. Remove it by hand: Plaid dashboard, Items, search the Item id, Remove. The person's account is otherwise as they left it."
+          : flag === "plaid_item_owner_unread"
+          ? "Check first whether this account has a plaid_items row for this Item id. If it does, it is the person's own bank: leave it. If it does not, nothing will retry it: remove it by hand (Plaid dashboard, Items, search the Item id, Remove)."
+          : "The bank is still connected for this person, exactly as before, and nothing was deleted. If this message repeats, check the database and Plaid's status; the person can try again, and the same bank can be removed in Plaid's dashboard by its Item id.",
+      ].join("\n"),
+    };
+  }
   return {
     subject: `[flourish support] ${flag}`,
     text: [
@@ -49,11 +71,11 @@ function supportAlertMessage({ flag, userId, provider }) {
   };
 }
 
-async function alertSupport({ flag, userId, provider }, { env = process.env, fetchImpl = (typeof fetch === "function" ? fetch : null) } = {}) {
+async function alertSupport({ flag, userId, provider, itemId, path }, { env = process.env, fetchImpl = (typeof fetch === "function" ? fetch : null) } = {}) {
   try {
     const key = String(env.RESEND_API_KEY || "").trim();
     if (!key || !fetchImpl) { console.log("[support-alert] SUPPORT_ALERT_SKIPPED", flag); return false; }
-    const { subject, text } = supportAlertMessage({ flag, userId, provider });
+    const { subject, text } = supportAlertMessage({ flag, userId, provider, itemId, path });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {

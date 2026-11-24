@@ -47,6 +47,7 @@ function fakeDb(answer) {
       delete() { call.op = "delete"; return api; },
       eq(k, v) { call.filters.push(["eq", k, v]); return api; },
       lt(k, v) { call.filters.push(["lt", k, v]); return api; },
+      neq(k, v) { call.filters.push(["neq", k, v]); return api; },
       in(k, v) { call.filters.push(["in", k, v]); return api; },
       is(k, v) { call.filters.push(["is", k, v]); return api; },
       order() { return api; }, limit() { return api; },
@@ -186,7 +187,8 @@ function memStore(init = {}) {
     const item = (token) => ({ item: { item_id: "item-" + token.slice(-1), institution_id: "ins_1" } });
     // three tokens: A saves, B's bank lookup times out (no Plaid code), C is refused by Plaid for good
     const db = fakeDb((c) => {
-      if (c.table === "plaid_items" && c.op === "upsert") return { data: null, error: null };
+      // A row that went in answers itself (free v1 review round 2: migrate_items inserts if absent, with .select()).
+      if (c.table === "plaid_items" && c.op === "upsert") return { data: [{ item_id: "item-A" }], error: null };
       return { data: [], error: null };
     });
     const r = await plaidCall({ action: "migrate_items", tokens: [{ token: "tok-A", institution_name: "Bank A" }, { token: "tok-B", institution_name: "Bank B" }, { token: "tok-C", institution_name: "Bank C" }] }, {

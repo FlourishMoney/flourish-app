@@ -149,7 +149,7 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
       "4m a store build that does not sell: the Terms keep their own date, as the page does");
     t.eq(await C.currentLegalVersions({ fetchImpl: async () => { throw new Error("offline"); }, termsDatedBySwitch: true }), { terms_version: "2026-10-14", privacy_version: P117 },
       "4n no answer: the pages' own fallback dates");
-    t.ok(/termsDatedBySwitch: !isNativeApp\(\) \|\| storeBillingBuild\(\)/.test(APP) && /const tpfTerms = \(!isNativeApp\(\) \|\| storeBillingBuild\(\)\) \? trialFirstTermsSection7\(tpfSince\) : null;/.test(APP),
+    t.ok(/termsDatedBySwitch: !isNativeApp\(\) \|\| storeBillingBuild\(\)/.test(APP) && /const tpfTerms = \(!isNativeApp\(\) \|\| storeBillingBuild\(\)\) \? trialFirstTermsSection7\(tpfSince, \{ web: !isNativeApp\(\) \}\) : null;/.test(APP),
       "4o the record dates the Terms where the Terms page does");
   }
 
@@ -174,7 +174,11 @@ async function record(body, { signedIn = true, origin = "capacitor://localhost",
     t.eq(await C.currentLegalVersions({ fetchImpl: async () => { throw new Error("offline"); }, termsDatedBySwitch: true, giftDate: GIFT }), { terms_version: GIFT, privacy_version: GIFT },
       "5e the record on the website, no answer: both pages' gift date");
     t.ok(/giftDate: isNativeApp\(\) \? null : GIFT_LEGAL_DATE,/.test(APP) && /const giftDay = isNativeApp\(\) \? null : GIFT_LEGAL_DATE;/.test(APP) &&
-      /const lastShown = giftDay && withGiftDate\(termsVersion\(tpfTerms \? tpfSince : null, true\), giftDay\) === giftDay \? policyDateLabel\(giftDay\) : last;/.test(APP) &&
+      // Free v1 on the website (2026-11-23): the Terms (not the Privacy Policy) also take the free v1 words' day, once set,
+      // in the same place, and the record takes it beside the gift date (tests/freeV1Words.test.cjs 3a-3c).
+      /const extraDay = withGiftDate\(withGiftDate\("", giftDay\), isNativeApp\(\) \? null : FREE_TERMS_DATE\) \|\| null;/.test(APP) &&
+      /const lastShown = extraDay && withGiftDate\(termsVersion\(tpfTerms \? tpfSince : null, true\), extraDay\) === extraDay \? policyDateLabel\(extraDay\) : last;/.test(APP) &&
+      /freeTermsDate: isNativeApp\(\) \? null : FREE_TERMS_DATE,/.test(APP) &&
       APP.includes("Terms of Service</div>\n          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {lastShown}</div>"),
       "5f the record, the Terms page and the Privacy Policy take the gift date in the same place: on the website, never in a store app");
   }

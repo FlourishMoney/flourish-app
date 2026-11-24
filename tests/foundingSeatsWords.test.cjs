@@ -64,7 +64,8 @@ const HOLD = /\[WORDS:\s*[a-z0-9-]+/;
   // balance-truth (2026-11-06): the second exception's lines (lib/balanceWords.js) hold the build back the same way.
   // trial plan first (2026-11-10): the third exception's lines hold the build back the same way.
   // gifts (2026-11-20): the fourth exception's lines hold the build back the same way.
-  t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingBalanceWordIds().length || PW.pendingTrialWordIds().length || PW.pendingGiftWordIds().length ? 1 : 0, "3b the production build's guard refuses while one of those is left, and finds none once they are approved");
+  // free v1 on the website (2026-11-23): the fifth's too (and tests/freeV1Words.test.cjs fails while any is left).
+  t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingBalanceWordIds().length || PW.pendingTrialWordIds().length || PW.pendingGiftWordIds().length || PW.pendingFreeWordIds().length ? 1 : 0, "3b the production build's guard refuses while one of those is left, and finds none once they are approved");
 
   // 4. The founding list form is gone.
   const APP = read("src", "App.jsx");

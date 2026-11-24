@@ -421,8 +421,9 @@ const updates = (calls, table = "plaid_items") => calls.filter((c) => c.table ==
     const { execFileSync } = require("child_process");
     let guard = 0;
     try { execFileSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public"], { cwd: REPO, stdio: "pipe" }); } catch (e) { guard = e.status; }
-    // trial plan first (2026-11-10): its listed placeholders hold the build back the same way. So do the gifts' (2026-11-20).
-    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingTrialWordIds().length || PW.pendingGiftWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
+    // trial plan first (2026-11-10): its listed placeholders hold the build back the same way. So do the gifts' (2026-11-20),
+    // and free v1's on the website (2026-11-23; tests/freeV1Words.test.cjs fails while any is left).
+    t.eq(guard, PW.pendingCreatorWordIds().length || PW.pendingTrialWordIds().length || PW.pendingGiftWordIds().length || PW.pendingFreeWordIds().length ? 1 : 0, "7j the production and store builds' guard finds no balance placeholder");
   }
 
   t.summary("balanceTruth.test");

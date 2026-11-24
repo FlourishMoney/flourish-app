@@ -290,9 +290,12 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     const all = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), "src", "netlify/functions", "public", "index.html"], { cwd: REPO, encoding: "utf8" });
     // Gifts (2026-11-20): the one other set still to come, each in its own words home and listed as pending in
     // docs/review/GIFT-COPY.md (tests/_pendingWords.cjs), holds the build back on its own. None of trial plan first's is left.
+    // Free v1 on the website (2026-11-23): its slots are the other set, in their own two homes and listed in
+    // docs/product/FREE-V1-WORDS.md; tests/freeV1Words.test.cjs fails on its own while any is left.
     const PWg = require("./_pendingWords.cjs");
-    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !PWg.pendingGiftWordIds().includes(id));
-    t.eq([left, all.status], [[], PWg.pendingGiftWordIds().length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the gifts' pending lines");
+    const others = [...PWg.pendingGiftWordIds(), ...PWg.pendingFreeWordIds()];
+    const left = [...(all.stderr || "").matchAll(/\[WORDS: ([a-z0-9-]+)\]\s+in (\S+)/g)].map((m) => m[1]).filter((id) => !others.includes(id));
+    t.eq([left, all.status], [[], others.length ? 1 : 0], "5d0 no placeholder anywhere the production and store builds check (src, functions, public, index.html), but the gifts' and free v1's pending lines");
     for (const f of [path.join("src", "lib", "trialWords.js"), path.join("netlify", "functions", "_lib", "trialWords.js")]) {
       const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "check-pending-words.mjs"), path.join(REPO, f)], { encoding: "utf8" });
       t.eq(r.status, 0, `5d the build guard passes ${f}: no placeholder left`);
@@ -302,7 +305,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     t.ok(/command\s+= "npm run build && node scripts\/check-pending-words\.mjs dist netlify\/functions"/.test(toml) && /check-pending-words\.mjs dist$/.test(pkg.scripts["build:native"]),
       "5e …and it runs on the production web build (the bundle and the functions) and on every store build");
     t.ok(!APP.includes("No credit card") && !APP.includes("Canada & USA"), "5f onboarding: the old welcome's price and countries line is gone (1.1.7), switch on or off");
-    t.ok(APP.includes('{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same");
+    // Free v1 on the website (2026-11-23): while on, the landing's line is the word slot free-landing-line (lib/freeWords.js).
+    t.ok(APP.includes('{tpfOn ? freeWords("free-landing-line") : "Every feature free for 14 days. Also on iPhone and Android."}'), "5g the landing: the same (the free v1 line while on)");
     const fake = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
     t.eq([await lib.askTrialPlanFirstOn(fake(200, { on: true })), await lib.askTrialPlanFirstOn(fake(404, {})), await lib.askTrialPlanFirstOn(fake(500, {})),
       await lib.askTrialPlanFirstOn(async () => { throw new Error("offline"); }), await lib.askTrialPlanFirstOn(fake(200, { on: "yes" }))], [true, false, null, null, null],

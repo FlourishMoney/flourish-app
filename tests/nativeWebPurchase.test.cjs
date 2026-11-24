@@ -138,9 +138,13 @@ function load(db) {
         t.ok(plaidCalls.slice(before).some(u => /\/item\/public_token\/exchange$/.test(u)), `4b ${name}: …and the exchange goes on to Plaid`);
       }
       db.subscriptions = [];
+      // Free v1 on the website (2026-11-23): the website's free plan refuses a new bank at the link token, before Plaid
+      // opens (tests/freeV1Bank.test.cjs holds every step); a store app at the exchange, as before.
+      const linkToken = async (origin) => { const { plaid } = load(db); return plaid.handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x" },
+        body: JSON.stringify({ action: "create_link_token", country: "CA", user_id: "u1" }) }); };
       for (const [origin, name] of [[IOS, "iOS"], [ANDROID, "Android"], [WEB, "the web"]]) {
         const before = plaidCalls.length;
-        const res = await exchange(origin);
+        const res = origin === WEB ? await linkToken(origin) : await exchange(origin);
         t.eq([res.statusCode, JSON.parse(res.body).error], [402, "plan_limit"], `4c ${name}: with no subscription and the trial over, a second bank is refused`);
         t.eq(plaidCalls.length, before, `4d ${name}: …before Plaid is asked`);
       }

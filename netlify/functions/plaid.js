@@ -26,6 +26,10 @@ const PLAID_BASE = {
 };
 
 const { corsHeadersFor } = require("./_lib/cors");
+const { freeBankCap, REFUSED } = require("./_lib/freeBanks");
+const { freeServerWords } = require("./_lib/freeWords");
+const { reportServerError } = require("./_lib/serverAlert");
+const { alertSupport } = require("./_lib/supportAlert");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 const { liveSubscriptionsFor } = require("./_lib/stripeLive");
 const { emailKey, emailRef } = require("./_lib/logSafe");
@@ -65,6 +69,175 @@ async function plaid(endpoint, body) {
     throw err;
   }
   return data;
+}
+
+// ── A REFUSED BANK IS CLEANED UP DURABLY (free v1, review round 1, 2026-11-23) ─────────────────────────────────────
+// Ported as-is from plus-1.1.8 (removeRefusedItem, keepRefusedRow (removed in round 4), removeRefusedRow, alertItemNotRemoved,
+// finishRefusedBanks: rounds 2 to 7 of the Plus review; its markRefused is for paths this branch does not change). No migration: a refused row is an ordinary plaid_items row
+// whose status text is "refused" (_lib/freeBanks.js REFUSED). Added here: claimRefusedRow (whether the account holds
+// the bank, found out by the write itself when the read failed) and alertRefusedPending (the error tracker hears of a
+// removal still to finish).
+
+// A NEW BANK THAT WAS REFUSED IS REMOVED AT PLAID, so nothing is left connected or billed (review 2026-11-22, M2). Three
+// tries. One that still cannot be removed has no row here (its token is never kept for a bank the person was refused),
+// so one error line names the item, never the token, for it to be removed by hand in Plaid's dashboard.
+const REMOVE_TRIES = 3;
+// Plaid saying it no longer knows the Item (or its token) is the same as removed: there is nothing left there to bill.
+const goneAtPlaid = (e) => /ITEM_NOT_FOUND|INVALID_ACCESS_TOKEN/.test(String((e && (e.errorCode || e.message)) || ""));
+async function removeRefusedItem(access_token, item_id, where) {
+  let last = null;
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try { await plaid("/item/remove", { access_token }); return true; }
+    catch (e) { if (goneAtPlaid(e)) return true; last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+  }
+  console.error(`[${where}] /item/remove failed ${REMOVE_TRIES} times: item ${item_id} is still live at Plaid (its refused row, if one could be kept, is finished the next time the banks are listed; with no row it must be removed by hand):`, (last && (last.errorCode || last.message)) || "error");
+  return false;
+}
+
+// A BANK THAT IS NOT (OR NO LONGER) CONNECTED KEEPS A ROW UNTIL PLAID HAS REMOVED IT (round 6 of the Plus review, R6-1).
+// The row is marked refused: it holds the Item's id and token and nothing else matters about it. It counts toward no
+// limit, is never in the list the app is sent, and is never read (resolveAccessToken).
+// It is deleted once Plaid has removed the Item; until then finishRefusedBanks tries again each time its owner's banks
+// are listed. Without it, a removal Plaid would not do left the Item live there with no record anywhere.
+// It is only ever written by claimRefusedRow below, never over a row already there (review round 4, R4-1: the port's
+// keepRefusedRow, an unconditional upsert, could overwrite a bank saved as connected meanwhile, and is gone).
+
+// WHETHER THE ACCOUNT HOLDS THIS BANK, WHEN THAT COULD NOT BE READ (free v1, review round 1). The refused row is
+// written ONLY IF NO ROW IS THERE (insert, conflicts ignored): a row that went in means the account held no row for
+// this Item, so it is a new bank and may be removed.
+// A ROW ALREADY THERE IS READ, never taken as "held" (review round 2, R2-1): it can be an older refused row for this
+// Item, or this request's own refused row whose first write went in while its reply was lost (the next try then meets
+// it). Either is a bank on its way out, not one the account holds. Only a row that is there and not refused is "held"
+// (its own bank, a reconnect), and nothing about it is touched.
+// Answers "new" | "refused" | "held" | "unknown". "new": this write put the refused row in. "refused": a refused row was
+// there. Either way a refused row now keeps the Item, so it may be removed. "unknown": neither the write nor the read of
+// the row there could be done, OR the row the write met was gone when read (review round 3, R3-3: absent is not refused),
+// so whether it is the account's own cannot be told: nothing may be removed, and nothing may be saved as connected.
+async function claimRefusedRow(admin, user_id, bank, where) {
+  const row = { user_id, item_id: bank.item_id, access_token: bank.access_token, institution_id: bank.institution_id || null, institution_name: bank.institution_name || "Your Bank", status: REFUSED };
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try {
+      const { data, error } = await admin.from("plaid_items").upsert(row, { onConflict: "user_id,item_id", ignoreDuplicates: true }).select("item_id");
+      if (!error) {
+        if (Array.isArray(data) && data.length) return "new";
+        const { data: there, error: readErr } = await admin.from("plaid_items").select("status").eq("user_id", user_id).eq("item_id", bank.item_id).maybeSingle();
+        if (!readErr && !there) { console.error(`[${where}] the row met by the refused row's write was gone when read; nothing removed, nothing saved:`, bank.item_id); return "unknown"; }
+        if (!readErr) return there.status === REFUSED ? "refused" : "held";
+      }
+    } catch (e) { /* tried again */ }
+    if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+  }
+  console.error(`[${where}] could not tell whether the account holds a bank it just linked; nothing removed, nothing saved:`, bank.item_id);
+  return "unknown";
+}
+
+// A CONNECTED BANK IS NEVER SAVED OVER A REFUSED ROW, by the exchange or the old-bank import (review round 2, R2-2;
+// round 3, R3-1: the exchange too). Two writes: a new row goes in only where none is there; a row already there is
+// updated only while it is NOT refused. Answers { saved, error }: saved false with no error means neither matched.
+async function saveConnectedRow(admin, user_id, item_id, fields) {
+  const { data: inserted, error: insErr } = await admin.from("plaid_items")
+    .upsert({ user_id, item_id, ...fields }, { onConflict: "user_id,item_id", ignoreDuplicates: true }).select("item_id");
+  if (insErr) return { saved: false, error: insErr };
+  if (Array.isArray(inserted) && inserted.length) return { saved: true, error: null };
+  const { data: updated, error: updErr } = await admin.from("plaid_items")
+    .update(fields).eq("user_id", user_id).eq("item_id", item_id).neq("status", REFUSED).select("item_id");
+  if (updErr) return { saved: false, error: updErr };
+  return { saved: Array.isArray(updated) && updated.length > 0, error: null };
+}
+
+// WHAT IS THERE NOW, read back after a save that did not say it saved (review round 3, R3-2 and R3-3), never a snapshot
+// from before it:
+//   "saved"    a connected row holding this very token: the save went in (its reply was lost)
+//   "refused"  a row marked refused: a bank on its way out at Plaid, never saved as connected
+//   "held"     any other row: a bank the account holds, left exactly as it is
+//   "absent"   no row      "unknown"  it could not be read
+async function rowNow(admin, user_id, item_id, access_token) {
+  try {
+    const { data, error } = await admin.from("plaid_items").select("status, access_token").eq("user_id", user_id).eq("item_id", item_id).maybeSingle();
+    if (error) return "unknown";
+    if (!data) return "absent";
+    if (data.status === REFUSED) return "refused";
+    return data.status === "active" && data.access_token === access_token ? "saved" : "held";
+  } catch (e) { return "unknown"; }
+}
+
+// …and then its row goes. Round 2 (H3, "the clean-up can fail"): the delete used to be tried once, and a row that did not
+// go was left standing for a bank that no longer exists at Plaid. Now up to three tries, like the removal above; a row
+// that still will not go is named in one error line, as before.
+// ONLY WHILE IT IS STILL REFUSED (free v1, review round 2, R2-4): the delete itself asks for status refused, so a row that
+// stopped being refused meanwhile is never deleted, and two clean-ups of the same Item at once delete it once. A direct
+// delete, not household.disconnectItem as in plus-1.1.8: in this branch a refused row is only ever a NEW bank that was
+// refused or never saved, so no household data ever came from it (plus-1.1.8 also marks former connected banks refused).
+async function deleteRefusedRow(admin, user_id, item_id) {
+  const { error } = await admin.from("plaid_items").delete().eq("user_id", user_id).eq("item_id", item_id).eq("status", REFUSED);
+  if (error) throw new Error(error.code || error.message || "error");
+}
+async function removeRefusedRow(admin, user_id, item_id, where) {
+  let last = null;
+  for (let i = 0; i < REMOVE_TRIES; i++) {
+    try { await deleteRefusedRow(admin, user_id, item_id); return true; }
+    catch (e) { last = e; if (i < REMOVE_TRIES - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+  }
+  console.error(`[${where}: row delete failed]`, item_id, (last && last.message) || "error");
+  return false;
+}
+
+// NEITHER COULD BE DONE: Plaid would not remove the Item AND the database would not record it (round 7, R7-1).
+// A person has to know, and the database is the thing that failed, so the alert goes OUTSIDE it: one error to the
+// error tracker (_lib/serverAlert.js) and one email to the support inbox (_lib/supportAlert.js), each naming the
+// Item, the path and the account. NEVER the token. kind:
+//   "no_record"     the Item is live at Plaid and no row here remembers it: nothing will retry it, remove it by hand
+//   "stuck"         nothing was deleted: the bank's row is still there, connected, as it was
+//   "owner_unread"  (free v1) whether the account already held it could not be told: nothing removed, nothing saved
+// The caller answers "unavailable" wherever that is honest. Never throws.
+const ALERT_FLAGS = { no_record: "plaid_item_no_record", stuck: "plaid_item_removal_stuck", owner_unread: "plaid_item_owner_unread" };
+async function alertItemNotRemoved(user_id, item_id, where, kind) {
+  const flag = ALERT_FLAGS[kind] || ALERT_FLAGS.stuck;
+  console.error(`[${where}] ${flag}: the bank Item could not be removed at Plaid or recorded:`, item_id);
+  try {
+    await Promise.all([
+      reportServerError({ message: `${flag}: a bank Item could not be removed at Plaid and could not be recorded (${where})`, tags: { area: "plaid", flag, path: where }, extra: { item_id, account: user_id } }),
+      alertSupport({ flag, userId: user_id, provider: "plaid", itemId: item_id, path: where }),
+    ]);
+  } catch (e) { /* each sender already never throws */ }
+}
+
+// A REFUSED BANK STILL LIVE AT PLAID, WITH ITS ROW KEPT (free v1, review round 1): the error tracker is told, naming the
+// Item and the path, never the token. Nothing is lost (finishRefusedBanks tries again), but someone can see it. Never throws.
+async function alertRefusedPending(user_id, item_id, where) {
+  await reportServerError({ message: `plaid_refused_item_pending: a refused bank Item is not removed at Plaid yet; its refused row keeps it for a retry (${where})`,
+    tags: { area: "plaid", flag: "plaid_refused_item_pending", path: where }, extra: { item_id, account: user_id } });
+}
+
+// …and the rows still marked refused (their removal did not finish) are finished when their owner's banks are next
+// listed: removed at Plaid (one that Plaid no longer knows is already gone), then the row. Best effort and bounded: a
+// bank that still will not go stays marked for the next time. Never throws.
+// EVERY ROW GETS ITS TURN (review round 2, R2-4): at most FINISH_AT_MOST a listing, the least recently tried first
+// (updated_at, oldest first), and a try that does not finish moves its row to the back (updated_at now). The first two
+// rows used to be the only ones ever tried, so two that Plaid would never remove kept every other one live there.
+// The delete runs only while the row is still refused (deleteRefusedRow).
+// ONE TRY AT A TIME (review round 3, R3-4): before Plaid is called, the row is CLAIMED by one conditional write that
+// matches only while it is refused AND its last try is over RETRY_AFTER_MS old, and stamps the try time (which also
+// moves it to the back). A claim that matches no row is skipped: another listing is trying it, it was tried within
+// five minutes, or it is no longer refused (never a connected bank). Overlapping listings call Plaid once for an Item.
+const FINISH_AT_MOST = 2;
+const RETRY_AFTER_MS = 5 * 60 * 1000;
+const triedAt = (r) => String((r && (r.updated_at || r.created_at)) || "");
+async function finishRefusedBanks(admin, user_id, rows) {
+  const turn = (rows || []).filter(Boolean).slice().sort((a, b) => (triedAt(a) < triedAt(b) ? -1 : triedAt(a) > triedAt(b) ? 1 : 0));
+  for (const r of turn.slice(0, FINISH_AT_MOST)) {
+    try {
+      const now = Date.now();
+      const { data: claimed, error } = await admin.from("plaid_items").update({ updated_at: new Date(now).toISOString() })
+        .eq("user_id", user_id).eq("item_id", r.item_id).eq("status", REFUSED).lt("updated_at", new Date(now - RETRY_AFTER_MS).toISOString())
+        .select("access_token");
+      if (error || !Array.isArray(claimed) || !claimed.length) continue;   // not this listing's to try
+      let gone = false;
+      try { await plaid("/item/remove", { access_token: claimed[0].access_token }); gone = true; }
+      catch (e) { gone = goneAtPlaid(e); }
+      if (gone) await deleteRefusedRow(admin, user_id, r.item_id);
+    } catch (e) { console.error("[refused bank] not finished:", r.item_id, (e && e.message) || "error"); }
+  }
 }
 
 exports.handler = async (event) => {
@@ -119,6 +292,18 @@ exports.handler = async (event) => {
       const COUNTRY_CODES = [country];
       const REDIRECT_URI = "https://flourishmoney.app";
 
+      // FREE V1 (2026-11-23, _lib/freeBanks.js): a NEW bank on a plan that connects none is refused here, before Plaid
+      // opens, so nobody signs in to their bank only to be turned away after. Only the website's Free plan connects
+      // none; a store app keeps today's one-bank rule, asked at the exchange as before. A reconnect (item_id, Plaid's
+      // update mode) is never refused: a bank already connected keeps working. A plan that cannot be read changes
+      // nothing here (as before this check existed): the exchange still answers 503 for it.
+      if (ENFORCE_PLAN_LIMITS && !body.item_id && freeBankCap(event) === 0) {
+        const { unlimited, status_unavailable } = await getUserPlan(user_id);
+        if (!status_unavailable && !unlimited) {
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
+        }
+      }
+
       // Update-mode: re-link an existing item. Verify ownership and read the
       // access_token server-side (never from the client).
       let updateAccessToken = null;
@@ -126,11 +311,12 @@ exports.handler = async (event) => {
         const admin = getAdminClient();
         const { data, error } = await admin
           .from("plaid_items")
-          .select("access_token")
+          .select("access_token, status")
           .eq("user_id", user_id)
           .eq("item_id", body.item_id)
           .single();
-        if (error || !data) {
+        // A refused bank (on its way out at Plaid) is not this person's to reconnect.
+        if (error || !data || data.status === REFUSED) {
           return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "item not found for this user" }) };
         }
         updateAccessToken = data.access_token;
@@ -182,12 +368,20 @@ exports.handler = async (event) => {
       // policy — adjust the limit or remove this block if free should allow multiple banks.
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16: never the one-bank cap on an unread plan
+      let onlyHeldBank = false;
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
+        // Free v1 (_lib/freeBanks.js): the website's Free plan connects no bank; a store app keeps today's one.
+        const cap = freeBankCap(event);
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
-        if ((count || 0) >= 1) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
+        if (cap > 0 && (count || 0) >= cap) {
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
         }
+        // The website's Free plan (cap 0): a NEW bank was already refused at create_link_token, so what reaches here is a
+        // reconnect of a bank this account holds (Plaid's update mode, which re-uses its item and is never refused). It
+        // is asked after the exchange, by the item Plaid names: a bank this account holds goes on; any other is removed
+        // at Plaid at once (never kept, never billed) and refused.
+        if (cap === 0) onlyHeldBank = true;
       }
 
       const data = await plaid("/item/public_token/exchange", { public_token });
@@ -195,24 +389,64 @@ exports.handler = async (event) => {
       const item_id = data.item_id;
 
       const admin = getAdminClient();
-      const { error: upsertErr } = await admin
-        .from("plaid_items")
-        .upsert({
-          user_id,
-          item_id,
-          access_token,
-          institution_id,
-          institution_name,
-          status: "active",
-        }, { onConflict: "user_id,item_id" });
+      const bank = { item_id, access_token, institution_id, institution_name };
+      const planRefusal = { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: freeServerWords("free-server-bank") }) };
+      if (onlyHeldBank) {
+        // Review round 1 (2026-11-23): the clean-up of a refused bank is durable. A refused row keeps the Item (its
+        // token; never listed, counted or read) until Plaid confirms the removal or says the Item is gone; until then
+        // finishRefusedBanks tries again each time the banks are listed, and the error tracker is told.
+        const WHERE = "exchange_token free plan";
+        const { data: held, error: heldErr } = await admin.from("plaid_items").select("item_id, status").eq("user_id", user_id).eq("item_id", item_id).maybeSingle();
+        // A connected (not refused) row read for this Item is the account's own bank: a reconnect, nothing claimed.
+        // Anything else (no row, a refused row, or a read that failed) is CLAIMED before anything is removed (review
+        // round 4, R4-1): the refused row goes in only if no row is there (claimRefusedRow), never written over one, so
+        // the same Item saved as connected between the read and the claim is never overwritten or removed. The claim
+        // says which it is: "new" (it went in) or "refused" (a refused row is there): a refused row keeps the Item, so it
+        // is removed at Plaid; "held" (a connected row is there now): nothing removed, the reconnect goes on; "unknown":
+        // nothing removed, "unavailable".
+        if (heldErr || !held || held.status === REFUSED) {
+          const claim = await claimRefusedRow(admin, user_id, bank, WHERE);
+          if (claim === "unknown") { await alertItemNotRemoved(user_id, item_id, WHERE, "owner_unread"); return statusUnavailable(CORS); }
+          if (claim !== "held") {
+            if (await removeRefusedItem(access_token, item_id, WHERE)) await removeRefusedRow(admin, user_id, item_id, WHERE);
+            else await alertRefusedPending(user_id, item_id, WHERE);
+            return planRefusal;
+          }
+        }
+        // A bank this account holds (a reconnect in Plaid's update mode): it goes on below, saved as connected.
+      }
 
-      if (upsertErr) {
-        // Persist failed — roll back the orphaned Plaid item so we never leave a
-        // live access_token we couldn't save (best-effort).
-        console.error("[exchange_token upsert]", upsertErr.message);
-        try { await plaid("/item/remove", { access_token }); }
-        catch (rbErr) { console.warn("[exchange_token rollback /item/remove failed]", rbErr.message); }
-        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
+      // REVIEW ROUND 3 (R3-1): the save never overwrites a refused row (saveConnectedRow, the same guard as migrate_items),
+      // so it can never revive an Item the clean-up is removing at Plaid.
+      const { saved, error: saveErr } = await saveConnectedRow(admin, user_id, item_id, { access_token, institution_id, institution_name, status: "active" });
+      if (!saved) {
+        if (saveErr) console.error("[exchange_token save]", saveErr.message);
+        // REVIEW ROUND 3 (R3-2): what is there NOW is read back, never a snapshot from before the save:
+        //   saved (an error whose write went in): a success, nothing removed
+        //   refused: not saved; the plan refusal on a free plan, "try again" otherwise (the clean-up finishes its removal)
+        //   any other row (a bank the account holds, or one saved meanwhile): left exactly as it is, "try again"
+        //   unreadable: nothing removed, a person is told, "try again"
+        //   absent: the refused row is CLAIMED (written only if none is there) before the Item is removed at Plaid,
+        //     so a connected row is never overwritten and an Item that a row is saved for is never removed
+        const SAVE = "exchange_token save failed";
+        const tryAgain = { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again.", retry: true }) };
+        const there = await rowNow(admin, user_id, item_id, access_token);
+        // Refused (review round 4, R4-2): the plan refusal's words are true only for a free plan; a paid or trialing
+        // account hears "try again", retryable (the Item is on its way out at Plaid).
+        if (there === "refused") return ENFORCE_PLAN_LIMITS && !unlimited ? planRefusal : tryAgain;
+        if (there === "held") return tryAgain;
+        if (there === "unknown") { await alertItemNotRemoved(user_id, item_id, SAVE, "owner_unread"); return tryAgain; }
+        if (there === "absent") {
+          const claim = await claimRefusedRow(admin, user_id, bank, SAVE);
+          if (claim === "held") return tryAgain;
+          if (claim === "unknown") { await alertItemNotRemoved(user_id, item_id, SAVE, "owner_unread"); return tryAgain; }
+          // A refused row now keeps the Item: roll it back at Plaid so no live access_token is left that could not be
+          // saved. Plaid will not remove it: the row keeps it for finishRefusedBanks, and the error tracker is told.
+          if (await removeRefusedItem(access_token, item_id, SAVE)) await removeRefusedRow(admin, user_id, item_id, SAVE);
+          else await alertRefusedPending(user_id, item_id, SAVE);
+          return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
+        }
+        // "saved": the bank is connected; it goes on below.
       }
 
       // Server-side dedupe backstop. A re-link of an already-connected bank mints a FRESH item_id, so
@@ -233,13 +467,14 @@ exports.handler = async (event) => {
         if (dedupeKey) {
           const { data: existingRows, error: listErr } = await admin
             .from("plaid_items")
-            .select("item_id, access_token, institution_id, institution_name")
+            .select("item_id, access_token, institution_id, institution_name, status")
             .eq("user_id", user_id);
           if (listErr) {
             console.error("[exchange_token dedupe] list failed (leaving any duplicate for collapse):", listErr.message);
           } else {
             for (const r of existingRows || []) {
               if (r.item_id === item_id) continue;   // the item just linked/updated — never remove it
+              if (r.status === REFUSED) continue;    // already on its way out; finishRefusedBanks finishes it
               const rKey = (r.institution_id || "").trim().toLowerCase() || (r.institution_name || "").trim().toLowerCase();
               if (!rKey || rKey !== dedupeKey) continue;
               try { await plaid("/item/remove", { access_token: r.access_token }); }
@@ -555,7 +790,12 @@ exports.handler = async (event) => {
           else shared = (theirs || []).map((r) => ({ ...r, linked_by: "partner" }));
         }
       } catch (e) { console.error("[plaid_items list] household:", e.message); }
-      return ok({ items: (data || []).concat(shared) });
+      // A bank that was refused is never listed: it is not connected. One of this person's own whose removal at Plaid
+      // did not finish is finished now (ported from plus-1.1.8; finishRefusedBanks).
+      const connected = (r) => r && r.status !== REFUSED;
+      const unfinished = (data || []).filter((r) => r && r.status === REFUSED);
+      if (unfinished.length) await finishRefusedBanks(admin, user_id, unfinished);
+      return ok({ items: (data || []).filter(connected).concat(shared.filter(connected)) });
     }
 
     // 11. delete_item — auth-required: revoke an item from Plaid + delete row
@@ -607,7 +847,7 @@ exports.handler = async (event) => {
       const admin = getAdminClient();
       const { data: rows, error: listErr } = await admin
         .from("plaid_items")
-        .select("item_id, access_token, institution_id, institution_name, created_at")
+        .select("item_id, access_token, institution_id, institution_name, status, created_at")
         .eq("user_id", user_id)
         .order("created_at", { ascending: false });   // newest first
       if (listErr) {
@@ -617,6 +857,7 @@ exports.handler = async (event) => {
       const seen = new Set();
       const kept = [], collapsed = [];
       for (const r of rows || []) {
+        if (r.status === REFUSED) continue;   // a bank on its way out is no one's duplicate, and never "the one kept"
         // institution_id is often null (neither client call site sends it), so fall back to a
         // normalised institution_name. Rows with neither are never collapsed — we cannot prove
         // they are duplicates, and wrongly removing a real bank is far worse than a duplicate.
@@ -654,11 +895,24 @@ exports.handler = async (event) => {
       const { unlimited, status_unavailable } = await getUserPlan(user_id); // the same answer for the web and the store apps
       if (ENFORCE_PLAN_LIMITS && status_unavailable) return statusUnavailable(CORS); // item 16
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
+      const freeCap = freeBankCap(event);
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {
-        const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
+        // Review round 1 (2026-11-23): either read failing answers a retryable 503 BEFORE any token is looked at, so
+        // a bank the account holds is never refused, and a new one never let in, on a list that could not be read.
+        // The app keeps its tokens and tries again (lib/legacyTokenMigration.js).
+        const { data: existing, error: existingErr } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
+        if (existingErr) { console.error("[migrate_items] could not read the connected banks; nothing done", existingErr.message); return statusUnavailable(CORS); }
         existingIds = new Set((existing || []).map(r => r.item_id));
         activeCount = existingIds.size;
+        // Free v1 (2026-11-23): the website's Free plan (cap 0) refuses every NEW bank, so a bank this account already
+        // holds is "existing" whatever its row's status (a sign-in that ran out is still its own bank, never a new one).
+        // A row marked refused is not one it holds: it is a bank on its way out at Plaid.
+        if (freeCap === 0) {
+          const { data: held, error: heldErr } = await admin.from("plaid_items").select("item_id, status").eq("user_id", user_id);
+          if (heldErr) { console.error("[migrate_items] could not read the banks this account holds; nothing done", heldErr.message); return statusUnavailable(CORS); }
+          for (const r of held || []) if (r.status !== REFUSED) existingIds.add(r.item_id);
+        }
       }
       // Review 2026-11-22 (P7-01): every answer names its token by its position in the list sent (never the token),
       // and a failure says whether trying again can help, so the app clears from the device only what the server
@@ -678,26 +932,23 @@ exports.handler = async (event) => {
             failures.push({ error: "no item_id returned", index, retry: false });
             continue;
           }
-          // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
-          if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more.", index, retry: false });
+          // Free tier: skip NEW banks beyond the cap (re-migrating an existing item is fine). Free v1
+          // (_lib/freeBanks.js): the website's Free plan connects none; a store app keeps today's one.
+          if (capBanks && !existingIds.has(item_id) && activeCount >= freeCap) {
+            failures.push({ error: "plan_limit", message: freeServerWords("free-server-bank"), index, retry: false });
             continue;
           }
-          // Upsert (idempotent — re-running migration is safe)
-          const { error: upsertErr } = await admin
-            .from("plaid_items")
-            .upsert({
-              user_id,
-              item_id,
-              access_token: t.token,
-              institution_id,
-              institution_name: t.institution_name || "Your Bank",
-              status: "active",
-            }, { onConflict: "user_id,item_id" });
-          if (upsertErr) {
-            console.error("[migrate_items upsert]", upsertErr.message);
-            failures.push({ error: "Could not save this bank.", index, retry: true });
-            continue;
+          // Saved idempotently (re-running migration is safe), in TWO writes so that a refused row is never turned back
+          // into a connected bank, on any plan (review round 2, R2-2), whatever an earlier read said (saveConnectedRow).
+          // Not saved: what is there is read back (review round 3, R3-3). Only a row READ as refused (a bank on its way
+          // out at Plaid) is a failure that trying again cannot help; a row gone between the two writes, a row that
+          // cannot be read, or any other row is retryable; a write that went in with its reply lost is a success.
+          const { saved, error: upsertErr } = await saveConnectedRow(admin, user_id, item_id, { access_token: t.token, institution_id, institution_name: t.institution_name || "Your Bank", status: "active" });
+          if (!saved) {
+            if (upsertErr) console.error("[migrate_items upsert]", upsertErr.message);
+            const there = await rowNow(admin, user_id, item_id, t.token);
+            if (there === "refused") { failures.push({ error: "refused", index, retry: false }); continue; }
+            if (there !== "saved") { failures.push({ error: "Could not save this bank.", index, retry: true }); continue; }
           }
           if (!existingIds.has(item_id)) { existingIds.add(item_id); activeCount++; }
           successes.push({ item_id, index });
@@ -983,7 +1234,8 @@ async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } =
     .eq("user_id", user_id)
     .eq("item_id", body.item_id)
     .single();
-  if (!error && data) { note(user_id, data.status); return { access_token: data.access_token, user_id, owner_id: user_id, error: null }; }
+  // A row marked refused is a bank on its way out: it is never read, whoever asks (ported from plus-1.1.8).
+  if (!error && data && data.status !== REFUSED) { note(user_id, data.status); return { access_token: data.access_token, user_id, owner_id: user_id, error: null }; }
   if (!ownOnly) {
     try {
       const peers = await household.peerIdsOf(admin, user_id);
@@ -994,7 +1246,7 @@ async function resolveAccessToken(event, body, { ownOnly = false, ctx = null } =
           .in("user_id", peers)
           .eq("item_id", body.item_id)
           .maybeSingle();
-        if (!peerErr && theirs && theirs.access_token) {
+        if (!peerErr && theirs && theirs.access_token && theirs.status !== REFUSED) {
           note(theirs.user_id, theirs.status);
           return { access_token: theirs.access_token, user_id, owner_id: theirs.user_id, item_row_id: theirs.id, error: null };
         }

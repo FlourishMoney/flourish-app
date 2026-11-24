@@ -117,7 +117,8 @@ const path = require("path");
     t.ok(/useEffect\(\(\)=>\{ if\(limitNote\|\|error\) noteReviewTrouble\(\); \},\[limitNote,error\]\);/.test(app), "the coach's limit note and every coach error (consent refusal, failure) note trouble");
     t.ok(/useEffect\(\(\)=>\{ if\(bankError\) noteReviewTrouble\(\); \},\[bankError\]\);/.test(app), "every onboarding bank error (link token, exchange, reconnect) notes trouble");
     t.ok(/useEffect\(\(\) => \{ if \(sdkError\) noteReviewTrouble\(\); \}, \[sdkError\]\);/.test(app), "Plaid's script failing to load notes trouble");
-    t.ok(/catch \{\s*noteReviewTrouble\(\);\s*alertModal\(\{message:"Could not reconnect/.test(app), "a failed reconnect notes trouble");
+    // Free v1 on the website (2026-11-23): a free-plan refusal (not a failure) shows its own line first; every other failure notes trouble.
+    t.ok(/catch \(err\) \{[\s\S]{0,240}?if\(isFreeBankRefusal\(err\)\)\{ freeBankDialogRef\.current\(\); return; \}\s*noteReviewTrouble\(\);\s*alertModal\(\{message:"Could not reconnect/.test(app), "a failed reconnect notes trouble");
     t.ok(/noteReviewTrouble\(\); alertModal\(\{message:"Could not start bank connection/.test(app), "a failed Add Bank start notes trouble");
     // The sign-out and shared-device wipes only remove flourish_* keys, so the record survives them.
     t.ok(/k\.startsWith\("flourish_"\) && k !== STORAGE_KEY && k !== STAMP_KEY/.test(app), "(sign-out removes only flourish_* keys)");

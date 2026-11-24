@@ -1536,3 +1536,42 @@ only by a payment that carries its name, "maybe" otherwise (R3-2, which was P4-0
 - A founding trial that goes into the store's billing grace period with no sync in between, and then ends, is
   treated as a paid founding subscription that ended (`_lib/storeSubscriptions.js:261-262`).
 - `tests/forecast-critic-verify.test.cjs` fails 8 of 40 on `main` (its own [OPEN] items); it is not in `test:math`.
+
+## 69. Free v1 on the website (branch free-v1-web, 2026-11-23): left from its review round
+
+- **A bank already connected when an account drops to Free stays connected and keeps updating.** By design for v1:
+  only a NEW bank is refused on the website's free plan (`netlify/functions/_lib/freeBanks.js`). Plaid keeps billing
+  that bank until it is removed. Removal at the end of a paid period, with notice and history kept, is the next round
+  (`docs/plans/FREE-PLAN-ONBOARDING-PLAN.md` section 2.4).
+- **Settings' "+ Connect a Bank" on Free shows the bank consent screen before the free-bank line.** Plaid never opens and
+  nothing is billed; the order is a wasted step. The server answer is what decides, so a covered or paid account is
+  never turned away by a guess on the device.
+- **A checkout started from the plans over onboarding comes back to the start of onboarding.** Stripe checkout leaves the
+  page and onboarding keeps no step across it (the same as any reload there); what was typed is asked again.
+- **The store apps' second-bank refusal at the exchange still leaves the new bank at Plaid.** Unchanged from before this
+  branch (the website's refusal now removes it at once, and keeps a refused row until Plaid confirms: review round 1).
+  Goes away when the store apps move to 0 banks, refused at the link token, in their next builds.
+
+## 70. Free v1: a request's Origin is not proof of which app sent it (review round 1 of PR #158, 2026-11-23)
+
+- **What:** the server tells the store apps from the website by the Origin header their WebViews send
+  (`netlify/functions/_lib/cors.js` isNativeRequest, read by `_lib/freeBanks.js` freeBankCap). Origin is not an
+  authenticated platform identity: a free website account that sends a store app's Origin from its own script is
+  given the store apps' rule, 1 bank.
+- **How far it goes:** 1 bank, never more. That is the rule every free account had before this branch, so nothing is
+  open that was closed before; a paid feature is not reached by it.
+- **The one-bank count is not atomic.** In a store app (or with a forged store Origin), two exchanges for a free
+  account at the same moment can each read 0 connected banks before either saves, and both banks are kept. The same
+  as before this branch. plus-1.1.8 re-counts after the save (`_lib/bankLimits.js` overAfterAdding); this branch does
+  not.
+- **When it closes:** when `STORE_APP_FREE_BANKS` goes to 0 with the new store builds (`_lib/freeBanks.js`), every
+  free account is refused a new bank at the link token, whatever its Origin says, and the count no longer matters.
+
+## 71. Free v1: a plan that ends between the plan check and the save leaves its bank (review round 1 of PR #158)
+
+- **What:** `plaid.js` exchange_token reads the plan (`getUserPlan`) before Plaid's exchange and saves the bank after.
+  A paid plan, trial or cover that ends in those few seconds still saves the new bank as connected.
+- **Effect:** the same state as an account that drops to Free with a bank already connected (69, first point): the bank
+  stays connected and keeps updating, and Plaid bills it. No more than one bank per exchange, and never on purpose.
+- **Revisit with:** the removal of banks at the end of a paid period (69), which will find such a bank the same way as
+  any other bank kept past its plan.

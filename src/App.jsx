@@ -93,6 +93,7 @@ import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFe
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { LOCKED_LINE, TRIAL_ENDED_BANNER, coachLimitLine, WHAT_IF_LIMIT_LINE, trialChip, FREE_BANK_LINE, STORE_TERMS_SECTION_7, STORE_TERMS_SECTION_7_IAP, TRIAL_FIRST_TERMS_7_HEADING, trialFirstTermsSection7 } from "./lib/freePlan.js";
+import { freeWords, FREE_TERMS_DATE } from "./lib/freeWords.js";
 import { PLUS_INCLUDES } from "./lib/plusIncludes.js";
 import { stripEmailSpaces } from "./lib/emailAddress.js";
 import { storeBadgesFor } from "./lib/storeLinks.js";
@@ -194,6 +195,7 @@ const supabase = createClient(
 function consentDeps(uid) {
   let storage = null; try { storage = window.localStorage; } catch { storage = null; }
   return { uid, storage, apiBase: API_BASE, termsDatedBySwitch: !isNativeApp() || storeBillingBuild(), giftDate: isNativeApp() ? null : GIFT_LEGAL_DATE,
+    freeTermsDate: isNativeApp() ? null : FREE_TERMS_DATE,   // free v1 (2026-11-23): the website's Terms' new date, once set
     getJwt: async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || null; } catch { return null; } } };
 }
 
@@ -4295,7 +4297,7 @@ function ManualBalanceStep({ country = "CA", account = null, onDone, onSkip }) {
 // balance), then pay and the next payday, and the first number. "after" (App, once the number has been seen): bills, then
 // debts, seeded from what the household already has, with "Not now". profile.billsAfterNumber marks a household that
 // still has them to do ("pending", set here only for a new account), so nobody onboarded before 1.1.7 ever sees "after".
-function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater}){
+function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[],onAccountsConnected,onCount,tpfOn=false,phase="before",initialBills=null,initialDebts=null,onLater,onOpenPlans=null,bankMayConnect=false}){
   const after = phase==="after";
   const [step,setStep]=useState(after?3:0);
   // Through a ref: the Plaid callbacks below are memoised once and must still reach the current onCount.
@@ -4344,6 +4346,9 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
   useEffect(()=>{ if(bankError) noteReviewTrouble(); },[bankError]); // any bank link failure rules out a review ask for a while
+  // Free v1 on the website (2026-11-23): the server said this plan connects no bank (plaid.js, 402 plan_limit). Not a
+  // failure: the step shows the free-bank line and a way to the plans, and the statement and typing stay as they are.
+  const [planBlocked,setPlanBlocked]=useState(false);
   // Apple 5.1.1/5.1.2: the CTA opens BankConsentModal rather than Plaid — that modal is the single
   // consent surface for every Plaid path. It replaced an inline card + checkbox whose copy had
   // drifted (it asserted a 30-day erasure the Privacy Policy does not state).
@@ -4364,8 +4369,8 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
 
-  const fetchLinkToken = useCallback(async ()=>{
-    if(linkToken) return; // already have one
+  const fetchLinkToken = useCallback(async ({fresh=false}={})=>{
+    if(linkToken && !fresh) return; // already have one (fresh: a retry, which never re-uses the one this render holds)
     // Quality Sprint item 6: offline → recoverable message + auto-retry when back online (effect below).
     if(typeof navigator!=="undefined" && navigator.onLine===false){ setBankError("You're offline. Reconnect to the internet, then tap Retry."); setLinkTokenLoading(false); return; }
     setLinkTokenLoading(true);
@@ -4373,17 +4378,34 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
     const jwt = await getJwt();
     callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false); });
+      .catch(err=>{
+        // Free v1: the website's free plan connects no bank. Never "Couldn't reach your bank", never a Retry.
+        if(!isNativeApp() && /plan_limit/.test(String(err?.message||""))){ setPlanBlocked(true); setLinkTokenLoading(false); return; }
+        setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline. Reconnect, then tap Retry." : "Couldn't reach your bank. Tap Retry."); setLinkTokenLoading(false);
+      });
   },[linkToken, p.country]); // eslint-disable-line
 
-  useEffect(()=>{ if(step===1) fetchLinkToken(); },[step]); // eslint-disable-line
+  useEffect(()=>{ if(step===1 && !planBlocked) fetchLinkToken(); },[step]); // eslint-disable-line
+  // Free v1 (review rounds, 2026-11-23): while the app knows the account is paid or covered, a free-plan refusal at the
+  // bank step is stale (the subscription may reach the server after the step opened, or the refusal came first): it is
+  // cleared and the link token asked for again, fresh. Whichever came last (the refusal, the paid answer, the step),
+  // this runs. ONCE per visit to the bank step while paid: if the server still refuses, the free-bank line stays and
+  // nothing loops; leaving the step, or the paid answer going away, lets it ask once more later.
+  const planRetried = useRef(false);
+  useEffect(()=>{
+    if(!bankMayConnect || step!==1){ planRetried.current=false; return; }
+    if(!planBlocked || planRetried.current) return;
+    planRetried.current=true;
+    setPlanBlocked(false); setBankError(null); setLinkToken(null);
+    fetchLinkToken({fresh:true});
+  },[bankMayConnect, planBlocked, step]); // eslint-disable-line react-hooks/exhaustive-deps
   // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
   // bank step without one yet (callPlaid also retries transient drops with backoff).
   useEffect(()=>{
-    const onOnline = ()=>{ if(step===1 && !linkToken) fetchLinkToken(); };
+    const onOnline = ()=>{ if(step===1 && !linkToken && !planBlocked) fetchLinkToken(); };
     window.addEventListener("online", onOnline);
     return ()=>window.removeEventListener("online", onOnline);
-  },[step, linkToken, fetchLinkToken]); // eslint-disable-line
+  },[step, linkToken, fetchLinkToken, planBlocked]); // eslint-disable-line
 
   // Called by Plaid Link after user authenticates
   const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
@@ -4459,6 +4481,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
       // A store app has nothing to buy, so never show the server's plan code or an upgrade path: its own line.
       // Every other failure (an expired session included) is W4: try again or enter the numbers.
       if (isNativeApp() && /plan_limit/.test(String(err.message||""))) setBankError(FREE_BANK_LINE);
+      else if (/plan_limit/.test(String(err?.message||""))) setPlanBlocked(true);   // free v1: the website's free plan, no bank
       else setBankOutcome("failed");
       setBankStage("select");
     }
@@ -4476,7 +4499,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   const canConnect = isLinkReady && !initError;
   // The link token could not be fetched: the main button is the retry, never "Ready".
   const tokenFailed = !!bankError && !linkToken && !linkTokenLoading && !initError;
-  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken(); };
+  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken({fresh:true}); };
   // Open Plaid (after the consent sheet): counted as a bank link started.
   const startPlaid = ()=>{ setBankOutcome(null); count("bank_link_started"); openPlaidLink(); };
 
@@ -4668,8 +4691,17 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
             </div>
           </div>
         )}
-        {/* Error state: the main button below is the retry when the link token could not be fetched. */}
-        {(bankError||initError)&&(
+        {/* Free v1 on the website (2026-11-23): the free plan connects no bank. Its line, and a way to the plans; the
+            statement and "Enter it myself" below are unchanged. Never shown in a store app (they keep one bank). */}
+        {planBlocked&&(
+          <div data-free-bank="" style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+            <div style={{color:C.cream,fontSize:14,lineHeight:1.5,marginBottom:onOpenPlans?GAP.textToControl:0}}>{freeWords("free-bank-line")}</div>
+            {onOpenPlans&&<Btn label={freeWords("free-bank-button")} onClick={onOpenPlans} color={C.teal} small/>}
+          </div>
+        )}
+        {/* Error state: the main button below is the retry when the link token could not be fetched. Never beside the
+            free-bank line (review round 1): on the free plan there is no bank to reach, so no bank error to show. */}
+        {!planBlocked&&(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
             <div style={{color:C.isDark?"#ff8888":"#A51F37",fontSize:13}}>{bankError||initError}</div>
           </div>
@@ -4679,7 +4711,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
         {/* One button, four states: ready to connect; the retry after a link-token error; preparing (the token or
             Plaid's script is on its way); Plaid's script could not load. Never "Ready" while it cannot connect.
             While W4 shows, its "Try again" is this button, so this one steps aside. */}
-        {!bankOutcome&&<button
+        {!bankOutcome&&!planBlocked&&<button
           onClick={canConnect?()=>setShowBankConsent(true):tokenFailed?retryToken:undefined}
           disabled={!canConnect&&!tokenFailed}
           data-bank-button={canConnect?"connect":tokenFailed?"retry":initError?"unavailable":"preparing"}
@@ -4699,9 +4731,9 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
           onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); startPlaid(); }}
           onCancel={()=>setShowBankConsent(false)}/>}
 
-        <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:14}}>
+        {!planBlocked&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:14}}>
           {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
-        </div>
+        </div>}
 
         {/* Sprint 6a: statement upload promoted to a co-equal connection path (not a footnote) —
             the primary route for accounts Plaid can't reach (employer RRSPs, some credit unions). */}
@@ -13105,7 +13137,7 @@ function Settings({creator=null,data,setAppData,setScreen:navToScreen,onClose,on
             : giftLine ? giftLine
             : billingUi.mode==="manage"
             ? "Change your card or cancel."
-            : "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If."}
+            : freeWords("free-settings-plan-line")}
         </div>
         {/* Couple mode: nothing to manage or buy while the partner's subscription covers this person. */}
         {!coveredByPartner&&!giftLine&&<Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>}
@@ -14296,13 +14328,16 @@ function TermsOfService({onBack,tpfSince:tpfSinceFirst=null}){
   // (GET /api/trial-plan-first), so every place that opens them follows it; off, or no answer, is today's section 7.
   const [tpfSince,setTpfSince]=useState(tpfSinceFirst);
   useEffect(()=>{ let live=true; askTrialPlanFirst(fetch, API_BASE).then(a=>{ if(!live) return; if(a===false) setTpfSince(null); else if(a&&a.since) setTpfSince(a.since); }); return ()=>{ live=false; }; },[]);
-  const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;
+  const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince, { web: !isNativeApp() }) : null;
   const last = tpfTerms ? chargeDateLabel(new Date(tpfSince)) : "October 14, 2026";
   // The website's Terms carry the Gifts section (approved 2026-11-20), so there they are dated the later of the above and
   // the gift words' day (lib/giftReturn.js GIFT_LEGAL_DATE), as Before you start records it (lib/legalConsent.js). A store
   // app's Terms have no Gifts section: their date does not move.
   const giftDay = isNativeApp() ? null : GIFT_LEGAL_DATE;
-  const lastShown = giftDay && withGiftDate(termsVersion(tpfTerms ? tpfSince : null, true), giftDay) === giftDay ? policyDateLabel(giftDay) : last;
+  // Free v1 (2026-11-23): the website's Terms are also dated the day the free v1 words go live (lib/freeWords.js
+  // FREE_TERMS_DATE) once it is set; the consent step records the same date (consentDeps, lib/legalConsent.js).
+  const extraDay = withGiftDate(withGiftDate("", giftDay), isNativeApp() ? null : FREE_TERMS_DATE) || null;
+  const lastShown = extraDay && withGiftDate(termsVersion(tpfTerms ? tpfSince : null, true), extraDay) === extraDay ? policyDateLabel(extraDay) : last;
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -14487,7 +14522,7 @@ function TrialTerms({disclosure}){
   );
 }
 
-function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount}){
+function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount, closeLabel="Close"}){
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState("");
   // "Send me a confirmation link" (round 4): "idle" | "sending" | "sent" | "limited" | "failed".
@@ -14564,7 +14599,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage, trialFirst=null
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
-          {!required&&<button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>}
+          {!required&&<button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{closeLabel}</button>}
         </div>
 
         {notice&&(
@@ -16679,7 +16714,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
                     the founding line, in that order. Signup shut: the waitlist form; all 50 taken: "Create your
                     account". Then the badges and the read-only line. */}
                 {trialFirst && <TrialButton onClick={goSignup} tpfOn={tpfOn}/>}
-                {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
+                {trialFirst && <p className="fll-trial-line">{tpfOn ? freeWords("free-landing-line") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}
                 {waitlistArea === "waitlist" && <WaitlistForm source="hero"/>}
                 {/* Signup open and all 50 founding spots taken (approved by ChatGPT and Grok, 2026-10-15): no
                     waitlist, one button that opens sign-up, and the one line under it. */}
@@ -16770,7 +16805,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
               <TrialButton onClick={goSignup} tpfOn={tpfOn}/>
-              {tpfOn && <p className="fll-trial-line">{trialWords("trialfirst-landing")}</p>}
+              {tpfOn && <p className="fll-trial-line">{freeWords("free-landing-line")}</p>}
             </div>
           </div>
           )}
@@ -16826,7 +16861,7 @@ function AuthScreen({ onAuth, onTryDemo, foundingNote, startOnLogin = false, tpf
               </button>}
               <div style={{ display: "flex", justifyContent: "center", marginBottom: SPACE.sm }}><FlourishLockup size={60} color={AUTH_C.heading} /></div>
               <div style={{ color: AUTH_C.muted, fontSize: 14, marginTop: SPACE.xs }}>
-                {mode === "signup" ? switchWords("trialfirst-signup-title", tpfOn) : mode === "check_email" ? "Almost there" : "Welcome back"}
+                {mode === "signup" ? ((tpfOn && !isNativeApp()) ? freeWords("free-signup-title") : switchWords("trialfirst-signup-title", tpfOn)) : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
@@ -18063,6 +18098,9 @@ export default function FlourishApp(){
   // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
   // surface hidden while BILLING_ENABLED is unset.
   const [showUpgrade,setShowUpgrade]=useState(false);
+  // Free v1 (2026-11-23): the plans over onboarding, opened ONLY by the bank step's free-bank button. Its own state, so
+  // nothing else that opens the plans (the founding link, a Stripe return) can draw them over onboarding (review round).
+  const [plansOverOnboarding,setPlansOverOnboarding]=useState(false);
   const [billingStatus,setBillingStatus]=useState(null);
   // Couple mode: /api/household's status (null until asked; { enabled: false } while the feature is off), and a
   // link's invite token kept for this tab while the person signs in (never synced; lib/household.js).
@@ -18421,6 +18459,19 @@ export default function FlourishApp(){
   // A store build that sells (version 1.1) opens its own paywall: prices from the store, nothing to pay on the web.
   // B4: with no billing answer yet, the status is asked again before the old Paywall is the fallback.
   const openUpgrade = async ()=>{ if(storeBilling){ setPaywallUp(true); return; } if(billingUi.show){ setShowUpgrade(true); return; } if(await recheckBilling()) setShowUpgrade(true); else setShowPaywall(true); };
+  // FREE V1 ON THE WEBSITE (2026-11-23): the server said this plan connects no bank (plaid.js, 402 plan_limit) when a
+  // bank was asked for outside onboarding (Settings, a reconnect with no bank, the exchange). Not an error: the free-bank
+  // line, and its button opens the plans where they can sell. Called through a ref, so a callback made on an earlier
+  // render still asks with this render's state.
+  const freeBankDialog = async ()=>{
+    if(!billingUi.show){ alertModal({ message: freeWords("free-bank-line") }); return; }
+    if(await confirmModal({ message: freeWords("free-bank-line"), confirmLabel: freeWords("free-bank-button") })) openUpgrade();
+  };
+  const freeBankDialogRef = useRef(freeBankDialog);
+  freeBankDialogRef.current = freeBankDialog;
+  const isFreeBankRefusal = (err) => !isNativeApp() && /plan_limit/.test(String(err?.message||""));
+  // Free v1: on the website, the plans' close button says it keeps Free, for an account without a plan; else "Close".
+  const freePlansClose = (!isNativeApp() && !isPremium && !billingStatus?.paid && !billingStatus?.covered_by) ? freeWords("free-plans-close") : "Close";
   // A PAID SUBSCRIPTION ON THE WEB. The billing status's `paid` is the server's answer (Stripe's status and
   // the paid period, planRules.isPaidSubscription): it lifts a free household to premium, and it ends
   // when the paid period does. The same in a store app (2026-10-20), which the server holds to the same
@@ -19807,6 +19858,7 @@ export default function FlourishApp(){
         // The free plan's one-bank limit is not a failure to retry. A store app says so in the approved line
         // (lib/freePlan.js FREE_BANK_LINE), never the server's plan code or an upgrade path; the web keeps its line.
         if(isNativeApp() && /plan_limit/.test(String(err?.message||""))){ alertModal({ message: FREE_BANK_LINE }); return; }
+        if(isFreeBankRefusal(err)){ freeBankDialogRef.current(); return; }   // free v1: the website's free plan, no bank
         captureError(err, { area: "plaid" });
         alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added. Please try again." });
       });
@@ -19897,11 +19949,13 @@ export default function FlourishApp(){
   // H1 (review round): someone who came from a partner's invite (householdLinkToken) is never held at the plans: they
   // join in Settings, and the partner's plan then covers them.
   const plansStageNow = plansFirstStage({ tpf: tpfStatus, paid: tpfPaySource?.paid===true, coveredBy: tpfPaySource?.covered_by||null,
-    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken });
+    profilePlan, demo: !!appData?.demo, canSell: storeBilling ? true : billingUi.show, pendingInvite: !!householdLinkToken,
+    native: isNativeApp() });   // free v1 (2026-11-23): on the website the plans close onto Free ("offer_once", never "required")
   // Once the server has said this account must choose, a status call that fails keeps the screen (never lets the app open),
-  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1).
+  // unless this device remembers a payment for the account (L1) or there is an invite to accept (H1). Free v1: only a store
+  // app is held on a remembered "required"; the website has the free plan, so it is never held.
   const plansRequired = !!user?.id && !appData?.demo && (tpfAnswered ? plansStageNow==="required"
-    : (recalledRequired(deviceStorage(), user.id) && !householdLinkToken
+    : (isNativeApp() && recalledRequired(deviceStorage(), user.id) && !householdLinkToken
        && recalledGate(deviceStorage(), user.id, Date.now(), WEB_PAID_KEY)!==true && recalledGate(deviceStorage(), user.id, Date.now())!==true));
   useEffect(()=>{ if(user?.id && tpfAnswered) rememberRequired(deviceStorage(), user.id, plansStageNow==="required"); },[user?.id, tpfAnswered, plansStageNow]);
   useEffect(()=>{
@@ -19999,7 +20053,17 @@ export default function FlourishApp(){
       });
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id} onConsent={()=>{ recordLegalConsent(consentDeps(user?.id)); }}
-    tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}/>{storePaywallOverlay}</>;
+    tpfOn={tpfOn} onCount={(event,detail)=>signalOnboarding(event,{detail,userId:user?.id})}
+    onOpenPlans={(!isNativeApp() && billingUi.show) ? ()=>{ if(user?.id) notePlansOffered(deviceStorage(), user.id); setPlansOverOnboarding(true); } : null}
+    bankMayConnect={!!(billingStatus?.paid || billingStatus?.covered_by)}/>{storePaywallOverlay}
+    {/* Free v1 (the website): the plans, opened from the bank step's free-bank button, over onboarding; closing them
+        goes back to the same step. Counted as this device's one offer, so they do not open again after the number. */}
+    {plansOverOnboarding && billingUi.show && !isNativeApp() && (
+      <div role="dialog" aria-modal="true" aria-label="Plans" style={{position:"fixed",inset:0,zIndex:9998,overflowY:"auto",background:C.bg,...overlaySafe(0, { bottom: true })}}>
+        <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setPlansOverOnboarding(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}
+          closeLabel={freePlansClose}/>
+      </div>
+    )}</>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
@@ -20028,7 +20092,8 @@ export default function FlourishApp(){
     if(billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{}} required
       trialFirst={tpfStatus} onSignOut={plansSignOut} onDeleteAccount={deleteAllData} onRecheck={recheckBilling} onViewLegal={s=>setScreen(s)}/>;
   }
-  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}/>;
+  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}} trialFirst={tpfStatus} onRecheck={recheckBilling}
+    closeLabel={freePlansClose}/>;
   if(showPaywall && !isNativeApp())return <Paywall onRetry={async ()=>{ if(await recheckBilling()){ setShowPaywall(false); setShowUpgrade(true); return true; } return false; }} onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"} province={appData?.profile?.province||""}/>;
 
   const unread = (() => {
@@ -20075,7 +20140,9 @@ export default function FlourishApp(){
       const opts = jwt ? { jwt } : undefined;
       const d = await callPlaid("create_link_token", payload, opts);
       setReconnectToken(d.link_token);
-    } catch {
+    } catch (err) {
+      // Free v1: with no bank to reconnect this is a new link, which the website's free plan does not include.
+      if(isFreeBankRefusal(err)){ freeBankDialogRef.current(); return; }
       noteReviewTrouble();
       alertModal({message:"Could not reconnect. Please try again."});
     } finally {
@@ -20092,7 +20159,9 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
+      .catch(err=>{ setReconnectLoading(false);
+        if(isFreeBankRefusal(err)){ freeBankDialogRef.current(); return; }   // free v1: the website's free plan, no bank
+        noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These
   // handlers only record intent — BankConsentModal's "Connect My Bank" runs the real action.

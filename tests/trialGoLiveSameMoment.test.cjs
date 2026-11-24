@@ -107,14 +107,18 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     }
     const webOffTerms = termsText("web", null);
     t.eq(section7(webOffTerms), LIVE_WEB_7, "1b off, the website: section 7 is the live text, word for word");
-    t.ok(webOffTerms.includes(`Last updated ${require("./_giftLegalDate.cjs").webLabel("2026-10-14")}`), "1c …with its live date (on the website, the gift words' day once the Gifts section is in: tests/_giftLegalDate.cjs)");
+    t.ok(webOffTerms.includes(`Last updated ${require("./_giftLegalDate.cjs").webTermsLabel("2026-10-14")}`), "1c …with its live date (on the website, the gift words' day once the Gifts section is in: tests/_giftLegalDate.cjs)");
     t.ok(GIFTS_AT(webOffTerms) > 0 && GIFTS_AT(webOffTerms) < webOffTerms.indexOf("8. Intellectual Property"), "1c2 the website's Terms carry the Gifts section, after section 7");
     for (const p of ["ios", "android"]) {
       const text = termsText(p, null);
       t.eq(section7(text), LIVE_STORE_7, `1d off, the ${p === "ios" ? "iPhone" : "Android"} app: section 7 is the live text, word for word, the founding sentence included`);
       t.ok(!/Gifts You can buy|flourishmoney\.app\/gift/.test(text), `1d2 the ${p === "ios" ? "iPhone" : "Android"} app's Terms say nothing about gifts`);
     }
-    t.eq(plansText({ status: webStatus(), trialFirst: off.web.trialFirst }), LIVE_WEB_PLANS, "1e off, the website's plans screen: the live words, all three plans, no trial line");
+    // Free v1 on the website (2026-11-23): the third bullet is the word slot free-plans-bullet-bank; every other word is live.
+    const FW = await import("../src/lib/freeWords.js");
+    const LIVE_WEB_PLANS_V1 = LIVE_WEB_PLANS.replace("More than one bank, all in one place", FW.freeWords("free-plans-bullet-bank"));
+    t.ok(LIVE_WEB_PLANS_V1 !== LIVE_WEB_PLANS, "1e0 (not vacuous: the bullet was in the live words)");
+    t.eq(plansText({ status: webStatus(), trialFirst: off.web.trialFirst }), LIVE_WEB_PLANS_V1, "1e off, the website's plans screen: the live words, all three plans, no trial line");
     t.ok(APP.includes("const trial = (trialFirst && copy) ? trialDisclosure({ platform, eligible: storeTrialEligible({ platform, product: p.product, eligibility: introElig }), price: copy.price, planKey: plan, words: trialWords }) : null;")
       && APP.includes("<TrialTerms disclosure={trial}/>") && APP.includes('{busy===plan?PAYWALL_COPY.checking:(trial?.claim ? trialWords("trialfirst-button") : copy.button)}'),
       "1f the store plans' card is built from the switch, the store's product and its own answer (the line this suite follows)");
@@ -148,7 +152,7 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
       t.ok(/function trialPlanFirstSince\(env = process\.env\)/.test(rules) && flagFn.includes("const since = trialPlanFirstSince();") && state.includes("const since = trialPlanFirstSince();"),
         "2b one rule, read on each call: what the Terms hear and what the plans screen hears cannot be set apart");
       const T = APP.slice(APP.indexOf("function TermsOfService("), APP.indexOf("<div style={h2}>8. Intellectual Property</div>"));
-      t.ok(T.includes("askTrialPlanFirst(fetch, API_BASE)") && T.includes("const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;"),
+      t.ok(T.includes("askTrialPlanFirst(fetch, API_BASE)") && T.includes("const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince, { web: !isNativeApp() }) : null;"),
         "2c the Terms ask the server each time they open, on the website and in a store app that sells");
     }
 
@@ -156,10 +160,14 @@ const storeProduct = (platform, plan, price) => (platform === "ios"
     const on = await answers({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
     for (const p of ["web", "ios", "android"]) {
       const text = termsText(p, on[p].terms && on[p].terms.since);
-      t.eq(section7(text), `7. Plans and billing ${ON_7}`, `3a on (${p}): section 7 is the approved text, the founding plan and its sentence included`);
+      // Free v1 on the website (2026-11-23): the website's text has the free v1 slots in their two places (freePlan.js).
+      const FP = await import("../src/lib/freePlan.js");
+      const want = p === "web" ? FP.trialFirstTermsSection7(SINCE, { web: true }).join(" ") : ON_7;
+      if (p === "web") t.ok(want !== ON_7 && want.includes(FP.trialFirstTermsSection7(SINCE).slice(1, 3).join(" ")), "3a0 the website's section 7 is the approved text but its two slots");
+      t.eq(section7(text), `7. Plans and billing ${want}`, `3a on (${p}): section 7 is the approved text (the website's with its slots), the founding plan and its sentence included`);
       // The website's Terms also carry the Gifts section: there, the gift words' day if that is later (tests/_giftLegalDate.cjs).
       const G = require("./_giftLegalDate.cjs");
-      const dated = p === "web" && G.webDay(G.localDay(SINCE)) !== G.localDay(SINCE) ? G.webLabel(G.localDay(SINCE)) : SINCE_DAY;
+      const dated = p === "web" && G.webTermsDay(G.localDay(SINCE)) !== G.localDay(SINCE) ? G.webTermsLabel(G.localDay(SINCE)) : SINCE_DAY;
       t.ok(text.includes(`Last updated ${dated}`) && !text.includes("Flourish Plus") && !text.includes("Payment is charged to your Apple or Google account when you confirm"),
         `3b …dated the day the switch went on (on the website, the gift words' day if later), with nothing left of the old section (${p})`);
     }

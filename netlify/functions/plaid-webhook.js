@@ -10,6 +10,7 @@
 
 const { verifyPlaidWebhook } = require("./_lib/webhook-verify");
 const { getAdminClient } = require("./_lib/auth");
+const { REFUSED } = require("./_lib/freeBanks");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -95,7 +96,7 @@ exports.handler = async (event) => {
   // user's row.
   const { data: ownerRow, error: lookupErr } = await admin
     .from("plaid_items")
-    .select("user_id")
+    .select("user_id, status")
     .eq("item_id", item_id)
     .maybeSingle();
   if (lookupErr) {
@@ -105,6 +106,12 @@ exports.handler = async (event) => {
   }
   if (!ownerRow) {
     console.warn(`[webhook] unknown item_id ${String(item_id).slice(0, 8)} — ack & skip`);
+    return { statusCode: 200, body: JSON.stringify({ received: true }) };
+  }
+  // A refused bank (free v1, review round 1: on its way out at Plaid) is never turned back into a connected one: a
+  // "sign-in repaired" or any other news about it changes nothing (plaid.js finishRefusedBanks removes it).
+  if (ownerRow.status === REFUSED) {
+    console.log(`[webhook] item ${String(item_id).slice(0, 8)} is refused, on its way out — ack & skip`);
     return { statusCode: 200, body: JSON.stringify({ received: true }) };
   }
   const ownerUserId = ownerRow.user_id;

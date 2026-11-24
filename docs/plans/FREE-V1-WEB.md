@@ -1,0 +1,99 @@
+# Free v1 on the website
+
+Branch `free-v1-web`, from main `f048f72` (2026-11-23). Website only. The iPhone and Android apps keep today's rules until their next store builds.
+
+## What changed
+
+**A. No bank on Free, enforced by the server** (`netlify/functions/plaid.js`, `netlify/functions/_lib/freeBanks.js`)
+
+- The free plan connects 0 banks from the website. A store app keeps today's 1 bank, told apart by the Origin its WebView sends.
+- A new bank is refused at `create_link_token`, before Plaid opens.
+- The exchange: on the website's free plan it goes on only for a bank the account already holds (a reconnect in Plaid's update mode). Any other bank is removed at Plaid at once and refused.
+- The old-bank import (`migrate_items`): 0 new banks on the website; a bank the account already holds is its own.
+- Unchanged:
+  - a reconnect is never refused;
+  - paid, trial (account, Stripe or store), founder, gift and partner cover are unlimited;
+  - a plan the server can't read behaves as before (the link opens, the exchange is 503).
+
+**B. The plans screen closes onto Free** (`src/lib/trialPlanFirst.js`, `src/App.jsx`)
+
+- On the website, a new account with no plan, or one whose subscription ended, sees the plans once and can close them. Closing keeps the account on Free.
+- A store app is still held at its plans screen, as today.
+
+**C. The website's bank buttons on Free** (`src/App.jsx`)
+
+- These places show the free-bank line and a button that opens the plans, never "Couldn't reach your bank", and Plaid never opens:
+  - onboarding's bank step;
+  - Settings' "+ Connect a Bank";
+  - a reconnect with no bank;
+  - a refused exchange.
+- In onboarding, the statement upload and "Enter it myself" stay. The plans open over the step and close back to it.
+- Once the server says the account is paid or covered, the step asks again.
+
+**Word slots** (`src/lib/freeWords.js`, `netlify/functions/_lib/freeWords.js`, listed in `docs/product/FREE-V1-WORDS.md`)
+
+- 13 slots, plus the Terms' new date (`FREE_TERMS_DATE`).
+- `tests/freeV1Words.test.cjs` fails while any slot is a placeholder or the date is unset. It runs last in `test:math`, so every other suite still runs.
+- The production build refuses the placeholders as well (`scripts/check-pending-words.mjs`).
+
+## Review round 1 (2026-11-23: Grok 100, Gemini 92, ChatGPT 72)
+
+- A refused bank is cleaned up durably (ported from plus-1.1.8, no migration): a refused row keeps the Item until Plaid
+  confirms the removal or says it is gone, tried again when the banks are listed (finishRefusedBanks); the error tracker
+  is told the Item and the path, never the token. When ownership cannot be read, nothing is removed: an insert-if-absent
+  of the refused row tells a new bank from the account's own. Refused rows are never listed, counted, read,
+  reconnected, held by migrate_items, or revived by the webhook (`tests/freeV1RefusedBank.test.cjs`).
+- migrate_items answers a retryable 503 before any token when either read of the held banks fails.
+- Onboarding's stale refusal: retried once per visit to the bank step while paid, with a fresh link token; no loop if
+  the server disagrees. No bank error beside the free-bank line (`tests/freeV1Web.browser.test.cjs` 4 to 6).
+- Known defects 70 (Origin is not authenticated; the one-bank count is not atomic) and 71 (a plan ending mid-exchange).
+- `FREE_TERMS_DATE` is 2026-11-24, the go-live day.
+
+## Review round 2 (on e60a9c4: Grok 100, ChatGPT 88)
+
+- R2-1: when the refused row's write meets a row already there, that row's status is read: refused (an older refusal,
+  or this exchange's own insert whose reply was lost) is not a held bank, so it is removed; unreadable is a 503 with the
+  support inbox told, nothing removed, nothing activated.
+- R2-2: migrate_items saves in two writes (insert if absent; else update only while not refused), so a refused row is
+  never turned back into a connected bank on any plan, whatever an earlier read said.
+- R2-3: a failed save is rolled back at Plaid only for an Item with no row before the exchange; an existing bank (a
+  reconnect) is left as it was with a retryable 503; an unreadable "before" removes nothing (503, support told).
+- R2-4: the clean-up takes the least recently tried refused rows first and moves a failed try to the back; the row is
+  deleted only while still refused (the delete's own condition), so overlapping clean-ups are harmless.
+- Token encryption stays as every Plaid token is today; app-level encryption is a later job for both branches.
+
+## Review round 3 (on 894b697: Grok 100, ChatGPT 90)
+
+- R3-1: the exchange saves a connected bank with the same guard as migrate_items (`saveConnectedRow`: insert if no row;
+  else update only while not refused). A refused row is not saved, and the answer is the plan refusal, so a save can
+  never revive an Item the clean-up is removing at Plaid.
+- R3-2: a save that did not say it saved is read back (`rowNow`), never judged from a snapshot taken before it. Its own
+  connected row (the reply was lost) is a success. Any other row is left exactly as it is ("try again"). Refused is the
+  plan refusal. Unreadable removes nothing (support told, "try again"). No row: the refused row is claimed (written only
+  if none is there) before the Item is removed at Plaid, so a connected row is never overwritten.
+- R3-3: absent, refused, connected and unreadable are told apart. Only a row read as refused is permanent; migrate_items
+  answers `retry: true` otherwise, and `claimRefusedRow` answers "unknown" (nothing removed) when the row it met is gone.
+- R3-4: the clean-up claims a row before it calls Plaid: one conditional write that matches only while the row is
+  refused and its last try is over 5 minutes old, stamping the try time. A claim that matches nothing is skipped, so
+  overlapping listings call Plaid once for an Item.
+
+## Review round 4 (on 5585eb4: Grok 100, Gemini 100, ChatGPT 94)
+
+- R4-1: the free plan's refusal claims the refused row (`claimRefusedRow`, insert only if absent) whenever the read did
+  not find a connected row: no row, a refused row, or a read that failed. A connected row that appears between the
+  read and the claim is "held": nothing removed, the reconnect goes on. "unknown": nothing removed, "unavailable". The
+  port's `keepRefusedRow` (an unconditional upsert) is gone. A claim that finds a refused row still removes the Item at
+  Plaid, as before: a refused row can never be saved as connected, so nothing connected can be lost.
+- R4-2: a refused row read back after a save answers the plan refusal only on a free plan; a paid or trialing account
+  hears the existing "Could not save your bank connection. Please try again." (503, retryable). No new words.
+
+## Not in this branch
+
+- Removing a bank at the end of a paid period (a bank kept after a trial ends stays connected and billed for now).
+- Typing one transaction; statement import outside onboarding.
+- The new onboarding; the checklist with its ring.
+- Unlimited What-If: Free keeps 1 a day.
+- The store apps' rules, which change with their next builds.
+- `plus-1.1.8`, which is left alone. When main is next merged into it:
+  - `plaid.js`, `upgradeFlow.js`, the plans tests and `package.json` will need resolving;
+  - its own line "The free plan connects one bank. A flourish subscription connects more." needs new words.

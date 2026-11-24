@@ -35,13 +35,15 @@ export function termsVersion(tpfSince, datedBySwitch, giftDate = null) {
 export function privacyVersion(policyDate, giftDate = null) { return withGiftDate(privacyDate(policyDate), giftDate); }
 
 /** Both, asked of the same places the pages ask. Never throws; an unanswered question gives the page's own fallback. */
-export async function currentLegalVersions({ fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null } = {}) {
+// freeTermsDate (free v1 on the website, 2026-11-23, lib/freeWords.js FREE_TERMS_DATE): the website's Terms' new date once
+// set; the Terms only, the Privacy Policy does not change with it. null (the default, and every store app): as before.
+export async function currentLegalVersions({ fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null, freeTermsDate = null } = {}) {
   let policyDate = null, tpf = null;
   await Promise.all([
     Promise.resolve().then(() => fetchImpl(`${apiBase}/api/newsletter`)).then((r) => (r && r.ok ? r.json() : null)).then((j) => { policyDate = j && j.policyDate; }).catch(() => {}),
     askTrialPlanFirst(fetchImpl, apiBase).then((a) => { tpf = a; }).catch(() => {}),
   ]);
-  return { terms_version: termsVersion(tpf && tpf.since, termsDatedBySwitch, giftDate), privacy_version: privacyVersion(policyDate, giftDate) };
+  return { terms_version: withGiftDate(termsVersion(tpf && tpf.since, termsDatedBySwitch, giftDate), freeTermsDate), privacy_version: privacyVersion(policyDate, giftDate) };
 }
 
 // When the consent step first appeared, per account, for this run of the app only (never stored).
@@ -61,13 +63,13 @@ const clear = (storage, uid) => { try { storage.removeItem(key(uid)); } catch { 
  * Send the kept record, if there is one. Resolves "recorded" (or there was nothing to send), "kept" (to try again on the next
  * launch), or "dropped" (the server refused it as malformed, so sending again would not help). Never throws.
  */
-export async function flushLegalConsent({ uid, storage, getJwt, fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null }) {
+export async function flushLegalConsent({ uid, storage, getJwt, fetchImpl = globalThis.fetch, apiBase = "", termsDatedBySwitch = false, giftDate = null, freeTermsDate = null }) {
   if (!uid || !storage) return "kept";
   const rec = read(storage, uid);
   if (!rec) return "recorded";
   try {
     if (!isDate(rec.terms_version) || !isDate(rec.privacy_version)) {
-      Object.assign(rec, await currentLegalVersions({ fetchImpl, apiBase, termsDatedBySwitch, giftDate }));
+      Object.assign(rec, await currentLegalVersions({ fetchImpl, apiBase, termsDatedBySwitch, giftDate, freeTermsDate }));
       write(storage, uid, rec);
     }
     const jwt = await getJwt();

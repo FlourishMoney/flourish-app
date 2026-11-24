@@ -84,8 +84,13 @@ const offences = (s) => [...SELLS, ...COPY].filter(([, rx]) => rx.test(s)).map((
   t.eq([U.FREE_TIER_LIMITS.coachMessagesPerWeek, L.FREE_CHAT_WEEKLY], [2, 2], "3a the app and the server both allow 2 coach messages a week, as the coach line says");
   t.eq([U.FREE_TIER_LIMITS.simulationsPerDay, L.FREE_SIMULATIONS_DAILY], [1, 1], "3b …and 1 What-If explanation a day, as \"today's What-If\" says");
   t.eq(F.coachLimitLine(3), "You've used this week's 3 coach messages. You get 3 more on Monday.", "3c the coach line takes its number from the limit, not from the text");
-  const caps = [...PLAID.matchAll(/\(count \|\| 0\) >= (\d+)|activeCount >= (\d+)/g)].map(m => Number(m[1] || m[2]));
-  t.eq(caps, [F.FREE_BANKS, F.FREE_BANKS], `3d plaid.js caps the free plan at FREE_BANKS (${F.FREE_BANKS}) on both of its write paths`);
+  // Free v1 on the website (2026-11-23): both write paths cap the free plan at _lib/freeBanks.js freeBankCap, which is 0
+  // for the website and FREE_BANKS (this line's 1) for a store app. The store apps' line must still match their cap.
+  const caps = [...PLAID.matchAll(/\(count \|\| 0\) >= (\w+)|activeCount >= (\w+)/g)].map(m => m[1] || m[2]);
+  const FB = require("../netlify/functions/_lib/freeBanks.js");
+  t.ok(caps.length === 2 && caps[0] === "cap" && caps[1] === "freeCap" && /const cap = freeBankCap\(event\);/.test(PLAID) && /const freeCap = freeBankCap\(event\);/.test(PLAID)
+    && FB.STORE_APP_FREE_BANKS === F.FREE_BANKS && FB.freeBankCap({ headers: { origin: "capacitor://localhost" } }) === F.FREE_BANKS && FB.freeBankCap({ headers: { origin: "https://localhost" } }) === F.FREE_BANKS,
+    `3d plaid.js caps the free plan on both of its write paths at freeBankCap, which in a store app is FREE_BANKS (${F.FREE_BANKS}), as the line says`);
 
   // ── 4. the trial chip and the end-of-trial banner ────────────────────────────────────────────────────
   let A = {};

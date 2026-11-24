@@ -17,7 +17,8 @@
 //    on, a new account that has not chosen a plan cannot reach Settings, where Delete Account lives.
 //      5  the store app: Delete Account on that screen asks the same question Settings asks; "Cancel" changes nothing;
 //         confirming deletes on the server, signs out and leaves nothing of the account on the device
-//      6  the website: the same
+//      6  the website: since free v1 (2026-11-23) the website has the free plan, so nobody is held there: the plans
+//         open once and close onto the app, where Settings (and its Delete Account) is (tests/freeV1Web.browser.test.cjs)
 // Nothing reaches the network: Supabase and /api/* are answered here, and any other host is refused.
 // STORE_SIGNIN_SHOTS=<dir> also saves a picture of each plans screen and of the question.
 // -----------------------------------------------------------------------------
@@ -267,7 +268,20 @@ function installNative([platform, appleToken, appleMode]) {
       await ctx.close();
     }
     // ── 5 and 6. Held at "Choose your plan": the account can be deleted there ───────────────────
-    for (const [n, platform, where] of [[5, "ios", "the store app"], [6, "web", "the website"]]) {
+    // 6. the website (free v1, 2026-11-23): never held. The plans open once, can be closed, and Settings is reachable.
+    {
+      const { ctx, page } = await device({ platform: "web", seeded: true });
+      const { FREE_WORDS } = await import("../src/lib/freeWords.js");
+      const close = page.getByRole("button", { name: new RegExp(`^(Close|${FREE_WORDS["free-plans-close"].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})$`) });
+      const offered = await close.first().waitFor({ timeout: 40000 }).then(() => true, () => false);
+      t.ok(offered && await page.getByRole("heading", { name: "Choose your plan", exact: true }).count() === 0 && await page.locator("[data-plans-delete]").count() === 0,
+        "6a the website: an account with no plan is not held; the plans open once, with a way to close them (no wall, no Delete Account there)");
+      if (offered) await close.first().click();
+      t.ok(offered && await page.getByRole("button", { name: "Settings" }).first().waitFor({ timeout: 15000 }).then(() => true, () => false),
+        "6b …closing them lands in the app, where Settings (and its Delete Account) is");
+      await ctx.close();
+    }
+    for (const [n, platform, where] of [[5, "ios", "the store app"]]) {
       const { ctx, page, st } = await device({ platform, seeded: true });
       const held = await page.getByRole("heading", { name: "Choose your plan", exact: true }).waitFor({ timeout: 40000 }).then(() => true, () => false);
       t.ok(held, `${n}a ${where}: an account that must choose a plan is held at "Choose your plan"`);

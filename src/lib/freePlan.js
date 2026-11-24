@@ -20,6 +20,7 @@
 import { FREE_TIER_LIMITS } from "./usageLimits.js";
 import { pendingWords } from "./pendingWords.js";
 import { chargeDateLabel } from "./trialPlanFirst.js";
+import { freeWords, FREE_TERMS_DATE } from "./freeWords.js";
 
 // The free plan's bank limit. netlify/functions/plaid.js enforces it (exchange_token and migrate_items);
 // tests/nativeFreePlanLine.test.cjs reads the cap there so the two cannot drift.
@@ -82,10 +83,30 @@ export const STORE_TERMS_SECTION_7_IAP =
 // FREE_BANKS, as in the lines above. Its paragraphs, in order; the heading is TRIAL_FIRST_TERMS_7_HEADING.
 // tests/trialGoLiveWords.test.cjs pins the whole text word for word.
 export const TRIAL_FIRST_TERMS_7_HEADING = "7. Plans and billing";
-export function trialFirstTermsSection7(since) {
+// FREE V1 ON THE WEBSITE (2026-11-23): { web: true } is the website's text. The free plan is back there, so the sentence
+// "A new account chooses a plan..." and the free-plan paragraph are word slots (lib/freeWords.js), and a sentence says what
+// happens to a connected bank when a plan ends. A store app (web false, the default) keeps today's text, word for word.
+export function trialFirstTermsSection7(since, { web = false } = {}) {
   const t = Date.parse(since || "");
   if (!Number.isFinite(t)) return null;
   const date = chargeDateLabel(new Date(t));
+  if (web) return [
+    "flourish is sold as a subscription: flourish monthly, flourish annual and, while offered, flourish founding annual. " +
+      pendingWords("terms-7-founding") + " " +
+      freeWords("free-terms-7-new-account") + " A partner who joins a household can use the same subscription. " +
+      "Prices are in Canadian dollars, plus sales tax on the website.",
+    "Eligible new subscribers get 14 days free. Apple, Google or Stripe decides who is eligible, and the website needs a card to start. " +
+      "The plans screen shows whether the 14 days apply and the first-charge date. " +
+      "Unless you cancel before the first charge, you will be charged automatically. Apple may charge up to 24 hours before the trial ends. " +
+      "Your plan then renews automatically each billing period until you cancel.",
+    "To cancel on iPhone: Settings, your name, then Subscriptions, at least 24 hours before the trial or period ends. " +
+      "On Android: Google Play, your profile, Payments & subscriptions, then Subscriptions. On the website: Settings, then Manage subscription. " +
+      "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
+    // {date} is the day the free plan returns to the website (FREE_TERMS_DATE, also the Terms' "Last updated").
+    freeWords("free-terms-7-free-plan", { date: FREE_TERMS_DATE ? chargeDateLabel(new Date(`${FREE_TERMS_DATE}T12:00:00`)) : date }) + " " + freeWords("free-terms-7-bank-end"),
+    "Apple or Google handle refunds for in-app purchases under their own policies. " +
+      "On the website, partial periods are not refunded unless the law requires it.",
+  ];
   return [
     "flourish is sold as a subscription: flourish monthly, flourish annual and, while offered, flourish founding annual. " +
       pendingWords("terms-7-founding") + " " +

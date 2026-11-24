@@ -15,6 +15,7 @@
 // Pure, so it can be tested without a DOM.
 // -----------------------------------------------------------------------------
 import { trialChip } from "./freePlan.js";
+import { freeWords } from "./freeWords.js";
 
 /**
  * @param {object} o
@@ -54,7 +55,8 @@ export function trialEndLabel(endsAtMs, { trialActive = false } = {}) {
 // rows' own lines (offeredPlans), the founding note, and "Upgrade →" and trialChip on the countdown.
 export const UPGRADE_COPY = Object.freeze({
   headline: "All of flourish, in one subscription",
-  bullets: Object.freeze(["The coach, with no weekly limit", "What-If as often as you like", "More than one bank, all in one place"]),
+  // Free v1 on the website (2026-11-23): the free plan connects no bank, so the third bullet is a word slot (lib/freeWords.js).
+  bullets: Object.freeze(["The coach, with no weekly limit", "What-If as often as you like", freeWords("free-plans-bullet-bank")]),
   continue: "Review my plan",
   reviewHeading: "Check your plan",
   reviewConfirm: "Go to secure checkout",

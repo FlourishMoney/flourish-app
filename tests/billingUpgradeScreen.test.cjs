@@ -283,7 +283,9 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     const up = APP_SRC.slice(APP_SRC.indexOf("function UpgradeScreen("), APP_SRC.indexOf("\nfunction ", APP_SRC.indexOf("function UpgradeScreen(") + 10));
     // TRIAL_PLAN_FIRST (2026-11-10) adds props after the old ones, each with a default that is today's screen.
     // 2026-11-18: onDeleteAccount, last, given only to the screen that cannot be closed (absent everywhere else).
-    t.ok(/function UpgradeScreen\(\{status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount\}\)\{/.test(up), "6m the screen's props are unchanged, so every caller still opens it the same way (the switch's come after, off by default)");
+    // 2026-11-23 (free v1 on the website): closeLabel, last, defaulting to "Close" (today's word), so every caller that does
+    // not pass it opens the screen exactly as before.
+    t.ok(/function UpgradeScreen\(\{status, mode, notice, onClose, onManage, trialFirst=null, required=false, onSignOut, onRecheck, onViewLegal, onDeleteAccount, closeLabel="Close"\}\)\{/.test(up), "6m the screen's props are unchanged, so every caller still opens it the same way (the switch's come after, off by default)");
     t.ok(/const choices = upgradeChoices\(plans\);/.test(up) && /const plans = offeredPlans\(\{status\}\);/.test(up), "6n the rows are offeredPlans in upgradeChoices' order");
     t.ok(/<input type="radio" name="upgrade-plan" value=\{plan\.key\} checked=\{on\} onChange=\{\(\)=>setPicked\(plan\.key\)\}/.test(up),
       "6o a row is a radio button: tapping it selects the plan");
@@ -316,8 +318,13 @@ const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z
     const DOC = fs.readFileSync(path.join(__dirname, "..", "docs", "product", "SIGNUP-PATH-WORDS.md"), "utf8");
     const inDoc = [...DOC.matchAll(/^\| \d+ \| [a-z0-9-]+ \| `([^`]+)` \|/gm)].map(m => m[1]);
     t.eq(inDoc.length, 14, "6y the approved list has fourteen lines");
-    t.eq(mine.filter(w => !inDoc.includes(w)), [], "6z every approved line in the code is in the list, word for word");
-    t.eq(inDoc.filter(w => !mine.includes(w)), [], "6z2 …and the list has none the code does not");
+    // Free v1 on the website (2026-11-23): the third plans bullet, "More than one bank, all in one place", is replaced by
+    // the word slot free-plans-bullet-bank (lib/freeWords.js; its record is docs/product/FREE-V1-WORDS.md, held by
+    // tests/freeV1Words.test.cjs). Every other approved line is still the code's, word for word.
+    const { freeWords } = await import("../src/lib/freeWords.js");
+    const BANK_BULLET = freeWords("free-plans-bullet-bank");
+    t.eq(mine.filter(w => w !== BANK_BULLET && !inDoc.includes(w)), [], "6z every approved line in the code is in the list, word for word (the bank bullet's slot apart)");
+    t.eq(inDoc.filter(w => !mine.includes(w)), ["More than one bank, all in one place"], "6z2 …and the list has none the code does not, but the bank bullet the free plan's slot replaced");
     t.eq(U.upgradeTrialLine("November 9, 2026"), "Your trial ends on November 9, 2026.", "6z3 the trial line carries the server's date");
     const lib = ["upgradeFlow.js", "signupUi.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "lib", f), "utf8")).join("\n");
     t.ok(!/\[WORDS:/.test(lib + APP_SRC), "6z4 no [WORDS: placeholder is left in the app");

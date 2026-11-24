@@ -63,6 +63,19 @@ function pendingGiftWordIds() {
   return [...doc.matchAll(/^\| `(gift-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| pending \|$/gm)].map((m) => m[1]);
 }
 
+// A FIFTH EXCEPTION, AS NARROW: FREE V1 ON THE WEBSITE (2026-11-23; the founder: word slots until the words are agreed).
+// The same three conditions: the id starts "free-"; docs/product/FREE-V1-WORDS.md lists it with the placeholder as its
+// line; and it is in src/lib/freeWords.js or netlify/functions/_lib/freeWords.js. Unlike the others, a placeholder here
+// is never quiet: tests/freeV1Words.test.cjs FAILS while any is left, and check-pending-words.mjs refuses the build.
+const FREE_DOC = path.join(__dirname, "..", "docs", "product", "FREE-V1-WORDS.md");
+const FREE_HOMES = [path.join("src", "lib", "freeWords.js"), path.join("netlify", "functions", "_lib", "freeWords.js")];
+function pendingFreeWordIds() {
+  let doc = "";
+  try { doc = fs.readFileSync(FREE_DOC, "utf8"); } catch { return []; }
+  return [...doc.matchAll(/^\| `(free-[a-z0-9-]+)` \| [^|]+ \| [^|]+ \| \[WORDS: (free-[a-z0-9-]+)\] \| \d+ \|$/gm)]
+    .filter((m) => m[1] === m[2]).map((m) => m[1]);
+}
+
 // Every placeholder in a text, by its id.
 const placeholders = (src) => [...String(src).matchAll(/\[WORDS:\s*([a-z0-9-]+)/g)].map((m) => m[1]);
 // The placeholders in a file that the exceptions do not cover: every one, unless the file is one of the two words files.
@@ -73,7 +86,8 @@ function strayPlaceholders(src, file) {
   if (where === BALANCE_HOME) { const pending = pendingBalanceWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (TRIAL_HOMES.includes(where)) { const pending = pendingTrialWordIds(); return found.filter((id) => !pending.includes(id)); }
   if (GIFT_HOMES.some((h) => where === h || where.endsWith(path.sep + h))) { const pending = pendingGiftWordIds(); return found.filter((id) => !pending.includes(id)); }
+  if (FREE_HOMES.some((h) => where === h || where.endsWith(path.sep + h))) { const pending = pendingFreeWordIds(); return found.filter((id) => !pending.includes(id)); }
   return found;
 }
 
-module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingGiftWordIds, placeholders, strayPlaceholders };
+module.exports = { pendingCreatorWordIds, pendingBalanceWordIds, pendingTrialWordIds, pendingGiftWordIds, pendingFreeWordIds, placeholders, strayPlaceholders };

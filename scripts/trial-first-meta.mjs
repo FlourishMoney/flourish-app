@@ -13,12 +13,15 @@
 // checks the published page's source after the switch's deploy.
 // -----------------------------------------------------------------------------
 import { createRequire } from "node:module";
+import { freeWords } from "../src/lib/freeWords.js";
 
 const require = createRequire(import.meta.url);
 const { trialPlanFirstSince } = require("../netlify/functions/_lib/planRules.js");
 
 export const META_OFF = "Every feature free for 14 days.";
-export const META_ON = "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.";
+// Free v1 on the website (2026-11-23): the free plan is back, so the sentence is a word slot (src/lib/freeWords.js). Was:
+// "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled."
+export const META_ON = freeWords("free-page-description");
 
 const TAG = /(<meta (?:name="description"|property="og:description") content="[^"]*?)Every feature free for 14 days\.(" \/>)/g;
 

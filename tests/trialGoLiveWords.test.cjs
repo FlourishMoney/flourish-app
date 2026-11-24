@@ -40,6 +40,19 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   // ── 1. section 7, the text ──────────────────────────────────────────────────────────────────────
   t.eq(P.pendingWords("terms-7-founding"), FOUNDING, "1a the founding sentence is terms-7-founding, as approved");
   t.eq(F.trialFirstTermsSection7(SINCE), APPROVED_7, "1b section 7 while the switch is on: the approved text, word for word, dated from the switch");
+  // Free v1 on the website (2026-11-23): the website's text is the approved one with two changes, each a word slot
+  // (lib/freeWords.js, held by tests/freeV1Words.test.cjs): the new-account sentence, and the free-plan paragraph with the
+  // bank sentence after it. A store app keeps APPROVED_7, word for word (1b).
+  const FW = await import(path.join(REPO, "src", "lib", "freeWords.js"));
+  const APPROVED_7_WEB = [
+    APPROVED_7[0].replace("A new account chooses a plan to keep using flourish.", FW.freeWords("free-terms-7-new-account")),
+    APPROVED_7[1], APPROVED_7[2],
+    // {date} is the day the free plan returns to the website (FREE_TERMS_DATE), not the switch's day.
+    `${FW.freeWords("free-terms-7-free-plan", { date: new Date(`${FW.FREE_TERMS_DATE}T12:00:00`).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) })} ${FW.freeWords("free-terms-7-bank-end")}`,
+    APPROVED_7[4],
+  ];
+  t.ok(APPROVED_7_WEB[0] !== APPROVED_7[0], "1b1 (not vacuous: the website's first paragraph is not the store apps')");
+  t.eq(F.trialFirstTermsSection7(SINCE, { web: true }), APPROVED_7_WEB, "1b2 the website's section 7: the approved text with the free v1 slots in their two places");
   t.eq(F.TRIAL_FIRST_TERMS_7_HEADING, "7. Plans and billing", "1c …under the approved heading");
   t.eq([F.trialFirstTermsSection7(null), F.trialFirstTermsSection7(""), F.trialFirstTermsSection7("soon")], [null, null, null],
     "1d no time, no text: the Terms keep today's section 7");
@@ -56,19 +69,19 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
     try { return fn(); } finally { Object.defineProperty(globalThis, "Capacitor", { value: real, configurable: true, writable: true }); }
   };
   const terms = (X, p, props = {}) => as(p, () => textOf(X.render(X.h(X.TermsOfService, { onBack: () => {}, ...props }))));
-  const ON = APPROVED_7.join(" ");
+  const ON = APPROVED_7.join(" "), ON_WEB = APPROVED_7_WEB.join(" ");
   const webOff = terms(A, "web"), webOn = terms(A, "web", { tpfSince: SINCE });
   // The website's Terms also carry the Gifts section: dated the gift words' day when that is later (tests/_giftLegalDate.cjs).
   const G = require("./_giftLegalDate.cjs");
-  t.ok(webOff.includes("7. Subscription & Billing") && webOff.includes("a 14-day trial of premium features") && !webOff.includes("Plans and billing") && webOff.includes(`Last updated ${G.webLabel("2026-10-14")}`),
+  t.ok(webOff.includes("7. Subscription & Billing") && webOff.includes("a 14-day trial of premium features") && !webOff.includes("Plans and billing") && webOff.includes(`Last updated ${G.webTermsLabel("2026-10-14")}`),
     "1f the website, switch off: today's section 7, unchanged, and its date (or the gift words' day, if later)");
-  t.ok(webOn.includes(`7. Plans and billing ${ON}`) && !webOn.includes("a 14-day trial of premium features") && !webOn.includes("Flourish Plus") && webOn.includes(`Last updated ${G.webLabel(G.localDay(SINCE))}`),
-    "1g the website, switch on: the approved section 7, dated the day it went on (or the gift words' day, if later)");
+  t.ok(webOn.includes(`7. Plans and billing ${ON_WEB}`) && !webOn.includes("a 14-day trial of premium features") && !webOn.includes("Flourish Plus") && webOn.includes(`Last updated ${G.webTermsLabel(G.localDay(SINCE))}`),
+    "1g the website, switch on: its section 7 (the free v1 slots in), dated the day it went on (or the gift or free v1 words' day, if later)");
   for (const p of ["ios", "android"]) {
     const off = terms(S, p), on = terms(S, p, { tpfSince: SINCE });
     t.ok(off.includes(`7. Cost and usage limits ${F.STORE_TERMS_SECTION_7_IAP}`) && !off.includes("Plans and billing"), `1h a selling store build (${p}), switch off: today's section 7`);
     t.ok(on.includes(`7. Plans and billing ${ON}`) && !on.includes(F.STORE_TERMS_SECTION_7_IAP.slice(0, 60)) && on.includes("Last updated November 20, 2026"),
-      `1i …switch on: the same approved text as the website (${p})`);
+      `1i …switch on: the approved text, with no free v1 slot (${p})`);
   }
   const quiet = terms(A, "android", { tpfSince: SINCE });
   t.ok(quiet.includes(`7. Cost and usage limits ${F.STORE_TERMS_SECTION_7}`) && !quiet.includes("Plans and billing"),
@@ -84,7 +97,7 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   const T = APP.slice(APP.indexOf("function TermsOfService("), APP.indexOf("<div style={h2}>8. Intellectual Property</div>"));
   t.ok(/useEffect\(\(\)=>\{ let live=true; askTrialPlanFirst\(fetch, API_BASE\)\.then\(a=>\{ if\(!live\) return; if\(a===false\) setTpfSince\(null\); else if\(a&&a\.since\) setTpfSince\(a\.since\); \}\)/.test(T),
     "2b the Terms ask GET /api/trial-plan-first themselves: off clears it, no answer keeps what they had");
-  t.ok(T.includes("const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince) : null;"), "2c the website and a selling store build only");
+  t.ok(T.includes("const tpfTerms = (!isNativeApp() || storeBillingBuild()) ? trialFirstTermsSection7(tpfSince, { web: !isNativeApp() }) : null;"), "2c the website and a selling store build only (the website's own text on the website)");
   setEnv({ TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: SINCE });
   const FLAG_FN = require.resolve("../netlify/functions/trial-plan-first.js");
   let res = await loadWith(FLAG_FN, {}).handler({ httpMethod: "GET", headers: { origin: "capacitor://localhost" } });
@@ -99,16 +112,17 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   t.eq([btn({}), btn({ tpfOn: false }), btn({ tpfOn: true })], ["Try flourish free for 14 days", "Try flourish free for 14 days", "Get started"],
     "3b switch off: today's words; on: \"Get started\"");
   t.eq((APP.match(/<TrialButton onClick=\{goSignup\} tpfOn=\{tpfOn\}\/>/g) || []).length, 2, "3c both main buttons on the landing (top and bottom) follow the switch");
-  t.ok(APP.includes('{trialFirst && <TrialButton onClick={goSignup} tpfOn={tpfOn}/>}\n                {trialFirst && <p className="fll-trial-line">{tpfOn ? trialWords("trialfirst-landing") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}')
-    && APP.includes('<TrialButton onClick={goSignup} tpfOn={tpfOn}/>\n              {tpfOn && <p className="fll-trial-line">{trialWords("trialfirst-landing")}</p>}'),
-    "3d …each with trialfirst-landing under it while on (the bottom one adds nothing while off)");
+  // Free v1 on the website (2026-11-23): the line under it is the word slot free-landing-line (was trialfirst-landing).
+  t.ok(APP.includes('{trialFirst && <TrialButton onClick={goSignup} tpfOn={tpfOn}/>}\n                {trialFirst && <p className="fll-trial-line">{tpfOn ? freeWords("free-landing-line") : "Every feature free for 14 days. Also on iPhone and Android."}</p>}')
+    && APP.includes('<TrialButton onClick={goSignup} tpfOn={tpfOn}/>\n              {tpfOn && <p className="fll-trial-line">{freeWords("free-landing-line")}</p>}'),
+    "3d …each with the free v1 landing line under it while on (the bottom one adds nothing while off)");
 
   // ── 4. index.html: at build time since 2026-11-13 (it was "by hand on the day") ─────────────────────
   const list = fs.readFileSync(path.join(REPO, "docs", "product", "TRIAL-PLAN-FIRST-NO-CARD.md"), "utf8");
   const META = await import(path.join(REPO, "scripts", "trial-first-meta.mjs"));
   t.ok(list.includes("\"Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.\"") && list.includes("Since 2026-11-13 it follows the switch at build time instead (`scripts/trial-first-meta.mjs`)") && /^1\. \*\*`index\.html`\*\* meta description and og:description/m.test(list)
-    && META.META_ON === "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled.",
-    "4a the approved meta sentence is listed for index.html, and it is the one the build puts in while the switch is on");
+    && META.META_ON === FW.freeWords("free-page-description"),
+    "4a the approved meta sentence is listed for index.html (its record), and the build now puts in the free v1 slot while the switch is on");
 
   t.summary("trialGoLiveWords.test");
   setImmediate(() => process.exit(process.exitCode || 0));

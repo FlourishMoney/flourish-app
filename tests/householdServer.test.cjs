@@ -696,8 +696,11 @@ const coupleDb = (over = {}) => ({
       const failing = load(coupleDb(), { rpc: { household_disconnect_item: () => ({ data: null, error: { code: "XX000", message: "upstream" } }) } });
       t.eq([(await call(failing.plaid, O, { action: "delete_item", item_id: "item-O" })).code, failing.db.plaid_items.length], [500, 2], "11e a cleanup that fails deletes nothing (500): the bank stays linked and its data stays whole");
       const src = require("fs").readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8");
-      t.eq((src.match(/\.from\("plaid_items"\)\.delete\(\)\.eq\("user_id", user_id\)\.eq\("item_id"/g) || []).length, 0,
-        "11f no path in plaid.js deletes one bank's row on its own: delete_item and both duplicate clean-ups go through the cleanup");
+      // Free v1 review round 2 (R2-4): the one direct delete allowed is of a REFUSED row, by the delete's own condition
+      // (deleteRefusedRow): a bank refused or never saved, from which no household data ever came.
+      const direct = src.match(/\.from\("plaid_items"\)\.delete\(\)\.eq\("user_id", user_id\)\.eq\("item_id"[^;]*;/g) || [];
+      t.eq(direct.filter((d) => !/\.eq\("status", REFUSED\)\s*;$/.test(d)).length, 0,
+        "11f no path in plaid.js deletes one bank's row on its own: delete_item and both duplicate clean-ups go through the cleanup (only a refused row, by the delete's own condition)");
       // Who linked each account: recorded from Plaid's own answers, against the person who linked the bank.
       const w = load(coupleDb());
       await call(w.plaid, P, { action: "get_accounts", item_id: "item-O" });

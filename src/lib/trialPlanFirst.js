@@ -46,13 +46,16 @@ export function recalledAccountTrial(storage, uid) {
 //                 on this device, and can be closed. Nothing they already have is taken away (item 2).
 // canSell: the screen can actually sell here (the website with billing on; a store build that sells). Where it
 // cannot, nobody is held at a screen with nothing to buy.
-export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePlan = null, demo = false, canSell = false, pendingInvite = false } = {}) {
+// FREE V1 ON THE WEBSITE (2026-11-23): the free plan is back, so on the website "required" becomes "offer_once": a new
+// account with no plan, or one whose subscription ended, sees the plans once and can close them onto Free. A store app
+// keeps "required" until its next build (native: true, the default, so a caller that says nothing is never loosened).
+export function plansFirstStage({ tpf, paid = false, coveredBy = null, profilePlan = null, demo = false, canSell = false, pendingInvite = false, native = true } = {}) {
   if (!tpf || tpf.on !== true || demo || !canSell) return null;
   // A partner's invite waiting to be accepted (couple mode): never held at the plans; once joined, the partner's plan covers.
   if (pendingInvite) return null;
   if (paid === true || coveredBy) return null;
   if (profilePlan === "beta_founder" || profilePlan === "premium") return null;
-  if (tpf.account_trial === false) return "required";
+  if (tpf.account_trial === false) return native === false ? "offer_once" : "required";
   if (profilePlan === "free") return "offer_once";
   return null;   // inside the account trial: unchanged, the plans open when asked (item 2)
 }

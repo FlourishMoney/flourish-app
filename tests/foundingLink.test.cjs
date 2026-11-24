@@ -325,8 +325,11 @@ const brokenStorage = { getItem() { throw new Error("blocked"); }, setItem() { t
     t.ok(/foundingNote=\{foundingLink \? FOUNDING_SIGN_IN_NOTE : \(giftReturn && GIFT_SIGN_IN_NOTE \? GIFT_SIGN_IN_NOTE : null\)\}/.test(APP), "6d the sign-in card gets the waitlist-address line when the link brought them (and, website only, the gift's line when the redeem page did, lib/giftReturn.js)");
     t.ok(/useState\(isNativeApp\(\) \|\| !!foundingNote\)/.test(APP), "6e …and opens straight to sign-in");
     // TRIAL_PLAN_FIRST (2026-11-10): a second mount, the plans-first screen, behind the same guard: every mount is.
-    t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, (APP.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length, "6f still only behind billingUi.show, wherever the checkout screen is mounted");
-    t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, 2, "6f2 …in two places: when asked, and the plans that come first for a new account");
+    // Free v1 on the website (2026-11-23): a third, the plans over onboarding (opened only by the bank step's button), behind
+    // billingUi.show and !isNativeApp().
+    const overOnboarding = (APP.match(/\{plansOverOnboarding && billingUi\.show && !isNativeApp\(\) && \(\s*<div role="dialog" aria-modal="true" aria-label="Plans"[^>]*>\s*<UpgradeScreen /g) || []).length;
+    t.eq((APP.match(/<UpgradeScreen\b/g) || []).length, (APP.match(/billingUi\.show\)return <UpgradeScreen /g) || []).length + overOnboarding, "6f still only behind billingUi.show, wherever the checkout screen is mounted");
+    t.eq([(APP.match(/<UpgradeScreen\b/g) || []).length, overOnboarding], [3, 1], "6f2 …in three places: when asked, the plans that come first for a new account, and over onboarding from the bank step");
     // 2026-10-20: a store app asks /api/billing whether the household pays on the web, and keeps only that
     // (billing.js answers it with { enabled, paid }), so the founding offer can never reach it.
     t.ok(/setBillingStatus\(nativeApp \? \{ enabled: body\?\.enabled === true, paid: body\?\.paid === true \} : body\)/.test(APP),
