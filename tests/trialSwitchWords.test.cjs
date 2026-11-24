@@ -53,12 +53,12 @@ const APPROVED = {
 };
 const EIGHT = Object.keys(APPROVED).sort();
 const META_OFF = "Know what&#39;s safe to spend until payday. A Canadian money app where safe to spend is built around your paydays. Every feature free for 14 days.";
-// Free v1 on the website (2026-11-23): with the switch on, the whole description is the approved free-page-description
-// (src/lib/freeWords.js, held by tests/freeV1Words.test.cjs), in place of the 2026-11-11 one that ended "Eligible new
+// Free v1 on the website (2026-11-23): with the switch on, the sentence is the word slot free-page-description
+// (src/lib/freeWords.js, held by tests/freeV1Words.test.cjs) in place of the 2026-11-11 sentence, "Eligible new
 // subscribers get 14 days free, then the plan renews at the listed price unless cancelled." Read from the words file.
 const FREE_SRC = fs.readFileSync(path.join(REPO, "src", "lib", "freeWords.js"), "utf8");
 const FREE_DESC = JSON.parse(`"${(FREE_SRC.match(/"free-page-description": "((?:[^"\\]|\\.)*)"/) || [])[1]}"`);
-const META_ON = FREE_DESC.replace(/'/g, "&#39;");
+const META_ON = `Know what&#39;s safe to spend until payday. A Canadian money app where safe to spend is built around your paydays. ${FREE_DESC}`;
 
 (async () => {
   const t = create();
@@ -80,8 +80,8 @@ const META_ON = FREE_DESC.replace(/'/g, "&#39;");
       ["a date with no time", { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20" }], ["a time with no zone", { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-20T15:00:00" }]];
     for (const [name, env] of OFF_SETTINGS) t.ok(META.trialFirstMeta(INDEX, env) === INDEX, `1b the build with ${name}: index.html comes out exactly as it went in`);
     const built = META.trialFirstMeta(INDEX, ON_ENV);
-    t.eq(descriptions(built), [META_ON, META_ON], "1c the build with the switch on: both descriptions are the approved description, word for word");
-    t.ok(!built.includes("Every feature free for 14 days.") && built.split(META_ON).length === 3 && !built.includes("Eligible new subscribers get 14 days free, then") && !built.includes("built around your paydays"),
+    t.eq(descriptions(built), [META_ON, META_ON], "1c the build with the switch on: both descriptions end with the approved sentence, word for word");
+    t.ok(!built.includes("Every feature free for 14 days.") && built.split(FREE_DESC).length === 3 && !built.includes("Eligible new subscribers get 14 days free, then"),
       "1d …and the old sentences are nowhere in the file, the new one exactly twice");
     const strip = (h) => h.replace(/<meta (?:name="description"|property="og:description") content="[^"]*" \/>/g, "");
     t.ok(strip(built) === strip(INDEX) && built.length === INDEX.length + 2 * (META_ON.length - META_OFF.length), "1e nothing else in the file changes");
@@ -186,7 +186,8 @@ const META_ON = FREE_DESC.replace(/'/g, "&#39;");
       t.ok(on.includes(APPROVED["trialfirst-meeting-locked"]) && !on.includes("Start your trial") && !on.includes("[WORDS:"), "3j …switch on: \"Choose a plan to run the meeting with your coach.\", and no trial to \"start\" is promised");
       A.setTpfOn(false);
     }
-    t.ok(APP.includes('{mode === "signup" ? switchWords("trialfirst-signup-title", tpfOn) : mode === "check_email" ? "Almost there" : "Welcome back"}')
+    // Free v1 on the website (2026-11-23): on the website, with the switch on, the heading is the word slot free-signup-title.
+    t.ok(APP.includes('{mode === "signup" ? ((tpfOn && !isNativeApp()) ? freeWords("free-signup-title") : switchWords("trialfirst-signup-title", tpfOn)) : mode === "check_email" ? "Almost there" : "Welcome back"}')
       && /function AuthScreen\(\{[^)]*tpfOn = false[^)]*\}\)/.test(APP) && /<AuthScreen [^\n]*tpfOn=\{tpfOn\}/.test(APP),
       "3k the sign-up card's heading takes the switch the landing already takes (off unless the server says on)");
 

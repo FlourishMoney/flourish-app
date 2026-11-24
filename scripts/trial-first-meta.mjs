@@ -19,18 +19,14 @@ const require = createRequire(import.meta.url);
 const { trialPlanFirstSince } = require("../netlify/functions/_lib/planRules.js");
 
 export const META_OFF = "Every feature free for 14 days.";
-// Free v1 on the website (2026-11-23): the free plan is back, and the approved description (free-page-description,
-// src/lib/freeWords.js) is the WHOLE description while the switch is on, in place of "Know what's safe to spend until
-// payday. A Canadian money app where safe to spend is built around your paydays. Eligible new subscribers get 14 days
-// free, then the plan renews at the listed price unless cancelled." Off, index.html's own description stays.
+// Free v1 on the website (2026-11-23): the free plan is back, so the sentence is a word slot (src/lib/freeWords.js). Was:
+// "Eligible new subscribers get 14 days free, then the plan renews at the listed price unless cancelled."
 export const META_ON = freeWords("free-page-description");
-// As an attribute value, written the way index.html writes its own (an apostrophe as &#39;).
-export const META_ON_HTML = META_ON.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const TAG = /(<meta (?:name="description"|property="og:description") content=")[^"]*?Every feature free for 14 days\.(" \/>)/g;
+const TAG = /(<meta (?:name="description"|property="og:description") content="[^"]*?)Every feature free for 14 days\.(" \/>)/g;
 
 /**
- * index.html as it ships: unchanged while the switch is off; the approved description in both tags while on.
+ * index.html as it ships: unchanged while the switch is off; the approved sentence in both descriptions while on.
  * On, it must change exactly the two tags. If index.html was reworded or reformatted so that it cannot, the build
  * stops with an error (the deploy that would turn the switch on is refused, and the one before it stays live) rather
  * than publish "Every feature free for 14 days." beside a switch that is on.
@@ -38,7 +34,7 @@ const TAG = /(<meta (?:name="description"|property="og:description") content=")[
 export function trialFirstMeta(html, env = process.env) {
   if (typeof html !== "string" || trialPlanFirstSince(env) === null) return html;
   let changed = 0;
-  const out = html.replace(TAG, (_, before, after) => { changed++; return `${before}${META_ON_HTML}${after}`; });
+  const out = html.replace(TAG, (_, before, after) => { changed++; return `${before}${META_ON}${after}`; });
   if (changed !== 2 || out.includes(META_OFF)) {
     throw new Error(`trial-first-meta: TRIAL_PLAN_FIRST is on, but index.html's two descriptions could not be changed (${changed} of 2). See scripts/trial-first-meta.mjs.`);
   }

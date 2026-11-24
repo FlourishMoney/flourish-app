@@ -120,7 +120,7 @@ export const LLMS_FACTS = {
   operator: { text: "flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.", from: "home" },
 };
 
-export function buildLlms({ pages, guides, summary = null }) {
+export function buildLlms({ pages, guides }) {
   const check = (f) => {
     const on = pages[f.from];
     if (typeof on !== "string") throw new Error(`build-seo: llms.txt names a page it was not given (${f.from})`);
@@ -131,7 +131,7 @@ export function buildLlms({ pages, guides, summary = null }) {
   return [
     `# ${ORG_NAME}`,
     "",
-    `> ${check(summary || F.summary)}`,
+    `> ${check(F.summary)}`,
     "",
     "Who it's for: Canadian households.",
     "",
@@ -181,11 +181,7 @@ export function buildSeo(dist, { env = process.env, published = [], render = ren
   if (fs.existsSync(getPath)) fs.writeFileSync(getPath, addToHead(fs.readFileSync(getPath, "utf8"), jsonLd(graph(organization(), ...apps()))));
 
   const homeMeta = (shell.match(/<meta name="description" content="([^"]*)"/) || [])[1] || "";
-  // While plans come first, the home page's description is the approved free-plan one as a whole (scripts/trial-first-meta.mjs),
-  // so llms.txt's summary is that description, word for word. Off, the summary line above.
-  const summary = tpfOn ? { text: textOf(homeMeta), from: "homeMeta" } : null;
-  if (summary && !summary.text) throw new Error("build-seo: the home page has no description");
-  const llms = buildLlms({ pages: { home: textOf(home), support: textOf(support), homeMeta: textOf(homeMeta) }, guides: published, summary });
+  const llms = buildLlms({ pages: { home: textOf(home), support: textOf(support), homeMeta: textOf(homeMeta) }, guides: published });
   fs.writeFileSync(path.join(dist, "llms.txt"), llms);
   return { tpfOn, homeChars: textOf(home).length, supportChars: textOf(support).length, faq: faq.length };
 }

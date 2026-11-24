@@ -35,7 +35,7 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   const rows = [...DOC.matchAll(/^\| `(free-[a-z0-9-]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (\d+) \|$/gm)]
     .map((m) => ({ id: m[1], where: m[2].trim(), line: m[4].trim(), limit: Number(m[5]) }));
   t.eq(rows.map((r) => r.id).sort(), Object.keys(ALL).sort(), "1a the words doc lists exactly the slots in the two words files");
-  t.eq(Object.keys(ALL).length, 12, "1b (not vacuous: twelve slots)");
+  t.eq(Object.keys(ALL).length, 13, "1b (not vacuous: thirteen slots)");
   t.ok(rows.every((r) => r.line === ALL[r.id]), "1c each slot's line in the doc is its line in the code, word for word");
 
   // ── 2. each slot where it shows ──────────────────────────────────────────────────────────────────
@@ -58,18 +58,15 @@ const PLACEHOLDER = /\[WORDS:\s*free-/;
   t.ok(/const freePlansClose = \(!isNativeApp\(\) && !isPremium && !billingStatus\?\.paid && !billingStatus\?\.covered_by\) \? freeWords\("free-plans-close"\) : "Close";/.test(APP)
     && (APP.match(/closeLabel=\{freePlansClose\}/g) || []).length === 2 && /\{!required&&<button onClick=\{onClose\}[^>]*>\{closeLabel\}<\/button>\}/.test(APP),
     "2j the plans screen's close button, for an account without a plan (a paying one keeps \"Close\")");
-  t.ok(/: billingUi\.mode==="manage"\s*\? "Change your card or cancel\."\s*: onFreePlan\s*\? freeWords\("free-settings-plan-line"\)\s*: "Flourish Plus adds Credit and the coach-run meeting, and lifts the free plan's limits on the coach and What-If\."\}/.test(APP)
-    && /onFreePlan=\{!isPremium && !billingStatus\?\.paid && !billingStatus\?\.covered_by\}/.test(APP),
-    "2k Settings' plan card line, only for an account on the free plan (one in an account trial or founder access keeps today's line)");
-  t.ok(!/free-signup-title/.test(APP) && /\{mode === "signup" \? switchWords\("trialfirst-signup-title", tpfOn\)/.test(APP), "2l the sign-up heading is today's, unchanged (no new words for it)");
+  t.ok(/: billingUi\.mode==="manage"\s*\? "Change your card or cancel\."\s*: freeWords\("free-settings-plan-line"\)\}/.test(APP), "2k Settings' plan card line");
+  t.ok(/\(tpfOn && !isNativeApp\(\)\) \? freeWords\("free-signup-title"\) : switchWords\("trialfirst-signup-title", tpfOn\)/.test(APP), "2l the website's sign-up heading (a store app keeps its own)");
   t.eq((APP.match(/freeWords\("free-landing-line"\)/g) || []).length, 2, "2m the landing's line, top and bottom");
   t.ok(!/trialWords\("trialfirst-landing"\)/.test(APP), "2n …and the old line is no longer shown");
   const META = await import("../scripts/trial-first-meta.mjs");
   t.eq(META.META_ON, W.freeWords("free-page-description"), "2o the page description's sentence");
   const html = read("index.html");
   const on = META.trialFirstMeta(html, { TRIAL_PLAN_FIRST: "true", TRIAL_PLAN_FIRST_SINCE: "2026-11-18T18:55:00Z" });
-  const descs = [...on.matchAll(/<meta (?:name="description"|property="og:description") content="([^"]*)" \/>/g)].map((m) => m[1]);
-  t.eq(descs, [META.META_ON_HTML, META.META_ON_HTML], "2p …as the whole of both descriptions while plans come first");
+  t.eq((on.match(new RegExp(W.freeWords("free-page-description").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 2, "2p …in both descriptions while plans come first");
   const F = await import("../src/lib/freePlan.js");
   const web = F.trialFirstTermsSection7("2026-11-18T18:55:00Z", { web: true }).join(" ");
   t.ok(web.includes(W.freeWords("free-terms-7-new-account")) && web.includes(W.freeWords("free-terms-7-bank-end")) && !web.includes("A new account chooses a plan to keep using flourish."),

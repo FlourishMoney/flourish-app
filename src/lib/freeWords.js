@@ -28,12 +28,14 @@ export const FREE_WORDS = Object.freeze({
   "free-plans-close": "Continue on the free plan",
   // The website's Settings, the plan card's line (today "Flourish Plus adds Credit and the coach-run meeting, and
   // lifts the free plan's limits on the coach and What-If.").
-  "free-settings-plan-line": "You're on the free plan.",
+  "free-settings-plan-line": "A flourish subscription adds bank connections, Credit and the coach-run money meeting, and lifts the free plan's limits on the coach and What-If.",
+  // The website's sign-up card heading (today "Create your account" while plans come first).
+  "free-signup-title": "Create your account",
   // The website's landing: the line under "Get started", top and bottom (today "Choose a plan to get started. ...").
   "free-landing-line": "On the website, use the free plan or choose a flourish subscription to connect banks. Eligible new subscribers get 14 days free with payment details required, then the subscription renews at the listed price unless cancelled. flourish is also on iPhone and Android.",
   // The website's page description (search results and link previews): the sentence after "Know what's safe to
   // spend until payday. A Canadian money app where safe to spend is built around your paydays."
-  "free-page-description": "flourish is a Canadian money app that shows what's safe to spend until payday.",
+  "free-page-description": "Use the free plan on the website, or a flourish subscription to connect banks.",
   // Terms of Service section 7 on the website (plans first): the sentence that replaces "A new account chooses a
   // plan to keep using flourish.", the paragraph that says what the free plan is (replaces "An account opened
   // before {date} keeps its 14-day account trial ... then moves to the free plan: ..."), and what happens to a
@@ -46,6 +48,8 @@ export const FREE_WORDS = Object.freeze({
 // THE TERMS' NEW DATE. The website's Terms change with these words, so their "Last updated" date (and the date the
 // consent step records, lib/legalConsent.js) moves to the day the words go live: "YYYY-MM-DD", set when the words are
 // pasted in. null until then, and tests/freeV1Words.test.cjs fails while it is. The store apps' Terms do not move.
+// Set 2026-11-23 (Toronto) with the approved words. If the website goes live on another day, change this line to
+// that day (Toronto time) before the deploy: the Terms' date and section 7's {date} both follow it.
 export const FREE_TERMS_DATE = "2026-11-23";
 
 const PLACEHOLDER = /\[WORDS:\s*free-/;
