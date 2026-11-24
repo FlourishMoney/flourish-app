@@ -7,7 +7,8 @@ import {
   TrendingUp, Shield, CheckCircle,
   Target, PiggyBank, DollarSign,
   ShoppingBag, Flame, Star, Car, BarChart2,
-  Navigation, Cpu, Grid, Heart, LayoutGrid
+  Navigation, Cpu, Grid, Heart, LayoutGrid,
+  Lock, CheckSquare, FileText, Landmark
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
@@ -4675,9 +4676,10 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
       {bankStage==="select"&&<>
         {/* Trust bar */}
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
-          <div style={{color:C.isDark?C.tealBright:"#00606F",fontWeight:700,marginBottom:8}}>🔒 Read-only connection</div>
-          {[["✅","Read-only. We can never move your money"],["✅","Encrypted in transit and at rest"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
-            <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
+          {/* Line icons in the app's colours (2026-11-24, in place of the lock and check-box emoji); the words carry it all. */}
+          <div style={{color:C.isDark?C.tealBright:"#00606F",fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><Lock size={16} strokeWidth={2} color={C.isDark?C.tealBright:"#00606F"} aria-hidden="true"/><span>Read-only connection</span></div>
+          {["Read-only. We can never move your money","Encrypted in transit and at rest","Live balances + 90 days of transactions","Disconnect any time from settings"].map((t,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><CheckSquare size={16} strokeWidth={2} color={C.isDark?C.greenBright:C.green} aria-hidden="true" style={{marginTop:3}}/><span>{t}</span></div>
           ))}
         </div>
 
@@ -4721,7 +4723,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
           ):(linkTokenLoading||(!isLinkReady&&!initError))?(
             <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
           ):(
-            <><span style={{fontSize:20}}>🏦</span><span>{initError?"SDK unavailable":"Connect My Bank Securely →"}</span></>
+            <><Landmark size={20} strokeWidth={2} aria-hidden="true"/><span>{initError?"SDK unavailable":"Connect My Bank Securely →"}</span></>
           )}
         </button>}
         {/* "Not Now" just dismisses — the user stays on this step and can still skip it or upload a
@@ -4745,7 +4747,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
 
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
-          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementTitle}</div>
+          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}><FileText size={15} strokeWidth={2} color={C.mutedHi} aria-hidden="true"/><span>{FIRST_RUN_WORDS.statementTitle}</span></div>
           <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FIRST_RUN_WORDS.statementSub}</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
@@ -15187,7 +15189,8 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
       <StatusBarCover bg={C.bg}/>
       <div style={{maxWidth:480,width:"100%",minWidth:0}}>
         <div style={{textAlign:"center",marginBottom:24}}>
-          <div style={{fontSize:48,marginBottom:8}}>🤖</div>
+          {/* The app's own mark (2026-11-24, in place of a robot emoji), at the 48 px the robot was drawn at. */}
+          <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><FlourishMark size={48}/></div>
           <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:24,color:C.cream,marginBottom:6}}>About AI in Flourish</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Quick heads-up before you use AI features.</div>
         </div>

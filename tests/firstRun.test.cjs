@@ -90,7 +90,8 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
       billsPending: "Your bills and debt payments aren't in this number yet. You'll add them in the next steps.",
       billsLead: "Add the bills due before payday so they're in your number.",
       notNow: "Not now", updateNumber: "Update my number →",
-      statementTitle: "📄 Import a bank statement", statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
+      // 2026-11-24: the same words; the page emoji is now a line icon beside them (tests/consentIcons.test.cjs).
+      statementTitle: "Import a bank statement", statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
       // The consent step, approved 2026-11-12 (ChatGPT 100, Grok 100).
       consentTitle: "Before you start",
       consentLine: "By tapping Get started, you agree to the Terms and the Privacy Policy, including how flourish collects and uses your information.",
@@ -271,7 +272,7 @@ async function socialSignup(user, { signedIn = true, hadMilestone = false, origi
     const fv = (bills) => textOf(A.render(A.h(A.FirstVisitScreen, { data: { ...A.buildDemoState("CA"), demo: false, bills, profile: { ...A.buildDemoState("CA").profile, billsAfterNumber: "pending" } }, onDismiss: () => {} })));
     t.ok(fv([]).includes(W.billsPending) && !fv([{ name: "Rent", amount: "1", date: "1" }]).includes(W.billsPending), "6d the first number says bills aren't in it yet, only while there are none");
     const bank = textOf(as("ios", () => A.render(A.h(A.Onboarding, { onComplete: () => {} }))));
-    t.ok(APP.includes("{FIRST_RUN_WORDS.statementTitle}</div>") && APP.includes("{FIRST_RUN_WORDS.statementSub}</div>") && !APP.includes("📄 Upload a statement instead"),
+    t.ok(APP.includes("{FIRST_RUN_WORDS.statementTitle}</span></div>") && APP.includes("{FIRST_RUN_WORDS.statementSub}</div>") && !APP.includes("📄 Upload a statement instead"),
       "6e the statement import is offered beside the bank as a first path, in its own words");
     t.ok(bank.length > 0, "6f onboarding still renders from its first screen");
   }

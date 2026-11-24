@@ -29,7 +29,8 @@ export const FIRST_RUN_WORDS = Object.freeze({
   billsLead: "Add the bills due before payday so they're in your number.",
   notNow: "Not now",
   updateNumber: "Update my number →",
-  statementTitle: "📄 Import a bank statement",
+  // 2026-11-24: the page emoji left the words for a line icon beside them (App.jsx, the bank step). Same words.
+  statementTitle: "Import a bank statement",
   statementSub: "A PDF or CSV from your bank's website. No bank sign-in needed.",
 
   // The consent step that opens onboarding for every new account (email, Apple or Google), APPROVED 2026-11-12 (ChatGPT
