@@ -62,6 +62,21 @@ Branch `free-v1-web`, from main `f048f72` (2026-11-23). Website only. The iPhone
   deleted only while still refused (the delete's own condition), so overlapping clean-ups are harmless.
 - Token encryption stays as every Plaid token is today; app-level encryption is a later job for both branches.
 
+## Review round 3 (on 894b697: Grok 100, ChatGPT 90)
+
+- R3-1: the exchange saves a connected bank with the same guard as migrate_items (`saveConnectedRow`: insert if no row;
+  else update only while not refused). A refused row is not saved, and the answer is the plan refusal, so a save can
+  never revive an Item the clean-up is removing at Plaid.
+- R3-2: a save that did not say it saved is read back (`rowNow`), never judged from a snapshot taken before it. Its own
+  connected row (the reply was lost) is a success. Any other row is left exactly as it is ("try again"). Refused is the
+  plan refusal. Unreadable removes nothing (support told, "try again"). No row: the refused row is claimed (written only
+  if none is there) before the Item is removed at Plaid, so a connected row is never overwritten.
+- R3-3: absent, refused, connected and unreadable are told apart. Only a row read as refused is permanent; migrate_items
+  answers `retry: true` otherwise, and `claimRefusedRow` answers "unknown" (nothing removed) when the row it met is gone.
+- R3-4: the clean-up claims a row before it calls Plaid: one conditional write that matches only while the row is
+  refused and its last try is over 5 minutes old, stamping the try time. A claim that matches nothing is skipped, so
+  overlapping listings call Plaid once for an Item.
+
 ## Not in this branch
 
 - Removing a bank at the end of a paid period (a bank kept after a trial ends stays connected and billed for now).

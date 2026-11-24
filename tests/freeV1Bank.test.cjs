@@ -211,7 +211,10 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
           t.eq([res.statusCode, json(res).error, toPlaid, removed, wrote], [402, "plan_limit", true, true, false],
             `4b website, ${who} (Free), ${banks} bank(s), a bank it does not hold: refused, removed at Plaid at once, never saved as connected`);
           t.eq(json(res).message, SERVER_LINE, `4c website, ${who}, ${banks} bank(s): …with the server's word slot`);
-        } else t.eq([res.statusCode !== 402 && res.statusCode !== 503, toPlaid], [true, true], `4d website, ${who}, ${banks} bank(s): goes on to Plaid`);
+        // (The fake database refuses every write. Review round 3 (R3-2): a save that fails, with no refused row that can
+        // be claimed, removes nothing and answers a retryable 503 "Could not save", never the plan's refusal and never
+        // "status_unavailable".)
+        } else t.eq([res.statusCode !== 402 && json(res).error !== "status_unavailable", toPlaid], [true, true], `4d website, ${who}, ${banks} bank(s): goes on to Plaid`);
         // the store apps: exactly today's answers
         for (const [origin, name] of STORE_ORIGINS) {
           mod = load(h, { banks });
