@@ -8,7 +8,7 @@ import {
   Target, PiggyBank, DollarSign,
   ShoppingBag, Flame, Star, Car, BarChart2,
   Navigation, Cpu, Grid, Heart, LayoutGrid,
-  Lock, CheckSquare, FileText, Landmark
+  Lock, CheckSquare, FileText, Landmark, Smartphone
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
@@ -9934,7 +9934,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           {goals.length>0&&setScreen&&(
             <div style={{background:C.purple+"08",border:`1px solid ${C.purple}22`,borderRadius:14,padding:"12px 16px",display:"flex",gap:10,alignItems:"center",cursor:"pointer"}}
               onClick={()=>setScreen("coach")}>
-              <span style={{fontSize:18}}>🤖</span>
+              <Icon id="sparkles" size={18} color={C.purpleBright} strokeWidth={1.5}/>
               <div style={{flex:1}}>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
                 <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. It can explain what different monthly amounts would mean for each timeline.</div>
@@ -12019,7 +12019,7 @@ function WidgetScreen({data,onBack}){
 
     {/* Android setup */}
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.blueDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.blue}33`,padding:"20px"}}>
-      <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🤖</span> Add to Android Home Screen</div>
+      <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><Smartphone size={18} strokeWidth={2} color={C.blueBright} aria-hidden="true"/> Add to Android Home Screen</div>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,marginLeft:26}}>Chrome · Android 8+</div>
       {[["1","Open flourishmoney.app in Chrome"],["2","Tap the three-dot menu (⋮) top right"],["3","Tap 'Add to Home screen'"],["4","Confirm. The icon appears on your home screen"],["5","On Samsung: long-press icon → 'Add widget' in Home screen editor"]].map(([n,step])=>(
         <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
@@ -15243,7 +15243,8 @@ function AIDisabledNotice({onOpenSettings, onClose}){
   return (
     <div style={{minHeight:"60vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
       <div style={{maxWidth:380,textAlign:"center"}}>
-        <div style={{fontSize:42,marginBottom:12}}>🤖</div>
+        {/* The app's own mark (2026-11-24, in place of a robot emoji), at the 42 px the robot was drawn at. */}
+        <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><FlourishMark size={42}/></div>
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream,marginBottom:8}}>AI features are off</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>You've turned off AI in Settings. Enable it to chat with the Coach and use AI explanations.</div>
         <button onClick={onOpenSettings} style={{background:C.green,color:textOn(C.green),border:"none",borderRadius:99,padding:"11px 24px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginRight:8}}>Open Settings</button>
@@ -15275,7 +15276,8 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
       <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24,margin:"auto"}}>
         <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{fontSize:40,marginBottom:8}}>🔒</div>
+          {/* The bank step's line lock (2026-11-24, in place of the lock emoji), in its teal, at the emoji's 40 px. */}
+          <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><Lock size={40} strokeWidth={1.75} color={C.isDark?C.tealBright:"#00606F"} aria-hidden="true"/></div>
           <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream}}>Connect your bank</div>
         </div>
         <div style={card}>
@@ -15310,7 +15312,8 @@ function AIConsentModal({ onEnable, onCancel, failed = false }){
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
       <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
         <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{fontSize:40,marginBottom:8}}>🤖</div>
+          {/* The app's own mark (2026-11-24, in place of a robot emoji), at the 40 px the robot was drawn at. */}
+          <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><FlourishMark size={40}/></div>
           <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream}}>Enable AI Coach</div>
         </div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"16px 18px",marginBottom:18}}>
@@ -15362,7 +15365,7 @@ export function clearState() {
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
 // ─── KIDS MINI SITE ──────────────────────────────────────────────────────────
 function KidsGoal({goal, jars, code, theme, primary, playSound}){
-  const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
+  const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪"];
   const [editingGoal,setEditingGoal]=useState(false);
   const [goalName,setGoalName]=useState(goal.name||"");
   const [goalAmt2,setGoalAmt2]=useState(goal.amount||"");

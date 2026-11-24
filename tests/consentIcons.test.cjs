@@ -7,6 +7,10 @@
 //   2  the onboarding bank step: the lock, the green check boxes, the page and the bank button's emoji become simple line
 //      icons (lucide, the app's icon set) in the app's colours, hidden from screen readers (the words say it all)
 //   3  no word changes on either screen
+//   4  review round 1 (2026-11-24): the same for the "Enable AI Coach" pop-up and the "AI features are off" screen (the
+//      flourish mark), and the "Connect your bank" consent pop-up (the bank step's line lock). No robot emoji is left
+//      anywhere in the app: the Goals coach hint takes the Coach's own icon, the Android home-screen tip a phone line
+//      icon, and the Kids goal picker drops its robot.
 // The screens were looked at in a browser, light and dark, at phone width (the shots in the PR); the layout suite
 // measures onboarding's controls and gaps.
 // -----------------------------------------------------------------------------
@@ -48,6 +52,30 @@ const EMOJI = /\p{Extended_Pictographic}/u;
   const W = (await import("../src/lib/firstRunWords.js")).FIRST_RUN_WORDS;
   t.eq(W.statementTitle, "Import a bank statement", "2g the statement title keeps its words; the page emoji left the string for the icon");
   t.ok(/import \{[^}]*\bLock\b[^}]*\bCheckSquare\b[^}]*\bFileText\b[^}]*\bLandmark\b[^}]*\} from "lucide-react";/.test(APP), "2h the four icons come from lucide-react, the app's icon set");
+
+  // ── 4. Review round 1: the other AI screens, the bank consent pop-up, and no robot anywhere ─────────────
+  const modal = between("function AIConsentModal(", "// ─── APP ROOT");
+  t.ok(modal.length > 1000 && !/🤖/.test(modal), "4a \"Enable AI Coach\": no robot");
+  t.ok(/<div style=\{\{display:"flex",justifyContent:"center",marginBottom:8\}\}><FlourishMark size=\{40\}\/><\/div>\s*<div[^>]*>Enable AI Coach<\/div>/.test(modal), "4b …the flourish mark at the robot's 40 px, above the title");
+  for (const said of ["Enable AI Coach</div>", "This enables AI coaching powered by", "Claude (Anthropic)", "Your conversations may be processed by Anthropic to generate responses.", "This is not financial advice.", ">Enable AI Coach</button>", ">Cancel</button>"]) t.ok(modal.includes(said), `4c the words are unchanged: ${said}`);
+  const off = between("function AIDisabledNotice(", "function BankConsentModal(");
+  t.ok(off.length > 500 && !/🤖/.test(off), "4d \"AI features are off\": no robot");
+  t.ok(/<div style=\{\{display:"flex",justifyContent:"center",marginBottom:12\}\}><FlourishMark size=\{42\}\/><\/div>\s*<div[^>]*>AI features are off<\/div>/.test(off), "4e …the flourish mark at the robot's 42 px, above the title");
+  for (const said of ["AI features are off</div>", "You've turned off AI in Settings. Enable it to chat with the Coach and use AI explanations.", ">Open Settings</button>", ">Back</button>"]) t.ok(off.includes(said), `4f the words are unchanged: ${said}`);
+  const consent = between("function BankConsentModal(", "function AIConsentModal(");
+  t.ok(consent.length > 1000 && !/🔒/.test(consent), "4g \"Connect your bank\" pop-up: no lock emoji");
+  t.ok(/<div style=\{\{display:"flex",justifyContent:"center",marginBottom:8\}\}><Lock size=\{40\} strokeWidth=\{1\.75\} color=\{C\.isDark\?C\.tealBright:"#00606F"\} aria-hidden="true"\/><\/div>\s*<div[^>]*>Connect your bank<\/div>/.test(consent), "4h …the bank step's line lock, in the same teal, at the emoji's 40 px");
+  for (const said of ["Connect your bank</div>", "Read-only: we cannot move money", "What we access", "How long we keep it", "Disconnecting and deleting", ">Connect My Bank</button>", ">Not Now</button>"]) t.ok(consent.includes(said), `4i the words are unchanged: ${said}`);
+  // Nowhere in the app: every source file a build bundles, and the website's own pages.
+  const files = [];
+  (function walk(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : /\.(jsx?|mjs|html|json|css)$/.test(f) && files.push(p); } })(path.join(ROOT, "src"));
+  (function walk(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : /\.(html|js|json|webmanifest)$/.test(f) && files.push(p); } })(path.join(ROOT, "public"));
+  files.push(path.join(ROOT, "index.html"));
+  t.ok(files.length > 50, `sanity: the scan reads the app's files (${files.length})`);
+  t.eq(files.filter((f) => /🤖/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(ROOT, f)), [], "4j no robot emoji anywhere in the app");
+  t.ok(/<Icon id="sparkles" size=\{18\} color=\{C\.purpleBright\} strokeWidth=\{1\.5\}\/>\s*<div style=\{\{flex:1\}\}>\s*<div[^>]*>Ask Coach about your goals<\/div>/.test(APP), "4k the Goals hint to ask the Coach: the Coach's own sparkles icon");
+  t.ok(/<Smartphone size=\{18\} strokeWidth=\{2\} color=\{C\.blueBright\} aria-hidden="true"\/> Add to Android Home Screen/.test(APP), "4l the Android home-screen tip: a phone line icon");
+  t.ok(/const goalEmojis=\["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪"\];/.test(APP), "4m the Kids goal picker: the other 14 choices, the robot gone");
 
   t.summary("consentIcons.test");
 })();
