@@ -9,7 +9,7 @@
 //    triggers (third day on Today, weekly check-in) ask nothing.
 //    2026-11-24 (the meeting is reached by almost nobody): two more moments, native only, under the same
 //    limits. About 3 seconds after the first safe-to-spend number shows (first_safe), and the 3rd different day the
-//    app is opened (third_open_day). Each comes once per install: once it has come, asked or not, it never asks again.
+//    app is opened (third_open_day). Each comes once per install: once it has come (asked, or ruled out by the yearly limit), it never asks again.
 //    Review round 1 (2026-11-24): the first number's wait is cancelled when the number leaves the screen, the app goes to
 //    the background or the demo starts, and is checked again right before asking (none of those spends the moment). An
 //    open is a real open: once when the app loads, then each time the app comes back to the foreground (a data update
@@ -22,6 +22,8 @@
 //    the foreground), and a launch that fails it can still count later in the same launch.
 //    Review round 3: a first-number wait cancelled after its timer fired (the plugin still loading) asks nothing and
 //    keeps the moment; both screens go off screen when they unmount (tests/reviewScreens.browser.test.cjs mounts them).
+//    Review round 4: going to the background also cancels a wait whose timer has fired (the plugin still loading), and
+//    trouble in the last 24 hours no longer spends the first number's or the third day's moment: they wait.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
@@ -190,11 +192,12 @@ const path = require("path");
     t.ok(rec2().askedAt.length === 1 && !!rec2().moments.first_safe, "…recorded as an ask, and the moment as spent");
     newSession(at("2026-11-29T10:00:00"));
     t.eq((await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-29T10:00:00") })).reason, "moment_spent", "…and never again on this install");
-    // Trouble during the wait: the decision is made after the wait, so it does not ask, and the moment is spent.
+    // Trouble during the wait: the decision is made after the wait, so it does not ask. Review round 4 (C4-1): the moment
+    // is kept; it waits for the next time the number shows, 24 hours on.
     fresh(T0);
     const waiting = P.reviewOnFirstSafe({ delayMs: 80, now: T0 });
     P.noteReviewTrouble(at("2026-11-24T09:59:59"));
-    t.eq([(await waiting).reason, asks.length, !!rec2().moments.first_safe], ["recent_trouble", 1, true], "trouble during the 3 seconds: no ask, and the moment has passed");
+    t.eq([(await waiting).reason, asks.length, !!rec2().moments.first_safe], ["recent_trouble", 1, false], "C4-1 trouble during the 3 seconds: no ask, and the moment is kept");
 
     // R1 (review round 1): the wait ends early, or the check right before asking fails. No ask, and the moment is NOT spent.
     const unspent = () => !(rec2() && rec2().moments.first_safe) && asks.length === 1;
@@ -332,6 +335,50 @@ const path = require("path");
       t.eq([(await w2).ask, asks.length - before2, !!rec2().moments.first_safe], [true, 1, true], "R3-1 a wait left alone still asks, once");
       w2.cancel();
       t.eq(asks.length - before2, 1, "…and a cancel after it asked changes nothing");
+    }
+    // Round 4, R4-1: the timer has fired and the plugin is loading when the app goes to the background and comes back
+    // before it has loaded. Going to the background cancels the wait in flight too: no ask, the moment kept.
+    {
+      fresh(T0);
+      const before = asks.length;
+      const d = slowPlugin();
+      const w = P.reviewOnFirstSafe({ delayMs: 0, now: T0 });
+      await Promise.race([d.started, w]);
+      P._reviewVisibility("hidden", T0.getTime() + 5000);
+      P._reviewVisibility("visible", T0.getTime() + 6000);
+      d.release();
+      t.eq([(await w).reason, kept(before)], ["cancelled", true], "R4-1 hidden and back while the plugin loads (the timer had fired): no ask, and the moment is not spent");
+      const d2 = slowPlugin();
+      const w2 = P.reviewOnFirstSafe({ delayMs: 0, now: T0 });
+      await Promise.race([d2.started, w2]);
+      d2.release();
+      t.eq([(await w2).ask, asks.length - before], [true, 1], "R4-1 …the number's next showing still asks, once");
+    }
+    // Round 4, C4-1: trouble in the last 24 hours keeps the first number's and the third day's moments. They wait: the
+    // number for its next showing, the third day for a later open. (The yearly limit still spends them, as before.)
+    {
+      fresh(T0);
+      const before = asks.length;
+      P.noteReviewTrouble(at("2026-11-24T09:00:00"));
+      const r1 = await P.reviewOnFirstSafe({ delayMs: 0, now: T0 });
+      t.eq([r1.reason, asks.length - before, rec2().moments.first_safe], ["recent_trouble", 0, null], "C4-1 trouble, then the first number within 24 hours: no ask, and the moment is kept");
+      const r2 = await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-25T09:00:01") });
+      t.eq([r2, asks.length - before, !!rec2().moments.first_safe], [{ ask: true, reason: "first_safe" }, 1, true], "C4-1 …the same number shown again after 24 hours: it asks, once");
+      t.eq([(await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-26T09:00:00") })).reason, asks.length - before], ["moment_spent", 1], "…and then never again");
+
+      fresh(at("2026-11-27T08:00:00"));
+      P._resetLaunchForTest();
+      store[P.REVIEW_STORAGE_KEY] = JSON.stringify({ openDays: ["2026-11-24", "2026-11-25"] });
+      P.noteReviewTrouble(at("2026-11-27T07:30:00"));
+      const before3 = asks.length;
+      const o1 = await P.reviewOnAppLaunch({ now: at("2026-11-27T08:00:00") });
+      t.eq([o1.reason, asks.length - before3, rec2().moments.third_open_day, rec2().openDays.length], ["recent_trouble", 0, null, 3],
+        "C4-1 trouble, then the third day's open within 24 hours: no ask, the moment kept (the day counted)");
+      P._reviewVisibility("hidden", at("2026-11-28T07:00:00").getTime());
+      const o2 = await P._reviewVisibility("visible", at("2026-11-28T08:00:00").getTime());
+      t.eq([o2 && o2.ask, asks.length - before3, !!rec2().moments.third_open_day], [true, 1, true], "C4-1 …a later open, after 24 hours: it asks, once");
+      P._reviewVisibility("hidden", at("2026-11-29T07:00:00").getTime());
+      t.eq([(await P._reviewVisibility("visible", at("2026-11-29T08:00:00").getTime())).reason, asks.length - before3], ["moment_spent", 1], "…and then never again");
     }
     P._setReviewPluginLoaderForTest(null);
 

@@ -68,9 +68,10 @@ async function reviewPlugin() {
   return _plugin;
 }
 
-// The reasons a once-per-install moment passes without being spent: it never came (web, demo), it already had, or this
-// session already asked (it waits for a later session).
-const NOT_A_MOMENT = ["web", "demo", "unknown_trigger", "moment_spent", "not_third_day", "session_already_asked"];
+// The reasons a once-per-install moment passes without being spent: it never came (web, demo), it already had, this
+// session already asked (it waits for a later session), or there was trouble in the last 24 hours (review round 4: it
+// waits too; the first number for its next showing, the third day for a later open). Only the yearly limit spends it.
+const NOT_A_MOMENT = ["web", "demo", "unknown_trigger", "moment_spent", "not_third_day", "session_already_asked", "recent_trouble"];
 
 // THE APP SESSION (review round 1): at most one ask per session. A session starts when the app loads, and again when it
 // comes back after REVIEW_SESSION_GAP_MINUTES or more in the background. Kept in memory only: a new launch is a new session.
@@ -125,7 +126,7 @@ async function askIfAllowed(trigger, { demo = false, now = new Date(), meetingKe
     state = next;
   }
   const decision = decideReviewAsk({ state, trigger, now, native, demo, meetingKey, askedThisSession: _askedThisSession });
-  // A once-per-install moment has come but the rules say no (trouble, three a year): spent now. A yes is spent only once
+  // A once-per-install moment has come but the rules say no (three a year; trouble only waits): spent now. A yes is spent only once
   // it has passed the live check below, together with the ask.
   if (native && !demo && !decision.ask && trigger !== REVIEW_TRIGGERS.MEETING_DONE && !NOT_A_MOMENT.includes(decision.reason)) {
     state = withMomentSpent(state, trigger, now);
@@ -166,9 +167,14 @@ export function reviewOnMeetingDone(opts = {}) {
 // cancelled flag, which cancel() always sets, even after the timer fired; the live check right before asking reads it.
 //   onScreen  () => is the number still on screen?   isDemo  () => is the demo on now?
 let _firstSafe = null;   // the wait whose timer has not fired yet: { timer, finish, cancelled }
+// Review round 4: the wait whose timer has fired and whose ask has not finished (the plugin may still be loading). Ending
+// the first number's wait (the background, a second showing) cancels it too.
+let _firstSafeAsking = null;
 function endFirstSafe(reason) {
+  if (_firstSafeAsking) _firstSafeAsking.cancelled = true;
   const w = _firstSafe;
   if (!w) return;
+  w.cancelled = true;
   _firstSafe = null;
   clearTimeout(w.timer);
   w.finish({ ask: false, reason });
@@ -194,7 +200,10 @@ export function reviewOnFirstSafe({ demo = false, now = null, delayMs = FIRST_SA
         else if (!onScreen()) still.reason = "not_on_screen";
       } catch { still.reason = "not_on_screen"; }
       if (still.reason) { finish({ ask: false, reason: still.reason }); return; }
-      finish(askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date(), live: { isDemo, onScreen, cancelled: () => w.cancelled } }));
+      _firstSafeAsking = w;
+      const asking = askIfAllowed(REVIEW_TRIGGERS.FIRST_SAFE, { now: now || new Date(), live: { isDemo, onScreen, cancelled: () => w.cancelled } });
+      asking.finally(() => { if (_firstSafeAsking === w) _firstSafeAsking = null; }).catch(() => {});
+      finish(asking);
     }, Math.max(0, delayMs));
   });
   _firstSafe = w;

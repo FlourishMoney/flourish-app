@@ -15,8 +15,10 @@
 //   first_safe      about 3 seconds after the first safe-to-spend number shows on this install (2026-11-24).
 //   third_open_day  the 3rd different day (the person's own calendar day) the app is opened on this install
 //                   (2026-11-24). The days need not be in a row.
-// The last two come once per install: once a moment has come, whether or not the limits below let it ask, it never
-// asks again, so it never turns up later at some other, unrelated moment.
+// The last two come once per install: once a moment has come, it never asks again, so it never turns up later at some
+// other, unrelated moment. It has come when it asks, or when the three-a-year limit rules it out. Trouble in the last
+// 24 hours does not spend it (review round 4): it waits, the first number for its next showing, the third day for a
+// later open, since a new household's first session is when trouble is likeliest.
 //
 // ONE ASK PER APP SESSION (review round 1, 2026-11-24): whichever moment comes first. A moment that comes later in the
 // same session is not spent; it waits for a later session (the third day: any later open; the first number: the next
@@ -25,7 +27,8 @@
 //
 // NEVER straight after something went wrong: an error, a bank link that failed, a payment the store
 // declined (or a purchase that did not finish), or a coach message that was refused. Any of those in the
-// last 24 hours rules the ask out, because a person who just hit a wall is being asked to grade the wall.
+// last 24 hours rules the ask out, because a person who just hit a wall is being asked to grade the wall. The
+// meeting's ask is simply not made; the first number's and the third day's wait for later (above).
 //
 // AT MOST THREE TIMES IN ANY 365 DAYS PER INSTALL, counted from the times Flourish asked, whether or not
 // the store chose to show its sheet (neither store says whether it did, so the conservative reading is
@@ -115,7 +118,7 @@ export function withOpenDay(state, now) {
   return { ...s, openDays: [...s.openDays, key] };
 }
 
-// A once-per-install moment has come (asked or not): it never asks again.
+// A once-per-install moment has come (it asked, or the yearly limit ruled it out): it never asks again.
 export function withMomentSpent(state, trigger, now) {
   const s = normalizeReviewState(state, now);
   if (!MOMENTS.includes(trigger) || s.moments[trigger]) return s;
