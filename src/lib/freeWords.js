@@ -48,9 +48,9 @@ export const FREE_WORDS = Object.freeze({
 // THE TERMS' NEW DATE. The website's Terms change with these words, so their "Last updated" date (and the date the
 // consent step records, lib/legalConsent.js) moves to the day the words go live: "YYYY-MM-DD", set when the words are
 // pasted in. null until then, and tests/freeV1Words.test.cjs fails while it is. The store apps' Terms do not move.
-// Set 2026-11-23 (Toronto) with the approved words. If the website goes live on another day, change this line to
-// that day (Toronto time) before the deploy: the Terms' date and section 7's {date} both follow it.
-export const FREE_TERMS_DATE = "2026-11-23";
+// Set to 2026-11-24 (Toronto), the go-live day (review round 1). If the website goes live on another day, change this
+// line to that day (Toronto time) before the deploy: the Terms' date and section 7's {date} both follow it.
+export const FREE_TERMS_DATE = "2026-11-24";
 
 const PLACEHOLDER = /\[WORDS:\s*free-/;
 

@@ -36,6 +36,19 @@ Branch `free-v1-web`, from main `f048f72` (2026-11-23). Website only. The iPhone
 - `tests/freeV1Words.test.cjs` fails while any slot is a placeholder or the date is unset. It runs last in `test:math`, so every other suite still runs.
 - The production build refuses the placeholders as well (`scripts/check-pending-words.mjs`).
 
+## Review round 1 (2026-11-23: Grok 100, Gemini 92, ChatGPT 72)
+
+- A refused bank is cleaned up durably (ported from plus-1.1.8, no migration): a refused row keeps the Item until Plaid
+  confirms the removal or says it is gone, tried again when the banks are listed (finishRefusedBanks); the error tracker
+  is told the Item and the path, never the token. When ownership cannot be read, nothing is removed: an insert-if-absent
+  of the refused row tells a new bank from the account's own. Refused rows are never listed, counted, read,
+  reconnected, held by migrate_items, or revived by the webhook (`tests/freeV1RefusedBank.test.cjs`).
+- migrate_items answers a retryable 503 before any token when either read of the held banks fails.
+- Onboarding's stale refusal: retried once per visit to the bank step while paid, with a fresh link token; no loop if
+  the server disagrees. No bank error beside the free-bank line (`tests/freeV1Web.browser.test.cjs` 4 to 6).
+- Known defects 70 (Origin is not authenticated; the one-bank count is not atomic) and 71 (a plan ending mid-exchange).
+- `FREE_TERMS_DATE` is 2026-11-24, the go-live day.
+
 ## Not in this branch
 
 - Removing a bank at the end of a paid period (a bank kept after a trial ends stays connected and billed for now).
