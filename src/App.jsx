@@ -4369,8 +4369,8 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
 
-  const fetchLinkToken = useCallback(async ()=>{
-    if(linkToken) return; // already have one
+  const fetchLinkToken = useCallback(async ({fresh=false}={})=>{
+    if(linkToken && !fresh) return; // already have one (fresh: a retry, which never re-uses the one this render holds)
     // Quality Sprint item 6: offline → recoverable message + auto-retry when back online (effect below).
     if(typeof navigator!=="undefined" && navigator.onLine===false){ setBankError("You're offline. Reconnect to the internet, then tap Retry."); setLinkTokenLoading(false); return; }
     setLinkTokenLoading(true);
@@ -4386,9 +4386,19 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===1 && !planBlocked) fetchLinkToken(); },[step]); // eslint-disable-line
-  // Free v1 (review round): once the server says the account is paid or covered, a free-plan refusal from before is
-  // stale: clear it and ask for a link token again (the subscription's webhook may land after the bank step opened).
-  useEffect(()=>{ if(bankMayConnect && planBlocked){ setPlanBlocked(false); setLinkToken(null); if(step===1) fetchLinkToken(); } },[bankMayConnect]); // eslint-disable-line
+  // Free v1 (review rounds, 2026-11-23): while the app knows the account is paid or covered, a free-plan refusal at the
+  // bank step is stale (the subscription may reach the server after the step opened, or the refusal came first): it is
+  // cleared and the link token asked for again, fresh. Whichever came last (the refusal, the paid answer, the step),
+  // this runs. ONCE per visit to the bank step while paid: if the server still refuses, the free-bank line stays and
+  // nothing loops; leaving the step, or the paid answer going away, lets it ask once more later.
+  const planRetried = useRef(false);
+  useEffect(()=>{
+    if(!bankMayConnect || step!==1){ planRetried.current=false; return; }
+    if(!planBlocked || planRetried.current) return;
+    planRetried.current=true;
+    setPlanBlocked(false); setBankError(null); setLinkToken(null);
+    fetchLinkToken({fresh:true});
+  },[bankMayConnect, planBlocked, step]); // eslint-disable-line react-hooks/exhaustive-deps
   // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
   // bank step without one yet (callPlaid also retries transient drops with backoff).
   useEffect(()=>{
@@ -4489,7 +4499,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   const canConnect = isLinkReady && !initError;
   // The link token could not be fetched: the main button is the retry, never "Ready".
   const tokenFailed = !!bankError && !linkToken && !linkTokenLoading && !initError;
-  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken(); };
+  const retryToken = ()=>{ setLinkToken(null); fetchLinkToken({fresh:true}); };
   // Open Plaid (after the consent sheet): counted as a bank link started.
   const startPlaid = ()=>{ setBankOutcome(null); count("bank_link_started"); openPlaidLink(); };
 
@@ -4689,8 +4699,9 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
             {onOpenPlans&&<Btn label={freeWords("free-bank-button")} onClick={onOpenPlans} color={C.teal} small/>}
           </div>
         )}
-        {/* Error state: the main button below is the retry when the link token could not be fetched. */}
-        {(bankError||initError)&&(
+        {/* Error state: the main button below is the retry when the link token could not be fetched. Never beside the
+            free-bank line (review round 1): on the free plan there is no bank to reach, so no bank error to show. */}
+        {!planBlocked&&(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
             <div style={{color:C.isDark?"#ff8888":"#A51F37",fontSize:13}}>{bankError||initError}</div>
           </div>

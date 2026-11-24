@@ -11,6 +11,13 @@
 //             close onto Free (the app, not a wall); a reload does not open them again; Settings' "+ Connect a Bank"
 //             shows the free-bank line with its button, which opens the plans.
 //   paid      a paying account: the bank step is today's (the Connect button, the link token used), no free line.
+//   late      review round 1 (Gemini, ChatGPT): the app already knows the account is paid, but the server's first answer
+//             is the free plan's refusal (its subscription not landed there yet): the refusal is stale, the step asks
+//             once more with a fresh link token, and today's Connect button shows.
+//   disagree  the app says paid and the server keeps refusing: the step asks once more, never in a loop, and the
+//             free-bank line stays.
+//   sdk       review round 1 (ChatGPT): Plaid's script fails while a Free account is at the bank step: only the
+//             free-bank line shows, never "Plaid SDK failed to load" beside it.
 // The words are the slots in src/lib/freeWords.js, read from the file (placeholders until the words are pasted in).
 // -----------------------------------------------------------------------------
 "use strict";
@@ -66,8 +73,9 @@ function buildApp(supabaseUrl) {
   dist = buildApp(base);
   const browser = await playwright.chromium.launch();
 
-  // who: "free" (no plan: the server refuses a new bank) or "paid".
-  const open = async (who) => {
+  // who: "free" (no plan: the server refuses a new bank) or "paid". opts.link: the link-token answers in order (402 the
+  // free plan's refusal, 200 a token; the last repeats); opts.plaidScript "fail": Plaid's script cannot load.
+  const open = async (who, opts = {}) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: "light", locale: "en-CA", timezoneId: "America/Toronto" });
     await ctx.addInitScript(([key, session]) => { try {
       if (sessionStorage.getItem("seeded")) return;
@@ -76,6 +84,7 @@ function buildApp(supabaseUrl) {
       localStorage.setItem("flourish_tour_done", "1");
       localStorage.setItem(key, session);
     } catch (e) {} }, [MOCK.storageKey(base), JSON.stringify(MOCK.makeSession())]);
+    await ctx.addInitScript(() => { window.addEventListener("error", (e) => { if (e.target && /cdn\.plaid\.com/.test(String(e.target.src || ""))) window.__plaidScriptFailed = true; }, true); });
     const seen = { plaid: [], billing: [], saved: null };
     const tpf = { trial_plan_first: { on: true, trial_days: 14, account_trial: false, web_trial_eligible: true, trialing: false, trial_ends: null } };
     await ctx.route("**/rest/v1/user_data*", (r) => {
@@ -85,7 +94,8 @@ function buildApp(supabaseUrl) {
       const out = row && row.data ? { data: row.data, updated_at: new Date().toISOString() } : null;
       return r.fulfill({ status: 200, contentType: "application/json", body: obj ? JSON.stringify(out) : JSON.stringify(out ? [out] : []) });
     });
-    await ctx.route("https://cdn.plaid.com/**", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: PLAID_STUB }));
+    await ctx.route("https://cdn.plaid.com/**", async (r) => { if (opts.plaidScript === "fail") { await new Promise((ok) => setTimeout(ok, 9000)); return r.abort().catch(() => {}); } return r.fulfill({ status: 200, contentType: "text/javascript", body: PLAID_STUB }); });
+    const linkAnswers = (opts.link || [who === "paid" ? 200 : 402]).slice();
     await ctx.route("**/api/**", async (r) => {
       const req = r.request(), u = new URL(req.url()), name = u.pathname.slice(5);
       let body = {}; try { body = JSON.parse(req.postData() || "{}"); } catch {}
@@ -100,7 +110,10 @@ function buildApp(supabaseUrl) {
       }
       if (name === "plaid") {
         seen.plaid.push(body.action + (body.item_id ? ":update" : ""));
-        if (body.action === "create_link_token") return who === "paid" ? json(200, { link_token: "link-sandbox-test" }) : json(402, { error: "plan_limit", message: "server words" });
+        if (body.action === "create_link_token") {
+          const status = linkAnswers.length > 1 ? linkAnswers.shift() : linkAnswers[0];
+          return status === 200 ? json(200, { link_token: `link-sandbox-test-${seen.plaid.length}` }) : json(402, { error: "plan_limit", message: "server words" });
+        }
         if (body.action === "list_items") return json(200, { items: [] });
         return json(200, {});
       }
@@ -142,8 +155,8 @@ function buildApp(supabaseUrl) {
   };
 
   // Each scenario: a step that times out is a failure with its message, and its browser context always closes.
-  const scenario = async (name, who, fn) => {
-    const o = await open(who);
+  const scenario = async (name, who, fn, opts) => {
+    const o = await open(who, opts);
     try { await fn(o); } catch (e) { t.ok(false, `${name}: ${String(e && e.message || e).split("\n")[0]}`); }
     finally { await o.ctx.close().catch(() => {}); }
   };
@@ -209,6 +222,46 @@ function buildApp(supabaseUrl) {
     t.ok(/Connect My Bank Securely/.test(s) && seen.plaid.includes("create_link_token"), "3b …today's Connect button, with its link token");
     t.eq(errs, [], "3c no page errors");
   });
+
+  // ── late: paid in the app, the server's first answer a stale refusal ───────────────────────────────
+  await scenario("late", "paid", async ({ page, seen, errs }) => {
+    await toBankStep(page);
+    await page.locator('[data-bank-button="connect"]').waitFor();
+    const s = await text(page);
+    t.eq(seen.plaid.filter((a) => a === "create_link_token").length, 2, "4a a stale refusal for a paid account: the link token is asked once more");
+    t.ok(!s.includes(LINE) && await page.locator("[data-free-bank]").count() === 0, "4b …the free-bank line goes");
+    t.ok(/Connect My Bank Securely/.test(s) && !/Couldn.t reach your bank/.test(s), "4c …and today's Connect button shows, with no error");
+    t.eq(errs, [], "4d no page errors");
+  }, { link: [402, 200] });
+
+  // ── disagree: paid in the app, the server keeps refusing ──────────────────────────────────────────
+  await scenario("disagree", "paid", async ({ page, seen, errs }) => {
+    await toBankStep(page);
+    await page.locator("[data-free-bank]").waitFor();
+    await page.waitForTimeout(4000);
+    const asks = seen.plaid.filter((a) => a === "create_link_token").length;
+    t.eq(asks, 2, "5a the server keeps refusing: asked once more, never in a loop");
+    t.ok((await text(page)).includes(LINE), "5b …and the free-bank line stays");
+    t.eq(errs, [], "5c no page errors");
+  }, { link: [402] });
+
+  // ── sdk: Plaid's script cannot load on a Free account ──────────────────────────────────────────────
+  await scenario("sdk", "free", async ({ page, errs }) => {
+    await toBankStep(page);
+    await page.locator("[data-free-bank]").waitFor();
+    await page.waitForFunction(() => !!window.__plaidScriptFailed, null, { timeout: 20000 });
+    await page.waitForTimeout(500);
+    const s = await text(page);
+    t.ok(s.includes(LINE), "6a Plaid's script cannot load on Free: the free-bank line shows");
+    t.ok(!/Plaid SDK failed to load|Couldn.t reach your bank/.test(s), "6b …and no bank error beside it");
+    t.eq(errs, [], "6c no page errors");
+  }, { plaidScript: "fail" });
+  await scenario("sdk-paid", "paid", async ({ page }) => {
+    await toBankStep(page);
+    await page.waitForFunction(() => !!window.__plaidScriptFailed, null, { timeout: 20000 });
+    await page.getByText("Plaid SDK failed to load").first().waitFor();
+    t.ok(true, "6d (not vacuous: the same failure on a paid account shows Plaid's error)");
+  }, { plaidScript: "fail" });
 
   await browser.close();
   server.close();
