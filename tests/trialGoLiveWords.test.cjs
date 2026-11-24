@@ -47,7 +47,8 @@ function setEnv(o) { for (const k of ENV_KEYS) delete process.env[k]; Object.ass
   const APPROVED_7_WEB = [
     APPROVED_7[0].replace("A new account chooses a plan to keep using flourish.", FW.freeWords("free-terms-7-new-account")),
     APPROVED_7[1], APPROVED_7[2],
-    `${FW.freeWords("free-terms-7-free-plan", { date: "November 20, 2026" })} ${FW.freeWords("free-terms-7-bank-end")}`,
+    // {date} is the day the free plan returns to the website (FREE_TERMS_DATE), not the switch's day.
+    `${FW.freeWords("free-terms-7-free-plan", { date: new Date(`${FW.FREE_TERMS_DATE}T12:00:00`).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) })} ${FW.freeWords("free-terms-7-bank-end")}`,
     APPROVED_7[4],
   ];
   t.ok(APPROVED_7_WEB[0] !== APPROVED_7[0], "1b1 (not vacuous: the website's first paragraph is not the store apps')");

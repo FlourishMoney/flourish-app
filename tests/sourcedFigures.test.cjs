@@ -394,6 +394,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       // Its go-live words (approved 2026-11-11, ChatGPT 100, Grok 100): the landing's main button, and Terms section 7's
       // line on avoiding flourish's own first charge (legal text about the app's plan, not the household's money).
       "Get started", "Cancel before the first charge and you pay nothing; after that, cancelling takes effect at the period's end.",
+      // Free v1 on the website (approved 2026-11-23, ChatGPT 100, Grok 100): the page description, about which of
+      // flourish's own plans to use, never advice on the household's money.
+      "Use the free plan on the website, or a flourish subscription to connect banks.",
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",

@@ -190,7 +190,9 @@ function buildApp(supabaseUrl) {
     if (await consent.count()) await consent.first().click();
     await page.getByText(LINE).first().waitFor();
     t.ok(!/Could not start bank connection/.test(await text(page)), "2d Settings' + Connect a Bank on Free: the free-bank line, not \"Could not start bank connection\"");
-    await tap(page, BUTTON);
+    // The box's own button: Settings' plan card behind it has a "See plans" button too.
+    await page.getByRole("dialog").filter({ hasText: LINE }).getByRole("button", { name: BUTTON, exact: true }).click();
+    await page.waitForTimeout(300);
     await btn(page, CLOSE).waitFor();
     t.ok((await text(page)).includes(PLANS_HEADLINE), "2e …and its button opens the plans");
     await tap(page, CLOSE);
