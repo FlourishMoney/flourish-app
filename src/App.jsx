@@ -5989,9 +5989,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // account and an income (otherwise it shows "Connect an account…" or "Add your income…"). Sent the first
   // time it shows; never in the demo.
   const showsSafeFigure = isVisible('hero') && hasCashAccount && !_ss.noIncome;
+  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
   // The store review's first-number moment (2026-11-24): for a household that did not see its first number on this
   // install's first-number screen (an update, a new phone), Today's figure is that first number. Once per install.
-  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); if(showsSafeFigure) reviewOnFirstSafe({ demo: !!data?.demo || _activationOff }); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ if(showsSafeFigure) reviewOnFirstSafe({ demo: !!data?.demo || _activationOff }); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
@@ -19257,8 +19258,8 @@ export default function FlourishApp(){
   useEffect(() => {
     if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
     signalActivation("app_open", false, user.id);
-    reviewOnAppOpen({ demo: false }); // the store review's third-day moment (lib/reviewPrompt.js); a counted day changes nothing
     if (hasDataSource(appData)) signalActivation("data_source", false, user.id);
+    reviewOnAppOpen({ demo: false }); // the store review's third-day moment (lib/reviewPrompt.js); a counted day changes nothing
   }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──

@@ -201,9 +201,9 @@ const path = require("path");
     // never saw it on this install) and the app opening. Demo and the sample households never ask.
     t.eq((app.match(/reviewOnFirstSafe\(/g) || []).length, 2, "the first number asks from two places: the first-number screen and Today");
     t.ok(/onNumberShown=\{\(\)=>\{ signalActivation\("safe_view", false, user\?\.id\); signalOnboarding\("first_number_shown",[^}]*\}\); reviewOnFirstSafe\(\{ demo: _activationOff \}\); \}\}/.test(app), "…the first-number screen, when its number shows (never in the demo: that screen is for a real account)");
-    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); if\(showsSafeFigure\) reviewOnFirstSafe\(\{ demo: !!data\?\.demo \|\| _activationOff \}\); \},\[showsSafeFigure\]\);/.test(app), "…Today, when it shows the figure, passing demo");
+    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); \},\[showsSafeFigure\]\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*useEffect\(\(\)=>\{ if\(showsSafeFigure\) reviewOnFirstSafe\(\{ demo: !!data\?\.demo \|\| _activationOff \}\); \},\[showsSafeFigure\]\);/.test(app), "…Today, when it shows the figure (beside the safe_view count), passing demo");
     t.eq((app.match(/reviewOnAppOpen\(/g) || []).length, 1, "the app opening asks from one place");
-    t.ok(/signalActivation\("app_open", false, user\.id\);\s*reviewOnAppOpen\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo");
+    t.ok(/signalActivation\("app_open", false, user\.id\);\s*if \(hasDataSource\(appData\)\) signalActivation\("data_source", false, user\.id\);\s*reviewOnAppOpen\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo");
     const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
     t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
     // Meeting memory (2026-11-08): markDone saves the meeting first, so "after the meeting is recorded" is now checked
