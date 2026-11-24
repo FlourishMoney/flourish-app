@@ -202,9 +202,12 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
         let toPlaid = asked(before, /\/item\/public_token\/exchange$/);
         if (who === "unread") t.eq([res.statusCode, toPlaid], [503, false], `4a website, unread plan, ${banks} bank(s): 503 before Plaid, as today`);
         else if (h.free) {
-          const removed = asked(before, /\/item\/remove$/), wrote = mod.calls.writes.some(([table]) => table === "plaid_items");
+          // Review round 1: a refused row (status "refused": never listed, counted or read) may be written while the
+          // removal runs (tests/freeV1RefusedBank.test.cjs); what may never be written is the bank as a connected one.
+          const removed = asked(before, /\/item\/remove$/);
+          const wrote = mod.calls.writes.some(([table, op, v]) => table === "plaid_items" && op !== "delete" && !(v && v.status === "refused"));
           t.eq([res.statusCode, json(res).error, toPlaid, removed, wrote], [402, "plan_limit", true, true, false],
-            `4b website, ${who} (Free), ${banks} bank(s), a bank it does not hold: refused, removed at Plaid at once, nothing saved`);
+            `4b website, ${who} (Free), ${banks} bank(s), a bank it does not hold: refused, removed at Plaid at once, never saved as connected`);
           t.eq(json(res).message, SERVER_LINE, `4c website, ${who}, ${banks} bank(s): …with the server's word slot`);
         } else t.eq([res.statusCode !== 402 && res.statusCode !== 503, toPlaid], [true, true], `4d website, ${who}, ${banks} bank(s): goes on to Plaid`);
         // the store apps: exactly today's answers

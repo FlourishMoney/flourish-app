@@ -24,4 +24,9 @@ function freeBankCap(event) {
   return isNativeRequest(event) ? STORE_APP_FREE_BANKS : WEBSITE_FREE_BANKS;
 }
 
-module.exports = { freeBankCap, WEBSITE_FREE_BANKS, STORE_APP_FREE_BANKS };
+// A BANK THAT WAS REFUSED AND IS STILL TO BE REMOVED AT PLAID (review round 1, 2026-11-23; the same value and meaning as
+// plus-1.1.8's _lib/bankLimits.js REFUSED). Its plaid_items row keeps the Item's id and token only until Plaid has
+// removed it: it is never listed, never counted toward any limit, never read, never reconnected (plaid.js).
+const REFUSED = "refused";
+
+module.exports = { freeBankCap, WEBSITE_FREE_BANKS, STORE_APP_FREE_BANKS, REFUSED };
