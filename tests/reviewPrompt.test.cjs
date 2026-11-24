@@ -7,6 +7,9 @@
 //    at most three asks in any 365 days; never within 24 hours of trouble (an error, a failed bank link,
 //    a declined payment, a refused coach message); never on the web or in demo mode. The retired
 //    triggers (third day on Today, weekly check-in) ask nothing.
+//    2026-11-24 (Amanda: the meeting is reached by almost nobody): two more moments, native only, under the same
+//    limits. About 3 seconds after the first safe-to-spend number shows (first_safe), and the 3rd different day the
+//    app is opened (third_open_day). Each comes once per install: once it has come, asked or not, it never asks again.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
@@ -31,7 +34,8 @@ const path = require("path");
 
   // ── 1a. The constants ────────────────────────────────────────────────────────────────────────
   t.eq([R.REVIEW_MAX_ASKS, R.REVIEW_WINDOW_DAYS, R.TROUBLE_QUIET_HOURS], [3, 365, 24], "at most 3 asks in 365 days; 24 quiet hours after trouble");
-  t.eq(Object.values(T), ["meeting_done"], "one trigger: a money meeting marked done");
+  t.eq(Object.values(T), ["meeting_done", "first_safe", "third_open_day"], "three moments: a money meeting marked done, the first safe-to-spend number, the third day the app is opened");
+  t.eq(R.FIRST_SAFE_DELAY_MS, 3000, "the first number's ask waits about 3 seconds");
   t.eq(localDayKey(at("2026-10-02T00:00:01")), "2026-10-02", "(the day key is local, not UTC)");
   t.eq(typeof R.REVIEW_COOLDOWN_DAYS, "undefined", "the 120-day rule of 2026-10-01 is gone");
 
@@ -72,6 +76,45 @@ const path = require("path");
     t.ok(!/health|score|paid|premium|plan|rating|happy|sentiment|balance|income/i.test(src), "…and nothing in it reads how the household is doing, what it pays, or how it might rate");
   }
 
+  // ── 1d. The first safe-to-spend number, and the third day the app is opened (2026-11-24) ────────
+  {
+    const d0 = at("2026-11-24T19:00:00");
+    const moment = (state, trigger, now, extra = {}) => decideReviewAsk({ state, trigger, now, native: true, demo: false, ...extra });
+    t.eq(moment(emptyReviewState(), T.FIRST_SAFE, d0), { ask: true, reason: "first_safe" }, "the first safe-to-spend number asks");
+    const spent = R.withMomentSpent(emptyReviewState(), T.FIRST_SAFE, d0);
+    t.eq(moment(spent, T.FIRST_SAFE, later(d0, 30)), { ask: false, reason: "moment_spent" }, "…once per install: never again, even a month on");
+    t.eq(moment(emptyReviewState(), T.FIRST_SAFE, d0, { native: false }).reason, "web", "the web never asks on the first number");
+    t.eq(moment(emptyReviewState(), T.FIRST_SAFE, d0, { demo: true }).reason, "demo", "…nor does the demo");
+    t.eq(moment(withTrouble(emptyReviewState(), later(d0, -0.01)), T.FIRST_SAFE, d0).reason, "recent_trouble", "…nor within 24 hours of trouble (a failed bank link in onboarding)");
+    const full = [0, 7, 14].reduce((s, n) => withAsked(s, later(d0, n - 30), "m" + n), emptyReviewState());
+    t.eq(moment(full, T.FIRST_SAFE, d0).reason, "yearly_limit", "…and it counts toward the same three a year");
+
+    // Opened on three different days of the person's own calendar.
+    const day1 = at("2026-11-24T08:00:00"), day1b = at("2026-11-24T23:30:00"), day2 = at("2026-11-26T09:00:00"), day3 = at("2026-11-30T00:30:00");
+    let s = R.withOpenDay(emptyReviewState(), day1);
+    t.eq(moment(s, T.THIRD_OPEN_DAY, day1).reason, "not_third_day", "day 1: no ask");
+    s = R.withOpenDay(s, day1b);
+    t.eq([s.openDays, moment(s, T.THIRD_OPEN_DAY, day1b).reason], [["2026-11-24"], "not_third_day"], "opened again the same day: still one day");
+    s = R.withOpenDay(s, day2);
+    t.eq(moment(s, T.THIRD_OPEN_DAY, day2).reason, "not_third_day", "day 2: no ask");
+    s = R.withOpenDay(s, day3);
+    t.eq([s.openDays.length, moment(s, T.THIRD_OPEN_DAY, day3)], [3, { ask: true, reason: "third_open_day" }], "the 3rd different day the app is opened asks (the days need not be in a row)");
+    const after3 = R.withMomentSpent(s, T.THIRD_OPEN_DAY, day3);
+    t.eq(moment(R.withOpenDay(after3, later(day3, 1)), T.THIRD_OPEN_DAY, later(day3, 1)).reason, "moment_spent", "…once per install: day 4 and on never ask");
+    t.eq(moment(R.withOpenDay(R.withOpenDay(s, later(day3, 1)), later(day3, 2)), T.THIRD_OPEN_DAY, later(day3, 2)).reason, "not_third_day", "a day after the third is not the third day (the moment does not wait for a later day)");
+    t.eq(R.withOpenDay(after3, later(day3, 9)).openDays.length, 3, "only the first three days are kept");
+    t.eq(moment(s, T.THIRD_OPEN_DAY, day3, { native: false }).reason, "web", "the web never asks on the third day");
+    t.eq(moment(s, T.THIRD_OPEN_DAY, day3, { demo: true }).reason, "demo", "…nor does the demo");
+    t.eq(moment(withTrouble(s, later(day3, -0.5)), T.THIRD_OPEN_DAY, day3).reason, "recent_trouble", "…nor within 24 hours of trouble");
+    t.eq(moment(withAsked(withAsked(withAsked(s, day1, "a"), day2, "b"), day2, "c"), T.THIRD_OPEN_DAY, day3).reason, "yearly_limit", "…and it counts toward the same three a year");
+    // The meeting's ask is unchanged by the two new moments, and the moments do not need a meeting.
+    t.eq(ask(after3, later(day3, 2)).ask, true, "the meeting-done ask still asks");
+    t.eq(moment(emptyReviewState(), T.FIRST_SAFE, d0, { meetingKey: null }).ask, true, "a moment needs no meeting key");
+    t.eq(normalizeReviewState({ askedAt: [], openDays: ["2026-11-24", 7, "2026-11-24", "not-a-day", "2026-11-25"], moments: { first_safe: "garbage", third_open_day: null } }, d0.getTime()),
+      { askedAt: [], askedMeetings: [], lastTroubleAt: null, openDays: ["2026-11-24", "2026-11-25"], moments: { first_safe: d0.toISOString(), third_open_day: null } },
+      "a stored record is read safely: days de-duplicated, an unreadable moment counts as spent (never asks sooner)");
+  }
+
   // ── 2. The wrapper ───────────────────────────────────────────────────────────────────────────
   {
     const store = {};
@@ -83,6 +126,8 @@ const path = require("path");
     t.eq(Object.keys(store), [], "web: nothing is written");
     t.ok(!P.REVIEW_STORAGE_KEY.startsWith("flourish_"), "the record's key is outside the flourish_ prefix that sign-out and the shared-device wipe remove");
     t.eq(typeof P.reviewOnTodayOpen + typeof P.reviewOnCheckInDone, "undefinedundefined", "the retired triggers are gone from the wrapper");
+    const w1 = await P.reviewOnFirstSafe({ delayMs: 0 }), w2 = await P.reviewOnAppOpen({});
+    t.eq([w1.reason, w2.reason, Object.keys(store)], ["web", "web", []], "web: the first number and the app opening do not ask, and nothing is written");
 
     // On a native shell the ask is recorded before the plugin is called, so a crash mid-sheet
     // cannot lead to a second ask. (The plugin itself cannot run in node; the wrapper swallows that.)
@@ -100,6 +145,34 @@ const path = require("path");
     P.noteReviewTrouble(at("2027-11-01T11:00:00"));
     t.eq(JSON.parse(store[P.REVIEW_STORAGE_KEY]).lastTroubleAt, at("2027-11-01T11:00:00").toISOString(), "native: trouble is recorded");
     t.eq((await P.reviewOnMeetingDone({ now: at("2027-11-01T12:00:00") })).reason, "recent_trouble", "…and a meeting an hour later does not ask");
+
+    // The two new moments on a native shell (a fresh install's record).
+    for (const k of Object.keys(store)) delete store[k];
+    const asks = [];
+    P._setReviewPluginForTest({ requestReview: async () => { asks.push(Date.now()); } });
+    const rdemo = await P.reviewOnFirstSafe({ demo: true, delayMs: 0, now: at("2026-11-24T10:00:00") });
+    t.eq([rdemo.reason, store[P.REVIEW_STORAGE_KEY], asks.length], ["demo", undefined, 0], "native demo: the first number never asks, and writes nothing (the real first number is still to come)");
+    const started = Date.now();
+    const [fs1, fs2] = await Promise.all([P.reviewOnFirstSafe({ delayMs: 120, now: at("2026-11-24T10:00:00") }), P.reviewOnFirstSafe({ delayMs: 120, now: at("2026-11-24T10:00:01") })]);
+    t.ok(Date.now() - started >= 110, "the first number's ask waits its delay before asking");
+    t.eq([fs1, fs2.ask, asks.length], [{ ask: true, reason: "first_safe" }, false, 1], "native: the first number asks once, even when Today and the first-number screen both show it at once");
+    const recFs = JSON.parse(store[P.REVIEW_STORAGE_KEY]);
+    t.ok(recFs.askedAt.length === 1 && !!recFs.moments.first_safe, "…recorded as an ask, and the moment as spent");
+    t.eq((await P.reviewOnFirstSafe({ delayMs: 0, now: at("2026-11-29T10:00:00") })).reason, "moment_spent", "…and never again on this install");
+    // Trouble during the wait: the decision is made after the wait, so it does not ask, and the moment is spent.
+    for (const k of Object.keys(store)) delete store[k];
+    const waiting = P.reviewOnFirstSafe({ delayMs: 80, now: at("2026-11-24T10:00:00") });
+    P.noteReviewTrouble(at("2026-11-24T09:59:59"));
+    t.eq([(await waiting).reason, asks.length, !!JSON.parse(store[P.REVIEW_STORAGE_KEY]).moments.first_safe], ["recent_trouble", 1, true], "trouble during the 3 seconds: no ask, and the moment has passed");
+    // The third different day the app is opened.
+    for (const k of Object.keys(store)) delete store[k];
+    t.eq((await P.reviewOnAppOpen({ demo: true, now: at("2026-11-24T08:00:00") })).reason, "demo", "native demo: opening the demo counts no day");
+    t.eq(store[P.REVIEW_STORAGE_KEY], undefined, "…and writes nothing");
+    const opens = [];
+    for (const when of ["2026-11-24T08:00:00", "2026-11-24T20:00:00", "2026-11-25T08:00:00", "2026-11-27T08:00:00", "2026-11-27T09:00:00", "2026-11-28T08:00:00"]) opens.push((await P.reviewOnAppOpen({ now: at(when) })).reason);
+    t.eq(opens, ["not_third_day", "not_third_day", "not_third_day", "third_open_day", "moment_spent", "moment_spent"], "native: the 3rd different day the app is opened asks, once");
+    t.eq(asks.length, 2, "…one more ask in all");
+    P._setReviewPluginForTest(null);
     delete global.window;
   }
 
@@ -124,6 +197,13 @@ const path = require("path");
     t.ok(/k\.startsWith\("flourish_"\) && k !== STORAGE_KEY && k !== STAMP_KEY/.test(app), "(sign-out removes only flourish_* keys)");
 
     t.ok(!/reviewOnTodayOpen|reviewOnCheckInDone/.test(app), "the retired triggers are gone from the app");
+    // 2026-11-24: the first safe-to-spend number (the first-number screen after onboarding, or Today for a household that
+    // never saw it on this install) and the app opening. Demo and the sample households never ask.
+    t.eq((app.match(/reviewOnFirstSafe\(/g) || []).length, 2, "the first number asks from two places: the first-number screen and Today");
+    t.ok(/onNumberShown=\{\(\)=>\{ signalActivation\("safe_view", false, user\?\.id\); signalOnboarding\("first_number_shown",[^}]*\}\); reviewOnFirstSafe\(\{ demo: _activationOff \}\); \}\}/.test(app), "…the first-number screen, when its number shows (never in the demo: that screen is for a real account)");
+    t.ok(/useEffect\(\(\)=>\{ if\(showsSafeFigure && !data\?\.demo\) signalActivation\("safe_view", false\); if\(showsSafeFigure\) reviewOnFirstSafe\(\{ demo: !!data\?\.demo \|\| _activationOff \}\); \},\[showsSafeFigure\]\);/.test(app), "…Today, when it shows the figure, passing demo");
+    t.eq((app.match(/reviewOnAppOpen\(/g) || []).length, 1, "the app opening asks from one place");
+    t.ok(/signalActivation\("app_open", false, user\.id\);\s*reviewOnAppOpen\(\{ demo: false \}\);/.test(app), "…beside the app_open count: a signed-in household whose data has loaded, never the demo");
     const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
     t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
     // Meeting memory (2026-11-08): markDone saves the meeting first, so "after the meeting is recorded" is now checked

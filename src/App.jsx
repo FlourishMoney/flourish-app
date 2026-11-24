@@ -128,7 +128,7 @@ import { storePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
-import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
+import { noteReviewTrouble, reviewOnMeetingDone, reviewOnFirstSafe, reviewOnAppOpen } from "./lib/reviewPrompt.js";
 import { storeBillingOn, storeBillingFields, revenueCatKey, choosePackages, buy as storeBuy, restore as storeRestore, confirmWithServer, rememberGate, recalledGate, deviceStorage, foundingSwitch, WEB_PAID_KEY } from "./lib/storeBilling.js";
 import { pendingWords } from "./lib/pendingWords.js";
 import { offerCopy, storeDisclosure, APPLE_EULA_URL, PAYWALL_COPY, FOUNDING_SWITCH_COPY, TRIAL_KEEP_COPY, trialConfirmBody, trialKeepShown, foundingSpotLine, subscriptionLine, storeCancelNote } from "./lib/storeOffer.js";
@@ -5987,7 +5987,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,billingOn=
   // account and an income (otherwise it shows "Connect an account…" or "Add your income…"). Sent the first
   // time it shows; never in the demo.
   const showsSafeFigure = isVisible('hero') && hasCashAccount && !_ss.noIncome;
-  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The store review's first-number moment (2026-11-24): for a household that did not see its first number on this
+  // install's first-number screen (an update, a new phone), Today's figure is that first number. Once per install.
+  useEffect(()=>{ if(showsSafeFigure && !data?.demo) signalActivation("safe_view", false); if(showsSafeFigure) reviewOnFirstSafe({ demo: !!data?.demo || _activationOff }); },[showsSafeFigure]); // eslint-disable-line react-hooks/exhaustive-deps
   // manual-balances: which balances behind safe to spend the household typed in, and how old they are.
   const cashNote = enteredBalanceNote(cashAccountsUsed(data), new Date());
   const openBalance = setAppData ? (accountId) => setBalanceEdit({ accountId }) : null;
@@ -18259,8 +18261,8 @@ export default function FlourishApp(){
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
   const [budgetEditRequested,setBudgetEditRequested]=useState(false); // Goals → Budget's Edit opens Do → Budget's editor
-  // The store review prompt asks once, after the first money meeting marked done (MeetAgenda,
-  // reviewOnMeetingDone). The third-day-on-Today and weekly check-in triggers are retired.
+  // The store review prompt (lib/reviewRules.js): a money meeting marked done (MeetAgenda, reviewOnMeetingDone), the
+  // first safe-to-spend number and the 3rd different day the app is opened (2026-11-24, once per install each).
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
@@ -19246,6 +19248,7 @@ export default function FlourishApp(){
   useEffect(() => {
     if (!(user && hydratedUidRef.current === user.id && !appData?.demo)) return;
     signalActivation("app_open", false, user.id);
+    reviewOnAppOpen({ demo: false }); // the store review's third-day moment (lib/reviewPrompt.js); a counted day changes nothing
     if (hasDataSource(appData)) signalActivation("data_source", false, user.id);
   }, [user, appData]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -20067,7 +20070,7 @@ export default function FlourishApp(){
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   // demo-clarity: the demo has one intro, the five-step tour over Today; the first-number screen is for a real account.
   if(!firstVisitDone&&appData&&!appData.demo)return <><FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}
-    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); }}/>{storePaywallOverlay}</>;
+    onNumberShown={()=>{ signalActivation("safe_view", false, user?.id); signalOnboarding("first_number_shown",{mode:appData.bankConnected?"linked":"manual",userId:user?.id}); reviewOnFirstSafe({ demo: _activationOff }); }}/>{storePaywallOverlay}</>;
   // 1.1.7: bills and debts come AFTER the first number, for a household onboarded from 1.1.7 on (billsAfterNumber
   // "pending", set by onboarding's first phase). "Not now" leaves them to the checklist on Today.
   if(firstVisitDone&&appData&&!appData.demo&&appData.profile?.billsAfterNumber==="pending")return <><Onboarding key="after" phase="after"
