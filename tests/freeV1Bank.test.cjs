@@ -174,10 +174,12 @@ const json = (res) => { try { return JSON.parse(res.body || "{}"); } catch { ret
         const before = outside.length;
         const res = await call(mod, WEB, { action: "exchange_token", public_token: "public-sandbox-update" });
         PLAID_ITEM.exchange = "it-new";
-        // (The fake database refuses every save, so the function's own rollback runs after; what is asked here is that
-        // the free plan's check let the reconnect through to the save, with no refusal.)
-        const saved = mod.calls.writes.some(([table, op]) => table === "plaid_items" && op === "upsert");
-        t.eq([res.statusCode !== 402 && res.statusCode !== 503, json(res).message !== SERVER_LINE, asked(before, /\/item\/public_token\/exchange$/), saved], [true, true, true, true],
+        // (The fake database refuses every save; what is asked here is that the free plan's check let the reconnect
+        // through to the save, with no refusal. Review round 2 (R2-3): a held bank whose save fails answers a retryable
+        // 503 "Could not save", never the plan's refusal and never "status_unavailable".)
+        const saved = mod.calls.writes.some(([table, op, v]) => table === "plaid_items" && op === "upsert" && v && v.status === "active");
+        const notRefused = res.statusCode !== 402 && json(res).error !== "status_unavailable";
+        t.eq([notRefused, json(res).message !== SERVER_LINE, asked(before, /\/item\/public_token\/exchange$/), saved], [true, true, true, true],
           `2b website, ${who} (Free), its own bank (${bankStatus}) reconnected: the exchange goes on to the save, never refused`);
       }
     }

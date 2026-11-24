@@ -18,6 +18,15 @@
 //      reconnectable (create_link_token's update mode), not "held" by the old-bank import, not revived by a webhook
 //   M  migrate_items: either read that builds the list of banks the account holds fails: a retryable 503 before any
 //      token is looked at (no /item/get, no write)
+// Review round 2 (Grok 100, ChatGPT 88, on e60a9c4):
+//   C  R2-1 the refused row's write meets a row already there: its status is read. Refused (an older refusal, or this
+//      exchange's own insert whose reply was lost) is not a bank the account holds: removed, never saved as connected.
+//      Unreadable: 503, the support inbox told, nothing removed, nothing activated
+//   G  R2-2 migrate_items never turns a refused row back into a connected bank, on any plan, in the write itself
+//   S  R2-3 a save that fails for a bank the account already held (a reconnect) removes nothing at Plaid and marks
+//      nothing refused: a retryable 503. Only an item with no row before this exchange is rolled back
+//   F  R2-4 every refused row gets its turn (the least recently tried first), a row is deleted only while it is still
+//      refused, and two clean-ups of the same Item at once are harmless
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -47,7 +56,11 @@ function makeDb({ items = [], fail = [] } = {}) {
       const run = () => {
         log.push({ table, op: q.op, eqs: { ...q.eqs }, payload: q.payload, opts: q.opts });
         const err = failed();
-        if (err) return { data: null, error: err, count: null };
+        if (err && !err.applied) return { data: null, error: err, count: null };
+        if (err && err.applied) { q._apply(); return { data: null, error: { message: err.message }, count: null }; }
+        return q._apply();
+      };
+      q._apply = () => {
         if (q.op === "select") {
           const out = rows(table).filter(match);
           return q.head ? { count: out.length, error: null } : { data: out.map((r) => ({ ...r })), error: null };
@@ -63,7 +76,7 @@ function makeDb({ items = [], fail = [] } = {}) {
           }
           return { data: q.returning ? inserted : null, error: null };
         }
-        if (q.op === "update") { for (const r of rows(table).filter(match)) Object.assign(r, q.payload); return { data: null, error: null }; }
+        if (q.op === "update") { const hit = rows(table).filter(match); for (const r of hit) Object.assign(r, q.payload); return { data: q.returning ? hit.map((r) => ({ ...r })) : null, error: null }; }
         if (q.op === "delete") { tables[table] = rows(table).filter((r) => !match(r)); return { data: null, error: null }; }
         return { data: null, error: null };
       };
@@ -103,26 +116,40 @@ const DOWN = { message: "database down" };
 const failHeldRead = (q) => q.table === "plaid_items" && q.op === "select" && q.eqs.item_id && !q.head ? DOWN : null;
 // Fail every write of a plaid_items row (the refused row included).
 const failItemWrites = (q) => q.table === "plaid_items" && (q.op === "upsert" || q.op === "insert") ? DOWN : null;
+// Only the first n times the rule matches.
+const failFirst = (n, rule) => { let left = n; return (q) => { const e = rule(q); if (!e || left <= 0) return null; left--; return e; }; };
+// The write goes in, and its reply is lost (the caller sees an error).
+const LOST = { message: "connection reset after commit", applied: true };
+// Fail the save of a bank as connected.
+const failActiveSave = (q) => q.table === "plaid_items" && (q.op === "upsert" || q.op === "insert") && q.payload && q.payload.status === "active" ? DOWN : null;
 
 // ── a stand-in Plaid and error tracker ─────────────────────────────────────────────────────────────────────────
-const net = { removeFails: 0, removeCode: "INTERNAL_SERVER_ERROR", exchangeItem: "it-new", legacyItem: "it-legacy", asked: [], sentry: [] };
+const net = { removeFails: 0, removeCode: "INTERNAL_SERVER_ERROR", exchangeItem: "it-new", legacyItem: "it-legacy", asked: [], sentry: [], support: [], removed: new Set(), failTokens: new Set(), onRemove: null };
 global.fetch = async (url, init = {}) => {
   const u = String(url);
   net.asked.push(u);
   const answer = (status, body) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
   if (u.includes("ingest.sentry.test")) { net.sentry.push(String(init.body || "")); return answer(200, {}); }
+  if (u.includes("api.resend.com")) { net.support.push(String(init.body || "")); return answer(200, { id: "email-1" }); }
   if (/\/link\/token\/create$/.test(u)) return answer(200, { link_token: "link-sandbox-test", expiration: new Date(Date.now() + 3600e3).toISOString() });
   if (/\/item\/public_token\/exchange$/.test(u)) return answer(200, { access_token: TOKEN, item_id: net.exchangeItem });
   if (/\/item\/get$/.test(u)) return answer(200, { item: { item_id: net.legacyItem, institution_id: "ins_1" } });
   if (/\/item\/remove$/.test(u)) {
+    let tok = ""; try { tok = JSON.parse(init.body || "{}").access_token || ""; } catch {}
+    if (net.onRemove) { const f = net.onRemove; net.onRemove = null; f(tok); }
+    // Plaid no longer knows an Item it has removed.
+    if (net.removed.has(tok)) return answer(400, { error_code: "ITEM_NOT_FOUND", error_message: "gone" });
+    if (net.failTokens.has(tok)) return answer(400, { error_code: "INTERNAL_SERVER_ERROR", error_message: "no" });
     if (net.removeFails > 0) { net.removeFails--; return answer(400, { error_code: net.removeCode, error_message: "no" }); }
+    await new Promise((ok) => setTimeout(ok, 5));
+    net.removed.add(tok);
     return answer(200, { request_id: "removed" });
   }
   if (/\/accounts\/get$/.test(u)) return answer(200, { accounts: [] });
   throw new Error("network blocked in test");
 };
 const removes = (before) => net.asked.slice(before).filter((u) => /\/item\/remove$/.test(u)).length;
-const reset = (o = {}) => { Object.assign(net, { removeFails: 0, removeCode: "INTERNAL_SERVER_ERROR", exchangeItem: "it-new", legacyItem: "it-legacy", sentry: [] }, o); };
+const reset = (o = {}) => { Object.assign(net, { removeFails: 0, removeCode: "INTERNAL_SERVER_ERROR", exchangeItem: "it-new", legacyItem: "it-legacy", sentry: [], support: [], removed: new Set(), failTokens: new Set(), onRemove: null }, o); };
 
 // The real plaid.js, its database the one given, the plan free (or the one given).
 function load(db, { plan = { plan: "free", unlimited: false, paid: false, status_unavailable: false } } = {}) {
@@ -130,7 +157,7 @@ function load(db, { plan = { plan: "free", unlimited: false, paid: false, status
     SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", ENFORCE_PLAN_LIMITS: "true",
     PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox", SENTRY_DSN,
   });
-  delete process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = "re_test_key";
   for (const p of [AUTH_PATH, PLAID_PATH, HOOK_PATH]) delete require.cache[p];
   const auth = require(AUTH_PATH);
   auth.getUserFromRequest = async () => ({ user_id: "u1", error: null });
@@ -145,6 +172,13 @@ const call = (db, body, { origin = WEB, plan } = {}) => quiet(async () => {
   return { status: res.statusCode, json };
 });
 const exchange = (db, o) => call(db, { action: "exchange_token", public_token: "public-sandbox-1", institution_name: "New Bank" }, o);
+// The same call, not quieted (for several at once inside one quiet()).
+const callRaw = async (db, body, { origin = WEB, plan } = {}) => {
+  const res = await load(db, { plan }).handler({ httpMethod: "POST", headers: { origin, authorization: "Bearer x" }, body: JSON.stringify(body) });
+  let json = {}; try { json = JSON.parse(res.body || "{}"); } catch {}
+  return { status: res.statusCode, json };
+};
+const PAID = { plan: "annual", unlimited: true, paid: true, status_unavailable: false };
 
 (async () => {
   const t = create();
@@ -213,7 +247,7 @@ const exchange = (db, o) => call(db, { action: "exchange_token", public_token: "
     "H1d (not vacuous: the refused row was written only if none was there)");
 
   reset();
-  db = makeDb({ items: [{ item_id: "it-new", status: "error", access_token: "access-old" }], fail: [failHeldRead] });
+  db = makeDb({ items: [{ item_id: "it-new", status: "error", access_token: "access-old" }], fail: [failFirst(1, failHeldRead)] });
   before = net.asked.length;
   r = await exchange(db);
   t.eq(removes(before), 0, "H2a the read failed, a bank it holds (a reconnect): never removed at Plaid");
@@ -275,6 +309,104 @@ const exchange = (db, o) => call(db, { action: "exchange_token", public_token: "
   db = makeDb();
   r = await call(db, legacy, { origin: IOS });
   t.eq(r.status, 200, "M (not vacuous: with both reads working, the import runs)");
+
+  // ── C (R2-1): the refused row's write meets a row already there ──────────────────────────────────────────
+  // An older refused row for this Item: the held read fails once, the conflict's read says "refused".
+  reset();
+  db = makeDb({ items: [{ item_id: "it-new", status: "refused", access_token: "access-old" }], fail: [failFirst(1, failHeldRead)] });
+  before = net.asked.length;
+  r = await exchange(db);
+  t.eq(r.status, 402, "C1a an existing refused row for the Item: not a bank the account holds, refused");
+  t.eq(removes(before) >= 1, true, "C1b …removed at Plaid");
+  t.eq(item(db, "it-new"), null, "C1c …its row is gone");
+  t.ok(!db.log.some((l) => l.table === "plaid_items" && l.payload && l.payload.status === "active"), "C1d …and it was never saved as connected");
+  // This exchange's own refused row went in, and the reply was lost: the next try meets it.
+  reset();
+  db = makeDb({ fail: [failFirst(1, failHeldRead), failFirst(1, (q) => q.table === "plaid_items" && q.op === "upsert" && q.opts.ignoreDuplicates ? LOST : null)] });
+  before = net.asked.length;
+  r = await exchange(db);
+  t.eq(r.status, 402, "C2a our own refused row went in, its reply lost: still refused");
+  t.eq(removes(before) >= 1, true, "C2b …removed at Plaid");
+  t.eq(item(db, "it-new"), null, "C2c …its row is gone");
+  t.ok(!db.log.some((l) => l.table === "plaid_items" && l.payload && l.payload.status === "active"), "C2d …never saved as connected");
+  // The row there cannot be read either.
+  reset();
+  db = makeDb({ items: [{ item_id: "it-new", status: "error", access_token: "access-old" }], fail: [failHeldRead] });
+  before = net.asked.length;
+  r = await exchange(db);
+  t.eq(r.status, 503, "C3a a row is there and cannot be read: 503");
+  t.eq(removes(before), 0, "C3b …nothing removed at Plaid");
+  t.eq(item(db, "it-new").status, "error", "C3c …nothing activated (the row is as it was)");
+  t.eq(item(db, "it-new").access_token, "access-old", "C3d …its token untouched");
+  t.ok(net.support.some((b) => b.includes("plaid_item_owner_unread") && b.includes("it-new")), "C3e …and the support inbox is told");
+  t.ok(net.support.concat(net.sentry).every((b) => !b.includes(TOKEN)), "C3f …never with the token");
+
+  // ── G (R2-2): migrate_items never revives a refused row, on any plan ─────────────────────────────────────
+  for (const [name, origin, plan] of [["a paid account on the website", WEB, PAID], ["a paid account in a store app", IOS, PAID], ["a free account in a store app, under its one bank", IOS, undefined]]) {
+    reset({ legacyItem: "it-out" });
+    db = makeDb({ items: [{ item_id: "it-out", status: "refused", access_token: "access-out" }] });
+    r = await call(db, { action: "migrate_items", tokens: [{ token: "legacy-1", institution_name: "Old" }] }, { origin, plan });
+    t.eq(item(db, "it-out").status, "refused", `G ${name}: a refused row is never turned back into a connected bank`);
+    t.eq(item(db, "it-out").access_token, "access-out", `G ${name}: …its token untouched`);
+    t.eq([(r.json.successes || []).length, (r.json.failures || [])[0] && r.json.failures[0].retry], [0, false], `G ${name}: …it is a failure that trying again cannot help`);
+  }
+  reset({ legacyItem: "it-old" });
+  db = makeDb({ items: [{ item_id: "it-old", status: "error", access_token: "access-old" }] });
+  r = await call(db, { action: "migrate_items", tokens: [{ token: "legacy-1", institution_name: "Old" }] }, { plan: PAID });
+  t.eq([(r.json.successes || []).length, item(db, "it-old").status, item(db, "it-old").access_token], [1, "active", "legacy-1"], "G (not vacuous: a bank the account holds is imported, as before)");
+  reset({ legacyItem: "it-fresh" });
+  db = makeDb();
+  r = await call(db, { action: "migrate_items", tokens: [{ token: "legacy-1", institution_name: "Old" }] }, { plan: PAID });
+  t.eq([(r.json.successes || []).length, item(db, "it-fresh") && item(db, "it-fresh").status], [1, "active"], "G (not vacuous: a new bank on a paid plan is imported, as before)");
+
+  // ── S (R2-3): a save that fails for a bank the account already held ─────────────────────────────────────
+  for (const [name, origin, plan] of [["a paid account", WEB, PAID], ["a store app", IOS, undefined], ["the website's free plan", WEB, undefined]]) {
+    reset();
+    db = makeDb({ items: [{ item_id: "it-new", status: "error", access_token: "access-old" }], fail: [failActiveSave] });
+    before = net.asked.length;
+    r = await exchange(db, { origin, plan });
+    t.eq(removes(before), 0, `S ${name}: its own bank's save failed on a reconnect: nothing removed at Plaid`);
+    t.eq([item(db, "it-new") && item(db, "it-new").status, item(db, "it-new") && item(db, "it-new").access_token], ["error", "access-old"], `S ${name}: …the row is as it was, never marked refused`);
+    t.eq(r.status, 503, `S ${name}: …a retryable 503`);
+  }
+  reset();
+  db = makeDb({ fail: [failActiveSave] });
+  before = net.asked.length;
+  r = await exchange(db, { plan: PAID });
+  t.eq([r.status, removes(before), item(db, "it-new")], [500, 1, null], "S an item with no row before: its failed save is rolled back at Plaid, as before");
+  reset();
+  db = makeDb({ fail: [failActiveSave, (q) => q.table === "plaid_items" && q.op === "select" && q.eqs.item_id ? DOWN : null] });
+  before = net.asked.length;
+  r = await exchange(db, { plan: PAID });
+  t.eq([r.status, removes(before), item(db, "it-new")], [503, 0, null], "S whether a row was there before cannot be read: nothing removed, 503");
+  t.ok(net.support.some((b) => b.includes("it-new")), "S …and the support inbox is told");
+
+  // ── F (R2-4): the clean-up ─────────────────────────────────────────────────────────────────────────────
+  // Starvation: three refused rows, the two oldest never removable. The third is tried by the second listing.
+  reset({ failTokens: new Set(["tok-a", "tok-b"]) });
+  db = makeDb({ items: [
+    { item_id: "it-a", status: "refused", access_token: "tok-a", created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+    { item_id: "it-b", status: "refused", access_token: "tok-b", created_at: "2026-11-02T00:00:00Z", updated_at: "2026-11-02T00:00:00Z" },
+    { item_id: "it-c", status: "refused", access_token: "tok-c", created_at: "2026-11-03T00:00:00Z", updated_at: "2026-11-03T00:00:00Z" },
+  ] });
+  await call(db, { action: "list_items" });
+  await call(db, { action: "list_items" });
+  t.eq(item(db, "it-c"), null, "F1a a row behind two that never go is still tried, and removed");
+  t.eq([!!item(db, "it-a"), !!item(db, "it-b")], [true, true], "F1b …the two Plaid will not remove stay, still refused");
+  // Two clean-ups of the same Item at once.
+  reset();
+  db = makeDb({ items: [{ item_id: "it-x", status: "refused", access_token: "tok-x" }, { item_id: "it-keep", status: "active", access_token: "tok-keep" }] });
+  const both = await quiet(() => Promise.all([callRaw(db, { action: "list_items" }), callRaw(db, { action: "list_items" })]));
+  t.eq(both.map((x) => x.status), [200, 200], "F2a two clean-ups of the same Item at once: both answer");
+  t.eq(item(db, "it-x"), null, "F2b …the refused row is gone");
+  t.eq(item(db, "it-keep") && item(db, "it-keep").status, "active", "F2c …the connected bank is untouched");
+  t.eq(net.sentry.length + net.support.length, 0, "F2d …and nobody is alerted");
+  // A row that stops being refused while its clean-up runs is never deleted.
+  reset();
+  db = makeDb({ items: [{ item_id: "it-y", status: "refused", access_token: "tok-y" }] });
+  net.onRemove = () => { item(db, "it-y").status = "active"; };
+  await call(db, { action: "list_items" });
+  t.eq(item(db, "it-y") && item(db, "it-y").status, "active", "F3 a row no longer refused when the delete runs is left alone (the delete asks for status refused)");
 
   t.summary("FREE V1 REFUSED BANK");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

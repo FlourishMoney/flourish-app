@@ -49,6 +49,19 @@ Branch `free-v1-web`, from main `f048f72` (2026-11-23). Website only. The iPhone
 - Known defects 70 (Origin is not authenticated; the one-bank count is not atomic) and 71 (a plan ending mid-exchange).
 - `FREE_TERMS_DATE` is 2026-11-24, the go-live day.
 
+## Review round 2 (on e60a9c4: Grok 100, ChatGPT 88)
+
+- R2-1: when the refused row's write meets a row already there, that row's status is read: refused (an older refusal,
+  or this exchange's own insert whose reply was lost) is not a held bank, so it is removed; unreadable is a 503 with the
+  support inbox told, nothing removed, nothing activated.
+- R2-2: migrate_items saves in two writes (insert if absent; else update only while not refused), so a refused row is
+  never turned back into a connected bank on any plan, whatever an earlier read said.
+- R2-3: a failed save is rolled back at Plaid only for an Item with no row before the exchange; an existing bank (a
+  reconnect) is left as it was with a retryable 503; an unreadable "before" removes nothing (503, support told).
+- R2-4: the clean-up takes the least recently tried refused rows first and moves a failed try to the back; the row is
+  deleted only while still refused (the delete's own condition), so overlapping clean-ups are harmless.
+- Token encryption stays as every Plaid token is today; app-level encryption is a later job for both branches.
+
 ## Not in this branch
 
 - Removing a bank at the end of a paid period (a bank kept after a trial ends stays connected and billed for now).
