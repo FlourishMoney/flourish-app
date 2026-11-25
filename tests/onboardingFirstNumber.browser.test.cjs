@@ -77,11 +77,15 @@ const PLAID_STUB = `window.__plaidOpens = 0; window.Plaid = { create: function (
   }, 30);
 } }; } };`;
 
-function buildApp(supabaseUrl) {
-  if (process.env.ONBOARDING_DIST) return process.env.ONBOARDING_DIST;
-  const out = tempDir("onboarding");
+// region: APP_REGION for the build (canada-lock, 2026-11-25). Unset is flourish's own build (Canada only); "US" is the
+// future US app's, built only for the device-country checks (section 6). ONBOARDING_DIST stands in for flourish's build.
+function buildApp(supabaseUrl, { region = null } = {}) {
+  if (process.env.ONBOARDING_DIST && !region) return process.env.ONBOARDING_DIST;
+  const out = tempDir(region ? `onboarding-${region.toLowerCase()}` : "onboarding");
+  const env = { ...process.env, VITE_SUPABASE_URL: supabaseUrl, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" };
+  if (region) env.APP_REGION = region; else delete env.APP_REGION;
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "warn"],
-    { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: supabaseUrl, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" } });
+    { cwd: ROOT, stdio: "inherit", env });
   return out;
 }
 
@@ -556,19 +560,35 @@ function buildApp(supabaseUrl) {
   }
 
   // ── the device's country, and Plaid's search ────────────────────────────────────────────────
-  for (const [locale, timezoneId, want] of [["en-CA", "America/Toronto", "CA"], ["fr-CA", "America/Vancouver", "CA"], ["en-US", "America/Toronto", "CA"], ["en-US", "America/New_York", "US"], ["en-CA", "America/Chicago", "US"]]) {
-    const { ctx, page, seen } = await open({ locale, timezoneId });
-    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
-    await btn(page, "I Understand & Accept").click();
-    await btn(page, "Get started").click();
-    await page.locator('[data-bank-button="connect"]').waitFor();
-    t.eq([...new Set(seen.tokenCountries)], [want], `6a a ${locale} device in ${timezoneId}: the country is ${want}, and Plaid's institution search is asked for ${want}`);
-    if (want === "US") {
-      await page.getByRole("button", { name: "Enter it myself", exact: true }).last().click();
-      t.ok(/checking/i.test(await text(page)) && !/chequing/i.test(await text(page)), "6b …and the balance it asks for is a US checking balance");
+  // canada-lock (2026-11-25): flourish is Canada only. In its own build every device, a US language or a US time zone
+  // included, is Canada: Plaid's search is asked for CA and the balance asked for is a chequing balance. The device
+  // rule still decides in a build made with APP_REGION=US (the future US app), checked last on a second build.
+  const deviceCountryRun = async (cases, label) => {
+    for (const [locale, timezoneId, want] of cases) {
+      const { ctx, page, seen } = await open({ locale, timezoneId });
+      await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await btn(page, "I Understand & Accept").waitFor({ timeout: 40000 });
+      await btn(page, "I Understand & Accept").click();
+      await btn(page, "Get started").click();
+      await page.locator('[data-bank-button="connect"]').waitFor();
+      t.eq([...new Set(seen.tokenCountries)], [want], `6a ${label}: a ${locale} device in ${timezoneId}: the country is ${want}, and Plaid's institution search is asked for ${want}`);
+      if (/America\/(New_York|Chicago)/.test(timezoneId)) {
+        await page.getByRole("button", { name: "Enter it myself", exact: true }).last().click();
+        const words = await text(page);
+        if (want === "US") t.ok(/checking/i.test(words) && !/chequing/i.test(words), `6b ${label}: …and the balance it asks for is a US checking balance`);
+        else t.ok(/chequing/i.test(words) && !/checking/i.test(words), `6b ${label}: …and the balance it asks for is a chequing balance, not a US checking one`);
+      }
+      await ctx.close();
     }
-    await ctx.close();
+  };
+  await deviceCountryRun([["en-CA", "America/Toronto", "CA"], ["fr-CA", "America/Vancouver", "CA"], ["en-US", "America/Toronto", "CA"],
+    ["en-US", "America/New_York", "CA"], ["en-CA", "America/Chicago", "CA"]], "flourish");
+  {
+    const flourishDist = dist;
+    try {
+      dist = buildApp(base, { region: "US" });
+      await deviceCountryRun([["en-US", "America/Toronto", "CA"], ["en-US", "America/New_York", "US"], ["en-CA", "America/Chicago", "US"]], "APP_REGION=US");
+    } finally { dist = flourishDist; }
   }
 
   // ── the confirmation link ───────────────────────────────────────────────────────────────────

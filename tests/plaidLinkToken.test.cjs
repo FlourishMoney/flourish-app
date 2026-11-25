@@ -38,9 +38,11 @@ function fakeSupabase() {
 }
 
 // plaid.js's real create_link_token against the stand-in database and a stand-in Plaid that checks what Plaid checks.
-async function linkToken(body) {
+// env: extra server settings for this one call, e.g. { APP_REGION: "US" } for the future US app's build (canada-lock).
+async function linkToken(body, env = {}) {
   const saved = { ...process.env };
-  Object.assign(process.env, { SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox" });
+  delete process.env.APP_REGION;
+  Object.assign(process.env, { SUPABASE_URL: "https://example.supabase.test", SUPABASE_SECRET_KEY: "test-service-role", PLAID_CLIENT_ID: "test-client", PLAID_SECRET: "test-secret", PLAID_ENV: "sandbox" }, env);
   require.cache[SUPA_PATH] = { id: SUPA_PATH, filename: SUPA_PATH, loaded: true, exports: { createClient: () => fakeSupabase() } };
   delete require.cache[AUTH_PATH]; delete require.cache[PLAID_PATH];
   const auth = require(AUTH_PATH);
@@ -100,8 +102,14 @@ async function activation(body, rpcAnswer) {
     t.eq(u.country_codes, ["CA"], "1c …it names the country, CA");
     t.ok(!!u.redirect_uri && u.redirect_uri === f.redirect_uri, `1d …and the same redirect address as a new connection (${u.redirect_uri})`);
     t.ok(u.access_token === "access-production-test" && !u.products, "1e …for that bank's own item, with no products (update mode)");
-    const us = await linkToken({ item_id: "item-scotia", country: "US" });
-    t.eq([us.status, (us.sent[0] || {}).country_codes], [200, ["US"]], "1f a US household's reconnect names US, as its new connection does");
+    // canada-lock (2026-11-25): flourish is Canada only, so whatever country the app sends, Plaid is asked for CA.
+    // The US path stays for the future US app, behind APP_REGION="US".
+    const usInCa = await linkToken({ item_id: "item-scotia", country: "US" });
+    const usFreshInCa = await linkToken({ country: "US", user_id: "u-owner" });
+    t.eq([usInCa.status, (usInCa.sent[0] || {}).country_codes, (usFreshInCa.sent[0] || {}).country_codes], [200, ["CA"], ["CA"]],
+      "1f flourish (APP_REGION unset): a request naming US still asks Plaid for CA only, reconnect and new connection alike");
+    const us = await linkToken({ item_id: "item-scotia", country: "US" }, { APP_REGION: "US" });
+    t.eq([us.status, (us.sent[0] || {}).country_codes], [200, ["US"]], "1f2 a build with APP_REGION=US: a US household's reconnect names US, as its new connection does");
     const noCountry = await linkToken({ item_id: "item-scotia" });
     t.eq((noCountry.sent[0] || {}).country_codes, ["CA"], "1g no country sent: CA");
     const SRC = fs.readFileSync(PLAID_PATH, "utf8");

@@ -24,6 +24,13 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
 (async () => {
   const t = create();
   let A = {};
+  // canada-lock (2026-11-25): flourish's own build loads the Canadian household whatever country is asked for
+  // (tests/canadaLock.test.cjs 6h), so the US household these checks need comes from a build made for the future
+  // US app (APP_REGION=US). Built first, so the bundle below is the one whose globals stay in place.
+  let demoUS = null;
+  try { demoUS = loadApp(["buildDemoState"], { env: { APP_REGION: "US" } }).buildDemoState("US"); }
+  catch (e) { t.ok(false, `App.jsx bundles with APP_REGION=US: ${describe(e)}`); }
+  t.eq(demoUS && demoUS.profile.country, "US", "0a the APP_REGION=US build's demo is a US household");
   try {
     A = loadApp(["Goals", "SupportPage", "faqFor", "Notifications", "notifListFor", "unreadNotifCount", "buildDemoState",
       "generateBudgetSuggestions", "BudgetScreen", "BudgetPlanCard", "WeeklyCheckInModal"]);
@@ -35,7 +42,6 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
   const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
 
   const demoCA = A.buildDemoState ? A.buildDemoState("CA") : null;
-  const demoUS = A.buildDemoState ? A.buildDemoState("US") : null;
 
   // ── 1. CRA in Canada, IRS in the US, never both ──────────────────────────────────────────────
   {

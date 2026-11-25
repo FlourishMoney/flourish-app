@@ -210,8 +210,8 @@ async function call({ body, user = { id: "u1", email: "alex@example.ca", created
     "7e a Canadian time zone wins over a US language region (desktop browsers in Canada often report en-US)");
   t.eq([dc(["en-CA"], "America/New_York"), dc(["fr-CA"], "America/Chicago")], ["US", "US"], "7e2 …and a US time zone is the US whatever the language");
   t.eq(dc(["en", "en-CA"], "America/Toronto"), "CA", "7f a language with no region is passed over for the next one that has one");
-  t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=deviceCountry\(\); return \{name:"",country,province:"",partnerName:""/.test(ob),
-    "7g onboarding starts from the device's country, with the province, status and kids left unset");
+  t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=appCountry\(deviceCountry\(\)\); return \{name:"",country,province:"",partnerName:""/.test(ob),
+    "7g onboarding starts from the device's country (through the Canada lock, tests/canadaLock.test.cjs), with the province, status and kids left unset");
   t.ok(/callPlaid\("create_link_token",\{country:p\.country,/.test(ob), "7h …and that country is what Plaid's institution search is asked for");
   t.ok(/<select aria-label="Country" defaultValue=\{data\.profile\?\.country\|\|"CA"\}/.test(app), "7i Settings still changes it");
 

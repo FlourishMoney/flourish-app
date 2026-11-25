@@ -81,6 +81,7 @@ import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
+import { APP_REGION, appCountry, lockCountry } from "./lib/appRegion.js";   // canada-lock: flourish is Canada only (APP_REGION)
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
 import { recordLegalConsent, flushLegalConsent, markConsentShown, privacyVersion, termsVersion, withGiftDate } from "./lib/legalConsent.js";
@@ -1155,7 +1156,7 @@ const reconcileNotifications = latestOnly(async function reconcileNotificationsN
 // baseCurrencyOf() already read, so the whole demo session resolves to that country by construction
 // rather than by a second switch anywhere else. An unknown value falls back to CA inside the fixture.
 function buildDemoState(country = "CA") {
-  const cc = DEMO_COUNTRIES.includes(String(country || "").toUpperCase()) ? String(country).toUpperCase() : "CA";
+  const cc = appCountry(DEMO_COUNTRIES.includes(String(country || "").toUpperCase()) ? String(country).toUpperCase() : "CA");
   return {
     profile:demoProfileFor(cc),
     // Phase-anchored so a visitor always lands at the same point in the pay cycle (see demoFixture.js).
@@ -4312,7 +4313,7 @@ function Onboarding({onComplete,onViewLegal,onConsent,userId,connectedAccounts=[
   // here, as are status and kids: until Settings sets them, Flourish shows federal content only, no couple
   // framing and no child-benefit tips. The country is the device's (lib/deviceCountry.js: a Canadian time zone
   // is Canada; else a US time zone or US region is the US; else Canada); Settings changes it. It is also Plaid's search.
-  const [p,setP]=useState(()=>{ const country=deviceCountry(); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
+  const [p,setP]=useState(()=>{ const country=appCountry(deviceCountry()); return {name:"",country,province:"",partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""}; });
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
   const [bills,setBills]=useState(()=>after&&Array.isArray(initialBills)&&initialBills.length?initialBills.map(b=>({...b,amount:String(b.amount??""),date:String(b.date??"")})):[{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState(()=>after&&Array.isArray(initialDebts)&&initialDebts.length?initialDebts.map(d=>({...d,balance:String(d.balance??""),rate:String(d.rate??""),min:String(d.min??"")})):[{name:"",balance:"",rate:"",min:""}]);
@@ -12322,12 +12323,15 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
         <select aria-label="Country" defaultValue={data.profile?.country||"CA"} onChange={e=>{
           // Phase D12: reset province to a sensible default when country changes
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
-          const newCountry = e.target.value;
+          // canada-lock: flourish (APP_REGION unset) lists Canada only. A country this build refuses changes nothing:
+          // the picker is put back and no update fires, so a Canadian's province is never cleared.
+          const newCountry = appCountry(e.target.value);
+          if (newCountry !== e.target.value) { e.target.value = newCountry; return; }
           const defaultProvince = "";   // 2026-10-23: unset (federal content only) until picked below
           if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince, creditScore:Math.min(prev.profile?.creditScore??680, newCountry==="US"?850:900)}}));
         }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-          <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
+          <option value="CA">🇨🇦 Canada</option>{APP_REGION === "US" && <option value="US">🇺🇸 United States</option>}
         </select>
       </div>
       {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
@@ -17992,7 +17996,7 @@ export default function FlourishApp(){
   };
   // A device that synced a loan's own entries before lib/loanActivity.js existed has them in its saved
   // transactions: they move to the loan-activity store once, here, before anything reads them.
-  const [appData,setAppData]=useState(()=>moveSavedLoanActivity(saved)?.appData||null);
+  const [appData,setAppData]=useState(()=>lockCountry(moveSavedLoanActivity(saved)?.appData||null));
   const [loginFromConfirm,setLoginFromConfirm]=useState(false);
   // Couple mode: "owner" or "partner" while this account shares a household, else null. The coach's roles are
   // the viewer's own ("you" is whoever is asking), so the partner's names and employment are swapped for them.
@@ -18825,7 +18829,7 @@ export default function FlourishApp(){
   // said. See the derivation below.
   const applyBlob = (blob, { keepSynced = false } = {}) => {
     const c = (blob && blob.core) || {};
-    if (c.appData !== undefined) setAppData((prev) => (keepSynced ? keepSyncedTransactions(c.appData, prev) : c.appData));
+    if (c.appData !== undefined) setAppData((prev) => lockCountry(keepSynced ? keepSyncedTransactions(c.appData, prev) : c.appData));
     setOnboarded(!!c.onboarded);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);

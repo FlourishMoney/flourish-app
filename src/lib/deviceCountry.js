@@ -6,6 +6,8 @@
 // en-US); else a US time zone or a US region means the United States; else Canada.
 // Editable in Settings (Profile & Income: Country). Onboarding passes it to Plaid's institution search
 // (create_link_token's country), so a US household is shown US banks.
+// canada-lock (2026-11-25): flourish is Canada only. Onboarding reads this through appCountry (lib/appRegion.js), which
+// answers "CA" whatever the device says unless the app is built with APP_REGION=US (the future US app).
 // -----------------------------------------------------------------------------
 
 // The IANA zones of the fifty states, and their old US/* names.
