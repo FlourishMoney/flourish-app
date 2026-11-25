@@ -47,7 +47,7 @@ Without them the test fails at step 5 and says so.
 
 - Every night at 3:17 am Eastern, once the workflow is on `main`.
 - By hand: GitHub, Actions, "nightly end-to-end", Run workflow. Choosing `manual` runs a rehearsal that types the balance by hand at step 5 and connects no bank: it tells you whether a failure is Plaid's or ours.
-- On a pull request: when it changes the test, any of `src/App.jsx` (which holds the plans screens), the plans' rules, words and prices in `src/lib`, or the server's bank limit, plan, entitlement and billing code in `netlify/functions` (the full list is the workflow's `paths`). A label other than `nightly-fire-drill` never starts or cancels a run.
+- On a pull request: when it changes the test, any of `src/App.jsx` (which holds the plans screens), the plans' rules, words and prices in `src/lib`, or the server's bank limit, plan, entitlement and billing code in `netlify/functions` (the full list is the workflow's `paths`). A label other than `nightly-fire-drill` still starts a run of the workflow, but it walks nothing and cannot cancel a run in progress.
 - Fire drill: tick `drill` when running by hand. The run fails on purpose after the first step and GitHub sends its failure email, so you can see the alert arrive. (On a pull request that changes the test, the label `nightly-fire-drill` does the same.)
 - On this Mac: `supabase start --workdir e2e/nightly`, `node e2e/nightly/setup-db.cjs`, build the two apps, `node e2e/nightly/server.cjs`, `node e2e/nightly/run.cjs` (the workflow file is the exact recipe).
 

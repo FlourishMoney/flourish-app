@@ -105,6 +105,20 @@ function installStoreApp(platform) {
 
 class StepFailed extends Error {}
 
+// The walk's own create_link_token probe (the website's bank step) carries this header, so the page's listener never
+// counts it as the app's request (review round 2): only the app asking, and being refused, proves the app's behaviour.
+const PROBE_HEADER = "x-nightly-probe";
+/** Is this request the APP asking for a Plaid link token (not the walk's probe, not another action or route)? */
+function isAppLinkTokenRequest({ url, postData, headers }) {
+  let pathname = ""; try { pathname = new URL(url).pathname; } catch { return false; }
+  if (!/\/api\/plaid$/.test(pathname) || !/"create_link_token"/.test(postData || "")) return false;
+  return !Object.keys(headers || {}).some((h) => h.toLowerCase() === PROBE_HEADER);
+}
+/** Was one of the app's own link-token requests refused as the free plan's (402, plan_limit)? */
+function appLinkTokenRefused(answers) {
+  return (answers || []).some((r) => r.status === 402 && r.error === "plan_limit");
+}
+
 /** What a failure says on GitHub: one error annotation (shown in GitHub's failure email and on the run) and the summary. */
 function alertLines(f) {
   const flat = (s) => String(s || "").replace(/\s+/g, " ").trim();
@@ -151,7 +165,8 @@ async function walk(browser, device) {
   page.on("response", (r) => { try { const u = new URL(r.url()); if (u.origin === WEB && u.pathname.startsWith("/api/") && r.status() >= 500) st.apiErrors.push(`${u.pathname} answered ${r.status()}`); } catch {} });
   // The app's own requests for a Plaid link token, and the server's answers (the website's free plan is refused).
   page.on("response", async (r) => { try {
-    if (!/\/api\/plaid$/.test(new URL(r.url()).pathname) || !/"create_link_token"/.test(r.request().postData() || "")) return;
+    const q = r.request();
+    if (!isAppLinkTokenRequest({ url: r.url(), postData: q.postData(), headers: q.headers() })) return;
     let error = null; try { error = (await r.json()).error || null; } catch {}
     st.linkTokens.push({ status: r.status(), error });
   } catch {} });
@@ -198,17 +213,22 @@ async function walk(browser, device) {
         const said = (await line.innerText()).replace(/\s+/g, " ");
         if (!said.includes(words.bankLine)) throw new Error(`the free plan's bank line is not the approved one, it says: ${said.slice(0, 160)}`);
         if (await page.locator("[data-bank-button]").count()) throw new Error("the website's free plan shows a Connect button for a bank it cannot connect");
+        // The app asked for a link token and was refused as the free plan's: read and checked BEFORE the walk's own
+        // probe below, which is tagged and never recorded, so the probe cannot stand in for the app.
+        // (The listener reads each answer's body as it comes in: give the app's answer a moment to be recorded.)
+        for (const end = Date.now() + 10000; !appLinkTokenRefused(st.linkTokens) && Date.now() < end;) await page.waitForTimeout(200);
+        const appTokens = st.linkTokens.slice();
+        if (!appLinkTokenRefused(appTokens)) throw new Error(`the app's own link-token request was not refused as the free plan's (it got: ${JSON.stringify(appTokens)})`);
         // The server itself refuses: a link token asked for as this signed-in account answers the free plan's refusal.
-        const refusal = await page.evaluate(async () => {
+        const refusal = await page.evaluate(async (probeHeader) => {
           let token = null;
           for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { token = JSON.parse(localStorage.getItem(k)).access_token; } catch (e) {} }
           if (!token) return { status: 0, error: "no session token on the device" };
-          const r = await fetch("/api/plaid", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ action: "create_link_token", country: "CA" }) });
+          const r = await fetch("/api/plaid", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, [probeHeader]: "1" }, body: JSON.stringify({ action: "create_link_token", country: "CA" }) });
           let b = {}; try { b = await r.json(); } catch (e) {}
           return { status: r.status, error: b.error || null };
-        });
+        }, PROBE_HEADER);
         if (refusal.status !== 402 || refusal.error !== "plan_limit") throw new Error(`the server did not refuse a bank on the website's free plan: create_link_token answered ${refusal.status} ${refusal.error}`);
-        if (!st.linkTokens.some((r) => r.status === 402 && r.error === "plan_limit")) throw new Error(`the app's own link-token request was not refused as the free plan's (it got: ${JSON.stringify(st.linkTokens)})`);
         await tap("Enter it myself");
         await page.getByPlaceholder("0.00").first().fill("2500");
         await tap("Continue →");
@@ -252,7 +272,7 @@ async function walk(browser, device) {
       const notNow = page.getByRole("button", { name: "Not now", exact: true }).first();
       if (kind === "plans-once") {   // the website: the plans open once, then close onto the free plan
         const headline = page.getByText(words.headline, { exact: false }).first();
-        for (let i = 0; i < 3 && !(await headline.isVisible()); i++) { await notNow.or(headline).first().waitFor({ state: "visible", timeout: 40000 }); if (await headline.isVisible()) break; await notNow.click(); await page.waitForTimeout(800); }
+        for (let i = 0; i < 3 && !(await headline.isVisible()); i++) { await notNow.or(headline).filter({ visible: true }).first().waitFor({ state: "visible", timeout: 40000 }); if (await headline.isVisible()) break; await notNow.click(); await page.waitForTimeout(800); }
         await headline.waitFor({ state: "visible", timeout: 40000 });
         await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
         await page.getByRole("button", { name: words.close, exact: true }).first().click();
@@ -385,5 +405,5 @@ async function main() {
   console.log(`\n✓ NIGHTLY: ${results.length} devices, ${STEPS.length} steps each, bank step: ${BANK === "plaid" ? "Plaid sandbox" : "typed by hand (rehearsal)"}.`);
 }
 
-module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines, stepsFor, approvedWords };
+module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines, stepsFor, approvedWords, PROBE_HEADER, isAppLinkTokenRequest, appLinkTokenRefused };
 if (require.main === module) main().catch((e) => { console.error(`✗ the nightly test could not run: ${e && e.stack}`); process.exit(1); });
