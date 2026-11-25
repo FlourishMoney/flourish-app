@@ -35,6 +35,8 @@ const APPROVED = {
   whatsNew116: "- Your weekly money meeting now opens with a recap of what you decided last time, and can ask about bill changes it finds in your accounts.\n" +
     "- Sign up in Settings for a short weekly email of Canadian money dates.\n" +
     "- Small fixes and improvements.\n",
+  // 1.1.8 (Amanda, 2026-11-24), one text for the App Store, Google Play and the app, word for word: one note.
+  whatsNew118: "- The AI coach and bank connection screens have a cleaner look. Plus bug fixes and small improvements.\n",
 };
 // The old upgrade texts the server sent beside plan_limit (gone 2026-11-23: every refusal now sends the approved
 // free-server-bank line, netlify/functions/_lib/freeWords.js). The app must never show any of them.
@@ -76,8 +78,8 @@ const UPGRADE_TEXTS = ["Connecting more than one bank is a Plus feature. Upgrade
   const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
   // The app's text, line by line as the store shows it, is the approved file: the same for iPhone and Android.
   const asText = [...(W.notes || []).map((x) => "- " + x)].join("\n") + "\n";
-  t.eq([W.version, asText, W.notesAndroid, W.intro, W.alsoTitle, W.alsoNotes], ["1.1.6", APPROVED.whatsNew116, undefined, undefined, undefined, undefined],
-    "5a What's new for 1.1.6 is the approved text, word for word and in order (three notes), one text for iPhone and Android");
+  t.eq([W.version, asText, W.notesAndroid, W.intro, W.alsoTitle, W.alsoNotes], ["1.1.8", APPROVED.whatsNew118, undefined, undefined, undefined, undefined],
+    "5a What's new for 1.1.8 is the approved text, word for word (one note), one text for iPhone and Android");
   t.ok(/const whatsNewNotes = \(platform = currentPlatform\(\)\) => \(platform === "ios" \? WHATS_NEW\.notes : \(WHATS_NEW\.notesAndroid \|\| WHATS_NEW\.notes\)\);/.test(fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8")),
     "5a2 …an iOS build shows the iPhone notes, every other build Android's (no device named)");
 
