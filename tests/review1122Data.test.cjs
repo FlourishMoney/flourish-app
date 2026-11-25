@@ -129,7 +129,7 @@ class FakeStorage {
     t.eq(PS.hasRealLocalData({ profile: { name: "Sam", country: "CA" } }), true, "P5-03f a name someone typed is still real data");
     t.eq(PS.hasRealLocalData({ profile: { country: "CA", province: "ON" } }), true, "P5-03g so is a province someone picked (it starts unset)");
     t.eq(PS.hasRealLocalData({ profile: { country: "CA" }, incomes: [{ amount: 2100 }] }), true, "P5-03h and any record: an income, a bill, a debt, a goal, an account, a transaction");
-    t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=deviceCountry\(\); return \{name:"",country,province:""/.test(app),
+    t.ok(/const \[p,setP\]=useState\(\(\)=>\{ const country=appCountry\(deviceCountry\(\)\); return \{name:"",country,province:""/.test(app),
       "P5-03i onboarding does start every profile with the device's country and an unset province, which is why country alone proves nothing");
   }
 

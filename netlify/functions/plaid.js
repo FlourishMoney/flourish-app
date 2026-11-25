@@ -28,6 +28,7 @@ const PLAID_BASE = {
 const { corsHeadersFor } = require("./_lib/cors");
 const { freeBankCap, REFUSED } = require("./_lib/freeBanks");
 const { freeServerWords } = require("./_lib/freeWords");
+const { plaidCountryCodes } = require("./_lib/appRegion");
 const { reportServerError } = require("./_lib/serverAlert");
 const { alertSupport } = require("./_lib/supportAlert");
 const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
@@ -284,12 +285,13 @@ exports.handler = async (event) => {
       const { user_id, error: authError } = await getUserFromRequest(event);
       if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
 
-      const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
       // Every link token, new or update-mode, names its country and the same redirect address. Plaid requires
       // country_codes on update mode too: without it /link/token/create answers 400 MISSING_FIELDS and a bank whose
       // sign-in ran out (ITEM_LOGIN_REQUIRED) can never be reconnected (Plaid logs, Scotiabank, Nov 10 2026).
-      const COUNTRY_CODES = [country];
+      // canada-lock (2026-11-25): the country is the site's (APP_REGION, _lib/appRegion.js), so flourish asks Plaid for
+      // CA only whatever the app sent; a site built with APP_REGION=US (the future US app) passes the app's country on.
+      const COUNTRY_CODES = plaidCountryCodes(body.country);
       const REDIRECT_URI = "https://flourishmoney.app";
 
       // FREE V1 (2026-11-23, _lib/freeBanks.js): a NEW bank on a plan that connects none is refused here, before Plaid

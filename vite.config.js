@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { execSync } from 'node:child_process'
 import { trialFirstMetaPlugin } from './scripts/trial-first-meta.mjs'
+import { normalizeRegion } from './src/lib/appRegion.js'
 
 // ── Build stamp ──────────────────────────────────────────────────────────────
 // Bake the git commit SHA into the bundle so a deployed web build and a Capacitor iOS build can be
@@ -31,6 +32,10 @@ const BUILD_SHA = resolveBuildSha()
 // build), where errorReporting.js falls back to the build mode. Not a secret: it is the build's own label.
 const DEPLOY_CONTEXT = (process.env.CONTEXT || '').trim()
 
+// Which market this build serves (canada-lock, 2026-11-25; src/lib/appRegion.js). flourish builds with APP_REGION
+// unset, which is "CA": Canada only, whatever the device or store says. APP_REGION=US is for the future US app.
+const APP_REGION = normalizeRegion(process.env.APP_REGION)
+
 export default defineConfig({
   // trial-first-meta: index.html's two descriptions follow TRIAL_PLAN_FIRST at build time (scripts/trial-first-meta.mjs).
   plugins: [react(), trialFirstMetaPlugin()],
@@ -39,6 +44,7 @@ export default defineConfig({
   define: {
     'import.meta.env.VITE_BUILD_SHA': JSON.stringify(BUILD_SHA),
     'import.meta.env.VITE_DEPLOY_CONTEXT': JSON.stringify(DEPLOY_CONTEXT),
+    'import.meta.env.APP_REGION': JSON.stringify(APP_REGION),
   },
   // Sprint 6b: strip console.log/info/warn/debug from PRODUCTION bundles. esbuild marks these
   // as side-effect-free (their return is always unused) and dead-code-eliminates them during
