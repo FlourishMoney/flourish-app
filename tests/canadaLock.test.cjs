@@ -95,9 +95,11 @@ const REPO = path.join(__dirname, "..");
       const saved = { profile, accounts: [usd, unstamped] };
       const l = R.lockCountry(saved);
       t.eq([l.profile.country, l.profile.baseCurrency, F.baseCurrencyOf(l)], ["CA", "CAD", "CAD"], `3i ${what}: loads as Canada, base currency CAD`);
-      t.ok(l.accounts === saved.accounts && l.accounts[0].currency === "USD", `3j ${what}: its USD bank account is left as USD`);
-      t.eq([F.accountCurrencyOf(l.accounts[0], l), F.isBaseCurrencyAccount(l.accounts[0], l), F.accountCurrencyOf(l.accounts[1], l)], ["USD", false, "CAD"],
-        `3k ${what}: the USD account is read as USD (held apart from CAD), an unstamped one as CAD`);
+      t.ok(l.accounts[0] === usd && l.accounts[0].currency === "USD", `3j ${what}: its USD bank account is left as USD (the same object)`);
+      // Review round 1 (MUST 1): the unstamped account was read as the old base, USD, so it keeps USD (section 7);
+      // round 1 let it become CAD, which silently counted US dollars as Canadian ones.
+      t.eq([F.accountCurrencyOf(l.accounts[0], l), F.isBaseCurrencyAccount(l.accounts[0], l), F.accountCurrencyOf(l.accounts[1], l), F.isBaseCurrencyAccount(l.accounts[1], l)], ["USD", false, "USD", false],
+        `3k ${what}: the USD account is read as USD (held apart from CAD), and so is the unstamped one, which was USD before the lock`);
       t.eq(saved.profile.baseCurrency, profile.baseCurrency, `3l ${what}: the saved object is not changed in place`);
     }
     const cad = { profile: { country: "CA", baseCurrency: "CAD" } };
@@ -162,6 +164,105 @@ const REPO = path.join(__dirname, "..");
     } catch (e) {
       t.ok(false, `6h App.jsx bundles: ${e && e.message}`);
     }
+  }
+
+  // ── 7. Accounts with no stated currency keep the household's OLD currency (review round 1, MUST 1) ─────
+  // accountCurrencyOf gives an account with no currency the household's base. A household that was US had base
+  // USD, so its unstamped accounts were USD; when the lock makes the base CAD they must not quietly become CAD.
+  // Every account list the currency code reads is data.accounts (bank, manual balances, statement imports).
+  {
+    const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
+    const hh = (profile, accounts) => ({ profile, accounts, bills: [], debts: [], incomes: [], transactions: [], goals: [] });
+    const usAccounts = () => [
+      { id: "c1", name: "Checking ••1111", type: "checking", balance: 1200, institution: "Chase" },              // bank, no currency stated
+      { id: "m1", name: "Checking", type: "checking", balance: 300, institution: "Manual", currency: null },   // manual balance, null
+      { id: "st", name: "Statement", type: "checking", balance: 50, institution: "Statement", currency: "" },  // statement import, blank
+      { id: "s1", name: "Savings ••2222", type: "savings", balance: 4000, institution: "Chase", currency: "USD" }, // already stamped
+      { id: "e1", name: "Euro account", type: "checking", balance: 10, institution: "N26", currency: "EUR" },
+    ];
+    for (const [what, profile] of [["a US household (base USD by country)", { country: "US", province: "OH" }],
+      ["a Canadian profile saved with baseCurrency USD", { country: "CA", province: "ON", baseCurrency: "USD" }],
+      ["a US household saved with baseCurrency \" usd \"", { country: "US", baseCurrency: " usd " }]]) {
+      const before = hh(profile, usAccounts());
+      t.eq(F.baseCurrencyOf(before).trim(), "USD", `7a ${what}: before the lock its base is USD`);
+      const l = R.lockCountry(before);
+      t.eq(l.accounts.map((a) => a.currency), ["USD", "USD", "USD", "USD", "EUR"], `7b ${what}: every account with no currency is stamped with the old base, USD; stated ones are kept`);
+      t.ok(l.accounts[3] === before.accounts[3] && l.accounts[4] === before.accounts[4], `7c ${what}: an account that already states its currency is the same object`);
+      t.eq(before.accounts.map((a) => a.currency), [undefined, null, "", "USD", "EUR"].map((c) => c === undefined ? undefined : c), `7d ${what}: the saved accounts are not changed in place`);
+      t.eq([F.baseCurrencyOf(l), l.accounts.filter((a) => F.isBaseCurrencyAccount(a, l)).length], ["CAD", 0], `7e ${what}: base CAD, and none of its accounts counts as CAD`);
+      const ss = SafeSpendEngine.calculate(l);
+      t.eq([ss.balance, ss.mixedCurrencyDetected, ss.excludedForeignCash], [0, true, 5560], `7f ${what}: safe to spend leaves the US$ cash out and says it is held in another currency`);
+      const nw = F.FinancialCalcEngine.netWorth(l);
+      t.eq([nw.mixedCurrencyDetected, F.netWorthRows(l).total], [true, 0], `7g ${what}: net worth leaves them out too, with the other-currency notice`);
+    }
+    // The notice a person sees: Goals > Net worth, rendered from App.jsx.
+    try {
+      const { loadApp, textOf } = require("./_renderApp.cjs");
+      const A = loadApp(["Goals"]);
+      const l = R.lockCountry(hh({ country: "US", province: "OH" }, usAccounts().slice(0, 3)));   // only accounts that state no currency
+      const words = textOf(A.render(A.h(A.Goals, { data: l, initialTab: "worth", setAppData: () => {}, setScreen: () => {} })));
+      t.ok(words.includes("Your USD account(s) are excluded from these totals (CAD only)."), "7h Net worth shows the existing notice: \"Your USD account(s) are excluded from these totals (CAD only).\"");
+    } catch (e) { t.ok(false, `7h Goals renders: ${e && e.message}`); }
+    const usd = hh({ country: "US" }, usAccounts());
+    t.eq(R.lockCountry({ ...usd, profile: { country: "US", baseCurrency: "CAD" } }).accounts.map((a) => a.currency), [undefined, null, "", "USD", "EUR"],
+      "7i a US profile whose base was already CAD: nothing to stamp (its unstamped accounts were CAD before and after)");
+    const ca = hh({ country: "CA", province: "ON" }, [{ id: "c1", type: "checking", balance: 900 }]);
+    t.ok(R.lockCountry(ca) === ca, "7j a Canadian household with unstamped accounts is returned as the same object");
+    t.ok(R.lockCountry(usd, "US") === usd, "7k APP_REGION=US: nothing is stamped");
+    t.eq(R.lockCountry({ profile: { country: "US" } }).profile.country, "CA", "7l a household with no account list still locks");
+  }
+
+  // ── 8. baseCurrency is written back as exactly "CAD" (review round 1, MUST 3) ───────────────────────────
+  {
+    for (const saved of [" cad ", " CAD ", "cad", "Cad", "CAD\n"]) {
+      const l = R.lockCountry({ profile: { country: "CA", province: "ON", baseCurrency: saved }, accounts: [{ id: "c1", type: "checking", balance: 5 }, { id: "c2", type: "checking", balance: 7, currency: "CAD" }] });
+      t.eq([l.profile.baseCurrency, l.profile.province, F.baseCurrencyOf(l), l.accounts.filter((a) => F.isBaseCurrencyAccount(a, l)).length], ["CAD", "ON", "CAD", 2],
+        `8a a saved ${JSON.stringify(saved)} is written back as exactly "CAD", the province kept, both CAD accounts counted`);
+      t.eq(l.accounts[0].currency, undefined, `8b ${JSON.stringify(saved)} was CAD already, so an unstamped account is not stamped`);
+    }
+    const exact = { profile: { country: "CA", baseCurrency: "CAD" } };
+    t.ok(R.lockCountry(exact) === exact, "8c exactly \"CAD\" is left as it is");
+  }
+
+  // ── 9. The Settings country picker (review round 1, MUST 2) ──────────────────────────────────────────
+  {
+    const { loadApp } = require("./_renderApp.cjs");
+    const props = (profile) => ({ sectionKey: "profile", data: { profile, incomes: [], accounts: [] }, setAppData: () => {}, color: "#00CC85" });
+    const countrySelect = (html) => (html.match(/<select[^>]*aria-label="Country"[^>]*>([\s\S]*?)<\/select>/) || [])[1] || "";
+    try {
+      const A = loadApp(["SettingsSectionContent"]);
+      const opts = countrySelect(A.render(A.h(A.SettingsSectionContent, props({ name: "Sam", country: "CA", province: "ON" }))));
+      t.ok(/value="CA"/.test(opts) && /Canada/.test(opts) && !/value="US"/.test(opts) && !/United States/.test(opts), "9a flourish's Settings lists Canada only");
+    } catch (e) { t.ok(false, `9a Settings renders: ${e && e.message}`); }
+    try {
+      const U = loadApp(["SettingsSectionContent"], { env: { APP_REGION: "US" } });
+      const opts = countrySelect(U.render(U.h(U.SettingsSectionContent, props({ name: "Sam", country: "US", province: "OH" }))));
+      t.ok(/value="CA"/.test(opts) && /value="US"/.test(opts) && /United States/.test(opts), "9b a build with APP_REGION=US still offers the United States");
+    } catch (e) { t.ok(false, `9b Settings renders (APP_REGION=US): ${e && e.message}`); }
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const from = app.indexOf("const newCountry = appCountry(e.target.value);");
+    const upd = app.indexOf("profile:{...prev.profile, country:newCountry", from);
+    const between = from >= 0 && upd > from ? app.slice(from, upd) : "";
+    t.ok(/if \(newCountry !== e\.target\.value\) \{ e\.target\.value = newCountry; return; \}/.test(between) && !/setAppData/.test(between.split("return;")[0]),
+      "9c a refused country returns before any update: the picker is put back and nothing is saved (province kept)");
+    t.ok(/\{APP_REGION === "US" && <option value="US">🇺🇸 United States<\/option>\}/.test(app), "9d the United States option is there only in an APP_REGION=US build");
+  }
+
+  // ── 10. flourish's own configuration never sets another region (review round 1, SHOULD 5) ─────────────
+  // The app's region is baked in at build and the server's read at run time, both from APP_REGION. A committed
+  // netlify.toml or env file that set it to anything but CA would move flourish (or only half of it) off Canada.
+  {
+    const settings = (text) => [...String(text).matchAll(/^\s*(?:export\s+)?APP_REGION\s*[=:]\s*["']?([^"'\s#]*)["']?/gm)].map((m) => m[1]);
+    t.eq([settings('[build.environment]\n  APP_REGION = "US"\n'), settings("APP_REGION=us\n"), settings('[context.production.environment]\n  APP_REGION = "CA"  # flourish\n'),
+      settings("export APP_REGION='CA'\n"), settings("# APP_REGION=US\nOTHER=1\n")], [["US"], ["us"], ["CA"], ["CA"], []],
+    "10a the check reads APP_REGION from netlify.toml and env-file lines (and not from comments)");
+    let tracked = [];
+    try { tracked = require("child_process").execFileSync("git", ["ls-files"], { cwd: REPO, encoding: "utf8" }).split("\n").filter(Boolean); } catch { tracked = []; }
+    if (!tracked.length) tracked = ["netlify.toml", ...fs.readdirSync(REPO).filter((f) => /^\.env/.test(f))];
+    const configFiles = tracked.filter((f) => /(^|\/)netlify\.toml$/.test(f) || /(^|\/)\.env(\.[\w.-]+)?$/.test(f) || /\.env$/.test(f));
+    t.ok(configFiles.includes("netlify.toml"), `10b the committed configuration files are found (${configFiles.join(", ")})`);
+    const wrong = configFiles.flatMap((f) => settings(fs.readFileSync(path.join(REPO, f), "utf8")).filter((v) => v.trim().toUpperCase() !== "CA").map((v) => `${f}: APP_REGION=${v}`));
+    t.eq(wrong, [], "10c no committed netlify.toml or env file sets APP_REGION to anything but CA");
   }
 
   t.summary("canadaLock.test");

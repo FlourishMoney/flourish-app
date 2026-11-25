@@ -44,15 +44,24 @@ export function plaidCountryCodes(candidate, region = APP_REGION) {
 // App data as it loads (from this device or the server), with its profile's country locked. A profile that is
 // already Canadian comes back as the same object, so nothing re-renders or re-saves for it. A profile that was
 // US loses its US state code too, as the Settings picker does when the country changes (province unset).
-// The household's own currency (profile.baseCurrency, read by baseCurrencyOf) is CAD: a saved non-CAD value is
-// replaced. Accounts are not touched: a bank account Plaid reports in USD stays USD (Canadians hold US-dollar
-// accounts) and is read as held apart from CAD, as it always has been for a Canadian household.
+// The household's own currency (profile.baseCurrency, read by baseCurrencyOf) is CAD: any saved value that is
+// not exactly "CAD" (" cad ", "USD") is written back as "CAD". A bank account that states its currency keeps it:
+// one Plaid reports in USD stays USD (Canadians hold US-dollar accounts) and is held apart from CAD totals.
+// An account that states NO currency is read as the household's base (accountCurrencyOf), so when the base
+// moves off something else (a US household's USD) every such account in data.accounts (bank, manual balances,
+// statement imports: the only list the currency code reads) is first stamped with that old base. Otherwise a
+// US household's dollars would silently count as Canadian ones.
 export function lockCountry(appData, region = APP_REGION) {
   const p = appData && appData.profile;
   if (!p || normalizeRegion(region) !== "CA") return appData;
-  const savedBase = p.baseCurrency == null || p.baseCurrency === "" ? null : String(p.baseCurrency).trim().toUpperCase();
-  const baseOk = savedBase === null || savedBase === "CAD";
-  if (p.country === "CA" && baseOk) return appData;
+  const hasSavedBase = !(p.baseCurrency == null || p.baseCurrency === "");
+  if (p.country === "CA" && (!hasSavedBase || p.baseCurrency === "CAD")) return appData;
+  // The base before the lock, as baseCurrencyOf (financialCalculations.js) reads it, trimmed.
+  const oldBase = String(hasSavedBase ? p.baseCurrency : (String(p.country ?? "").trim().toUpperCase() === "US" ? "USD" : "CAD")).trim().toUpperCase();
   const wasUS = String(p.country ?? "").trim().toUpperCase() === "US";
-  return { ...appData, profile: { ...p, country: "CA", ...(wasUS ? { province: "" } : {}), ...(baseOk ? {} : { baseCurrency: "CAD" }) } };
+  const next = { ...appData, profile: { ...p, country: "CA", ...(wasUS ? { province: "" } : {}), ...(hasSavedBase ? { baseCurrency: "CAD" } : {}) } };
+  if (oldBase && oldBase !== "CAD" && Array.isArray(appData.accounts) && appData.accounts.some((a) => a && !a.currency)) {
+    next.accounts = appData.accounts.map((a) => (a && !a.currency ? { ...a, currency: oldBase } : a));
+  }
+  return next;
 }

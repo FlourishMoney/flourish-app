@@ -81,7 +81,7 @@ import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY, stepBody } from "./lib/tour.js";
 import { firstNumberGreeting, firstNumberSentence, bufferPending, FIRST_NUMBER_HEADLINE, BUFFER_PENDING_LINE } from "./lib/firstNumber.js";
 import { deviceCountry } from "./lib/deviceCountry.js";
-import { appCountry, lockCountry } from "./lib/appRegion.js";   // canada-lock: flourish is Canada only (APP_REGION)
+import { APP_REGION, appCountry, lockCountry } from "./lib/appRegion.js";   // canada-lock: flourish is Canada only (APP_REGION)
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { FIRST_RUN_WORDS } from "./lib/firstRunWords.js";
 import { recordLegalConsent, flushLegalConsent, markConsentShown, privacyVersion, termsVersion, withGiftDate } from "./lib/legalConsent.js";
@@ -12323,14 +12323,15 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
         <select aria-label="Country" defaultValue={data.profile?.country||"CA"} onChange={e=>{
           // Phase D12: reset province to a sensible default when country changes
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
-          // canada-lock: in flourish (APP_REGION unset) the country stays Canada, and the picker shows Canada again.
+          // canada-lock: flourish (APP_REGION unset) lists Canada only. A country this build refuses changes nothing:
+          // the picker is put back and no update fires, so a Canadian's province is never cleared.
           const newCountry = appCountry(e.target.value);
-          if (e.target.value !== newCountry) e.target.value = newCountry;
+          if (newCountry !== e.target.value) { e.target.value = newCountry; return; }
           const defaultProvince = "";   // 2026-10-23: unset (federal content only) until picked below
           if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince, creditScore:Math.min(prev.profile?.creditScore??680, newCountry==="US"?850:900)}}));
         }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-          <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
+          <option value="CA">🇨🇦 Canada</option>{APP_REGION === "US" && <option value="US">🇺🇸 United States</option>}
         </select>
       </div>
       {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
