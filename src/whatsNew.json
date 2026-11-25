@@ -1,12 +1,10 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.8",
   "builds": {
-    "ios": 526911,
-    "android": 27
+    "ios": 526917,
+    "android": 33
   },
   "notes": [
-    "Your weekly money meeting now opens with a recap of what you decided last time, and can ask about bill changes it finds in your accounts.",
-    "Sign up in Settings for a short weekly email of Canadian money dates.",
-    "Small fixes and improvements."
+    "The AI coach and bank connection screens have a cleaner look. Plus bug fixes and small improvements."
   ]
 }
