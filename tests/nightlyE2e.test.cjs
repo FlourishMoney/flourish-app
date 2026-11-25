@@ -102,5 +102,73 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.ok(/on purpose/.test(R.DRILL_STEP || "") && !R.STEPS.includes(R.DRILL_STEP), "6e …that says it was on purpose, and is not one of the nine");
   t.ok(/if \(DRILL\) await step\(DRILL_STEP, async \(\) => \{ throw new Error\(/.test(run) && /const DRILL = process\.env\.E2E_DRILL === "true";/.test(run), "6f only E2E_DRILL exactly \"true\" fails it, right after the fresh visit");
 
+  // ── 7. The website walks the free plan (Free v1, PR #158; run 45471015886 broke at "Choose your plan") ──────────
+  // On the website the free plan connects no bank, the plans open once and close onto the free plan, and Delete
+  // Account is in Settings. The store apps keep the required plans, one sandbox bank, and Delete Account there.
+  {
+    const dev = (k) => R.DEVICES.find((d) => d.key === k);
+    const kinds = (k, bank) => (typeof R.stepsFor === "function" ? R.stepsFor(dev(k), bank) : []).map((s) => s.kind);
+    const names = (k, bank) => (typeof R.stepsFor === "function" ? R.stepsFor(dev(k), bank) : []).map((s) => s.name);
+    for (const k of ["iphone", "android"]) {
+      t.eq(kinds(k, "plaid"), ["visit", "signup", "ai-notice", "before-you-start", "plaid", "first-number", "plans-required", "delete-on-plans", "gone"], `7a ${k}: Plaid's sandbox bank, the required plans, Delete Account on them (unchanged)`);
+      t.eq(names(k, "plaid"), R.STEPS, `7b ${k}: the same nine step names as before`);
+    }
+    t.eq(kinds("iphone", "manual")[4], "by-hand", "7c the rehearsal types the phone's balance by hand, as before");
+    for (const bank of ["plaid", "manual"]) {
+      t.eq(kinds("website", bank), ["visit", "signup", "ai-notice", "before-you-start", "free-bank-line", "first-number", "plans-once", "delete-in-settings", "gone"],
+        `7d the website (${bank}): the free plan's bank line instead of a bank, the plans once then the free plan, Delete Account in Settings`);
+    }
+    t.eq(names("website", "plaid").length, 9, "7e the website still has nine named steps");
+    t.ok(names("website", "plaid")[4] !== R.STEPS[4] && names("website", "plaid")[6] !== R.STEPS[6] && names("website", "plaid")[7] !== R.STEPS[7],
+      `7f …and the three that differ say so in their names (${names("website", "plaid").slice(4, 8).join(" | ")})`);
+    // The approved words come from the app's own files, never typed into the test.
+    const { FREE_WORDS } = await import(path.join(REPO, "src", "lib", "freeWords.js"));
+    const { UPGRADE_COPY } = await import(path.join(REPO, "src", "lib", "upgradeFlow.js"));
+    const words = typeof R.approvedWords === "function" ? await R.approvedWords() : {};
+    t.eq([words.headline, words.close, words.bankLine, words.settingsLine], [UPGRADE_COPY.headline, FREE_WORDS["free-plans-close"], FREE_WORDS["free-bank-line"], FREE_WORDS["free-settings-plan-line"]],
+      "7g the walk's words are the app's own: the plans' headline (upgradeFlow.js) and the free plan's close button, bank line and Settings line (freeWords.js)");
+    t.ok(![UPGRADE_COPY.headline, FREE_WORDS["free-plans-close"], FREE_WORDS["free-bank-line"], FREE_WORDS["free-settings-plan-line"]].some((w) => run.includes(w)), "7h …none of them typed into run.cjs");
+    const differ = ["plaid", "by-hand", "free-bank-line", "plans-required", "plans-once", "delete-on-plans", "delete-in-settings"];
+    t.eq(differ.filter((k) => ![...kinds("iphone", "plaid"), ...kinds("iphone", "manual"), ...kinds("website", "plaid")].includes(k) || !new RegExp(`kind [!=]== "${k}"`).test(run)), [],
+      "7i every kind of step that differs between the devices is used, and the walk has a branch for it");
+    t.ok(/kind === "free-bank-line"[\s\S]{0,900}\[data-free-bank\][\s\S]{0,900}\[data-bank-button\][\s\S]{0,400}Enter it myself/.test(run), "7j the website's bank step: the free-bank line, no Connect button, then the balance by hand");
+    t.ok(/kind === "plans-once"[\s\S]{0,900}words\.headline[\s\S]{0,600}\\\$11\\\.99[\s\S]{0,900}words\.close[\s\S]{0,900}words\.settingsLine/.test(run), "7k the website's plans: the headline and $11.99, then \"Continue on the free plan\", then the app, on the free plan (Settings says so)");
+    t.ok(/kind === "delete-in-settings"[\s\S]{0,900}"Delete Account"[\s\S]{0,600}Delete your account\?[\s\S]{0,600}"Delete account"/.test(run), "7l the website deletes from Settings, as a website user does now");
+  }
+
+  // ── 8. The nightly's server enforces the plan limits the live site does ──────────────────────────────
+  t.ok(/\n      ENFORCE_PLAN_LIMITS: "true"\n/.test(wf), "8a the walk runs with ENFORCE_PLAN_LIMITS on, as the live site does (so the website's free plan refuses a bank)");
+  t.eq(S.refusal({ ...ok, ENFORCE_PLAN_LIMITS: "true" }), null, "8b …which the server allows");
+
+  // ── 9. A pull request that changes the plans runs the nightly (so a change like #158 cannot slip past it) ────
+  {
+    let P = {};
+    try { P = require(path.join(REPO, "e2e", "nightly", "touchesPlans.cjs")); } catch (e) { t.ok(false, `9 e2e/nightly/touchesPlans.cjs loads: ${e.message}`); }
+    const paths = (wf.match(/\n  pull_request:\n[\s\S]*?\n    paths:\n((?:      - "[^"]+"\n)+)/) || [])[1] || "";
+    t.eq(["e2e/nightly/**", ".github/workflows/nightly-e2e.yml", "src/lib/trialPlanFirst.js", "src/lib/upgradeFlow.js", "src/lib/freeWords.js", "src/App.jsx"].filter((p) => !paths.includes(`"${p}"`)), [],
+      "9a a pull request touching the plans' files (or the test) starts the workflow");
+    const run9 = (o) => (typeof P.shouldRun === "function" ? P.shouldRun(o) : null);
+    t.eq([run9({ event: "schedule", files: [] }), run9({ event: "workflow_dispatch", files: [] })], [true, true], "9b every night and by hand: always");
+    t.eq(["src/lib/trialPlanFirst.js", "src/lib/upgradeFlow.js", "src/lib/freeWords.js", "e2e/nightly/run.cjs", ".github/workflows/nightly-e2e.yml"].map((f) => run9({ event: "pull_request", files: [f], appDiff: "" })),
+      [true, true, true, true, true], "9c a pull request changing a plans file or the test itself: runs");
+    t.eq(run9({ event: "pull_request", files: ["README.md", "src/lib/locale.js"], appDiff: "" }), false, "9d …one that changes nothing of the plans: does not");
+    t.eq([run9({ event: "pull_request", action: "labeled", label: "nightly-fire-drill", files: ["README.md"], appDiff: "" }), run9({ event: "pull_request", action: "labeled", label: "other", files: ["README.md"], appDiff: "" })],
+      [true, false], "9d2 the label nightly-fire-drill still starts the drill on any pull request the workflow sees; another label does not");
+    const hunk = (fn, line) => `diff --git a/src/App.jsx b/src/App.jsx\n--- a/src/App.jsx\n+++ b/src/App.jsx\n@@ -100,1 +100,1 @@ ${fn}\n-  ${line}\n+  ${line} \n`;
+    t.eq([run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function UpgradeScreen({status, mode}){", "const a = 1;") }),
+      run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function StorePaywall({purchases}){", "const b = 2;") }),
+      run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("export default function App(){", "if(plansRequired && firstVisitDone){") })],
+    [true, true, true], "9e src/App.jsx: a change inside the plans screens, or to where the app decides to show them: runs");
+    t.eq(run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function Goals({data}){", "const savLabel=\"Savings\";") }), false, "9f …a change elsewhere in src/App.jsx: does not");
+    const git = (args) => require("child_process").execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    try {
+      const files = git(["show", "--name-only", "--format=", "af0f7ff"]).split("\n").filter(Boolean);
+      const appDiff = git(["show", "--format=", "af0f7ff", "--", "src/App.jsx"]);
+      t.eq([run9({ event: "pull_request", files, appDiff }), typeof P.appDiffTouchesPlans === "function" && P.appDiffTouchesPlans(appDiff)], [true, true],
+        "9g #158 itself (af0f7ff) would have run it, by its files and by its src/App.jsx changes alone");
+    } catch (e) { t.ok(true, "9g (af0f7ff is not in this checkout's history: skipped)"); }
+    t.ok(/\n  changes:\n[\s\S]*?node e2e\/nightly\/touchesPlans\.cjs[\s\S]*?\n  walk:\n[\s\S]*?\n    needs: changes\n    if: needs\.changes\.outputs\.run == 'true'\n/.test(wf), "9h a first job decides, and the walk runs only when it says so");
+  }
+
   t.summary("nightlyE2e.test");
 })();

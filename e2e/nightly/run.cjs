@@ -7,6 +7,12 @@
 //   5 connect a bank (Plaid sandbox, the standard test user)   6 first number   7 "Choose your plan"
 //   8 Delete Account   9 the account is gone (asked of the database, not of the app)
 //
+// The website walks the free plan (Free v1, PR #158): at 5 the server refuses a bank (ENFORCE_PLAN_LIMITS, as on the
+// live site) and the app shows the free plan's bank line, so the balance is typed by hand; at 7 the plans open once
+// and their close button closes them onto the free plan; at 8 Delete Account is in Settings. The store apps
+// keep one sandbox bank, the required plans, and Delete Account on them (stepsFor below). The screens' words are the
+// app's own, read from src/lib/upgradeFlow.js and src/lib/freeWords.js (approvedWords below), never typed here.
+//
 // Devices: the iPhone app and the Android app (the store build, in a phone-sized window, with the platform each app
 // reports and the Origin each app sends) and the website (a desktop window).
 //
@@ -41,7 +47,31 @@ const DEVICES = [
   { key: "android", label: "Android app", base: STORE, platform: "android", origin: "https://localhost", viewport: { width: 412, height: 915 }, mobile: true },
   { key: "website", label: "website", base: WEB, platform: null, origin: null, viewport: { width: 1280, height: 800 }, mobile: false },
 ];
-const STEPS = ["fresh visit", "sign up", "AI notice", "Before you start", BANK === "plaid" ? "connect a bank (Plaid sandbox)" : "balance typed by hand (rehearsal, no bank)", "first number", "Choose your plan", "Delete Account", "the account is gone"];
+const bankStepName = (bank) => (bank === "plaid" ? "connect a bank (Plaid sandbox)" : "balance typed by hand (rehearsal, no bank)");
+// The store apps' nine steps (the names GitHub's failure email shows).
+const STEPS = ["fresh visit", "sign up", "AI notice", "Before you start", bankStepName(BANK), "first number", "Choose your plan", "Delete Account", "the account is gone"];
+
+/** The nine steps a device walks: a name for the email, and a kind the walk acts on. Only steps 5, 7 and 8 differ. */
+function stepsFor(device, bank = BANK) {
+  const web = !device.platform;
+  const k = (name, kind) => ({ name, kind });
+  return [
+    k("fresh visit", "visit"), k("sign up", "signup"), k("AI notice", "ai-notice"), k("Before you start", "before-you-start"),
+    web ? k("the free plan's bank line, then a balance by hand (website)", "free-bank-line") : k(bankStepName(bank), bank === "plaid" ? "plaid" : "by-hand"),
+    k("first number", "first-number"),
+    web ? k("the plans, once, then the free plan (website)", "plans-once") : k("Choose your plan", "plans-required"),
+    web ? k("Delete Account, from Settings (website)", "delete-in-settings") : k("Delete Account", "delete-on-plans"),
+    k("the account is gone", "gone"),
+  ];
+}
+
+/** The approved words the website's free plan shows, from the app's own files (so a change of words cannot break this). */
+async function approvedWords() {
+  const lib = (f) => require("url").pathToFileURL(path.join(__dirname, "..", "..", "src", "lib", f)).href;
+  const { FREE_WORDS } = await import(lib("freeWords.js"));
+  const { UPGRADE_COPY } = await import(lib("upgradeFlow.js"));
+  return { headline: UPGRADE_COPY.headline, close: FREE_WORDS["free-plans-close"], bankLine: FREE_WORDS["free-bank-line"], settingsLine: FREE_WORDS["free-settings-plan-line"] };
+}
 
 /** Where a request may go: "allow", "api" (answer it from the local server), "production" (refuse and fail) or "block". */
 function verdict(url, supabaseUrl = SUPABASE_URL) {
@@ -94,6 +124,8 @@ function alertLines(f) {
 }
 
 async function walk(browser, device) {
+  const plan = stepsFor(device);
+  const words = await approvedWords();
   const dir = path.join(OUT, device.key);
   fs.mkdirSync(dir, { recursive: true });
   const st = { step: null, n: 0, done: [], production: [], blocked: new Set(), apiErrors: [], email: `nightly-${device.key}-${RUN}@flourishmoney.app`, userId: null };
@@ -134,13 +166,13 @@ async function walk(browser, device) {
   };
 
   try {
-    await step(STEPS[0], async () => {
+    await step(plan[0].name, async () => {
       await page.goto(device.base + "/", { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 60000 });
       if (device.platform) await seen("Example, sample data");
     });
     if (DRILL) await step(DRILL_STEP, async () => { throw new Error("Nothing is broken. Someone ran the fire drill to check that the failure email arrives."); });
-    await step(STEPS[1], async () => {
+    await step(plan[1].name, async () => {
       await tap("Get started");
       await page.getByRole("button", { name: "Create Account", exact: true }).waitFor();
       await page.getByPlaceholder("you@example.com").or(page.locator('input[type="email"]')).first().fill(st.email);
@@ -150,15 +182,28 @@ async function walk(browser, device) {
       st.userId = await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { return JSON.parse(localStorage.getItem(k)).user.id; } catch (e) {} } return null; });
       if (!st.userId) throw new Error("signed up, but no session was kept on the device");
     });
-    await step(STEPS[2], async () => { await tap("I Understand & Accept"); await seen("Before you start"); });
-    await step(STEPS[3], async () => { await tap("Get started"); await seen("Link your accounts"); });
-    await step(STEPS[4], async () => {
-      if (BANK === "manual") {   // the rehearsal: everything but Plaid
+    await step(plan[2].name, async () => { await tap("I Understand & Accept"); await seen("Before you start"); });
+    await step(plan[3].name, async () => { await tap("Get started"); await seen("Link your accounts"); });
+    await step(plan[4].name, async () => {
+      const { kind } = plan[4];
+      if (kind === "free-bank-line") {   // the website: its free plan connects no bank, and the app says so
+        const line = page.locator("[data-free-bank]").first();
+        await line.waitFor({ timeout: 40000 });
+        const said = (await line.innerText()).replace(/\s+/g, " ");
+        if (!said.includes(words.bankLine)) throw new Error(`the free plan's bank line is not the approved one, it says: ${said.slice(0, 160)}`);
+        if (await page.locator("[data-bank-button]").count()) throw new Error("the website's free plan shows a Connect button for a bank it cannot connect");
         await tap("Enter it myself");
         await page.getByPlaceholder("0.00").first().fill("2500");
         await tap("Continue →");
         return;
       }
+      if (kind === "by-hand") {   // the rehearsal: everything but Plaid
+        await tap("Enter it myself");
+        await page.getByPlaceholder("0.00").first().fill("2500");
+        await tap("Continue →");
+        return;
+      }
+      if (kind !== "plaid") throw new Error(`no bank step of kind ${kind}`);
       if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET || /^rehearsal/.test(process.env.PLAID_SECRET)) {
         throw new Error("Plaid's sandbox keys are not here: add the repository secrets PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET (e2e/nightly/README.md)");
       }
@@ -173,7 +218,7 @@ async function walk(browser, device) {
       await seen("Connected!", 90000);
       await tap("Let's go →");
     });
-    await step(STEPS[5], async () => {
+    await step(plan[5].name, async () => {
       await seen("Your paycheques");
       const amount = page.getByPlaceholder("e.g. 2100").first();
       if (await amount.count() && !(await amount.inputValue())) await amount.fill("2100");
@@ -184,21 +229,45 @@ async function walk(browser, device) {
       const number = await page.evaluate(() => (document.body.innerText.match(/\$\s*[\d,]+/) || [""])[0]);
       if (!/\d/.test(number)) throw new Error("the first-number screen shows no number");
     });
-    await step(STEPS[6], async () => {
+    await step(plan[6].name, async () => {
+      const { kind } = plan[6];
       await page.getByText("Skip for now", { exact: true }).first().click();
-      const notNow = page.getByRole("button", { name: "Not now", exact: true }).first(), plans = page.getByRole("heading", { name: "Choose your plan", exact: true });
+      const notNow = page.getByRole("button", { name: "Not now", exact: true }).first();
+      if (kind === "plans-once") {   // the website: the plans open once, then close onto the free plan
+        const headline = page.getByText(words.headline, { exact: false }).first();
+        for (let i = 0; i < 3 && !(await headline.count()); i++) { await notNow.or(headline).first().waitFor({ timeout: 40000 }); if (await headline.count()) break; await notNow.click(); await page.waitForTimeout(800); }
+        await headline.waitFor({ timeout: 40000 });
+        await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
+        await page.getByRole("button", { name: words.close, exact: true }).first().click();
+        await headline.waitFor({ state: "hidden", timeout: 20000 });
+        // On the free plan: the app is open, and Settings' plan card says what a subscription adds over it.
+        await page.getByRole("button", { name: "Settings" }).first().click();
+        await seen(words.settingsLine, 20000);
+        return;
+      }
+      if (kind !== "plans-required") throw new Error(`no plans step of kind ${kind}`);
+      const plans = page.getByRole("heading", { name: "Choose your plan", exact: true });
       for (let i = 0; i < 3 && !(await plans.count()); i++) { await notNow.or(plans).first().waitFor({ timeout: 40000 }); if (await plans.count()) break; await notNow.click(); await page.waitForTimeout(800); }
       await plans.waitFor({ timeout: 40000 });
       await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
     });
-    await step(STEPS[7], async () => {
+    await step(plan[7].name, async () => {
+      const { kind } = plan[7];
+      if (kind === "delete-in-settings") {   // the website: Delete Account is in Settings, as the support page says
+        await page.getByRole("button", { name: "Delete Account", exact: true }).first().click();
+        await seen("Delete your account?", 10000);
+        await tap("Delete account");
+        await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 40000 });
+        return;
+      }
+      if (kind !== "delete-on-plans") throw new Error(`no delete step of kind ${kind}`);
       await page.locator("[data-plans-delete]").click();
       await seen("Delete your account?", 10000);
       await tap("Delete account");
       await page.getByRole("heading", { name: "Choose your plan", exact: true }).waitFor({ state: "detached", timeout: 30000 });
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 40000 });
     });
-    await step(STEPS[8], async () => {
+    await step(plan[8].name, async () => {
       const gone = await accountIsGone(st.userId, st.email, password);
       if (gone !== true) throw new Error(gone);
     });
@@ -299,5 +368,5 @@ async function main() {
   console.log(`\n✓ NIGHTLY: ${results.length} devices, ${STEPS.length} steps each, bank step: ${BANK === "plaid" ? "Plaid sandbox" : "typed by hand (rehearsal)"}.`);
 }
 
-module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines };
+module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines, stepsFor, approvedWords };
 if (require.main === module) main().catch((e) => { console.error(`✗ the nightly test could not run: ${e && e.stack}`); process.exit(1); });
