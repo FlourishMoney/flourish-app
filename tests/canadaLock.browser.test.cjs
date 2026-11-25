@@ -121,6 +121,16 @@ const caBlob = () => blob({ name: "Sam", country: "CA", province: "ON" }, [{ id:
     return [p.country, p.province, p.baseCurrency, cur];
   };
   const LOCKED_US = ["CA", "", "CAD", ["USD", "USD", "USD"]];
+  // A real save (review round 2): change the household's name in Settings, so the app must save, and the payload
+  // that carries the new name is the one checked (an empty list of saves can no longer pass).
+  const saveAName = async (page, name) => {
+    await profileSettings(page);
+    await page.locator('input[aria-label="Name"]').fill(name);
+    await page.locator('input[aria-label="Name"]').press("Tab");
+    await settled(page);
+  };
+  const appDataOf = (d) => d && d.core && d.core.appData;
+  const savedWith = (list, name) => list.map(appDataOf).filter((a) => a && a.profile && a.profile.name === name);
 
   try {
     // ── 1. SAVED ON THIS DEVICE ─────────────────────────────────────────────────────────────────────
@@ -132,8 +142,11 @@ const caBlob = () => blob({ name: "Sam", country: "CA", province: "ON" }, [{ id:
       await ready(page);
       await settled(page);
       t.eq(lockedUS((await local(page) || {}).appData), LOCKED_US, "1a a US household saved on this device loads as Canada, base CAD, its unstamped accounts kept as USD (as saved back to the device)");
-      const up = S.writes.map((w) => w && w.data && w.data.core && w.data.core.appData).filter(Boolean).pop();
-      t.ok(!up || JSON.stringify(lockedUS(up)) === JSON.stringify(LOCKED_US), "1b …and anything pushed up to the server is the locked household too");
+      await saveAName(page, "Sam Device");
+      const up1 = savedWith(S.writes.map((w) => w && w.data), "Sam Device");
+      t.ok(up1.length > 0 && up1.every((a) => JSON.stringify(lockedUS(a)) === JSON.stringify(LOCKED_US)),
+        `1b a real save to the server (a name changed in Settings) carries the locked household: CA, base CAD, USD kept (${up1.length} save(s): ${JSON.stringify(up1.map(lockedUS))})`);
+      await page.goto(base + "/", { waitUntil: "domcontentloaded" }); await ready(page);
       await page.getByRole("button", { name: /goals/i }).first().click().catch(() => {});
       const nw = page.getByText("Net worth", { exact: false }).first();
       if (await nw.count()) await nw.click().catch(() => {});
@@ -152,9 +165,10 @@ const caBlob = () => blob({ name: "Sam", country: "CA", province: "ON" }, [{ id:
       await ready(page);
       await settled(page);
       t.eq(lockedUS((await local(page) || {}).appData), LOCKED_US, "2a a US household's row from the server loads as Canada, base CAD, its unstamped accounts kept as USD");
-      const up = S.writes.map((w) => w && w.data && w.data.core && w.data.core.appData).filter(Boolean);
-      t.ok(up.every((a) => JSON.stringify(lockedUS(a)) === JSON.stringify(LOCKED_US)), `2b nothing saved back to the server is US (${up.length} save(s))`);
-      await profileSettings(page);
+      await saveAName(page, "Sam Server");
+      const up2 = savedWith(S.writes.map((w) => w && w.data), "Sam Server");
+      t.ok(up2.length > 0 && up2.every((a) => JSON.stringify(lockedUS(a)) === JSON.stringify(LOCKED_US)),
+        `2b a real save back to the server (a name changed in Settings) is not empty and carries CA, base CAD, USD kept (${up2.length} save(s): ${JSON.stringify(up2.map(lockedUS))})`);
       t.eq(await page.locator('select[aria-label="Country"]').inputValue(), "CA", "2c Settings shows Canada");
       await ctx.close();
     }
@@ -166,7 +180,10 @@ const caBlob = () => blob({ name: "Sam", country: "CA", province: "ON" }, [{ id:
       await ready(page);
       await settled(page);
       t.eq(lockedUS((await local(page) || {}).appData), LOCKED_US, "3a a shared US household from the server loads as Canada, base CAD, its unstamped accounts kept as USD");
-      t.ok(S.patches.every((d) => JSON.stringify(lockedUS(d && d.core && d.core.appData)) === JSON.stringify(LOCKED_US)), `3b nothing saved back to the shared household is US (${S.patches.length} save(s))`);
+      await saveAName(page, "Sam Shared");
+      const up3 = savedWith(S.patches, "Sam Shared");
+      t.ok(up3.length > 0 && up3.every((a) => JSON.stringify(lockedUS(a)) === JSON.stringify(LOCKED_US)),
+        `3b a real save to the shared household (a name changed in Settings) is not empty and carries CA, base CAD, USD kept (${up3.length} save(s): ${JSON.stringify(up3.map(lockedUS))})`);
       await ctx.close();
     }
 

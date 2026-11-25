@@ -16,6 +16,8 @@
 // US app may tighten that when it is built.
 // -----------------------------------------------------------------------------
 
+import { baseCurrencyOf } from "./financialCalculations.js";
+
 // "US" only for an exact US (any case, trimmed); anything else, including nothing, is Canada.
 export function normalizeRegion(raw) {
   return String(raw ?? "").trim().toUpperCase() === "US" ? "US" : "CA";
@@ -56,8 +58,10 @@ export function lockCountry(appData, region = APP_REGION) {
   if (!p || normalizeRegion(region) !== "CA") return appData;
   const hasSavedBase = !(p.baseCurrency == null || p.baseCurrency === "");
   if (p.country === "CA" && (!hasSavedBase || p.baseCurrency === "CAD")) return appData;
-  // The base before the lock, as baseCurrencyOf (financialCalculations.js) reads it, trimmed.
-  const oldBase = String(hasSavedBase ? p.baseCurrency : (String(p.country ?? "").trim().toUpperCase() === "US" ? "USD" : "CAD")).trim().toUpperCase();
+  // The base before the lock: exactly what the app read (baseCurrencyOf), trimmed. Not the lock's own reading of
+  // the country: baseCurrencyOf treats only an exact "US" as USD, so a saved " us " was CAD to the app and its
+  // unstamped accounts were counted as CAD (review round 2).
+  const oldBase = String(baseCurrencyOf(appData)).trim().toUpperCase();
   const wasUS = String(p.country ?? "").trim().toUpperCase() === "US";
   const next = { ...appData, profile: { ...p, country: "CA", ...(wasUS ? { province: "" } : {}), ...(hasSavedBase ? { baseCurrency: "CAD" } : {}) } };
   if (oldBase && oldBase !== "CAD" && Array.isArray(appData.accounts) && appData.accounts.some((a) => a && !a.currency)) {

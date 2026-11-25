@@ -210,6 +210,26 @@ const REPO = path.join(__dirname, "..");
     t.ok(R.lockCountry(ca) === ca, "7j a Canadian household with unstamped accounts is returned as the same object");
     t.ok(R.lockCountry(usd, "US") === usd, "7k APP_REGION=US: nothing is stamped");
     t.eq(R.lockCountry({ profile: { country: "US" } }).profile.country, "CA", "7l a household with no account list still locks");
+
+    // Review round 2 (MUST 1): the old base is exactly what the app read (baseCurrencyOf), not the lock's own
+    // reading of the country. baseCurrencyOf checks country === "US" exactly, so a saved "us", " us " or "Us" was
+    // CAD to the app: its unstamped accounts were counted as CAD and must not be stamped USD (and drop out).
+    for (const country of ["us", " us ", "Us"]) {
+      const before = hh({ country, province: "OH" }, usAccounts());
+      t.eq(F.baseCurrencyOf(before), "CAD", `7m country ${JSON.stringify(country)}: the app read this household's base as CAD`);
+      const l = R.lockCountry(before);
+      t.eq(l.accounts.map((a) => a.currency), [undefined, null, "", "USD", "EUR"], `7n country ${JSON.stringify(country)}: so nothing is stamped (the lock stamps exactly what the app read)`);
+      t.eq(SafeSpendEngine.calculate(l).balance, SafeSpendEngine.calculate(before).balance, `7o country ${JSON.stringify(country)}: safe to spend counts the same cash before and after the lock`);
+    }
+    // The rule in one line: the lock never changes the currency any account is read in.
+    const cases = [{ country: "US" }, { country: "us" }, { country: " us " }, { country: "Us" }, { country: "CA", baseCurrency: " usd " }, { country: "us", baseCurrency: "USD" },
+      { country: "US", baseCurrency: "CAD" }, { country: "US", baseCurrency: " cad " }, { country: "CA", baseCurrency: "EUR" }, { country: undefined }, { country: "GB" }, { country: "CA" }];
+    for (const profile of cases) {
+      const before = hh(profile, usAccounts());
+      const l = R.lockCountry(before);
+      t.eq(l.accounts.map((a) => F.accountCurrencyOf(a, l).trim()), before.accounts.map((a) => F.accountCurrencyOf(a, before).trim()),
+        `7p ${JSON.stringify(profile)}: every account is read in the same currency before and after the lock`);
+    }
   }
 
   // ── 8. baseCurrency is written back as exactly "CAD" (review round 1, MUST 3) ───────────────────────────
