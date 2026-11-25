@@ -32,15 +32,44 @@ on:
   pull_request:
     # "labeled": putting the label nightly-fire-drill on a pull request that changes the test runs the fire drill there.
     types: [opened, synchronize, reopened, labeled]
+    # Also any change to the plans (free v1, PR #158, broke the nightly unseen): their rules, words, prices and screens
+    # (all of src/App.jsx, which holds the screens), and the server's plan, entitlement, billing and bank limits.
     paths:
       - "e2e/nightly/**"
       - ".github/workflows/nightly-e2e.yml"
+      # the app
+      - "src/App.jsx"
+      - "src/lib/trialPlanFirst.js"
+      - "src/lib/upgradeFlow.js"
+      - "src/lib/freeWords.js"
+      - "src/lib/freePlan.js"
+      - "src/lib/billingVisibility.js"
+      - "src/lib/pricing.js"
+      # the server: the bank limit and how it tells the website from a store app
+      - "netlify/functions/plaid.js"
+      - "netlify/functions/_lib/freeBanks.js"
+      - "netlify/functions/_lib/freeWords.js"
+      - "netlify/functions/_lib/cors.js"
+      # the server: the plan and what it entitles (a trial, a gift, a partner's cover, a store subscription)
+      - "netlify/functions/_lib/auth.js"
+      - "netlify/functions/_lib/planRules.js"
+      - "netlify/functions/_lib/gifts.js"
+      - "netlify/functions/_lib/household.js"
+      - "netlify/functions/_lib/storeSubscriptions.js"
+      # the server: billing and the plans-first decision
+      - "netlify/functions/billing.js"
+      - "netlify/functions/_lib/billingPlans.js"
+      - "netlify/functions/trial-plan-first.js"
+      - "netlify/functions/_lib/trialPlanFirst.js"
 
 permissions:
   contents: read
 
+# One run per branch or pull request: a newer push replaces the run in progress. A label other than nightly-fire-drill
+# still starts a run of this workflow (with nothing to walk), so it gets a group of its own and can never cancel the
+# walk in progress; the fire-drill label shares the pull request's group, so it replaces that run with the drill.
 concurrency:
-  group: nightly-e2e-${{ github.ref }}
+  group: nightly-e2e-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'nightly-fire-drill' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -71,6 +100,9 @@ jobs:
       TRIAL_PLAN_FIRST_SINCE: "2026-11-18T18:55:00Z"
       IAP_ENABLED: "true"
       BILLING_ENABLED: "true"
+      # The plan limits, on as on the live site: the website's free plan refuses a bank (the walk expects its line);
+      # the store apps' free plan still connects one (_lib/freeBanks.js), so the phones connect a sandbox bank.
+      ENFORCE_PLAN_LIMITS: "true"
       LIMITER_HASH_SECRET: nightly-e2e-local
       APP_ORIGIN: http://localhost:8888
       E2E_WEB_DIST: ${{ github.workspace }}/e2e/nightly/dist-web

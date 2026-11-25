@@ -7,6 +7,12 @@
 //   5 connect a bank (Plaid sandbox, the standard test user)   6 first number   7 "Choose your plan"
 //   8 Delete Account   9 the account is gone (asked of the database, not of the app)
 //
+// The website walks the free plan (Free v1, PR #158): at 5 the server refuses a bank (ENFORCE_PLAN_LIMITS, as on the
+// live site) and the app shows the free plan's bank line, so the balance is typed by hand; at 7 the plans open once
+// and their close button closes them onto the free plan; at 8 Delete Account is in Settings. The store apps
+// keep one sandbox bank, the required plans, and Delete Account on them (stepsFor below). The screens' words are the
+// app's own, read from src/lib/upgradeFlow.js and src/lib/freeWords.js (approvedWords below), never typed here.
+//
 // Devices: the iPhone app and the Android app (the store build, in a phone-sized window, with the platform each app
 // reports and the Origin each app sends) and the website (a desktop window).
 //
@@ -41,7 +47,31 @@ const DEVICES = [
   { key: "android", label: "Android app", base: STORE, platform: "android", origin: "https://localhost", viewport: { width: 412, height: 915 }, mobile: true },
   { key: "website", label: "website", base: WEB, platform: null, origin: null, viewport: { width: 1280, height: 800 }, mobile: false },
 ];
-const STEPS = ["fresh visit", "sign up", "AI notice", "Before you start", BANK === "plaid" ? "connect a bank (Plaid sandbox)" : "balance typed by hand (rehearsal, no bank)", "first number", "Choose your plan", "Delete Account", "the account is gone"];
+const bankStepName = (bank) => (bank === "plaid" ? "connect a bank (Plaid sandbox)" : "balance typed by hand (rehearsal, no bank)");
+// The store apps' nine steps (the names GitHub's failure email shows).
+const STEPS = ["fresh visit", "sign up", "AI notice", "Before you start", bankStepName(BANK), "first number", "Choose your plan", "Delete Account", "the account is gone"];
+
+/** The nine steps a device walks: a name for the email, and a kind the walk acts on. Only steps 5, 7 and 8 differ. */
+function stepsFor(device, bank = BANK) {
+  const web = !device.platform;
+  const k = (name, kind) => ({ name, kind });
+  return [
+    k("fresh visit", "visit"), k("sign up", "signup"), k("AI notice", "ai-notice"), k("Before you start", "before-you-start"),
+    web ? k("the free plan's bank line, then a balance by hand (website)", "free-bank-line") : k(bankStepName(bank), bank === "plaid" ? "plaid" : "by-hand"),
+    k("first number", "first-number"),
+    web ? k("the plans, once, then the free plan (website)", "plans-once") : k("Choose your plan", "plans-required"),
+    web ? k("Delete Account, from Settings (website)", "delete-in-settings") : k("Delete Account", "delete-on-plans"),
+    k("the account is gone", "gone"),
+  ];
+}
+
+/** The approved words the website's free plan shows, from the app's own files (so a change of words cannot break this). */
+async function approvedWords() {
+  const lib = (f) => require("url").pathToFileURL(path.join(__dirname, "..", "..", "src", "lib", f)).href;
+  const { FREE_WORDS } = await import(lib("freeWords.js"));
+  const { UPGRADE_COPY } = await import(lib("upgradeFlow.js"));
+  return { headline: UPGRADE_COPY.headline, close: FREE_WORDS["free-plans-close"], bankLine: FREE_WORDS["free-bank-line"], settingsLine: FREE_WORDS["free-settings-plan-line"] };
+}
 
 /** Where a request may go: "allow", "api" (answer it from the local server), "production" (refuse and fail) or "block". */
 function verdict(url, supabaseUrl = SUPABASE_URL) {
@@ -75,6 +105,20 @@ function installStoreApp(platform) {
 
 class StepFailed extends Error {}
 
+// The walk's own create_link_token probe (the website's bank step) carries this header, so the page's listener never
+// counts it as the app's request (review round 2): only the app asking, and being refused, proves the app's behaviour.
+const PROBE_HEADER = "x-nightly-probe";
+/** Is this request the APP asking for a Plaid link token (not the walk's probe, not another action or route)? */
+function isAppLinkTokenRequest({ url, postData, headers }) {
+  let pathname = ""; try { pathname = new URL(url).pathname; } catch { return false; }
+  if (!/\/api\/plaid$/.test(pathname) || !/"create_link_token"/.test(postData || "")) return false;
+  return !Object.keys(headers || {}).some((h) => h.toLowerCase() === PROBE_HEADER);
+}
+/** Was one of the app's own link-token requests refused as the free plan's (402, plan_limit)? */
+function appLinkTokenRefused(answers) {
+  return (answers || []).some((r) => r.status === 402 && r.error === "plan_limit");
+}
+
 /** What a failure says on GitHub: one error annotation (shown in GitHub's failure email and on the run) and the summary. */
 function alertLines(f) {
   const flat = (s) => String(s || "").replace(/\s+/g, " ").trim();
@@ -94,9 +138,11 @@ function alertLines(f) {
 }
 
 async function walk(browser, device) {
+  const plan = stepsFor(device);
+  const words = await approvedWords();
   const dir = path.join(OUT, device.key);
   fs.mkdirSync(dir, { recursive: true });
-  const st = { step: null, n: 0, done: [], production: [], blocked: new Set(), apiErrors: [], email: `nightly-${device.key}-${RUN}@flourishmoney.app`, userId: null };
+  const st = { step: null, n: 0, done: [], production: [], blocked: new Set(), apiErrors: [], linkTokens: [], email: `nightly-${device.key}-${RUN}@flourishmoney.app`, userId: null };
   const password = `Nightly-${RUN}-${Math.random().toString(36).slice(2, 10)}!`;
   const ctx = await browser.newContext({ viewport: device.viewport, deviceScaleFactor: device.mobile ? 2 : 1, isMobile: device.mobile, hasTouch: device.mobile, locale: "en-CA", timezoneId: "America/Toronto", colorScheme: "light" });
   if (device.platform) await ctx.addInitScript(installStoreApp, device.platform);
@@ -117,6 +163,13 @@ async function walk(browser, device) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   page.on("response", (r) => { try { const u = new URL(r.url()); if (u.origin === WEB && u.pathname.startsWith("/api/") && r.status() >= 500) st.apiErrors.push(`${u.pathname} answered ${r.status()}`); } catch {} });
+  // The app's own requests for a Plaid link token, and the server's answers (the website's free plan is refused).
+  page.on("response", async (r) => { try {
+    const q = r.request();
+    if (!isAppLinkTokenRequest({ url: r.url(), postData: q.postData(), headers: q.headers() })) return;
+    let error = null; try { error = (await r.json()).error || null; } catch {}
+    st.linkTokens.push({ status: r.status(), error });
+  } catch {} });
 
   const shot = async (name) => { st.n++; await page.screenshot({ path: path.join(dir, `${String(st.n).padStart(2, "0")}-${name.replace(/[^\w]+/g, "-").toLowerCase()}.png`) }).catch(() => {}); };
   const seen = (text, ms = 40000) => page.getByText(text, { exact: false }).first().waitFor({ timeout: ms });
@@ -134,13 +187,13 @@ async function walk(browser, device) {
   };
 
   try {
-    await step(STEPS[0], async () => {
+    await step(plan[0].name, async () => {
       await page.goto(device.base + "/", { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 60000 });
       if (device.platform) await seen("Example, sample data");
     });
     if (DRILL) await step(DRILL_STEP, async () => { throw new Error("Nothing is broken. Someone ran the fire drill to check that the failure email arrives."); });
-    await step(STEPS[1], async () => {
+    await step(plan[1].name, async () => {
       await tap("Get started");
       await page.getByRole("button", { name: "Create Account", exact: true }).waitFor();
       await page.getByPlaceholder("you@example.com").or(page.locator('input[type="email"]')).first().fill(st.email);
@@ -150,15 +203,44 @@ async function walk(browser, device) {
       st.userId = await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { return JSON.parse(localStorage.getItem(k)).user.id; } catch (e) {} } return null; });
       if (!st.userId) throw new Error("signed up, but no session was kept on the device");
     });
-    await step(STEPS[2], async () => { await tap("I Understand & Accept"); await seen("Before you start"); });
-    await step(STEPS[3], async () => { await tap("Get started"); await seen("Link your accounts"); });
-    await step(STEPS[4], async () => {
-      if (BANK === "manual") {   // the rehearsal: everything but Plaid
+    await step(plan[2].name, async () => { await tap("I Understand & Accept"); await seen("Before you start"); });
+    await step(plan[3].name, async () => { await tap("Get started"); await seen("Link your accounts"); });
+    await step(plan[4].name, async () => {
+      const { kind } = plan[4];
+      if (kind === "free-bank-line") {   // the website: its free plan connects no bank, and the app says so
+        const line = page.locator("[data-free-bank]").first();
+        await line.waitFor({ timeout: 40000 });
+        const said = (await line.innerText()).replace(/\s+/g, " ");
+        if (!said.includes(words.bankLine)) throw new Error(`the free plan's bank line is not the approved one, it says: ${said.slice(0, 160)}`);
+        if (await page.locator("[data-bank-button]").count()) throw new Error("the website's free plan shows a Connect button for a bank it cannot connect");
+        // The app asked for a link token and was refused as the free plan's: read and checked BEFORE the walk's own
+        // probe below, which is tagged and never recorded, so the probe cannot stand in for the app.
+        // (The listener reads each answer's body as it comes in: give the app's answer a moment to be recorded.)
+        for (const end = Date.now() + 10000; !appLinkTokenRefused(st.linkTokens) && Date.now() < end;) await page.waitForTimeout(200);
+        const appTokens = st.linkTokens.slice();
+        if (!appLinkTokenRefused(appTokens)) throw new Error(`the app's own link-token request was not refused as the free plan's (it got: ${JSON.stringify(appTokens)})`);
+        // The server itself refuses: a link token asked for as this signed-in account answers the free plan's refusal.
+        const refusal = await page.evaluate(async (probeHeader) => {
+          let token = null;
+          for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { token = JSON.parse(localStorage.getItem(k)).access_token; } catch (e) {} }
+          if (!token) return { status: 0, error: "no session token on the device" };
+          const r = await fetch("/api/plaid", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, [probeHeader]: "1" }, body: JSON.stringify({ action: "create_link_token", country: "CA" }) });
+          let b = {}; try { b = await r.json(); } catch (e) {}
+          return { status: r.status, error: b.error || null };
+        }, PROBE_HEADER);
+        if (refusal.status !== 402 || refusal.error !== "plan_limit") throw new Error(`the server did not refuse a bank on the website's free plan: create_link_token answered ${refusal.status} ${refusal.error}`);
         await tap("Enter it myself");
         await page.getByPlaceholder("0.00").first().fill("2500");
         await tap("Continue →");
         return;
       }
+      if (kind === "by-hand") {   // the rehearsal: everything but Plaid
+        await tap("Enter it myself");
+        await page.getByPlaceholder("0.00").first().fill("2500");
+        await tap("Continue →");
+        return;
+      }
+      if (kind !== "plaid") throw new Error(`no bank step of kind ${kind}`);
       if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET || /^rehearsal/.test(process.env.PLAID_SECRET)) {
         throw new Error("Plaid's sandbox keys are not here: add the repository secrets PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET (e2e/nightly/README.md)");
       }
@@ -173,7 +255,7 @@ async function walk(browser, device) {
       await seen("Connected!", 90000);
       await tap("Let's go →");
     });
-    await step(STEPS[5], async () => {
+    await step(plan[5].name, async () => {
       await seen("Your paycheques");
       const amount = page.getByPlaceholder("e.g. 2100").first();
       if (await amount.count() && !(await amount.inputValue())) await amount.fill("2100");
@@ -184,21 +266,45 @@ async function walk(browser, device) {
       const number = await page.evaluate(() => (document.body.innerText.match(/\$\s*[\d,]+/) || [""])[0]);
       if (!/\d/.test(number)) throw new Error("the first-number screen shows no number");
     });
-    await step(STEPS[6], async () => {
+    await step(plan[6].name, async () => {
+      const { kind } = plan[6];
       await page.getByText("Skip for now", { exact: true }).first().click();
-      const notNow = page.getByRole("button", { name: "Not now", exact: true }).first(), plans = page.getByRole("heading", { name: "Choose your plan", exact: true });
+      const notNow = page.getByRole("button", { name: "Not now", exact: true }).first();
+      if (kind === "plans-once") {   // the website: the plans open once, then close onto the free plan
+        const headline = page.getByText(words.headline, { exact: false }).first();
+        for (let i = 0; i < 3 && !(await headline.isVisible()); i++) { await notNow.or(headline).filter({ visible: true }).first().waitFor({ state: "visible", timeout: 40000 }); if (await headline.isVisible()) break; await notNow.click(); await page.waitForTimeout(800); }
+        await headline.waitFor({ state: "visible", timeout: 40000 });
+        await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
+        await page.getByRole("button", { name: words.close, exact: true }).first().click();
+        await headline.waitFor({ state: "hidden", timeout: 20000 });
+        // On the free plan: the app is open, and Settings' plan card says what a subscription adds over it.
+        await page.getByRole("button", { name: "Settings" }).first().click();
+        await seen(words.settingsLine, 20000);
+        return;
+      }
+      if (kind !== "plans-required") throw new Error(`no plans step of kind ${kind}`);
+      const plans = page.getByRole("heading", { name: "Choose your plan", exact: true });
       for (let i = 0; i < 3 && !(await plans.count()); i++) { await notNow.or(plans).first().waitFor({ timeout: 40000 }); if (await plans.count()) break; await notNow.click(); await page.waitForTimeout(800); }
       await plans.waitFor({ timeout: 40000 });
       await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
     });
-    await step(STEPS[7], async () => {
+    await step(plan[7].name, async () => {
+      const { kind } = plan[7];
+      if (kind === "delete-in-settings") {   // the website: Delete Account is in Settings, as the support page says
+        await page.getByRole("button", { name: "Delete Account", exact: true }).first().click();
+        await seen("Delete your account?", 10000);
+        await tap("Delete account");
+        await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 40000 });
+        return;
+      }
+      if (kind !== "delete-on-plans") throw new Error(`no delete step of kind ${kind}`);
       await page.locator("[data-plans-delete]").click();
       await seen("Delete your account?", 10000);
       await tap("Delete account");
       await page.getByRole("heading", { name: "Choose your plan", exact: true }).waitFor({ state: "detached", timeout: 30000 });
       await page.getByRole("button", { name: "Get started", exact: true }).first().waitFor({ timeout: 40000 });
     });
-    await step(STEPS[8], async () => {
+    await step(plan[8].name, async () => {
       const gone = await accountIsGone(st.userId, st.email, password);
       if (gone !== true) throw new Error(gone);
     });
@@ -299,5 +405,5 @@ async function main() {
   console.log(`\n✓ NIGHTLY: ${results.length} devices, ${STEPS.length} steps each, bank step: ${BANK === "plaid" ? "Plaid sandbox" : "typed by hand (rehearsal)"}.`);
 }
 
-module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines };
+module.exports = { verdict, STEPS, DEVICES, DRILL_STEP, alertLines, stepsFor, approvedWords, PROBE_HEADER, isAppLinkTokenRequest, appLinkTokenRefused };
 if (require.main === module) main().catch((e) => { console.error(`✗ the nightly test could not run: ${e && e.stack}`); process.exit(1); });
