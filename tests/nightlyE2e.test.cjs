@@ -131,7 +131,7 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
     const differ = ["plaid", "by-hand", "free-bank-line", "plans-required", "plans-once", "delete-on-plans", "delete-in-settings"];
     t.eq(differ.filter((k) => ![...kinds("iphone", "plaid"), ...kinds("iphone", "manual"), ...kinds("website", "plaid")].includes(k) || !new RegExp(`kind [!=]== "${k}"`).test(run)), [],
       "7i every kind of step that differs between the devices is used, and the walk has a branch for it");
-    t.ok(/kind === "free-bank-line"[\s\S]{0,900}\[data-free-bank\][\s\S]{0,900}\[data-bank-button\][\s\S]{0,400}Enter it myself/.test(run), "7j the website's bank step: the free-bank line, no Connect button, then the balance by hand");
+    t.ok(/kind === "free-bank-line"[\s\S]{0,900}\[data-free-bank\][\s\S]{0,900}\[data-bank-button\][\s\S]{0,2000}Enter it myself/.test(run), "7j the website's bank step: the free-bank line, no Connect button, then the balance by hand");
     t.ok(/kind === "plans-once"[\s\S]{0,900}words\.headline[\s\S]{0,600}\\\$11\\\.99[\s\S]{0,900}words\.close[\s\S]{0,900}words\.settingsLine/.test(run), "7k the website's plans: the headline and $11.99, then \"Continue on the free plan\", then the app, on the free plan (Settings says so)");
     t.ok(/kind === "delete-in-settings"[\s\S]{0,900}"Delete Account"[\s\S]{0,600}Delete your account\?[\s\S]{0,600}"Delete account"/.test(run), "7l the website deletes from Settings, as a website user does now");
   }
@@ -141,33 +141,72 @@ const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
   t.eq(S.refusal({ ...ok, ENFORCE_PLAN_LIMITS: "true" }), null, "8b …which the server allows");
 
   // ── 9. A pull request that changes the plans runs the nightly (so a change like #158 cannot slip past it) ────
+  // Review round 1 (PR #162): no diff reader. GitHub's path filter decides alone: the test, the plans' rules, words and
+  // screens (any change to src/App.jsx), and the server's plan, billing and bank enforcement.
   {
-    let P = {};
-    try { P = require(path.join(REPO, "e2e", "nightly", "touchesPlans.cjs")); } catch (e) { t.ok(false, `9 e2e/nightly/touchesPlans.cjs loads: ${e.message}`); }
-    const paths = (wf.match(/\n  pull_request:\n[\s\S]*?\n    paths:\n((?:      - "[^"]+"\n)+)/) || [])[1] || "";
-    t.eq(["e2e/nightly/**", ".github/workflows/nightly-e2e.yml", "src/lib/trialPlanFirst.js", "src/lib/upgradeFlow.js", "src/lib/freeWords.js", "src/App.jsx"].filter((p) => !paths.includes(`"${p}"`)), [],
-      "9a a pull request touching the plans' files (or the test) starts the workflow");
-    const run9 = (o) => (typeof P.shouldRun === "function" ? P.shouldRun(o) : null);
-    t.eq([run9({ event: "schedule", files: [] }), run9({ event: "workflow_dispatch", files: [] })], [true, true], "9b every night and by hand: always");
-    t.eq(["src/lib/trialPlanFirst.js", "src/lib/upgradeFlow.js", "src/lib/freeWords.js", "e2e/nightly/run.cjs", ".github/workflows/nightly-e2e.yml"].map((f) => run9({ event: "pull_request", files: [f], appDiff: "" })),
-      [true, true, true, true, true], "9c a pull request changing a plans file or the test itself: runs");
-    t.eq(run9({ event: "pull_request", files: ["README.md", "src/lib/locale.js"], appDiff: "" }), false, "9d …one that changes nothing of the plans: does not");
-    t.eq([run9({ event: "pull_request", action: "labeled", label: "nightly-fire-drill", files: ["README.md"], appDiff: "" }), run9({ event: "pull_request", action: "labeled", label: "other", files: ["README.md"], appDiff: "" })],
-      [true, false], "9d2 the label nightly-fire-drill still starts the drill on any pull request the workflow sees; another label does not");
-    const hunk = (fn, line) => `diff --git a/src/App.jsx b/src/App.jsx\n--- a/src/App.jsx\n+++ b/src/App.jsx\n@@ -100,1 +100,1 @@ ${fn}\n-  ${line}\n+  ${line} \n`;
-    t.eq([run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function UpgradeScreen({status, mode}){", "const a = 1;") }),
-      run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function StorePaywall({purchases}){", "const b = 2;") }),
-      run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("export default function App(){", "if(plansRequired && firstVisitDone){") })],
-    [true, true, true], "9e src/App.jsx: a change inside the plans screens, or to where the app decides to show them: runs");
-    t.eq(run9({ event: "pull_request", files: ["src/App.jsx"], appDiff: hunk("function Goals({data}){", "const savLabel=\"Savings\";") }), false, "9f …a change elsewhere in src/App.jsx: does not");
-    const git = (args) => require("child_process").execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    try {
-      const files = git(["show", "--name-only", "--format=", "af0f7ff"]).split("\n").filter(Boolean);
-      const appDiff = git(["show", "--format=", "af0f7ff", "--", "src/App.jsx"]);
-      t.eq([run9({ event: "pull_request", files, appDiff }), typeof P.appDiffTouchesPlans === "function" && P.appDiffTouchesPlans(appDiff)], [true, true],
-        "9g #158 itself (af0f7ff) would have run it, by its files and by its src/App.jsx changes alone");
-    } catch (e) { t.ok(true, "9g (af0f7ff is not in this checkout's history: skipped)"); }
-    t.ok(/\n  changes:\n[\s\S]*?node e2e\/nightly\/touchesPlans\.cjs[\s\S]*?\n  walk:\n[\s\S]*?\n    needs: changes\n    if: needs\.changes\.outputs\.run == 'true'\n/.test(wf), "9h a first job decides, and the walk runs only when it says so");
+    const PLANS_PATHS = [
+      "e2e/nightly/**", ".github/workflows/nightly-e2e.yml",
+      // the app: the plans' rules, words, prices and screens
+      "src/App.jsx", "src/lib/trialPlanFirst.js", "src/lib/upgradeFlow.js", "src/lib/freeWords.js", "src/lib/freePlan.js", "src/lib/billingVisibility.js", "src/lib/pricing.js",
+      // the server: the bank limit (and how it tells the website from a store app), the plan and entitlement, billing
+      "netlify/functions/plaid.js", "netlify/functions/_lib/freeBanks.js", "netlify/functions/_lib/freeWords.js", "netlify/functions/_lib/cors.js",
+      "netlify/functions/_lib/auth.js", "netlify/functions/_lib/planRules.js", "netlify/functions/_lib/gifts.js", "netlify/functions/_lib/household.js",
+      "netlify/functions/_lib/storeSubscriptions.js", "netlify/functions/_lib/trialPlanFirst.js", "netlify/functions/_lib/billingPlans.js",
+      "netlify/functions/billing.js", "netlify/functions/trial-plan-first.js",
+    ];
+    const filter = [...((wf.match(/\n  pull_request:\n[\s\S]*?\n    paths:\n((?:\s+#[^\n]*\n|      - "[^"]+"\n)+)/) || [])[1] || "").matchAll(/- "([^"]+)"/g)].map((m) => m[1]);
+    t.eq(PLANS_PATHS.filter((p) => !filter.includes(p)), [], `9a the pull_request path filter has the test, the plans' files and the server's enforcement (${filter.length} paths)`);
+    t.ok(PLANS_PATHS.filter((p) => !p.includes("*")).every((p) => fs.existsSync(path.join(REPO, p))), "9b …each a file that exists (a renamed file would silently drop out of the filter)");
+    // GitHub's path filter: "**" any depth, otherwise the exact path.
+    const matches = (p, f) => (p.endsWith("/**") ? f.startsWith(p.slice(0, -2)) : p === f);
+    const triggers = (files) => files.some((f) => filter.some((p) => matches(p, f)));
+    const pr158 = fs.readFileSync(path.join(REPO, "tests", "fixtures", "pr158-changed-files.txt"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    t.ok(pr158.length > 20 && pr158.includes("src/lib/trialPlanFirst.js") && pr158.includes("netlify/functions/_lib/freeBanks.js"), `9c the fixture is #158's changed-file list (${pr158.length} files)`);
+    t.eq([triggers(pr158), pr158.filter((f) => filter.some((p) => matches(p, f))).length >= 5], [true, true], "9d #158 would have run the nightly, by several of its files");
+    t.eq([triggers(["src/App.jsx"]), triggers(["netlify/functions/plaid.js"]), triggers(["netlify/functions/_lib/freeBanks.js"]), triggers(["README.md", "src/lib/locale.js"])], [true, true, true, false],
+      "9e any change to src/App.jsx or the server's bank limit runs it; a change elsewhere does not");
+    t.ok(!fs.existsSync(path.join(REPO, "e2e", "nightly", "touchesPlans.cjs")) && !/touchesPlans|\n  changes:|needs: changes/.test(wf), "9f no diff reader and no deciding job: the path filter alone decides");
+    t.ok(/\n  walk:\n[\s\S]*?\n    if: github\.event\.action != 'labeled' \|\| github\.event\.label\.name == 'nightly-fire-drill'\n/.test(wf), "9g the walk itself runs on every event but a label other than nightly-fire-drill");
+  }
+
+  // ── 10. A label never cancels a running pull request run, except the fire drill (review round 1, MUST 3) ─────
+  // A labeled event starts a run of the workflow even when no job will run. With one concurrency group per branch and
+  // cancel-in-progress, that run cancelled the walk in progress. Here GitHub's own expressions are evaluated.
+  {
+    const expr = (src, ctx) => {   // a GitHub expression: ==, !=, &&, ||, format(), property access (missing = null)
+      const js = src.replace(/!=/g, "!==").replace(/([^!=])==/g, "$1===").replace(/\b((?:github|needs|matrix)(?:\.[A-Za-z_]+)+)/g, (m) => m.replace(/\./g, "?."));
+      let v;
+      try { v = new Function("github", "needs", "matrix", "format", `return (${js});`)(ctx, {}, {}, (f, ...a) => f.replace(/\{(\d+)\}/g, (_, i) => String(a[i] ?? ""))); }
+      catch (e) { return `<cannot evaluate ${src}: ${e.message}>`; }
+      return v === undefined || v === null ? "" : v;
+    };
+    const tmpl = (s, ctx) => String(s).replace(/\$\{\{\s*([\s\S]*?)\s*\}\}/g, (_, e) => String(expr(e, ctx)));
+    const group = (wf.match(/\nconcurrency:\n  group: ([^\n]+)\n  cancel-in-progress: true\n/) || [])[1] || "";
+    const walkIf = (wf.match(/\n  walk:\n[\s\S]*?\n    if: ([^\n]+)\n/) || [])[1] || "false";
+    const pr = (action, label, run_id) => ({ ref: "refs/pull/162/merge", run_id, event_name: "pull_request", event: { action, ...(label ? { label: { name: label } } : {}) } });
+    const running = tmpl(group, pr("synchronize", null, 1001));
+    t.ok(group.length > 0 && running.startsWith("nightly-e2e-refs/pull/162/merge"), `10a one group per pull request (${running})`);
+    t.ok(tmpl(group, pr("labeled", "documentation", 1002)) !== running, "10b another label: a group of its own, so it cannot cancel the run in progress");
+    t.eq(expr(walkIf, pr("labeled", "documentation", 1002)), false, "10c …and it walks nothing");
+    t.eq([tmpl(group, pr("labeled", "nightly-fire-drill", 1003)), expr(walkIf, pr("labeled", "nightly-fire-drill", 1003))], [running, true], "10d the fire-drill label: the pull request's group (it replaces the run) and it walks");
+    t.eq([tmpl(group, pr("opened", null, 1004)), tmpl(group, pr("reopened", null, 1005))], [running, running], "10e a new push, opening or reopening: the same group, so a newer run replaces an older one, as before");
+    t.eq(tmpl(group, { ref: "refs/heads/main", run_id: 9, event_name: "schedule", event: {} }), "nightly-e2e-refs/heads/main", "10f the nightly on main: its own group, as before");
+  }
+
+  // ── 11. The website's plans are found by what is visible, not what is in the page (review round 1, SHOULD 5) ───
+  {
+    const block = (run.match(/kind === "plans-once"[\s\S]*?\n        return;\n/) || [""])[0];
+    t.ok(block.length > 0 && /headline\.isVisible\(\)/.test(block) && !/\.count\(\)/.test(block), "11a the plans-once step waits on the headline being visible (isVisible), never on .count()");
+  }
+
+  // ── 12. The website's free plan: the server itself refuses a bank (review round 1, SHOULD 6) ─────────────────
+  {
+    const block = (run.match(/kind === "free-bank-line"[\s\S]*?\n        return;\n/) || [""])[0];
+    t.ok(/authorization: `Bearer \$\{token\}`/.test(block) && /action: "create_link_token"/.test(block) && /refusal\.status !== 402 \|\| refusal\.error !== "plan_limit"/.test(block),
+      "12a the bank step asks the server for a link token as the signed-in account and requires its free-plan refusal (402, plan_limit)");
+    t.ok(/st\.linkTokens/.test(run) && /st\.linkTokens\.some\(\(r\) => r\.status === 402 && r\.error === "plan_limit"\)/.test(block), "12b …and the app's own request for one was refused the same way");
+    const plaidSrc = read("netlify", "functions", "plaid.js");
+    t.ok(/statusCode: 402, headers: CORS, body: JSON\.stringify\(\{ error: "plan_limit"/.test(plaidSrc), "12c (that is the refusal plaid.js sends)");
   }
 
   t.summary("nightlyE2e.test");

@@ -128,7 +128,7 @@ async function walk(browser, device) {
   const words = await approvedWords();
   const dir = path.join(OUT, device.key);
   fs.mkdirSync(dir, { recursive: true });
-  const st = { step: null, n: 0, done: [], production: [], blocked: new Set(), apiErrors: [], email: `nightly-${device.key}-${RUN}@flourishmoney.app`, userId: null };
+  const st = { step: null, n: 0, done: [], production: [], blocked: new Set(), apiErrors: [], linkTokens: [], email: `nightly-${device.key}-${RUN}@flourishmoney.app`, userId: null };
   const password = `Nightly-${RUN}-${Math.random().toString(36).slice(2, 10)}!`;
   const ctx = await browser.newContext({ viewport: device.viewport, deviceScaleFactor: device.mobile ? 2 : 1, isMobile: device.mobile, hasTouch: device.mobile, locale: "en-CA", timezoneId: "America/Toronto", colorScheme: "light" });
   if (device.platform) await ctx.addInitScript(installStoreApp, device.platform);
@@ -149,6 +149,12 @@ async function walk(browser, device) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   page.on("response", (r) => { try { const u = new URL(r.url()); if (u.origin === WEB && u.pathname.startsWith("/api/") && r.status() >= 500) st.apiErrors.push(`${u.pathname} answered ${r.status()}`); } catch {} });
+  // The app's own requests for a Plaid link token, and the server's answers (the website's free plan is refused).
+  page.on("response", async (r) => { try {
+    if (!/\/api\/plaid$/.test(new URL(r.url()).pathname) || !/"create_link_token"/.test(r.request().postData() || "")) return;
+    let error = null; try { error = (await r.json()).error || null; } catch {}
+    st.linkTokens.push({ status: r.status(), error });
+  } catch {} });
 
   const shot = async (name) => { st.n++; await page.screenshot({ path: path.join(dir, `${String(st.n).padStart(2, "0")}-${name.replace(/[^\w]+/g, "-").toLowerCase()}.png`) }).catch(() => {}); };
   const seen = (text, ms = 40000) => page.getByText(text, { exact: false }).first().waitFor({ timeout: ms });
@@ -192,6 +198,17 @@ async function walk(browser, device) {
         const said = (await line.innerText()).replace(/\s+/g, " ");
         if (!said.includes(words.bankLine)) throw new Error(`the free plan's bank line is not the approved one, it says: ${said.slice(0, 160)}`);
         if (await page.locator("[data-bank-button]").count()) throw new Error("the website's free plan shows a Connect button for a bank it cannot connect");
+        // The server itself refuses: a link token asked for as this signed-in account answers the free plan's refusal.
+        const refusal = await page.evaluate(async () => {
+          let token = null;
+          for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { token = JSON.parse(localStorage.getItem(k)).access_token; } catch (e) {} }
+          if (!token) return { status: 0, error: "no session token on the device" };
+          const r = await fetch("/api/plaid", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ action: "create_link_token", country: "CA" }) });
+          let b = {}; try { b = await r.json(); } catch (e) {}
+          return { status: r.status, error: b.error || null };
+        });
+        if (refusal.status !== 402 || refusal.error !== "plan_limit") throw new Error(`the server did not refuse a bank on the website's free plan: create_link_token answered ${refusal.status} ${refusal.error}`);
+        if (!st.linkTokens.some((r) => r.status === 402 && r.error === "plan_limit")) throw new Error(`the app's own link-token request was not refused as the free plan's (it got: ${JSON.stringify(st.linkTokens)})`);
         await tap("Enter it myself");
         await page.getByPlaceholder("0.00").first().fill("2500");
         await tap("Continue →");
@@ -235,8 +252,8 @@ async function walk(browser, device) {
       const notNow = page.getByRole("button", { name: "Not now", exact: true }).first();
       if (kind === "plans-once") {   // the website: the plans open once, then close onto the free plan
         const headline = page.getByText(words.headline, { exact: false }).first();
-        for (let i = 0; i < 3 && !(await headline.count()); i++) { await notNow.or(headline).first().waitFor({ timeout: 40000 }); if (await headline.count()) break; await notNow.click(); await page.waitForTimeout(800); }
-        await headline.waitFor({ timeout: 40000 });
+        for (let i = 0; i < 3 && !(await headline.isVisible()); i++) { await notNow.or(headline).first().waitFor({ state: "visible", timeout: 40000 }); if (await headline.isVisible()) break; await notNow.click(); await page.waitForTimeout(800); }
+        await headline.waitFor({ state: "visible", timeout: 40000 });
         await page.getByText(/\$11\.99/).first().waitFor({ timeout: 20000 });   // a plan with its price, not an empty screen
         await page.getByRole("button", { name: words.close, exact: true }).first().click();
         await headline.waitFor({ state: "hidden", timeout: 20000 });

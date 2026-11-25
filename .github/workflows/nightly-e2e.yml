@@ -32,52 +32,52 @@ on:
   pull_request:
     # "labeled": putting the label nightly-fire-drill on a pull request that changes the test runs the fire drill there.
     types: [opened, synchronize, reopened, labeled]
-    # Also a change to the plans (free v1, PR #158, broke the nightly unseen): their rules and words, and src/App.jsx,
-    # where the first job (changes, below) reads the diff and runs the walk only if it touches the plans screens.
+    # Also any change to the plans (free v1, PR #158, broke the nightly unseen): their rules, words, prices and screens
+    # (all of src/App.jsx, which holds the screens), and the server's plan, entitlement, billing and bank limits.
     paths:
       - "e2e/nightly/**"
       - ".github/workflows/nightly-e2e.yml"
+      # the app
+      - "src/App.jsx"
       - "src/lib/trialPlanFirst.js"
       - "src/lib/upgradeFlow.js"
       - "src/lib/freeWords.js"
-      - "src/App.jsx"
+      - "src/lib/freePlan.js"
+      - "src/lib/billingVisibility.js"
+      - "src/lib/pricing.js"
+      # the server: the bank limit and how it tells the website from a store app
+      - "netlify/functions/plaid.js"
+      - "netlify/functions/_lib/freeBanks.js"
+      - "netlify/functions/_lib/freeWords.js"
+      - "netlify/functions/_lib/cors.js"
+      # the server: the plan and what it entitles (a trial, a gift, a partner's cover, a store subscription)
+      - "netlify/functions/_lib/auth.js"
+      - "netlify/functions/_lib/planRules.js"
+      - "netlify/functions/_lib/gifts.js"
+      - "netlify/functions/_lib/household.js"
+      - "netlify/functions/_lib/storeSubscriptions.js"
+      # the server: billing and the plans-first decision
+      - "netlify/functions/billing.js"
+      - "netlify/functions/_lib/billingPlans.js"
+      - "netlify/functions/trial-plan-first.js"
+      - "netlify/functions/_lib/trialPlanFirst.js"
 
 permissions:
   contents: read
 
+# One run per branch or pull request: a newer push replaces the run in progress. A label other than nightly-fire-drill
+# still starts a run of this workflow (with nothing to walk), so it gets a group of its own and can never cancel the
+# walk in progress; the fire-drill label shares the pull request's group, so it replaces that run with the drill.
 concurrency:
-  group: nightly-e2e-${{ github.ref }}
+  group: nightly-e2e-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'nightly-fire-drill' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
-  # Does this run need the walk? Always every night and by hand; on a pull request, when it changes the test or the
-  # plans (e2e/nightly/touchesPlans.cjs).
-  changes:
-    name: does this change the plans?
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.event.action != 'labeled' || github.event.label.name == 'nightly-fire-drill'
-    outputs:
-      run: ${{ steps.decide.outputs.run }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Decide
-        id: decide
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_ACTION: ${{ github.event.action }}
-          EVENT_LABEL: ${{ github.event.label.name }}
-        run: node e2e/nightly/touchesPlans.cjs
-
   walk:
     name: ${{ matrix.bank == 'plaid' && 'nightly (Plaid sandbox)' || 'rehearsal (no bank)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: changes
-    if: needs.changes.outputs.run == 'true'
+    if: github.event.action != 'labeled' || github.event.label.name == 'nightly-fire-drill'
     # The step that broke (set only by a job that failed), for the alert job below.
     outputs:
       broke: ${{ steps.walk.outputs.broke }}
