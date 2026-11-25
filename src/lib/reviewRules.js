@@ -9,12 +9,26 @@
 // pure: the caller passes the stored state and the clock, and gets back yes or no with a reason, so
 // every rule is testable without a phone.
 //
-// THE MOMENT is one thing: a money meeting the household has just marked done. Each completed meeting
-// may ask once (meetingKey: the meeting's own day), and no other moment ever asks.
+// THE MOMENTS are three, and no other moment ever asks:
+//   meeting_done    a money meeting the household has just marked done. Each completed meeting may ask once
+//                   (meetingKey: the meeting's own day).
+//   first_safe      about 3 seconds after the first safe-to-spend number shows on this install (2026-11-24).
+//   third_open_day  the 3rd different day (the person's own calendar day) the app is opened on this install
+//                   (2026-11-24). The days need not be in a row.
+// The last two come once per install: once a moment has come, it never asks again, so it never turns up later at some
+// other, unrelated moment. It has come when it asks, or when the three-a-year limit rules it out. Trouble in the last
+// 24 hours does not spend it (review round 4): it waits, the first number for its next showing, the third day for a
+// later open, since a new household's first session is when trouble is likeliest.
+//
+// ONE ASK PER APP SESSION (review round 1, 2026-11-24): whichever moment comes first. A moment that comes later in the
+// same session is not spent; it waits for a later session (the third day: any later open; the first number: the next
+// time Today shows it). A session ends after REVIEW_SESSION_GAP_MINUTES in the background (reviewPrompt.js). (2026-11-24: the meeting alone is reached by
+// almost nobody.)
 //
 // NEVER straight after something went wrong: an error, a bank link that failed, a payment the store
 // declined (or a purchase that did not finish), or a coach message that was refused. Any of those in the
-// last 24 hours rules the ask out, because a person who just hit a wall is being asked to grade the wall.
+// last 24 hours rules the ask out, because a person who just hit a wall is being asked to grade the wall. The
+// meeting's ask is simply not made; the first number's and the third day's wait for later (above).
 //
 // AT MOST THREE TIMES IN ANY 365 DAYS PER INSTALL, counted from the times Flourish asked, whether or not
 // the store chose to show its sheet (neither store says whether it did, so the conservative reading is
@@ -31,7 +45,14 @@ export const REVIEW_MAX_ASKS = 3;
 export const REVIEW_WINDOW_DAYS = 365;
 export const TROUBLE_QUIET_HOURS = 24;
 
-export const REVIEW_TRIGGERS = Object.freeze({ MEETING_DONE: "meeting_done" });
+export const REVIEW_TRIGGERS = Object.freeze({ MEETING_DONE: "meeting_done", FIRST_SAFE: "first_safe", THIRD_OPEN_DAY: "third_open_day" });
+// The once-per-install moments.
+const MOMENTS = [REVIEW_TRIGGERS.FIRST_SAFE, REVIEW_TRIGGERS.THIRD_OPEN_DAY];
+// The first number's ask waits about this long after the number shows, so the person sees it first.
+export const FIRST_SAFE_DELAY_MS = 3000;
+const OPEN_DAYS_TO_ASK = 3;
+export const REVIEW_SESSION_GAP_MINUTES = 30;
+const DAY_KEY_RX = /^\d{4}-\d{2}-\d{2}$/;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const KEEP = 12;                 // ask times and meeting keys kept: more than the window can ever use
@@ -45,7 +66,7 @@ export function localDayKey(now) {
 }
 
 export function emptyReviewState() {
-  return { askedAt: [], askedMeetings: [], lastTroubleAt: null };
+  return { askedAt: [], askedMeetings: [], lastTroubleAt: null, openDays: [], moments: { first_safe: null, third_open_day: null } };
 }
 
 // Whatever was stored (or nothing, or junk) becomes a well-formed state. A corrupt record must not
@@ -66,6 +87,11 @@ export function normalizeReviewState(raw, now = Date.now()) {
     const t = Date.parse(raw.lastTroubleAt);
     if (Number.isFinite(t)) s.lastTroubleAt = new Date(t).toISOString();
   }
+  // The first three different days the app was opened, in the order they came.
+  if (Array.isArray(raw.openDays)) for (const k of raw.openDays) if (typeof k === "string" && DAY_KEY_RX.test(k) && !s.openDays.includes(k) && s.openDays.length < OPEN_DAYS_TO_ASK) s.openDays.push(k);
+  // A moment that has come is kept as its time; an unreadable one reads as come (never ask sooner than the rules allow).
+  const m = raw.moments && typeof raw.moments === "object" ? raw.moments : {};
+  for (const k of MOMENTS) if (m[k] != null && m[k] !== false) s.moments[k] = asIso(m[k]);
   return s;
 }
 
@@ -84,6 +110,21 @@ export function withAsked(state, now, meetingKey) {
   };
 }
 
+// The app was opened today (the person's own day). Only the first three different days are kept.
+export function withOpenDay(state, now) {
+  const s = normalizeReviewState(state, now);
+  const key = localDayKey(now);
+  if (s.openDays.includes(key) || s.openDays.length >= OPEN_DAYS_TO_ASK) return s;
+  return { ...s, openDays: [...s.openDays, key] };
+}
+
+// A once-per-install moment has come (it asked, or the yearly limit ruled it out): it never asks again.
+export function withMomentSpent(state, trigger, now) {
+  const s = normalizeReviewState(state, now);
+  if (!MOMENTS.includes(trigger) || s.moments[trigger]) return s;
+  return { ...s, moments: { ...s.moments, [trigger]: new Date(now).toISOString() } };
+}
+
 // How many asks fall in the 365 days up to now. An ask dated after now (a clock set backwards) counts:
 // a moved clock never makes room for another ask.
 export function asksInWindow(state, now) {
@@ -93,13 +134,22 @@ export function asksInWindow(state, now) {
 
 // Returns { ask, reason }. `ask` is true only when every rule allows it.
 // meetingKey: the completed meeting's own key (its local day); a meeting asks at most once.
-export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey = null }) {
+// For third_open_day, state.openDays must already hold today (withOpenDay).
+// askedThisSession: this app session has already asked (reviewPrompt.js keeps it).
+export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey = null, askedThisSession = false }) {
   if (!native) return { ask: false, reason: "web" };
   if (demo) return { ask: false, reason: "demo" };
-  if (trigger !== REVIEW_TRIGGERS.MEETING_DONE) return { ask: false, reason: "unknown_trigger" };
-  if (typeof meetingKey !== "string" || !meetingKey) return { ask: false, reason: "no_meeting" };
+  if (!Object.values(REVIEW_TRIGGERS).includes(trigger)) return { ask: false, reason: "unknown_trigger" };
   const s = normalizeReviewState(state, now);
-  if (s.askedMeetings.includes(meetingKey)) return { ask: false, reason: "meeting_already_asked" };
+  if (trigger === REVIEW_TRIGGERS.MEETING_DONE) {
+    if (typeof meetingKey !== "string" || !meetingKey) return { ask: false, reason: "no_meeting" };
+    if (s.askedMeetings.includes(meetingKey)) return { ask: false, reason: "meeting_already_asked" };
+  } else {
+    if (s.moments[trigger]) return { ask: false, reason: "moment_spent" };
+    // From the third different day on: the first open of it asks, or, if that session had already asked, a later one.
+    if (trigger === REVIEW_TRIGGERS.THIRD_OPEN_DAY && s.openDays.length < OPEN_DAYS_TO_ASK) return { ask: false, reason: "not_third_day" };
+  }
+  if (askedThisSession) return { ask: false, reason: "session_already_asked" };
   if (asksInWindow(s, now) >= REVIEW_MAX_ASKS) return { ask: false, reason: "yearly_limit" };
   const t = new Date(now).getTime();
   if (s.lastTroubleAt) {
@@ -107,5 +157,5 @@ export function decideReviewAsk({ state, trigger, now, native, demo, meetingKey 
     // A trouble time after now (a clock set backwards) is recent: it waits.
     if (since < TROUBLE_QUIET_HOURS * 60 * 60 * 1000) return { ask: false, reason: "recent_trouble" };
   }
-  return { ask: true, reason: "meeting_done" };
+  return { ask: true, reason: trigger };
 }
